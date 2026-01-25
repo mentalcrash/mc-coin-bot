@@ -1,0 +1,251 @@
+[project]
+name = "mc-coin-bot"
+version = "0.1.0"
+description = "2026 Crypto Quant Trading System - Event-Driven Architecture based automated trading bot"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "MC Coin Bot Team" }
+]
+keywords = ["cryptocurrency", "trading", "quant", "bot", "binance"]
+
+dependencies = [
+    # Exchange API
+    "ccxt>=4.0.0",
+    
+    # Data Processing
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "pyarrow>=15.0.0",         # Parquet support
+    
+    # Technical Indicators
+    "pandas-ta>=0.3.14b",
+    
+    # Data Validation
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    
+    # Async Support
+    "aiosqlite>=0.20.0",
+    "aiohttp>=3.9.0",
+    
+    # Configuration
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    
+    # Logging
+    "loguru>=0.7.0",
+    
+    # CLI
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    
+    # Telegram Alerts
+    "python-telegram-bot>=21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "mypy>=1.8.0",
+    "ruff>=0.3.0",
+    "pre-commit>=3.6.0",
+]
+
+research = [
+    "vectorbt>=0.26.0",
+    "optuna>=3.5.0",
+    "jupyterlab>=4.1.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "plotly>=5.18.0",
+]
+
+[project.scripts]
+mc-bot = "src.live.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+indent-width = 4
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".git-rewrite",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "build",
+    "dist",
+    "venv",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+    # Core
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    
+    # Code quality
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "PIE",    # flake8-pie
+    "PERF",   # Perflint (performance)
+    
+    # Type checking
+    "TCH",    # flake8-type-checking
+    "ANN",    # flake8-annotations
+    
+    # Style
+    "N",      # pep8-naming
+    "Q",      # flake8-quotes
+    "RET",    # flake8-return
+    "PTH",    # flake8-use-pathlib
+    
+    # Security
+    "S",      # flake8-bandit (security)
+    
+    # Testing
+    "PT",     # flake8-pytest-style
+    
+    # Async
+    "ASYNC",  # flake8-async
+    
+    # Pylint
+    "PL",     # pylint
+    
+    # Ruff-specific
+    "RUF",    # Ruff-specific rules
+    
+    # Unused arguments (selective)
+    "ARG",    # flake8-unused-arguments
+]
+
+ignore = [
+    # Line length (handled by formatter)
+    "E501",
+    
+    # Function call in default argument (common pattern with FastAPI, typer)
+    "B008",
+    
+    # Too many arguments/branches/statements (overly strict for trading systems)
+    "PLR0913",  # Too many arguments
+    "PLR0912",  # Too many branches
+    "PLR0915",  # Too many statements
+    
+    # Magic value comparisons (common in trading logic)
+    "PLR2004",
+    
+    # Annotation rules that conflict with runtime needs
+    "ANN401",   # Dynamically typed expressions (Any)
+    
+    # Security rules that may cause false positives
+    "S101",     # Use of assert (needed for tests)
+    "S311",     # Standard pseudo-random generators (not for crypto)
+    
+    # Conflicts with formatter
+    "W191",     # Indentation contains tabs
+    "Q000",     # Single quotes found but double quotes preferred
+    
+    # Style choices for this project
+    "RUF022",   # __all__ sorted (we prefer grouped by category with comments)
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and don't need docstrings
+"tests/**/*.py" = [
+    "S101",     # Use of assert
+    "PLR2004",  # Magic value comparison
+    "ANN",      # Type annotations
+    "D",        # Docstrings
+    "ARG",      # Unused arguments (fixtures)
+]
+# Init files can have unused imports
+"__init__.py" = ["F401", "F403"]
+# Scripts can have different requirements
+"scripts/**/*.py" = ["T20", "D"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+force-single-line = false
+lines-after-imports = 2
+combine-as-imports = true
+
+[tool.ruff.lint.flake8-bugbear]
+# Allow default arguments like FastAPI's Depends, Query, etc.
+extend-immutable-calls = [
+    "typer.Option",
+    "typer.Argument",
+    "pydantic.Field",
+]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 15
+max-returns = 6
+max-statements = 60
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+mypy-init-return = true
+
+[tool.ruff.format]
+# Use double quotes for strings (like Black)
+quote-style = "double"
+
+# Indent with spaces (like Black)
+indent-style = "space"
+
+# Respect magic trailing commas
+skip-magic-trailing-comma = false
+
+# Auto-detect line ending
+line-ending = "auto"
+
+# Format docstring code examples
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=src --cov-report=term-missing"
