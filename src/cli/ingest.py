@@ -14,6 +14,7 @@ Rules Applied:
 """
 
 import asyncio
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
@@ -21,7 +22,16 @@ import pandas as pd
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from src.config.settings import get_settings
@@ -29,6 +39,7 @@ from src.core.logger import setup_logger
 from src.data.bronze import BronzeStorage
 from src.data.fetcher import DataFetcher
 from src.data.silver import SilverProcessor
+from src.exchange.binance_client import BinanceClient
 
 # Global Console Instance
 console = Console()
@@ -379,6 +390,323 @@ def info() -> None:
         )
 
     console.print(status_table)
+
+
+# =============================================================================
+# Bulk Download Command
+# =============================================================================
+
+
+# 테이블 표시 최대 행 수
+_MAX_DISPLAY_ROWS = 20
+
+
+@dataclass
+class BulkDownloadResult:
+    """벌크 다운로드 결과 추적."""
+
+    total: int = 0
+    success: list[str] = field(default_factory=list)
+    failed: list[tuple[str, str]] = field(default_factory=list)  # (symbol, error)
+    skipped: list[str] = field(default_factory=list)
+
+    @property
+    def success_count(self) -> int:
+        return len(self.success)
+
+    @property
+    def failed_count(self) -> int:
+        return len(self.failed)
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped)
+
+
+@dataclass
+class PipelineContext:
+    """파이프라인 실행 컨텍스트."""
+
+    symbol: str
+    years: list[int]
+    skip_existing: bool
+    result: BulkDownloadResult
+    progress: Progress
+    task_id: TaskID
+
+
+async def _get_top_symbols(
+    quote: str, limit: int, min_listing_year: int | None = None
+) -> list[str]:
+    """상위 N개 심볼 조회."""
+    async with BinanceClient() as client:
+        return await client.fetch_top_symbols(
+            quote=quote, limit=limit, min_listing_year=min_listing_year
+        )
+
+
+async def _run_pipeline_for_symbol(ctx: PipelineContext) -> None:
+    """단일 심볼에 대해 파이프라인 실행."""
+    settings = get_settings()
+    bronze_storage = BronzeStorage(settings)
+    fetcher = DataFetcher(settings)
+    processor = SilverProcessor(settings)
+
+    for year in ctx.years:
+        task_key = f"{ctx.symbol}_{year}"
+
+        # 기존 파일 확인 (skip_existing)
+        if ctx.skip_existing and bronze_storage.exists(ctx.symbol, year):
+            ctx.result.skipped.append(task_key)
+            ctx.progress.update(ctx.task_id, advance=1, description=f"[yellow]Skipped[/yellow] {ctx.symbol} {year}")
+            continue
+
+        try:
+            # Bronze: 데이터 수집
+            ctx.progress.update(ctx.task_id, description=f"[blue]Fetching[/blue] {ctx.symbol} {year}")
+            batch = await fetcher.fetch_year(ctx.symbol, year, show_progress=False)
+            bronze_storage.save(batch, year)
+
+            # Silver: 갭 필링
+            ctx.progress.update(ctx.task_id, description=f"[yellow]Processing[/yellow] {ctx.symbol} {year}")
+            processor.process(ctx.symbol, year, validate=True)
+
+            ctx.result.success.append(task_key)
+            ctx.progress.update(ctx.task_id, advance=1, description=f"[green]Done[/green] {ctx.symbol} {year}")
+
+            # Rate Limit 안전장치: 연도별 작업 완료 후 2초 대기
+            await asyncio.sleep(2.0)
+
+        except Exception as e:
+            ctx.result.failed.append((task_key, str(e)))
+            ctx.progress.update(ctx.task_id, advance=1, description=f"[red]Failed[/red] {ctx.symbol} {year}: {e}")
+            # 에러 후에도 대기 (Rate Limit 회복 시간)
+            await asyncio.sleep(5.0)
+
+
+async def _bulk_download(
+    symbols: list[str],
+    years: list[int],
+    skip_existing: bool,
+    progress: Progress,
+) -> BulkDownloadResult:
+    """벌크 다운로드 메인 로직."""
+    result = BulkDownloadResult(total=len(symbols) * len(years))
+
+    # 전체 진행률 Task
+    task_id = progress.add_task(
+        "[cyan]Bulk Download Progress[/cyan]",
+        total=result.total,
+    )
+
+    # 순차 처리 (Rate Limit 고려)
+    for symbol in symbols:
+        ctx = PipelineContext(
+            symbol=symbol,
+            years=years,
+            skip_existing=skip_existing,
+            result=result,
+            progress=progress,
+            task_id=task_id,
+        )
+        await _run_pipeline_for_symbol(ctx)
+
+    return result
+
+
+def _display_bulk_result(result: BulkDownloadResult) -> None:
+    """벌크 다운로드 결과 리포트 출력."""
+    # 요약 테이블
+    summary_table = Table(title="Bulk Download Summary", show_header=True)
+    summary_table.add_column("Status", style="bold")
+    summary_table.add_column("Count", justify="right")
+    summary_table.add_column("Percentage", justify="right")
+
+    total = result.total
+    summary_table.add_row(
+        "[green]Success[/green]",
+        str(result.success_count),
+        f"{result.success_count / total * 100:.1f}%" if total > 0 else "0%",
+    )
+    summary_table.add_row(
+        "[red]Failed[/red]",
+        str(result.failed_count),
+        f"{result.failed_count / total * 100:.1f}%" if total > 0 else "0%",
+    )
+    summary_table.add_row(
+        "[yellow]Skipped[/yellow]",
+        str(result.skipped_count),
+        f"{result.skipped_count / total * 100:.1f}%" if total > 0 else "0%",
+    )
+    summary_table.add_row(
+        "[bold]Total[/bold]",
+        str(total),
+        "100%",
+        style="bold",
+    )
+
+    console.print(summary_table)
+
+    # 실패 목록 (있는 경우)
+    if result.failed:
+        failed_table = Table(title="Failed Tasks", show_header=True)
+        failed_table.add_column("Task", style="cyan")
+        failed_table.add_column("Error", style="red")
+
+        for task_key, error in result.failed[:_MAX_DISPLAY_ROWS]:
+            failed_table.add_row(task_key, error[:80])
+
+        if len(result.failed) > _MAX_DISPLAY_ROWS:
+            failed_table.add_row("...", f"and {len(result.failed) - _MAX_DISPLAY_ROWS} more")
+
+        console.print(failed_table)
+
+
+@app.command("bulk-download")
+def bulk_download(  # noqa: PLR0913
+    top: Annotated[
+        int,
+        typer.Option("--top", "-t", help="Number of top symbols to download"),
+    ] = 100,
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s) to fetch (can specify multiple)"),
+    ] = [2023, 2024, 2025],  # noqa: B006
+    quote: Annotated[
+        str,
+        typer.Option("--quote", "-q", help="Quote currency for filtering symbols"),
+    ] = "USDT",
+    skip_existing: Annotated[
+        bool,
+        typer.Option("--skip-existing/--no-skip-existing", help="Skip if Bronze file already exists"),
+    ] = True,
+    no_filter_listing: Annotated[
+        bool,
+        typer.Option("--no-filter-listing", help="Disable listing year filter (include newly listed symbols)"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Only show target symbols without downloading"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logging"),
+    ] = False,
+) -> None:
+    """Bulk download top N symbols for multiple years.
+
+    Fetches the top N symbols by 24h quote volume from Binance,
+    then runs the full Bronze -> Silver pipeline for each.
+
+    Automatically filters symbols that have data for all requested years.
+    For example, if you request 2023-2025, only symbols listed before 2023
+    will be included.
+
+    Example:
+        # Download top 100 symbols for 2023-2025 (filters by 2023 listing)
+        python main.py ingest bulk-download
+
+        # Download top 10 symbols for 2024-2025 (filters by 2024 listing)
+        python main.py ingest bulk-download --top 10 -y 2024 -y 2025
+
+        # Preview target symbols without downloading
+        python main.py ingest bulk-download --top 100 --dry-run
+
+        # Include newly listed symbols (disable listing filter)
+        python main.py ingest bulk-download --no-filter-listing
+    """
+    # 로거 설정
+    settings = get_settings()
+    setup_logger(
+        log_dir=settings.log_dir,
+        console_level="DEBUG" if verbose else "INFO",
+    )
+    settings.ensure_directories()
+
+    # 최소 상장 연도 = 요청 연도 중 가장 오래된 연도 (자동 계산)
+    min_listing_year: int | None = None if no_filter_listing else min(year)
+
+    # 헤더 표시
+    filter_text = f"Filter: data since {min_listing_year}" if min_listing_year else "Filter: disabled"
+    console.print(Panel.fit(
+        f"[bold]Bulk Download[/bold]\nTop {top} symbols by {quote} volume\nYears: {', '.join(map(str, year))}\n{filter_text}\nSkip existing: {skip_existing}",
+        border_style="magenta",
+    ))
+
+    # Step 1: 상위 심볼 조회
+    console.print("\n[bold cyan]Step 1: Fetching top symbols by quote volume...[/bold cyan]")
+    if min_listing_year:
+        console.print(f"[dim]Filtering symbols with data since {min_listing_year} (this may take a moment)...[/dim]")
+
+    try:
+        symbols = asyncio.run(_get_top_symbols(
+            quote=quote, limit=top, min_listing_year=min_listing_year
+        ))
+    except Exception as e:
+        console.print(f"[bold red]Failed to fetch top symbols:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+    if not symbols:
+        console.print("[bold red]No symbols found![/bold red]")
+        raise typer.Exit(code=1)
+
+    # 심볼 목록 표시
+    symbols_table = Table(title=f"Top {len(symbols)} Symbols by {quote} Volume")
+    symbols_table.add_column("#", style="dim", justify="right")
+    symbols_table.add_column("Symbol", style="cyan")
+
+    for i, sym in enumerate(symbols[:_MAX_DISPLAY_ROWS], 1):
+        symbols_table.add_row(str(i), sym)
+
+    if len(symbols) > _MAX_DISPLAY_ROWS:
+        symbols_table.add_row("...", f"and {len(symbols) - _MAX_DISPLAY_ROWS} more")
+
+    console.print(symbols_table)
+
+    # Dry-run 모드
+    if dry_run:
+        total_tasks = len(symbols) * len(year)
+        console.print(Panel(
+            f"[yellow]Dry-run mode[/yellow]\n\nTotal tasks: {total_tasks} ({len(symbols)} symbols x {len(year)} years)\n\nRun without --dry-run to start downloading.",
+            border_style="yellow",
+        ))
+        return
+
+    # Step 2: 벌크 다운로드 실행
+    console.print(f"\n[bold cyan]Step 2: Downloading {len(symbols)} symbols x {len(year)} years...[/bold cyan]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        refresh_per_second=1,
+    ) as progress:
+        result = asyncio.run(_bulk_download(
+            symbols=symbols,
+            years=year,
+            skip_existing=skip_existing,
+            progress=progress,
+        ))
+
+    # Step 3: 결과 리포트
+    console.print("\n[bold cyan]Step 3: Results[/bold cyan]")
+    _display_bulk_result(result)
+
+    # 최종 상태
+    if result.failed_count == 0:
+        console.print(Panel(
+            "[bold green]✓ Bulk download completed successfully![/bold green]",
+            border_style="green",
+        ))
+    else:
+        console.print(Panel(
+            f"[bold yellow]⚠ Bulk download completed with {result.failed_count} failures[/bold yellow]",
+            border_style="yellow",
+        ))
 
 
 # Main entry point
