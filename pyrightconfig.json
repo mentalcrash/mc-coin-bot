@@ -23,10 +23,12 @@
     "reportUnusedVariable": false,
     
     // [Pragmatic Overrides]
-    // 외부 라이브러리(CCXT 등)의 타입 정보 부재로 인한 노이즈 제거
+    // 외부 라이브러리(CCXT, Pandas 등)의 타입 정보 부재로 인한 노이즈 제거
     "reportMissingTypeStubs": false, 
     "reportUnknownMemberType": false, // Pandas/CCXT의 동적 속성 허용
     "reportUnknownArgumentType": false,
+    "reportUnknownVariableType": false, // Pandas 연산 결과 타입 추론 한계
+    "reportUnnecessaryCast": false, // Pandas 타입 캐스트 필요
     
     // [Safety Enforcements]
     "reportImplicitStringConcatenation": true, // "s" "tr" 같은 실수 방지

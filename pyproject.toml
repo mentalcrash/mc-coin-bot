@@ -42,6 +42,10 @@ dependencies = [
 
     # Telegram Alerts
     "python-telegram-bot>=21.0",
+
+    # Retry & Progress (Data Ingestion)
+    "tenacity>=8.2.0",  # Exponential backoff retry
+    "tqdm>=4.66.0",     # Progress bar
 ]
 
 [project.optional-dependencies]
