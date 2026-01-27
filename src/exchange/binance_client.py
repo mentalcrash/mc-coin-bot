@@ -15,7 +15,6 @@ Rules Applied:
     - #10 Python Standards: Async/await, TaskGroup
 """
 
-import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import TracebackType
@@ -294,7 +293,6 @@ class BinanceClient:
         self,
         quote: str = "USDT",
         limit: int = 100,
-        min_listing_year: int | None = None,
     ) -> list[str]:
         """24시간 거래대금(quoteVolume) 기준 상위 N개 심볼 반환.
 
@@ -304,7 +302,6 @@ class BinanceClient:
         Args:
             quote: Quote 통화 (기본: "USDT")
             limit: 반환할 심볼 수 (기본: 100)
-            min_listing_year: 최소 상장 연도 (해당 연도 데이터가 있어야 함, 예: 2023)
 
         Returns:
             거래대금 기준 상위 N개 심볼 리스트 (예: ["BTC/USDT", "ETH/USDT", ...])
@@ -314,8 +311,7 @@ class BinanceClient:
 
         Example:
             >>> async with BinanceClient() as client:
-            ...     # 2023년 이전에 상장된 종목만 (최소 3년 데이터)
-            ...     top_symbols = await client.fetch_top_symbols(limit=10, min_listing_year=2023)
+            ...     top_symbols = await client.fetch_top_symbols(limit=10)
             ...     print(top_symbols)
             ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', ...]
         """
@@ -342,21 +338,8 @@ class BinanceClient:
         # 거래대금 내림차순 정렬
         filtered_tickers.sort(key=lambda x: x[1], reverse=True)
 
-        # 상위 심볼 추출 (min_listing_year 필터링 전에 여유있게 가져옴)
-        candidates = [symbol for symbol, _ in filtered_tickers]
-
-        # 최소 상장 연도 필터링
-        if min_listing_year is not None:
-            logger.info(
-                f"Filtering symbols with data since {min_listing_year}...",
-                extra={"min_listing_year": min_listing_year},
-            )
-            candidates = await self._filter_by_listing_year(
-                candidates, min_listing_year, limit * 2  # 여유있게 2배로 체크
-            )
-
-        # 최종 상위 N개 심볼만 추출
-        top_symbols = candidates[:limit]
+        # 상위 N개 심볼만 추출
+        top_symbols = [symbol for symbol, _ in filtered_tickers[:limit]]
 
         logger.info(
             f"Fetched top {len(top_symbols)} symbols by quote volume",
@@ -364,83 +347,8 @@ class BinanceClient:
                 "quote": quote,
                 "requested": limit,
                 "available": len(filtered_tickers),
-                "after_listing_filter": len(candidates) if min_listing_year else "N/A",
                 "top_3": top_symbols[:3] if top_symbols else [],
             },
         )
 
         return top_symbols
-
-    async def _filter_by_listing_year(
-        self,
-        symbols: list[str],
-        min_year: int,
-        max_check: int,
-    ) -> list[str]:
-        """상장 연도 기준으로 심볼 필터링.
-
-        해당 연도 1월 1일에 데이터가 존재하는지 확인하여 필터링합니다.
-
-        Args:
-            symbols: 필터링할 심볼 리스트
-            min_year: 최소 상장 연도
-            max_check: 최대 확인할 심볼 수
-
-        Returns:
-            필터링된 심볼 리스트
-        """
-        # 해당 연도 1월 1일 00:00 UTC 타임스탬프
-        check_ts = int(datetime(min_year, 1, 1, 0, 0, 0).timestamp() * 1000)
-
-        valid_symbols: list[str] = []
-        checked_count = 0
-
-        for symbol in symbols[:max_check]:
-            try:
-                # 해당 시점의 데이터 1개만 요청 (Rate Limit 최소화)
-                ohlcv = await self.exchange.fetch_ohlcv(
-                    symbol, "1d", since=check_ts, limit=1
-                )
-
-                if ohlcv and len(ohlcv) > 0:
-                    # 데이터의 첫 타임스탬프가 요청한 날짜와 가까운지 확인
-                    first_ts = ohlcv[0][0]
-                    # 1주일 이내의 데이터가 있으면 해당 연도에 상장된 것으로 간주
-                    if first_ts <= check_ts + (7 * 24 * 60 * 60 * 1000):
-                        valid_symbols.append(symbol)
-                        logger.debug(f"Symbol {symbol} has data since {min_year}")
-                    else:
-                        logger.debug(
-                            f"Symbol {symbol} listed after {min_year} (first data: {first_ts})"
-                        )
-
-                checked_count += 1
-
-                # Rate Limit 방지: 매 요청마다 0.3초 대기 (3.3 req/sec)
-                await asyncio.sleep(0.3)
-
-                # 추가: 20개마다 2초 휴식 (안전 마진)
-                if checked_count % 20 == 0:
-                    logger.debug(f"Rate limit pause after {checked_count} checks...")
-                    await asyncio.sleep(2.0)
-
-            except Exception as e:
-                logger.warning(
-                    f"Failed to check listing date for {symbol}: {e}",
-                    extra={"symbol": symbol, "error": str(e)},
-                )
-                # 확인 실패 시 제외 (안전하게)
-                # 에러 시 추가 대기 (레이트 리밋일 수 있음)
-                await asyncio.sleep(2.0)
-                continue
-
-        logger.info(
-            f"Listing year filter: {len(valid_symbols)}/{checked_count} symbols passed",
-            extra={
-                "min_year": min_year,
-                "checked": checked_count,
-                "passed": len(valid_symbols),
-            },
-        )
-
-        return valid_symbols

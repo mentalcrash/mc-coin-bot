@@ -14,7 +14,6 @@ Rules Applied:
 """
 
 import asyncio
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
@@ -436,14 +435,10 @@ class PipelineContext:
     task_id: TaskID
 
 
-async def _get_top_symbols(
-    quote: str, limit: int, min_listing_year: int | None = None
-) -> list[str]:
-    """상위 N개 심볼 조회."""
+async def _get_top_symbols(quote: str, limit: int) -> list[str]:
+    """상위 N개 심볼 조회 (24시간 거래대금 기준)."""
     async with BinanceClient() as client:
-        return await client.fetch_top_symbols(
-            quote=quote, limit=limit, min_listing_year=min_listing_year
-        )
+        return await client.fetch_top_symbols(quote=quote, limit=limit)
 
 
 async def _run_pipeline_for_symbol(ctx: PipelineContext) -> None:
@@ -581,10 +576,6 @@ def bulk_download(  # noqa: PLR0913
         bool,
         typer.Option("--skip-existing/--no-skip-existing", help="Skip if Bronze file already exists"),
     ] = True,
-    no_filter_listing: Annotated[
-        bool,
-        typer.Option("--no-filter-listing", help="Disable listing year filter (include newly listed symbols)"),
-    ] = False,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Only show target symbols without downloading"),
@@ -599,22 +590,18 @@ def bulk_download(  # noqa: PLR0913
     Fetches the top N symbols by 24h quote volume from Binance,
     then runs the full Bronze -> Silver pipeline for each.
 
-    Automatically filters symbols that have data for all requested years.
-    For example, if you request 2023-2025, only symbols listed before 2023
-    will be included.
-
     Example:
-        # Download top 100 symbols for 2023-2025 (filters by 2023 listing)
+        # Download top 100 symbols for 2023-2025 (default)
         python main.py ingest bulk-download
 
-        # Download top 10 symbols for 2024-2025 (filters by 2024 listing)
+        # Download top 10 symbols for specific years
         python main.py ingest bulk-download --top 10 -y 2024 -y 2025
 
         # Preview target symbols without downloading
         python main.py ingest bulk-download --top 100 --dry-run
 
-        # Include newly listed symbols (disable listing filter)
-        python main.py ingest bulk-download --no-filter-listing
+        # Re-download (don't skip existing files)
+        python main.py ingest bulk-download --no-skip-existing
     """
     # 로거 설정
     settings = get_settings()
@@ -624,25 +611,17 @@ def bulk_download(  # noqa: PLR0913
     )
     settings.ensure_directories()
 
-    # 최소 상장 연도 = 요청 연도 중 가장 오래된 연도 (자동 계산)
-    min_listing_year: int | None = None if no_filter_listing else min(year)
-
     # 헤더 표시
-    filter_text = f"Filter: data since {min_listing_year}" if min_listing_year else "Filter: disabled"
     console.print(Panel.fit(
-        f"[bold]Bulk Download[/bold]\nTop {top} symbols by {quote} volume\nYears: {', '.join(map(str, year))}\n{filter_text}\nSkip existing: {skip_existing}",
+        f"[bold]Bulk Download[/bold]\nTop {top} symbols by {quote} volume (24h)\nYears: {', '.join(map(str, year))}\nSkip existing: {skip_existing}",
         border_style="magenta",
     ))
 
     # Step 1: 상위 심볼 조회
     console.print("\n[bold cyan]Step 1: Fetching top symbols by quote volume...[/bold cyan]")
-    if min_listing_year:
-        console.print(f"[dim]Filtering symbols with data since {min_listing_year} (this may take a moment)...[/dim]")
 
     try:
-        symbols = asyncio.run(_get_top_symbols(
-            quote=quote, limit=top, min_listing_year=min_listing_year
-        ))
+        symbols = asyncio.run(_get_top_symbols(quote=quote, limit=top))
     except Exception as e:
         console.print(f"[bold red]Failed to fetch top symbols:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -672,12 +651,6 @@ def bulk_download(  # noqa: PLR0913
             border_style="yellow",
         ))
         return
-
-    # Rate Limit 쿨다운: 필터링 후 다운로드 전 대기
-    if min_listing_year:
-        cooldown_seconds = 10
-        console.print(f"\n[dim]Rate limit cooldown: waiting {cooldown_seconds}s before starting downloads...[/dim]")
-        time.sleep(cooldown_seconds)
 
     # Step 2: 벌크 다운로드 실행
     console.print(f"\n[bold cyan]Step 2: Downloading {len(symbols)} symbols x {len(year)} years...[/bold cyan]")
