@@ -16,6 +16,7 @@ dependencies = [
     "pandas>=2.2.0",
     "numpy>=1.26.0",
     "pyarrow>=15.0.0", # Parquet support
+    "duckdb>=0.10.0",  # [ADD] 대용량 데이터 처리용 (Rules #12 준수)
 
     # Technical Indicators
     "pandas-ta>=0.3.14b",
@@ -54,6 +55,7 @@ dev = [
 
 research = [
     "vectorbt>=0.26.0",
+    "numba>=0.59.0",
     "optuna>=3.5.0",
     "jupyterlab>=4.1.0",
     "matplotlib>=3.8.0",
@@ -110,6 +112,9 @@ select = [
     "LOG",   # flake8-logging (로깅 모범 사례)
     "TC",    # flake8-type-checking (타입 체킹 최적화)
     "PTH",   # flake8-use-pathlib (pathlib 사용 권장)
+    "PD",   # pandas-vet (Pandas 모범 사례 강제 - Rules #12)
+    "TRY",  # tryceratops (예외 처리 강화 - Rules #10)
+    "PL",   # Pylint (코드 복잡도 및 리팩토링 제안)
 ]
 
 ignore = [
@@ -118,11 +123,19 @@ ignore = [
     "S101",   # assert 사용 허용 (테스트 코드에서 필요)
     "S311",   # random 모듈 사용 허용 (보안이 필요 없는 경우)
     "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
+    "TRY003", # 긴 에러 메시지를 예외 클래스에 직접 넣기 금지 -> 허용 (빠른 개발 위해)
 ]
 
 # Allow autofix for all enabled rules
 fixable = ["ALL"]
 unfixable = []
+
+# [중요] 특정 파일/폴더에 대한 예외 규칙 적용
+[tool.ruff.lint.per-file-ignores]
+# 테스트 코드는 보안 검사 및 일부 엄격한 룰 제외
+"tests/**/*" = ["S101", "PLR2004", "PD", "N802"]
+# 연구용 노트북/스크립트는 print 사용 허용
+"research/**/*" = ["T201", "PD"]
 
 # [플러그인별 상세 설정]
 [tool.ruff.lint.isort]

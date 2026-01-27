@@ -1,0 +1,57 @@
+---
+description: Pytest Standards for Async/Quant Systems (Mocking, Fixtures)
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# 🧪 Testing Standards (Pytest & Asyncio)
+
+## 1. Async Testing Core
+- **Plugin:** `pytest-asyncio`를 사용하며, 모든 비동기 테스트 함수에는 `@pytest.mark.asyncio` 마커가 필요합니다. (혹은 `pytest.ini`의 `asyncio_mode=auto` 활용)
+- **Scope:** 비동기 픽스처(Fixture)의 스코프(`function`, `session`)를 명확히 하여 이벤트 루프 충돌을 방지합니다.
+
+## 2. Mocking Strategy (Strict)
+- **No Real Network Calls:** 단위 테스트(Unit Test)에서는 외부 API 호출이 **엄격히 금지**됩니다.
+    - **CCXT Mocking:** `AsyncMock`을 사용하여 `exchange.create_order`, `exchange.fetch_ticker` 등의 반환값을 시뮬레이션합니다.
+    - **Pattern:**
+        ```python
+        from unittest.mock import AsyncMock, MagicMock
+        
+        @pytest.fixture
+        def mock_exchange():
+            exchange = AsyncMock()
+            # 정밀도 함수는 동기(Sync) 로직인 경우가 많으므로 side_effect 처리나 Mock 설정 주의
+            exchange.amount_to_precision.return_value = "0.001" 
+            return exchange
+        ```
+
+## 3. Test Coverage & Quality
+- **Critical Paths:** 주문 집행(`Execution`), 시그널 생성(`Strategy`) 모듈은 커버리지 90% 이상을 지향합니다.
+- **Parametrization:** 다양한 시장 상황(상승장, 하락장, 횡보장)을 시뮬레이션하기 위해 `pytest.mark.parametrize`를 적극 활용합니다.
+
+## 4. Snapshot Testing
+- **Data Integrity:** 복잡한 지표 계산 결과나 Pydantic 모델의 직렬화 결과는 하드코딩된 값과 비교하기보다 `snapshot` 테스트(선택 사항)를 고려합니다.
+
+## 5. Example Pattern
+
+### ✅ Good (Async Mocking)
+```python
+import pytest
+from decimal import Decimal
+from unittest.mock import AsyncMock
+from src.execution.order_manager import OrderManager
+
+@pytest.mark.asyncio
+async def test_place_order_success():
+    # Arrange
+    mock_exchange = AsyncMock()
+    mock_exchange.create_order.return_value = {'id': '123', 'status': 'closed'}
+    mock_exchange.amount_to_precision.return_value = "1.0"
+    
+    manager = OrderManager(exchange=mock_exchange)
+    
+    # Act
+    await manager.place_buy_order("BTC/USDT", Decimal("1.0"))
+    
+    # Assert
+    mock_exchange.create_order.assert_awaited_once()

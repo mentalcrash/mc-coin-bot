@@ -1,11 +1,34 @@
 {
     "include": ["src"],
-    "exclude": ["**/node_modules", "**/__pycache__", "tests"],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "tests",
+        "research", // 연구용 노트북 폴더 등은 제외 권장
+        "build",
+        "dist"
+    ],
     "venvPath": ".",
     "venv": ".venv",
+    
+    // [Core Settings]
     "pythonVersion": "3.13",
-    "typeCheckingMode": "standard",
+    "typeCheckingMode": "strict", // Standard -> Strict 격상 (금융 앱 표준)
     "useLibraryCodeForTypes": true,
-    "reportMissingTypeStubs": false,
-    "reportUnknownMemberType": false
+    
+    // [Ruff Integration] 
+    // Ruff가 더 빠르고 잘하는 영역은 Pyright에서 끕니다.
+    "reportUnusedImport": false,
+    "reportUnusedClass": false,
+    "reportUnusedVariable": false,
+    
+    // [Pragmatic Overrides]
+    // 외부 라이브러리(CCXT 등)의 타입 정보 부재로 인한 노이즈 제거
+    "reportMissingTypeStubs": false, 
+    "reportUnknownMemberType": false, // Pandas/CCXT의 동적 속성 허용
+    "reportUnknownArgumentType": false,
+    
+    // [Safety Enforcements]
+    "reportImplicitStringConcatenation": true, // "s" "tr" 같은 실수 방지
+    "reportMissingImports": true
 }

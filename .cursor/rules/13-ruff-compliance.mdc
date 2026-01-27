@@ -1,0 +1,83 @@
+description: Ruff Linter & Formatter Compliance Standards (Strict Mode)
+globs: **/*.py
+alwaysApply: false
+---
+
+# 🧹 Ruff Compliance & Code Quality Standards
+
+## 1. Core Protocol (Pre-Linting)
+- **Mindset:** 코드를 생성할 때, 당신의 머릿속에서 실시간으로 `ruff check --fix`와 `ruff format`이 실행되고 있다고 가정하십시오.
+- **Goal:** 사용자가 코드를 붙여넣었을 때, 추가적인 린팅 에러가 '0'이어야 합니다.
+- **Reference:** 프로젝트 루트의 `pyproject.toml` 내 `[tool.ruff]` 섹션을 기준으로 합니다.
+
+## 2. Specific Rule Enforcements
+
+### 🐼 Pandas Hygiene (Ruleset: PD)
+- **Immutable Operations (Strict):** `inplace=True` 사용은 엄격히 금지됩니다. (Rule `PD002`)
+    - Pandas 3.0+ 트렌드에 맞춰 불변성을 유지하십시오.
+    - ❌ `df.fillna(0, inplace=True)`
+    - ✅ `df = df.fillna(0)`
+- **No Iteration:** `iterrows`, `itertuples`는 절대 사용하지 않습니다. (Vectorization Rule 참조)
+
+### 🛡️ Error Handling (Ruleset: TRY, B)
+- **No Bare Except:** `except:` 또는 `except Exception:`과 같은 포괄적 예외 처리는 금지됩니다. 반드시 구체적인 예외를 명시하십시오. (`TRY002`)
+- **Verbose Exceptions:** `raise ValueError` 내부에 긴 설명 문자열을 넣지 말고, 상황이 복잡하다면 커스텀 예외 클래스를 사용하십시오. (`TRY003`)
+
+### ⚡ Async Safety (Ruleset: ASYNC)
+- **No Blocking I/O:** `async def` 함수 내부에서 `time.sleep()`, `requests.get()` 등 동기 함수 호출은 절대 금지입니다. (`ASYNC101`, `ASYNC102`)
+    - 반드시 `await asyncio.sleep()`, `await client.get()`을 사용하십시오.
+
+### 🧹 Imports & Sorting (Ruleset: I, F)
+- **Sectioning:** Import는 `Standard Lib` -> `Third Party` -> `First Party (src)` 순서로 그룹화하여 정렬하십시오.
+- **Cleanliness:** 사용하지 않는 Import(`F401`)나 변수(`F841`)는 생성 코드에 포함하지 마십시오.
+
+### 📜 Naming & Style (Ruleset: N, PL)
+- **Snake Case:** 변수와 함수명은 `snake_case`를 따르십시오. (`N802`, `N806`)
+- **Double Quotes:** 모든 문자열은 Double Quotes (`"`)를 사용하십시오. (Ruff Format 기본값)
+- **Type Casting:** `len() > 0` 대신 `if seq:`를 사용하는 등 Pythonic한 간소화 규칙(`SIM`)을 적용하십시오.
+
+## 3. Security (Ruleset: S)
+- **No Hardcoded Secrets:** API Key, Password 등 민감 정보는 코드 내 문자열로 절대 포함하지 마십시오. (`S101`)
+- **No Shell Injection:** `subprocess` 사용 시 `shell=True`는 금지됩니다. (`S602`)
+
+## 4. Example Pattern
+
+### ✅ Compliant Code (Clean & Safe)
+```python
+import asyncio
+from decimal import Decimal
+
+from loguru import logger  # Third Party
+from pydantic import ValidationError
+
+from src.models import Order  # First Party
+
+async def process_order(order_id: str) -> None:
+    try:
+        # ASYNC safe sleep
+        await asyncio.sleep(0.1)
+        
+        # Double quotes & Snake case
+        logger.info(f"Processing order: {order_id}")
+        
+    except ValidationError as e:
+        # Specific exception handling
+        logger.error(f"Validation failed: {e}")
+        raise  # Re-raise nicely
+
+```
+
+### ❌ Non-Compliant Code (Ruff Errors)
+
+```python
+import time # ASYNC101 violation potential
+from src.models import Order # Import order wrong (should be last)
+
+def process(id): # Missing type hints
+    try:
+        time.sleep(1) # Blocking call in potentially async context
+        print('done') # T201 (print used instead of logger)
+    except: # TRY002 (Bare except)
+        pass
+
+```

@@ -1,0 +1,92 @@
+---
+description: Data Engineering Standards (Pandas, VectorBT, DuckDB, Parquet)
+globs: **/data/*.py, **/backtest/*.py, **/analysis/*.py
+alwaysApply: false
+---
+
+# 📊 Modern Data Engineering Standards (2026)
+
+## 1. Vectorization Protocol (No Loops)
+- **Zero Loop Policy:** 데이터 프레임의 행(Row)을 순회하는 `for` 문, `iterrows()`, `itertuples()` 사용을 **엄격히 금지**합니다.
+- **Vector Operations:**
+    - 모든 연산은 Pandas/NumPy의 내장 벡터 함수를 사용합니다.
+    - 복잡한 로직 적용 시에는 `.apply()` 대신 `numpy.where()`나 `numpy.select()`를 우선 고려합니다.
+    - **VectorBT Usage:** 백테스팅 시 캔들 하나하나를 루프 돌지 않고, 전체 배열을 한 번에 계산하는 **Broadcasting** 방식을 사용합니다.
+
+## 2. Pandas Modern Core (PyArrow Backed)
+- **PyArrow Engine:** Pandas DataFrame 생성 시 `dtype_backend='pyarrow'` 옵션을 적극 활용하여 메모리 사용량을 줄이고 속도를 높입니다.
+    - 예: `pd.read_parquet(..., dtype_backend="pyarrow")`
+- **Time Series Index:**
+    - 모든 시계열 데이터의 인덱스는 반드시 `DatetimeIndex`여야 합니다.
+    - **UTC Only:** 모든 시간대는 `UTC`로 통일하여 저장 및 처리합니다. (`tz_localize('UTC')`)
+
+## 3. Storage & I/O Strategy (Parquet & DuckDB)
+- **No CSV:** 데이터 저장은 반드시 **Parquet** 형식을 사용합니다.
+    - 압축 알고리즘: 입출력 속도와 압축률 밸런스가 좋은 `zstd` 또는 `snappy`를 사용합니다.
+- **DuckDB Integration:**
+    - 대용량 데이터(메모리보다 큰 파일)를 로드할 때는 `pandas.read_parquet`으로 전체를 읽지 말고, **DuckDB**를 사용하여 필요한 컬럼과 기간만 필터링(Pushdown Predicates)한 후 DataFrame으로 변환합니다.
+    - SQL Query 예시: `duckdb.query("SELECT * FROM 'data.parquet' WHERE date > '2026-01-01'").to_df()`
+
+## 4. VectorBT (Backtesting) Rules
+- **Indicator Construction:** 기술적 지표 생성 시 `vbt.IndicatorFactory`를 사용하여 벡터화된 지표를 생성합니다.
+- **Portfolio Simulation:**
+    - `vbt.Portfolio.from_signals()` 또는 `vbt.Portfolio.from_orders()`를 사용하여 전체 기간의 시뮬레이션을 단일 연산으로 처리합니다.
+    - 모수 최적화(Parameter Optimization) 시에는 `vbt`의 멀티 인덱스 기능을 활용하여 수천 개의 전략을 병렬로 테스트합니다.
+
+## 5. Example Patterns
+
+### ✅ Good (Vectorized & Efficient)
+```python
+import pandas as pd
+import duckdb
+import vectorbt as vbt
+import numpy as np
+
+def load_and_backtest():
+    # 1. Efficient Loading (DuckDB -> Pandas with PyArrow)
+    # 필요한 데이터만 쿼리로 추출
+    df = duckdb.query("""
+        SELECT timestamp, close 
+        FROM 'market_data.parquet' 
+        WHERE symbol = 'BTC/USDT' AND timestamp >= '2026-01-01'
+    """).to_df()
+    
+    # 2. PyArrow Conversion & Indexing
+    df = df.astype({'close': 'float64[pyarrow]'}) # Modern Type
+    df.set_index('timestamp', inplace=True)
+    
+    # 3. Vectorized Calculation (No Loops)
+    # Numpy select로 고속 연산
+    conditions = [
+        (df['close'] > df['close'].shift(1)),
+        (df['close'] < df['close'].shift(1))
+    ]
+    choices = [1, -1] # 1: Up, -1: Down
+    df['direction'] = np.select(conditions, choices, default=0)
+    
+    # 4. VectorBT Backtest
+    rsi = vbt.RSI.run(df['close'], window=14)
+    entries = rsi.rsi_below(30)
+    exits = rsi.rsi_above(70)
+    
+    portfolio = vbt.Portfolio.from_signals(df['close'], entries, exits, freq='1h')
+    return portfolio.total_return()
+
+```
+
+### ❌ Bad (Loop-based & CSV)
+
+```python
+import pandas as pd
+
+def slow_backtest():
+    # CSV 사용 및 전체 로드
+    df = pd.read_csv('market_data.csv') 
+    
+    # Iterrows 사용 (최악의 퍼포먼스)
+    for index, row in df.iterrows():
+        if row['close'] > 100000:
+             # 로직 처리...
+             pass
+
+```

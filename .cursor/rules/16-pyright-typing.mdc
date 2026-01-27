@@ -1,0 +1,87 @@
+---
+description: Pyright Static Type Checking Rules (Strict Mode)
+globs: **/*.py
+alwaysApply: false
+---
+
+# 🔍 Pyright Typing Standards (Strict Mode)
+
+## 1. Core Philosophy: "Strict but Pragmatic"
+- **Mode:** `strict` 모드를 기본으로 합니다. 이는 모든 변수와 함수에 **명시적인 타입**이 있어야 함을 의미합니다.
+- **Ruff vs Pyright:**
+    - **Ruff:** 스타일, 미사용 임포트, 코드 구조 개선 (Linter).
+    - **Pyright:** 타입 호환성, 논리적 모순, `None` 처리 검사 (Type Checker).
+    - **Rule:** Pyright가 `reportUnusedImport` 등을 무시하도록 설정했으므로, 관련 정리는 Ruff에 의존합니다.
+
+## 2. Typing Syntax (Python 3.13)
+- **Modern Generics:** `List`, `Dict`, `Tuple` (typing 모듈) 대신 내장 `list[]`, `dict[]`, `tuple[]`을 사용합니다.
+- **Union Types:** `Union[X, Y]` 대신 `X | Y` 문법을 사용합니다.
+- **Type Aliases:** 복잡한 타입 정의 시 `type` 키워드(Python 3.12+)를 사용합니다.
+    - ✅ `type Price = Decimal`
+    - ❌ `Price = Decimal`
+- **Self Type:** 메서드가 자기 자신을 반환하거나 클래스 타입을 참조할 때 `typing.Self`를 사용합니다.
+
+## 3. Handling "Any" & External Libraries
+- **Avoid `Any`:** `Any` 사용은 최대한 지양합니다. 데이터 구조를 모를 경우 `object`나 `dict[str, Any]`로 범위를 좁히십시오.
+- **External Libs (Pandas/CCXT):**
+    - 라이브러리가 타입 정보를 제공하지 않아 에러가 발생할 경우, 최후의 수단으로 `# type: ignore`를 사용하되 반드시 **구체적인 에러 코드**를 명시해야 합니다.
+    - ✅ `data = exchange.fetch_ticker() # type: ignore [reportUnknownMemberType]`
+    - ❌ `data = exchange.fetch_ticker() # type: ignore` (모든 에러 무시 금지)
+- **Casting:** 타입 체커가 추론하지 못하는 확실한 타입은 `typing.cast()`를 사용하여 명시합니다.
+
+## 4. Specific Patterns for This Project
+
+### 💰 Decimal & Numbers
+- 모든 금융 데이터는 `Decimal` 타입을 가집니다. `float`와 혼용 시 Pyright가 에러를 뱉도록 설계되어 있으므로, 명시적 변환(`Decimal(str(float_val))`)을 수행해야 합니다.
+
+### 🛡️ Pydantic Models
+- Pydantic V2 모델은 Pyright와 호환성이 좋으나, `model_validate` 사용 시 입력 데이터 타입을 추론하기 어려울 수 있습니다. 이 경우 입력 데이터의 기대 타입을 명확히 하십시오.
+
+### 🧩 Async Tasks
+- `asyncio.TaskGroup` 사용 시, 비동기 함수의 반환 타입이 `Coroutine[Any, Any, None]` 형태인지 확인하십시오.
+
+## 5. Example Pattern
+
+### ✅ Good (Strict Compliant)
+```python
+from decimal import Decimal
+from typing import Self, cast, Any
+
+# Python 3.12+ Type Alias
+type OrderID = str
+
+class Position:
+    def __init__(self, symbol: str, size: Decimal) -> None:
+        self.symbol: str = symbol
+        self.size: Decimal = size
+
+    def add_size(self, amount: Decimal) -> Self:
+        self.size += amount
+        return self
+
+    def get_metadata(self) -> dict[str, Any]:
+        return {"created_at": "2026-01-27"}
+
+def process_data(raw_data: object) -> None:
+    # Safe Casting
+    if isinstance(raw_data, str):
+        print(f"String data: {raw_data}")
+    else:
+        # Unknown type handling
+        val = cast(int, raw_data) # Only if you are 100% sure
+
+```
+
+### ❌ Bad (Loose Typing)
+
+```python
+from typing import List, Union # Legacy imports
+
+def calculate(data) -> float: # Missing input type, Dangerous return type (float)
+    # Implicit 'Any' type for 'data' triggers reportMissingParameterType
+    return data * 1.5 
+
+x = calculate(10)
+x.invalid_method() # Pyright won't catch this because x is inferred as Any/float
+
+```
