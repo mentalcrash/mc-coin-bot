@@ -1,76 +1,21 @@
 {
-    // ===== Python Environment =====
-    "python.defaultInterpreterPath": ".venv/bin/python",
-    
-    // ===== Editor Settings =====
-    "editor.formatOnSave": true,
-    "editor.formatOnPaste": false,
-    "editor.rulers": [100],
-    
-    // ===== Python-specific Settings =====
     "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff",
-        "editor.formatOnSave": true,
-        "editor.tabSize": 4,
-        "editor.insertSpaces": true,
-        "editor.codeActionsOnSave": {
-            "source.fixAll.ruff": "explicit",
-            "source.organizeImports.ruff": "explicit"
-        }
+      // 1. 기본 포매터로 Ruff 지정
+      "editor.defaultFormatter": "charliermarsh.ruff",
+      
+      // 2. 저장 시 자동 포맷팅 (Format on Save)
+      "editor.formatOnSave": true,
+      
+      // 3. 저장 시 자동 수정 (Fix on Save) - 핵심!
+      // import 정렬, 미사용 변수 제거, 구문법 업데이트가 자동으로 수행됨
+      "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+      }
     },
     
-    // ===== Global Code Actions (non-Python) =====
-    "editor.codeActionsOnSave": {
-        "source.fixAll.ruff": "always",
-        "source.organizeImports.ruff": "always"
-    },
-    
-    // ===== Ruff Extension Settings =====
+    // 4. Ruff 확장 프로그램 전용 설정
     "ruff.enable": true,
     "ruff.organizeImports": true,
-    "ruff.fixAll": true,
-    "ruff.lint.enable": true,
-    "ruff.importStrategy": "fromEnvironment",
-    
-    // ===== Pylance / Type Checking =====
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.autoImportCompletions": true,
-    "python.analysis.inlayHints.functionReturnTypes": true,
-    "python.analysis.inlayHints.variableTypes": false,
-    "python.analysis.inlayHints.pytestParameters": true,
-    
-    // ===== Testing =====
-    "python.testing.pytestEnabled": true,
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestArgs": ["tests"],
-    
-    // ===== Files =====
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/*.pyc": true,
-        "**/.pytest_cache": true,
-        "**/.ruff_cache": true,
-        "**/.mypy_cache": true,
-        "**/*.egg-info": true
-    },
-    "files.watcherExclude": {
-        "**/__pycache__/**": true,
-        "**/.git/**": true,
-        "**/.venv/**": true,
-        "**/venv/**": true
-    },
-    
-    // ===== Search Exclude =====
-    "search.exclude": {
-        "**/__pycache__": true,
-        "**/.venv": true,
-        "**/venv": true,
-        "**/*.egg-info": true,
-        "**/uv.lock": true
-    },
-    
-    // ===== TOML Settings =====
-    // Disable schema validation for pyproject.toml (SchemaStore's Ruff schema is outdated)
-    // The Ruff settings are valid - verified by `ruff check` CLI
-    "evenBetterToml.schema.enabled": false
-}
+    "ruff.fixAll": true
+  }

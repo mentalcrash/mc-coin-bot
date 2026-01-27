@@ -14,7 +14,6 @@ from src.core.models import (
 )
 from src.core.strategy import BaseStrategy
 
-
 __all__ = [
     # Events
     "Event",
