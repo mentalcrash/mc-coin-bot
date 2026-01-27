@@ -106,6 +106,9 @@ class BinanceClient:
             "options": {
                 "defaultType": "spot",  # spot 마켓 기본
                 "adjustForTimeDifference": True,  # 시간 동기화
+                # spot 마켓만 로드 (linear/inverse futures 제외)
+                # dapi.binance.com (COIN-M futures) 접근 불필요
+                "fetchMarkets": ["spot"],
             },
         }
 

@@ -433,20 +433,25 @@ class PipelineContext:
     result: BulkDownloadResult
     progress: Progress
     task_id: TaskID
+    client: "BinanceClient"  # 재사용할 BinanceClient
 
 
 async def _get_top_symbols(quote: str, limit: int) -> list[str]:
     """상위 N개 심볼 조회 (24시간 거래대금 기준)."""
-    async with BinanceClient() as client:
+    settings = get_settings()
+    async with BinanceClient(settings) as client:
         return await client.fetch_top_symbols(quote=quote, limit=limit)
 
 
 async def _run_pipeline_for_symbol(ctx: PipelineContext) -> None:
-    """단일 심볼에 대해 파이프라인 실행."""
+    """단일 심볼에 대해 파이프라인 실행.
+
+    전달받은 BinanceClient를 재사용합니다.
+    """
     settings = get_settings()
     bronze_storage = BronzeStorage(settings)
-    fetcher = DataFetcher(settings)
     processor = SilverProcessor(settings)
+    fetcher = DataFetcher(settings, client=ctx.client)
 
     for year in ctx.years:
         task_key = f"{ctx.symbol}_{year}"
@@ -470,14 +475,14 @@ async def _run_pipeline_for_symbol(ctx: PipelineContext) -> None:
             ctx.result.success.append(task_key)
             ctx.progress.update(ctx.task_id, advance=1, description=f"[green]Done[/green] {ctx.symbol} {year}")
 
-            # Rate Limit 안전장치: 연도별 작업 완료 후 2초 대기
-            await asyncio.sleep(2.0)
+            # Rate Limit 안전장치: 연도별 작업 완료 후 0.5초 대기
+            await asyncio.sleep(0.5)
 
         except Exception as e:
             ctx.result.failed.append((task_key, str(e)))
             ctx.progress.update(ctx.task_id, advance=1, description=f"[red]Failed[/red] {ctx.symbol} {year}: {e}")
             # 에러 후에도 대기 (Rate Limit 회복 시간)
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(2.0)
 
 
 async def _bulk_download(
@@ -486,7 +491,11 @@ async def _bulk_download(
     skip_existing: bool,
     progress: Progress,
 ) -> BulkDownloadResult:
-    """벌크 다운로드 메인 로직."""
+    """벌크 다운로드 메인 로직.
+
+    전체 다운로드에서 BinanceClient를 단 1번만 초기화하여 재사용합니다.
+    """
+    settings = get_settings()
     result = BulkDownloadResult(total=len(symbols) * len(years))
 
     # 전체 진행률 Task
@@ -495,17 +504,24 @@ async def _bulk_download(
         total=result.total,
     )
 
-    # 순차 처리 (Rate Limit 고려)
-    for symbol in symbols:
-        ctx = PipelineContext(
-            symbol=symbol,
-            years=years,
-            skip_existing=skip_existing,
-            result=result,
-            progress=progress,
-            task_id=task_id,
-        )
-        await _run_pipeline_for_symbol(ctx)
+    # BinanceClient를 전체 다운로드에서 단 1번만 생성
+    async with BinanceClient(settings) as client:
+        # 순차 처리 (Rate Limit 고려)
+        for idx, symbol in enumerate(symbols):
+            ctx = PipelineContext(
+                symbol=symbol,
+                years=years,
+                skip_existing=skip_existing,
+                result=result,
+                progress=progress,
+                task_id=task_id,
+                client=client,  # 재사용할 client 전달
+            )
+            await _run_pipeline_for_symbol(ctx)
+
+            # 종목 간 추가 대기 (첫 번째 종목 후부터)
+            if idx < len(symbols) - 1:  # 마지막 종목 제외
+                await asyncio.sleep(1.0)
 
     return result
 

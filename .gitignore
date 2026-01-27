@@ -232,7 +232,6 @@ credentials.json
 # Project specific
 # ----------------------------------------
 # Data files
-data/
 *.parquet
 *.csv
 !tests/fixtures/*.csv
