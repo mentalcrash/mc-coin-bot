@@ -14,6 +14,7 @@ Rules Applied:
 """
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
@@ -671,6 +672,12 @@ def bulk_download(  # noqa: PLR0913
             border_style="yellow",
         ))
         return
+
+    # Rate Limit 쿨다운: 필터링 후 다운로드 전 대기
+    if min_listing_year:
+        cooldown_seconds = 10
+        console.print(f"\n[dim]Rate limit cooldown: waiting {cooldown_seconds}s before starting downloads...[/dim]")
+        time.sleep(cooldown_seconds)
 
     # Step 2: 벌크 다운로드 실행
     console.print(f"\n[bold cyan]Step 2: Downloading {len(symbols)} symbols x {len(year)} years...[/bold cyan]")

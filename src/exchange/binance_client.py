@@ -416,9 +416,13 @@ class BinanceClient:
 
                 checked_count += 1
 
-                # Rate Limit 방지: 10개마다 0.5초 대기
-                if checked_count % 10 == 0:
-                    await asyncio.sleep(0.5)
+                # Rate Limit 방지: 매 요청마다 0.3초 대기 (3.3 req/sec)
+                await asyncio.sleep(0.3)
+
+                # 추가: 20개마다 2초 휴식 (안전 마진)
+                if checked_count % 20 == 0:
+                    logger.debug(f"Rate limit pause after {checked_count} checks...")
+                    await asyncio.sleep(2.0)
 
             except Exception as e:
                 logger.warning(
@@ -426,6 +430,8 @@ class BinanceClient:
                     extra={"symbol": symbol, "error": str(e)},
                 )
                 # 확인 실패 시 제외 (안전하게)
+                # 에러 시 추가 대기 (레이트 리밋일 수 있음)
+                await asyncio.sleep(2.0)
                 continue
 
         logger.info(
