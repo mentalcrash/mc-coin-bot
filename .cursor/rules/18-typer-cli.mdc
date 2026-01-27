@@ -1,0 +1,91 @@
+---
+description: Typer CLI & Rich UI Standards (Modern CLI, Async Support)
+globs: **/cli/*.py, **/main.py, **/scripts/*.py
+alwaysApply: false
+---
+
+# 🖥️ Typer CLI & Rich Standards (2026)
+
+## 1. Modern Syntax (Annotated First)
+- **Use `Annotated`:** Typer의 인자 설정은 반드시 `typing.Annotated`를 사용합니다. (Python 3.13 표준)
+    - 이는 Pydantic V2 및 Pyright와 가장 호환성이 좋은 패턴입니다.
+    - ✅ `def main(name: Annotated[str, typer.Option(help="...")]):`
+    - ❌ `def main(name: str = typer.Option(..., help="...")): ` (Legacy)
+
+## 2. Rich UI Integration
+- **No `print()` / No `typer.echo()`:** 사용자 출력은 반드시 **`rich`** 라이브러리를 사용합니다.
+- **Components:**
+    - **Status:** 단순 텍스트 대신 `console.status("Processing...")` 스피너를 사용합니다.
+    - **Tables:** 데이터 출력 시 `rich.table.Table`을 사용합니다.
+    - **Panels:** 중요 알림이나 요약 정보는 `rich.panel.Panel`로 감쌉니다.
+- **Global Console:** `src/core/console.py` 등에 정의된 싱글톤 `Console` 객체를 재사용하여 스타일 일관성을 유지합니다.
+
+## 3. Command Architecture
+- **Sub-commands:** 모든 명령어를 `main.py`에 몰아넣지 않고, 기능별로 `typer.Typer()` 앱을 분리한 뒤 `app.add_typer()`로 조립합니다.
+    - 예: `trade_app`, `backtest_app`, `config_app`
+- **Graceful Exit:** 오류 발생 시 `sys.exit()` 대신 `raise typer.Exit(code=1)`을 사용하여 깔끔하게 종료합니다.
+
+## 4. Async Handling in CLI
+- **Sync Entry -> Async Logic:** Typer는 기본적으로 동기(Sync) 방식입니다. 비동기 로직을 호출할 때는 동기 래퍼 함수 내에서 `asyncio.run()`을 사용해야 합니다.
+- **Pattern:**
+    ```python
+    @app.command()
+    def start():
+        # CLI Entrypoint (Sync)
+        asyncio.run(start_bot_logic())
+    ```
+
+## 5. Example Pattern
+
+### ✅ Good (Modern & Rich)
+```python
+import typer
+import asyncio
+from typing import Annotated
+from rich.console import Console
+from rich.panel import Panel
+
+# Global Console Instance
+console = Console()
+app = typer.Typer(no_args_is_help=True)
+
+async def _trade_logic(symbol: str, dry_run: bool):
+    with console.status(f"[bold green]Starting trading bot for {symbol}..."):
+        await asyncio.sleep(1) # Simulate init
+        console.print(Panel(f"Market: {symbol}\nMode: {'DRY RUN' if dry_run else 'LIVE'}", title="Bot Started"))
+
+@app.command()
+def start(
+    symbol: Annotated[str, typer.Option(help="Target Coin Pair")] = "BTC/USDT",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Test mode without real orders")] = False,
+):
+    """
+    Start the crypto trading bot.
+    """
+    try:
+        asyncio.run(_trade_logic(symbol, dry_run))
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+if __name__ == "__main__":
+    app()
+
+```
+
+### ❌ Bad (Legacy)
+
+```python
+import typer
+
+app = typer.Typer()
+
+@app.command()
+def start(symbol: str = typer.Option("BTC/USDT")): # Legacy Syntax
+    # Ugly output
+    print(f"Starting bot for {symbol}") 
+    
+    # Missing Async handling or dirty hack
+    # No Error handling
+
+```

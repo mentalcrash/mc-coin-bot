@@ -14,52 +14,75 @@ alwaysApply: true
 AI는 코드를 생성하거나 수정할 때, 아래의 디렉토리별 책임과 적용되는 룰(Rules)을 준수해야 합니다.
 
 ### 🔹 Core & Configuration
-- **Path:** `src/core/`
-- **Responsibility:** 로깅 설정, 상수 정의, 환경 변수 로드.
-- **Applied Rules:** `11-pydantic-modeling.mdc` (설정 관리)
+- **Path:** `src/core/`, `src/config/`
+- **Responsibility:** 로깅 설정, 상수 정의, 환경 변수 및 Pydantic Settings 관리.
+- **Applied Rules:** `11-pydantic-modeling.mdc` (Settings), `15-logging-standards.mdc`
 
-### 🔹 Data Layer (ETL)
-- **Path:** `src/data/`
-- **Responsibility:** 데이터 수집, 저장(Parquet), 로딩(DuckDB).
-- **Applied Rules:** `12-data-engineering.mdc` (Vectorization, No Loops)
+### 🔹 Data Layer (ETL & Analysis)
+- **Path:** `src/data/`, `src/analysis/`
+- **Responsibility:** 데이터 수집, 저장(Parquet), 로딩(DuckDB), 통계 분석.
+- **Applied Rules:** `12-data-engineering.mdc` (Vectorization), `21-data-visualization.mdc`
 - **Structure:**
     - `loader/`: 외부 소스에서 데이터 fetch (API 호출 제외, 순수 데이터 처리)
     - `storage/`: DuckDB/Parquet 관리
 
 ### 🔹 Exchange Layer (Connectivity)
-- **Path:** `src/exchange/`
-- **Responsibility:** CCXT Pro 연결, WebSocket 관리, 정밀도 보정.
+- **Path:** `src/exchange/`, `src/connector/`, `src/adapters/`
+- **Responsibility:** CCXT Pro 연결, WebSocket 관리, 정밀도 보정 및 거래소 어댑터.
 - **Applied Rules:** `14-ccxt-trading.mdc` (Async, Precision, WebSocket)
 - **Constraint:** 이곳에는 매매 전략(Strategy) 로직이 포함되어서는 안 됩니다. 오직 "연결"과 "주문 전송"만 담당합니다.
 
-### 🔹 Domain Models (DTO)
-- **Path:** `src/models/`
-- **Responsibility:** 데이터 구조 정의, 유효성 검사.
+### 🔹 Domain Models (DTO & Schemas)
+- **Path:** `src/models/`, `src/schemas/`, `src/dtos/`
+- **Responsibility:** 데이터 구조 정의, 유효성 검사, API 스키마.
 - **Applied Rules:** `11-pydantic-modeling.mdc` (Strict Typing, Frozen)
 
 ### 🔹 Strategy Layer (Brain)
 - **Path:** `src/strategy/`
-- **Responsibility:** 시그널 생성, 지표 계산(Pandas-TA), 매매 판단.
+- **Responsibility:** 시그널 생성, 지표 계산(Pandas-TA), 매매 판단 로직.
 - **Applied Rules:** `12-data-engineering.mdc` (Vectorized Indicators)
 
 ### 🔹 Execution Layer (Action)
 - **Path:** `src/execution/`
 - **Responsibility:** 주문 집행, 리스크 관리(Kill Switch), 포지션 추적.
-- **Applied Rules:** `20-crypto-safety.mdc` (Safety Rails, Double Check)
+- **Applied Rules:** `23-exception-handling.mdc` (Stopping on critical errors)
 
 ### 🔹 Backtesting & Research
 - **Path:** `src/backtest/` (또는 `research/`)
-- **Responsibility:** VectorBT 시뮬레이션, 전략 최적화.
-- **Applied Rules:** `12-data-engineering.mdc` (VBT Broadcasting)
+- **Responsibility:** VectorBT 시뮬레이션, 전략 최적화 및 결과 시각화.
+- **Applied Rules:** `12-data-engineering.mdc` (VBT Broadcasting), `21-data-visualization.mdc`
 
-## 3. Dependency Flow (Unidirectional)
+### 🔹 Interface & CLI
+- **Path:** `src/cli/`, `src/scripts/`, `src/main.py`
+- **Responsibility:** Typer 기반 CLI 구현, 자동화 스크립트, 시스템 엔트리포인트.
+- **Applied Rules:** `18-typer-cli.mdc` (Rich UI, Async CLI)
+
+### 🔹 Visualization & Dashboard
+- **Path:** `src/viz/`, `src/dashboard/`
+- **Responsibility:** 분석 시각화(Plotly), Streamlit 관제 대시보드.
+- **Applied Rules:** `21-data-visualization.mdc`
+
+### 🔹 Notification & Alerts
+- **Path:** `src/notification/`, `src/alerts/`, `src/reporter/`
+- **Responsibility:** Discord Webhook 알림, 에러 보고, 일일 리포트 전송.
+- **Applied Rules:** `22-notification-standards.mdc`
+
+## 3. Cross-cutting Concerns (Global Rules)
+모든 디렉토리의 `.py` 파일에 공통적으로 적용되는 규칙입니다.
+- **Code Quality:** `10-python-standards.mdc`, `13-ruff-compliance.mdc`, `16-pyright-typing.mdc`
+- **Stability:** `15-logging-standards.mdc`, `23-exception-handling.mdc`
+- **Security:** `19-git-security.mdc`
+- **Testing:** `17-testing-standards.mdc` (모든 `tests/` 및 `test_*.py`)
+
+## 4. Dependency Flow (Unidirectional)
 순환 참조(Circular Dependency)를 방지하기 위해 아래의 의존성 방향을 엄격히 지킵니다.
 - ✅ `Strategy` -> imports -> `Data`, `Models`
-- ✅ `Execution` -> imports -> `Exchange`, `Models`
-- ✅ `Main` -> imports -> `Strategy`, `Execution`
+- ✅ `Execution` -> imports -> `Exchange`, `Models`, `Notification`
+- ✅ `Main/CLI` -> imports -> `Strategy`, `Execution`, `Viz`
 - ❌ `Models` -> imports -> `Strategy` (Forbidden)
+- ❌ `Data` -> imports -> `Execution` (Forbidden)
 
-## 4. File Naming Convention
+## 5. File Naming Convention
 - **Modules:** `snake_case.py` (예: `market_data.py`, `risk_manager.py`)
 - **Classes:** `PascalCase` (예: `MarketDataManager`, `RiskController`)
 - **Tests:** `tests/` 폴더 내에 `src` 구조와 동일하게 미러링하며, 파일명 접두사는 `test_`로 시작합니다.

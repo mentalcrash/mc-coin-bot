@@ -1,0 +1,75 @@
+---
+description: Data Visualization & Dashboarding Standards (Plotly, Streamlit, Lightweight Charts)
+globs: **/viz/*.py, **/dashboard/*.py, **/analysis/*.py
+alwaysApply: false
+---
+
+# 📊 Modern Data Visualization Standards (2026)
+
+## 1. Primary Visualization Engine: Plotly
+- **Interactive First:** 데이터 분석 시 `matplotlib`이나 `seaborn` 같은 정적(Static) 이미지는 연구용(Research) 노트북에만 제한적으로 사용합니다.
+- **Standard Lib:** 모든 분석 차트는 **`plotly.graph_objects`** 또는 **`plotly.express`**를 사용합니다.
+- **VectorBT Integration:** `vbt`의 내장 플로팅 기능(`vbt.Portfolio.plot()`)을 적극 활용하며, 이는 내부적으로 Plotly를 사용합니다.
+
+## 2. Trading Specific Charts: Lightweight Charts
+- **High Performance:** 대량의 캔들스틱(Candlestick) 데이터나 실시간 시세 스트리밍을 시각화할 때는 **`lightweight-charts`** (Python Wrapper)를 우선 고려합니다.
+    - 이유: Plotly보다 렌더링 속도가 빠르고 TradingView와 동일한 UX를 제공합니다.
+- **Usage:** 주로 실시간 봇의 상태 모니터링이나 정밀한 진입/청산 타점 분석 시 사용합니다.
+
+## 3. Dashboarding Framework: Streamlit
+- **Single Page App:** 트레이딩 봇의 관제 시스템(Admin)은 **`streamlit`**으로 구축합니다.
+- **Layout:** `st.columns`, `st.tabs`, `st.expander`를 사용하여 정보를 구조화합니다.
+- **Real-time:** 데이터 갱신이 필요한 경우 `st.empty()`와 `time.sleep()` 루프보다는, `st.rerun()` 또는 `streamlit-autorefresh` 컴포넌트를 활용합니다.
+
+## 4. Color & Style Scheme
+- **Theme:** 암호화폐 트레이딩의 표준인 **Dark Mode**를 기본으로 합니다.
+- **Colors:**
+    - **Up/Buy:** Green (`#26a69a` / `#00C853`)
+    - **Down/Sell:** Red (`#ef5350` / `#D50000`)
+    - **Text:** White/Light Grey (`#E0E0E0`)
+
+## 5. Example Pattern
+
+### ✅ Good (Streamlit + Plotly)
+```python
+import streamlit as st
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+def render_dashboard(df):
+    st.set_page_config(layout="wide", page_title="Crypto Bot Dashboard")
+    
+    # 1. KPI Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total PnL", "$1,205", "+5.2%")
+    
+    # 2. Interactive Chart (Plotly)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
+    
+    # Candlestick
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['open'], high=df['high'],
+        low=df['low'], close=df['close'], name='OHLC'
+    ), row=1, col=1)
+    
+    # Volume
+    fig.add_trace(go.Bar(x=df.index, y=df['volume'], name='Volume'), row=2, col=1)
+    
+    fig.update_layout(height=800, template="plotly_dark")
+    st.plotly_chart(fig, use_container_width=True)
+
+```
+
+### ❌ Bad (Static Matplotlib)
+
+```python
+import matplotlib.pyplot as plt
+import streamlit as st
+
+def render_old_style(df):
+    # Interactive 하지 않음, 확대/축소 불가
+    fig, ax = plt.subplots()
+    ax.plot(df.index, df['close'])
+    st.pyplot(fig) # Not recommended for financial dashboard
+
+```
