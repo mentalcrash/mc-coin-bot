@@ -3,7 +3,7 @@ name = "mc-coin-bot"
 version = "0.1.0"
 description = "2026 Crypto Quant Trading System - Event-Driven Architecture based automated trading bot"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [{ name = "MC Coin Bot Team" }]
 keywords = ["cryptocurrency", "trading", "quant", "bot", "binance"]
@@ -46,10 +46,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.1.0",
-    "ruff>=0.3.0",
-    "pre-commit>=3.6.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.14.0",
+    "pre-commit>=4.0.0",
 ]
 
 research = [
@@ -72,7 +72,7 @@ build-backend = "hatchling.build"
 packages = ["src"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 88
 cache-dir = "~/.cache/ruff"
 
@@ -94,20 +94,30 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors (표준 에러)
-    "W",   # pycodestyle warnings (표준 경고)
-    "F",   # pyflakes (논리적 오류, 미사용 변수 등)
-    "I",   # isort (import 정렬)
-    "B",   # flake8-bugbear (잠재적 버그 탐지)
-    "UP",  # pyupgrade (최신 문법으로 자동 변환)
-    "N",   # pep8-naming (함수/변수/클래스 네이밍 컨벤션)
-    "SIM", # flake8-simplify (코드 단순화 제안)
-    "C4",  # flake8-comprehensions (리스트 컴프리헨션 최적화)
+    "E",     # pycodestyle errors (표준 에러)
+    "W",     # pycodestyle warnings (표준 경고)
+    "F",     # pyflakes (논리적 오류, 미사용 변수 등)
+    "I",     # isort (import 정렬)
+    "B",     # flake8-bugbear (잠재적 버그 탐지)
+    "UP",    # pyupgrade (최신 문법으로 자동 변환)
+    "N",     # pep8-naming (함수/변수/클래스 네이밍 컨벤션)
+    "SIM",   # flake8-simplify (코드 단순화 제안)
+    "C4",    # flake8-comprehensions (리스트 컴프리헨션 최적화)
+    "ASYNC", # flake8-async (비동기 코드 안티패턴 탐지)
+    "S",     # flake8-bandit (보안 취약점 탐지)
+    "RUF",   # Ruff-specific rules (Ruff 자체 규칙)
+    "PERF",  # Perflint (성능 안티패턴 탐지)
+    "LOG",   # flake8-logging (로깅 모범 사례)
+    "TC",    # flake8-type-checking (타입 체킹 최적화)
+    "PTH",   # flake8-use-pathlib (pathlib 사용 권장)
 ]
 
 ignore = [
-    "E501", # 줄 길이는 ruff format이 알아서 처리하므로 lint 에러는 무시
-    "B008", # FastAPI의 Depends() 사용 시 함수 호출 인자 허용
+    "E501",   # 줄 길이는 ruff format이 알아서 처리하므로 lint 에러는 무시
+    "B008",   # FastAPI의 Depends() 사용 시 함수 호출 인자 허용
+    "S101",   # assert 사용 허용 (테스트 코드에서 필요)
+    "S311",   # random 모듈 사용 허용 (보안이 필요 없는 경우)
+    "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
 ]
 
 # Allow autofix for all enabled rules
@@ -126,7 +136,78 @@ indent-style = "space"            # 들여쓰기 (space 추천)
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[dependency-groups]
-dev = [
-    "ruff>=0.14.14",
+[tool.pyright]
+# 1. 프로젝트 범위 및 환경 설정
+include = ["src"]        # src 레이아웃 권장
+exclude = ["**/__pycache__", "tests"]
+
+# [uv 통합 핵심] uv가 생성한 .venv를 Pyright가 인식하도록 설정
+venvPath = "."
+venv = ".venv"
+
+# 2. 타겟 파이썬 버전 (프로젝트에 맞게 수정)
+pythonVersion = "3.13"
+
+# 3. 타입 체크 모드: 'strict'를 권장하되, 예외를 둡니다.
+# standard: 2026년의 새로운 기본값 (basic보다 강하고 strict보다 약함)
+# strict: 모든 타입 힌트 강제 (추천)
+typeCheckingMode = "strict"
+
+# 4. Ruff와의 역할 분담 (충돌 방지)
+# import 정렬과 미사용 import 감지는 Ruff가 훨씬 빠르고 자동 수정이 가능하므로 끕니다.
+reportUnusedImport = false
+reportUnusedClass = false
+
+# 5. 실용적 예외 처리 (Pragmatic Overrides)
+# 외부 라이브러리에 타입 정보가 없을 때 발생하는 노이즈를 제거합니다.
+reportMissingTypeStubs = false    # "Stub file not found" 에러 무시 (가장 중요)
+reportUnknownMemberType = false   # 외부 라이브러리 멤버의 타입을 모를 때 무시
+reportUnknownArgumentType = false # 인자 타입 추론 불가 시 무시
+
+# 6. 엄격함 유지
+# 하지만, 내 코드 내부의 타입 누락은 엄격하게 잡습니다.
+reportMissingImports = true       # 임포트 경로가 잘못되면 에러
+reportImplicitStringConcatenation = true # "s" "tr" 같은 암시적 문자열 병합 금지 (버그 유발)
+
+# ============================================
+# pytest 설정
+# ============================================
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-ra",           # 실패/스킵/에러 요약 표시
+    "-q",            # 간결한 출력
+    "--strict-markers",  # 미등록 마커 사용 시 에러
+    "--tb=short",    # 짧은 트레이스백
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# ============================================
+# coverage 설정
+# ============================================
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+skip_covered = true
