@@ -39,6 +39,7 @@
 - **Conventional Commits:** `feat(scope): description` 형식을 엄격히 준수합니다.
 - **Small Commits:** 하나의 커밋은 하나의 논리적 변경 사항만 포함하도록 작게 유지합니다.
 
-## 6. Documentation
+## 6. Documentation & Task Tracking
 - 새로운 모듈이나 환경 변수 추가 시 `README.md`를 즉시 업데이트합니다.
 - 복잡한 비즈니스 로직은 코드 내에 Docstring(Google Style)으로 상세히 설명합니다.
+- **문서 기반 작업 시:** 작업의 근거가 되는 문서(예: `docs/*.md`)에 TODO가 있거나 작업 내용 업데이트가 필요할 경우, 해당 문서에 진행 상황이나 완료 내용을 즉시 반영합니다.
