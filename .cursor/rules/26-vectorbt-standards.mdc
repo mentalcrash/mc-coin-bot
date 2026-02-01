@@ -1,0 +1,100 @@
+---
+description: VectorBT Backtesting & Indicator Standards (Broadcasting, Numba)
+globs: **/backtest/*.py, **/strategy/*.py, **/analysis/*.py
+alwaysApply: false
+---
+
+# 🚀 VectorBT Standards (2026 High-Performance)
+
+## 1. The Broadcasting Philosophy
+- **No For-Loops:** 전략 파라미터(예: RSI 기간 14, 15, 16...)를 테스트할 때 절대 `for` 루프를 사용하지 않습니다.
+- **Broadcasting:** 파라미터를 리스트로 전달하여 VBT가 내부적으로 3차원 배열(Time x Assets x Parameters)을 생성하도록 합니다.
+    - ✅ `vbt.RSI.run(close, window=[14, 15, 16])`
+    - ❌ `for w in [14, 15, 16]: vbt.RSI.run(..., window=w)`
+
+## 2. Indicator Factory (Custom Indicators)
+- **Factory Pattern:** `pandas-ta`나 `talib` 함수를 단순히 호출하지 말고, **`vbt.IndicatorFactory`**로 래핑하여 사용합니다.
+    - 이유: 이렇게 해야 VBT의 브로드캐스팅, 캐싱, 플로팅 기능을 상속받을 수 있습니다.
+- **Numba Acceleration:** 커스텀 지표 로직은 반드시 `@njit` (Numba) 데코레이터를 사용하여 컴파일해야 합니다. 순수 Python 함수는 대량 백테스팅 시 병목이 됩니다.
+
+## 3. Portfolio Simulation Standards
+- **Entry/Exit Signals:** `from_signals` 사용 시, `entries`와 `exits`는 반드시 `bool` 타입의 DataFrame이어야 합니다.
+- **Realistic Settings (Crucial):**
+    - **Fees:** 수수료 없는 백테스팅은 사기입니다. 반드시 `fees` 파라미터를 설정합니다. (예: 바이낸스 기준 `0.0004` ~ `0.001`)
+    - **Slippage:** 시장가 주문 시 슬리피지를 고려하여 `slippage` 파라미터를 설정합니다.
+    - **Freq:** 연환산 수익률(Sharpe 등) 계산의 정확도를 위해 데이터의 주기(`freq='1h'`, `'15m'` 등)를 반드시 명시합니다.
+
+## 4. Optimization & Memory Management
+- **Chunking:** 수만 개의 파라미터 조합을 테스트할 때는 메모리 폭발(OOM)을 막기 위해 `chunked=True` 옵션이나 엔진 설정을 활용합니다.
+- **Parameter Selection:** 결과 분석 시 단순히 '수익률(Total Return)'만 보지 말고, **'Sharpe Ratio'**와 **'Max Drawdown'**을 복합적으로 고려하는 히트맵(Heatmap)을 생성합니다.
+
+## 5. Example Pattern
+
+### ✅ Good (Factory + Broadcasting + Numba)
+```python
+import vectorbt as vbt
+import numpy as np
+from numba import njit
+
+# 1. Define Fast Logic with Numba
+@njit
+def custom_strategy_logic(close, window, threshold):
+    # 단순 예시: 가격이 이평선보다 높고 변동성이 threshold 이상일 때
+    ma = vbt.nb.rolling_mean_nb(close, window)
+    return close > ma
+
+# 2. Wrap with IndicatorFactory
+MyStrategy = vbt.IndicatorFactory(
+    class_name='MyStrategy',
+    short_name='mystrat',
+    input_names=['close'],
+    param_names=['window', 'threshold'],
+    output_names=['signal']
+).from_apply_func(
+    custom_strategy_logic, 
+    keep_pd=True
+)
+
+def run_optimization(close_price_df):
+    # 3. Broadcasting (Massive Sweep)
+    # window 10~50, threshold 0.1~0.5 모든 조합(수백 개)을 한 번에 실행
+    strat = MyStrategy.run(
+        close_price_df, 
+        window=np.arange(10, 51), 
+        threshold=[0.1, 0.3, 0.5],
+        param_product=True # 모든 조합 테스트
+    )
+    
+    # 4. Portfolio Simulation with Realism
+    pf = vbt.Portfolio.from_signals(
+        close=close_price_df,
+        entries=strat.signal,
+        exits=~strat.signal,
+        fees=0.001,      # 0.1% fee
+        slippage=0.0001, # 0.01% slippage
+        freq='1h'        # Hourly data
+    )
+    
+    # 5. Analysis
+    return pf.total_return()
+
+```
+
+### ❌ Bad (Slow Loop & Unrealistic)
+
+```python
+import vectorbt as vbt
+
+def slow_test(close_df):
+    results = []
+    # 느린 루프 방식
+    for w in range(10, 50):
+        # 수수료/슬리피지 설정 누락 -> 수익률 뻥튀기됨
+        pf = vbt.Portfolio.from_signals(
+            close_df, 
+            entries=close_df > close_df.rolling(w).mean(),
+            exits=close_df < close_df.rolling(w).mean()
+        )
+        results.append(pf.total_return())
+
+```

@@ -1,5 +1,5 @@
 ---
-description: Data Engineering Standards (Pandas, VectorBT, DuckDB, Parquet)
+description: Data Engineering Standards (Pandas, VectorBT, DuckDB, Log Returns)
 globs: **/data/*.py, **/backtest/*.py, **/analysis/*.py
 alwaysApply: false
 ---
@@ -27,24 +27,32 @@ alwaysApply: false
     - 대용량 데이터(메모리보다 큰 파일)를 로드할 때는 `pandas.read_parquet`으로 전체를 읽지 말고, **DuckDB**를 사용하여 필요한 컬럼과 기간만 필터링(Pushdown Predicates)한 후 DataFrame으로 변환합니다.
     - SQL Query 예시: `duckdb.query("SELECT * FROM 'data.parquet' WHERE date > '2026-01-01'").to_df()`
 
-## 4. VectorBT (Backtesting) Rules
+## 4. Return Calculation Protocol (Log vs Simple)
+- **Internal Calculation (Math):**
+    - 전략 계산, 변동성 측정, 머신러닝 학습 시에는 반드시 **로그 수익률(Log Returns)**을 사용합니다.
+    - 공식: `np.log(df['close'] / df['close'].shift(1))`
+    - 이유: 시간 가산성(Time-Additivity)과 통계적 정규성 확보, 연산 속도 향상.
+- **Reporting (Human):**
+    - 최종 사용자에게 보여주거나 `QuantStats` 리포트를 생성할 때는 **단순 수익률(Simple Returns)**로 변환합니다.
+    - 공식: `np.expm1(log_returns)` (정밀도가 `np.exp(x) - 1` 보다 우수함)
+
+## 5. VectorBT (Backtesting) Rules
 - **Indicator Construction:** 기술적 지표 생성 시 `vbt.IndicatorFactory`를 사용하여 벡터화된 지표를 생성합니다.
 - **Portfolio Simulation:**
     - `vbt.Portfolio.from_signals()` 또는 `vbt.Portfolio.from_orders()`를 사용하여 전체 기간의 시뮬레이션을 단일 연산으로 처리합니다.
     - 모수 최적화(Parameter Optimization) 시에는 `vbt`의 멀티 인덱스 기능을 활용하여 수천 개의 전략을 병렬로 테스트합니다.
 
-## 5. Example Patterns
+## 6. Example Patterns
 
-### ✅ Good (Vectorized & Efficient)
+### ✅ Good (Vectorized, PyArrow & Log Returns)
 ```python
 import pandas as pd
 import duckdb
 import vectorbt as vbt
 import numpy as np
 
-def load_and_backtest():
+def load_process_backtest():
     # 1. Efficient Loading (DuckDB -> Pandas with PyArrow)
-    # 필요한 데이터만 쿼리로 추출
     df = duckdb.query("""
         SELECT timestamp, close 
         FROM 'market_data.parquet' 
@@ -52,41 +60,57 @@ def load_and_backtest():
     """).to_df()
     
     # 2. PyArrow Conversion & Indexing
-    df = df.astype({'close': 'float64[pyarrow]'}) # Modern Type
+    df = df.astype({'close': 'float64[pyarrow]'})
     df.set_index('timestamp', inplace=True)
     
-    # 3. Vectorized Calculation (No Loops)
-    # Numpy select로 고속 연산
+    # 3. Log Return Calculation (For Internal Logic)
+    # 벡터 연산으로 로그 수익률 계산
+    df['log_return'] = np.log(df['close'] / df['close'].shift(1))
+    
+    # 변동성 계산 (로그 수익률 기반)
+    volatility = df['log_return'].rolling(window=20).std()
+    
+    # 4. Strategy Logic (Numpy Select)
     conditions = [
-        (df['close'] > df['close'].shift(1)),
-        (df['close'] < df['close'].shift(1))
+        (df['log_return'] > 0.01), # 1% 이상 상승
+        (df['log_return'] < -0.01) # 1% 이상 하락
     ]
-    choices = [1, -1] # 1: Up, -1: Down
-    df['direction'] = np.select(conditions, choices, default=0)
+    choices = [1, -1]
+    df['signal'] = np.select(conditions, choices, default=0)
     
-    # 4. VectorBT Backtest
-    rsi = vbt.RSI.run(df['close'], window=14)
-    entries = rsi.rsi_below(30)
-    exits = rsi.rsi_above(70)
+    # 5. VectorBT Backtest
+    # VBT는 내부적으로 수익률을 잘 처리하지만, 커스텀 지표 사용 시 로그 수익률 활용 권장
+    portfolio = vbt.Portfolio.from_signals(
+        df['close'], 
+        entries=(df['signal'] == 1), 
+        exits=(df['signal'] == -1), 
+        freq='1h'
+    )
     
-    portfolio = vbt.Portfolio.from_signals(df['close'], entries, exits, freq='1h')
+    # 6. Reporting (Convert back to Simple Return if needed manually)
+    total_log_ret = df['log_return'].sum()
+    total_simple_ret_pct = np.expm1(total_log_ret) * 100
+    
     return portfolio.total_return()
 
 ```
 
-### ❌ Bad (Loop-based & CSV)
+### ❌ Bad (Loop-based & Arithmetic Returns)
 
 ```python
 import pandas as pd
 
 def slow_backtest():
-    # CSV 사용 및 전체 로드
     df = pd.read_csv('market_data.csv') 
+    
+    # 단순 수익률 사용 (연산 비용 높음)
+    df['simple_return'] = df['close'].pct_change()
     
     # Iterrows 사용 (최악의 퍼포먼스)
     for index, row in df.iterrows():
-        if row['close'] > 100000:
-             # 로직 처리...
-             pass
+        # 복리 계산을 루프로 처리하는 안티 패턴
+        pass
+
+```
 
 ```
