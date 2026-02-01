@@ -1,75 +1,113 @@
 ---
-description: Data Visualization & Dashboarding Standards (Plotly, Streamlit, Lightweight Charts)
-globs: **/viz/*.py, **/dashboard/*.py, **/analysis/*.py
+description: Data Visualization & Reporting Standards (QuantStats)
+globs: **/backtest/*.py, **/analysis/*.py, **/notebooks/*.ipynb
 alwaysApply: false
 ---
 
-# 📊 Modern Data Visualization Standards (2026)
+# 📊 Data Visualization Standards (2026)
 
-## 1. Primary Visualization Engine: Plotly
-- **Interactive First:** 데이터 분석 시 `matplotlib`이나 `seaborn` 같은 정적(Static) 이미지는 연구용(Research) 노트북에만 제한적으로 사용합니다.
-- **Standard Lib:** 모든 분석 차트는 **`plotly.graph_objects`** 또는 **`plotly.express`**를 사용합니다.
-- **VectorBT Integration:** `vbt`의 내장 플로팅 기능(`vbt.Portfolio.plot()`)을 적극 활용하며, 이는 내부적으로 Plotly를 사용합니다.
+## 1. Primary Visualization: QuantStats
+- **All-in-One Solution:** 백테스트 성과 분석 및 시각화는 **QuantStats**를 표준으로 사용합니다.
+- **Built-in Charts:** 자산 곡선, 낙폭, 월별 히트맵, 수익률 분포 등 20+ 차트가 내장되어 있습니다.
+- **No Custom Charts Needed:** 별도의 `src/viz/` 모듈 없이 QuantStats 하나로 충분합니다.
 
-## 2. Trading Specific Charts: Lightweight Charts
-- **High Performance:** 대량의 캔들스틱(Candlestick) 데이터나 실시간 시세 스트리밍을 시각화할 때는 **`lightweight-charts`** (Python Wrapper)를 우선 고려합니다.
-    - 이유: Plotly보다 렌더링 속도가 빠르고 TradingView와 동일한 UX를 제공합니다.
-- **Usage:** 주로 실시간 봇의 상태 모니터링이나 정밀한 진입/청산 타점 분석 시 사용합니다.
+## 2. QuantStats Core Functions
 
-## 3. Dashboarding Framework: Streamlit
-- **Single Page App:** 트레이딩 봇의 관제 시스템(Admin)은 **`streamlit`**으로 구축합니다.
-- **Layout:** `st.columns`, `st.tabs`, `st.expander`를 사용하여 정보를 구조화합니다.
-- **Real-time:** 데이터 갱신이 필요한 경우 `st.empty()`와 `time.sleep()` 루프보다는, `st.rerun()` 또는 `streamlit-autorefresh` 컴포넌트를 활용합니다.
-
-## 4. Color & Style Scheme
-- **Theme:** 암호화폐 트레이딩의 표준인 **Dark Mode**를 기본으로 합니다.
-- **Colors:**
-    - **Up/Buy:** Green (`#26a69a` / `#00C853`)
-    - **Down/Sell:** Red (`#ef5350` / `#D50000`)
-    - **Text:** White/Light Grey (`#E0E0E0`)
-
-## 5. Example Pattern
-
-### ✅ Good (Streamlit + Plotly)
+### 리포트 생성
 ```python
-import streamlit as st
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import quantstats as qs
 
-def render_dashboard(df):
-    st.set_page_config(layout="wide", page_title="Crypto Bot Dashboard")
-    
-    # 1. KPI Metrics
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total PnL", "$1,205", "+5.2%")
-    
-    # 2. Interactive Chart (Plotly)
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
-    
-    # Candlestick
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df['open'], high=df['high'],
-        low=df['low'], close=df['close'], name='OHLC'
-    ), row=1, col=1)
-    
-    # Volume
-    fig.add_trace(go.Bar(x=df.index, y=df['volume'], name='Volume'), row=2, col=1)
-    
-    fig.update_layout(height=800, template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+# HTML 종합 리포트 (한 줄로 20+ 차트 생성)
+qs.reports.html(returns, benchmark=btc_returns, output="report.html")
 
+# Jupyter 티어시트
+qs.reports.full(returns, benchmark=btc_returns)
+
+# 핵심 지표만
+qs.reports.metrics(returns, benchmark=btc_returns, display=True)
 ```
 
-### ❌ Bad (Static Matplotlib)
+### 개별 차트
+```python
+# 자산 곡선
+qs.plots.returns(returns, benchmark=btc_returns, cumulative=True)
+
+# 낙폭 차트
+qs.plots.drawdown(returns)
+
+# 월별 수익률 히트맵
+qs.plots.monthly_heatmap(returns)
+
+# 수익률 분포
+qs.plots.histogram(returns)
+```
+
+## 3. Crypto-Specific Settings (Required)
+```python
+# 암호화폐는 365일 24시간 거래
+qs.reports.html(
+    returns,
+    benchmark=btc_returns,
+    periods_per_year=365,  # 주식 기본값 252 대신 365
+    rf=0.05,               # 스테이블코인 예치 수익률 5%
+)
+```
+
+## 4. Dashboarding: Streamlit (Optional)
+- **실시간 모니터링용:** 트레이딩 봇 관제 시스템은 **Streamlit**으로 구축합니다.
+- **QuantStats 연동:** QuantStats HTML 리포트를 iframe으로 임베딩할 수 있습니다.
 
 ```python
-import matplotlib.pyplot as plt
 import streamlit as st
+import streamlit.components.v1 as components
 
-def render_old_style(df):
-    # Interactive 하지 않음, 확대/축소 불가
-    fig, ax = plt.subplots()
-    ax.plot(df.index, df['close'])
-    st.pyplot(fig) # Not recommended for financial dashboard
+# QuantStats HTML 리포트 임베딩
+with open("report.html", "r") as f:
+    html_content = f.read()
+components.html(html_content, height=800, scrolling=True)
+```
 
+## 5. Color Scheme (Reference)
+- **Up/Buy:** Green (`#26a69a` / `#00C853`)
+- **Down/Sell:** Red (`#ef5350` / `#D50000`)
+- **Text:** White/Light Grey (`#E0E0E0`)
+
+## 6. Example Pattern
+
+### ✅ Good (QuantStats)
+```python
+import quantstats as qs
+
+def analyze_strategy(returns, benchmark_returns):
+    """QuantStats로 전략 성과 분석."""
+    qs.extend_pandas()
+    
+    # 1. 콘솔에 핵심 지표 출력
+    qs.reports.metrics(returns, benchmark=benchmark_returns, display=True)
+    
+    # 2. 인터랙티브 차트 (Jupyter)
+    qs.plots.returns(returns, benchmark=benchmark_returns, cumulative=True)
+    qs.plots.drawdown(returns)
+    qs.plots.monthly_heatmap(returns)
+    
+    # 3. HTML 리포트 저장
+    qs.reports.html(
+        returns,
+        benchmark=benchmark_returns,
+        output="reports/strategy_report.html",
+        periods_per_year=365,
+        rf=0.05,
+    )
+```
+
+### ❌ Bad (Custom Plotly Implementation)
+```python
+import plotly.graph_objects as go
+
+def bad_custom_chart(returns):
+    # QuantStats가 이미 제공하는 기능을 직접 구현
+    # 유지보수 부담 증가, 버그 가능성
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=returns.index, y=returns.cumsum()))
+    fig.show()
 ```

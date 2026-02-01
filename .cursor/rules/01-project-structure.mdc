@@ -58,9 +58,9 @@ AI는 코드를 생성하거나 수정할 때, 아래의 디렉토리별 책임�
 - **Applied Rules:** `18-typer-cli.mdc` (Rich UI, Async CLI)
 
 ### 🔹 Visualization & Dashboard
-- **Path:** `src/viz/`, `src/dashboard/`
-- **Responsibility:** 분석 시각화(Plotly), Streamlit 관제 대시보드.
-- **Applied Rules:** `21-data-visualization.mdc`
+- **Path:** `src/backtest/reporter.py`, `src/dashboard/`
+- **Responsibility:** QuantStats 기반 성과 리포트 생성, Streamlit 관제 대시보드.
+- **Applied Rules:** `21-data-visualization.mdc`, `25-quantstats-standards.mdc`
 
 ### 🔹 Notification & Alerts
 - **Path:** `src/notification/`, `src/alerts/`, `src/reporter/`

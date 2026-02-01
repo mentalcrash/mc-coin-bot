@@ -819,29 +819,29 @@ BINANCE_SECRET_KEY=your_secret_key_here
 
 ## 10. 개발 로드맵
 
-### Phase 1: Foundation (기반 구축)
-- [ ] 프로젝트 초기 설정 (Poetry, 디렉토리 구조)
-- [ ] 핵심 데이터 모델 정의 (Pydantic)
+### Phase 1: Foundation (기반 구축) ✅
+- [x] 프로젝트 초기 설정 (Poetry, 디렉토리 구조)
+- [x] 핵심 데이터 모델 정의 (Pydantic)
 - [ ] 이벤트 버스 구현
-- [ ] 로깅 시스템 구축
+- [x] 로깅 시스템 구축
 
-### Phase 2: Data Pipeline (데이터 파이프라인)
-- [ ] REST API 데이터 수집기
+### Phase 2: Data Pipeline (데이터 파이프라인) ✅
+- [x] REST API 데이터 수집기
 - [ ] WebSocket 실시간 스트림
 - [ ] SQLite Hot Storage
-- [ ] Parquet Cold Storage
+- [x] Parquet Cold Storage (Medallion Architecture)
 
-### Phase 3: Strategy Engine (전략 엔진)
-- [ ] BaseStrategy 인터페이스
-- [ ] 지표 라이브러리 래퍼
-- [ ] 백테스팅 환경 구축
-- [ ] 첫 번째 전략 구현
+### Phase 3: Strategy Engine (전략 엔진) ✅
+- [x] BaseStrategy 인터페이스
+- [x] VW-TSMOM 전략 구현
+- [x] 백테스팅 환경 구축 (VectorBT)
+- [x] QuantStats 리포트 생성
 
 ### Phase 4: Execution System (실행 시스템)
 - [ ] Portfolio Manager
 - [ ] Risk Manager
 - [ ] Order Management System
-- [ ] 거래소 커넥터
+- [x] 거래소 커넥터 (Binance)
 
 ### Phase 5: Operations (운영)
 - [ ] Docker 컨테이너화
@@ -852,8 +852,75 @@ BINANCE_SECRET_KEY=your_secret_key_here
 ### Phase 6: Enhancement (고도화)
 - [ ] 다중 전략 동시 운영
 - [ ] 추가 거래소 지원
-- [ ] 성과 분석 리포트
+- [x] 성과 분석 리포트
 - [ ] ML 기반 전략 연구
+
+---
+
+## 11. VW-TSMOM 전략 사용법
+
+### 11.1 전략 개요
+
+VW-TSMOM (Volume-Weighted Time Series Momentum)은 거래량 가중 시계열 모멘텀 전략입니다.
+
+**핵심 아이디어:**
+- 거래량이 큰 가격 변화에 높은 가중치 부여
+- 변동성 스케일링으로 리스크 관리
+- 레버리지 제한으로 극단적 손실 방지
+
+### 11.2 빠른 시작
+
+```python
+from src.strategy.tsmom import TSMOMStrategy, TSMOMConfig
+from src.backtest import BacktestEngine, CostModel
+
+# 1. 전략 설정
+config = TSMOMConfig(
+    lookback=24,       # 24시간 모멘텀 윈도우
+    vol_target=0.15,   # 연 15% 목표 변동성
+    max_leverage=2.0,  # 최대 2배 레버리지
+)
+strategy = TSMOMStrategy(config)
+
+# 2. 백테스트 실행
+engine = BacktestEngine(cost_model=CostModel.binance_futures())
+result = engine.run(strategy, hourly_ohlcv_df, "BTC/USDT")
+
+# 3. 결과 확인
+print(f"Sharpe: {result.metrics.sharpe_ratio:.2f}")
+print(f"Return: {result.metrics.total_return:+.2f}%")
+print(f"MDD: {result.metrics.max_drawdown:.2f}%")
+```
+
+### 11.3 CLI 사용법
+
+```bash
+# 단일 백테스트 실행
+python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
+
+# 파라미터 최적화
+python -m src.cli.backtest optimize BTC/USDT -y 2024 -y 2025
+
+# 전략 정보 확인
+python -m src.cli.backtest info
+```
+
+### 11.4 Jupyter Notebook
+
+연구 및 분석은 `research/notebooks/` 디렉토리의 노트북을 참조하세요:
+
+- `01_vw_tsmom_backtest.ipynb` - VW-TSMOM 백테스트 분석
+
+### 11.5 전략 확장
+
+새로운 전략 추가 시:
+
+1. `src/strategy/{strategy_name}/` 디렉토리 생성
+2. 3개 파일 구현:
+   - `config.py` - Pydantic 설정
+   - `preprocessor.py` - 지표 계산
+   - `signal.py` - 시그널 생성
+3. `BaseStrategy` 상속 클래스 구현
 
 ---
 
@@ -862,6 +929,7 @@ BINANCE_SECRET_KEY=your_secret_key_here
 | 버전 | 날짜 | 작성자 | 변경 내용 |
 |------|------|--------|----------|
 | 1.0.0 | 2026-01-25 | - | 초기 설계 문서 작성 |
+| 1.1.0 | 2026-02-01 | - | VW-TSMOM 전략, 백테스팅 인프라 구현 |
 
 ---
 

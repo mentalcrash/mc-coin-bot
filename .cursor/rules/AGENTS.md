@@ -14,11 +14,21 @@
 - **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL)을 준수해야 합니다.
 - **Pyright:** `strict` 모드 수준의 타입 체크를 통과해야 합니다. (단, 외부 라이브러리 스터브 누락 등 `pyproject.toml`에서 허용된 예외 제외)
 
-> **AI 지침:** 코드를 작성한 후 반드시 `ruff check` 및 `pyright`를 실행하여 에러가 없는지 확인하십시오.
+> [!IMPORTANT]
+> **Lint & Type Check 실행 방식:**
+> 모든 검사는 반드시 `uv run`을 접두어로 사용하여 프로젝트 환경에서 실행해야 합니다.
+> - `uv run ruff check .`
+> - `uv run pyright`
+
+> **AI 지침:** 코드를 작성한 후 반드시 위 명령어를 실행하여 에러가 없는지 확인하십시오.
 
 ## 3. Tech Stack & Standards (2026 Modern Python)
 - **Language:** Python 3.13+ (최신 문법 및 `typing` 모듈 적극 활용)
+- **Type Safety:**
+    - **No `Any` Policy:** `Any` 타입 사용을 최대한 지양합니다. 불가피한 경우에만 사용하며, 가능한 `Protocol`, `Generic`, `Union` 또는 `TypeVar`를 통해 구체적인 타입을 명시합니다.
+    - **Strict Typing:** 모든 함수 인자와 반환값에 타입 힌팅을 적용합니다.
 - **Core Libraries:**
+    - `uv`: 패키지 및 가상환경 관리 표준 (2026년 권장)
     - `ccxt` (Async): 거래소 연동 표준
     - `pydantic` (V2): 데이터 검증 및 설정 관리
     - `asyncio`: 고성능 비동기 I/O 처리

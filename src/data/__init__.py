@@ -4,4 +4,4 @@ from src.data.bronze import BronzeStorage
 from src.data.fetcher import DataFetcher
 from src.data.silver import SilverProcessor
 
-__all__ = ["DataFetcher", "BronzeStorage", "SilverProcessor"]
+__all__ = ["BronzeStorage", "DataFetcher", "SilverProcessor"]

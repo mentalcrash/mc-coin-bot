@@ -248,7 +248,7 @@ class BronzeStorage:
             new_df = self._batch_to_dataframe(batch)
 
             # 병합 및 중복 제거
-            combined_df = cast(pd.DataFrame, pd.concat([existing_df, new_df]))
+            combined_df = cast("pd.DataFrame", pd.concat([existing_df, new_df]))
             combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
             combined_df.sort_index(inplace=True)
 

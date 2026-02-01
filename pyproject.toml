@@ -11,60 +11,33 @@ keywords = ["cryptocurrency", "trading", "quant", "bot", "binance"]
 dependencies = [
     # Exchange API
     "ccxt>=4.0.0",
-
     # Data Processing
     "pandas>=2.2.0",
     "numpy>=1.26.0",
     "pyarrow>=15.0.0", # Parquet support
-    "duckdb>=0.10.0",  # [ADD] 대용량 데이터 처리용 (Rules #12 준수)
-
+    "duckdb>=0.10.0", # [ADD] 대용량 데이터 처리용 (Rules #12 준수)
     # Technical Indicators
     "pandas-ta>=0.3.14b",
-
     # Data Validation
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
-
     # Async Support
     "aiosqlite>=0.20.0",
     "aiohttp>=3.9.0",
-
     # Configuration
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
-
     # Logging
     "loguru>=0.7.0",
-
     # CLI
     "typer>=0.12.0",
     "rich>=13.0.0",
-
     # Telegram Alerts
     "python-telegram-bot>=21.0",
-
     # Retry & Progress (Data Ingestion)
-    "tenacity>=8.2.0",  # Exponential backoff retry
-    "tqdm>=4.66.0",     # Progress bar
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.14.0",
-    "pre-commit>=4.0.0",
-]
-
-research = [
-    "vectorbt>=0.26.0",
-    "numba>=0.59.0",
-    "optuna>=3.5.0",
-    "jupyterlab>=4.1.0",
-    "matplotlib>=3.8.0",
-    "seaborn>=0.13.0",
-    "plotly>=5.18.0",
+    "tenacity>=8.2.0", # Exponential backoff retry
+    "tqdm>=4.66.0", # Progress bar
+    "ipykernel>=7.1.0",
 ]
 
 [project.scripts]
@@ -76,6 +49,36 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+# ============================================
+# 의존성 그룹 관리 (UV 표준 방식)
+# ============================================
+# [변경 2] optional-dependencies를 제거하고 dependency-groups로 통합
+
+[dependency-groups]
+# 개발용 도구 (테스트, 린팅) -> uv run --group dev ...
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.14.14", # 버전 통일됨
+    "pre-commit>=4.0.0",
+    "pyright>=1.1.408",
+]
+
+# 연구/분석용 도구 (노트북, 백테스팅) -> uv run --group research ...
+research = [
+    "ipykernel>=7.1.0", # [이동됨] 노트북 실행용 커널
+    "vectorbt>=0.26.0",
+    "numba>=0.59.0",
+    "optuna>=3.5.0",
+    "jupyterlab>=4.1.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "plotly>=5.18.0",
+    "quantstats>=0.0.81",
+]
+
 
 [tool.ruff]
 target-version = "py313"
