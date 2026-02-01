@@ -238,27 +238,48 @@ class BacktestEngine:
         df: pd.DataFrame,
         signals: Any,  # StrategySignals
     ) -> Any:  # vbt.Portfolio
-        """VectorBT Portfolio 생성.
+        """VectorBT Portfolio 생성 (from_signals with Long/Short 분리).
+
+        Long과 Short 시그널을 분리하여 전달하고,
+        upon_opposite_entry="reverse"로 포지션 반전을 처리합니다.
+
+        Note: SizeType.Percent는 반전을 지원하지 않으므로,
+        고정 비율 (100%)로 진입하고 반전 시 자동으로 처리합니다.
 
         Args:
             vbt: VectorBT 모듈
             df: 전처리된 DataFrame
-            signals: 전략 시그널
+            signals: 전략 시그널 (entries, exits, direction, strength)
 
         Returns:
             vbt.Portfolio 인스턴스
         """
+        import numpy as np
+
         # VectorBT 비용 파라미터
         vbt_params = self.cost_model.to_vbt_params()
 
-        # Portfolio 생성 (from_signals)
+        # Long/Short 진입 시그널 분리 (entries를 direction으로 분리)
+        long_entries = signals.entries & (signals.direction == 1)
+        short_entries = signals.entries & (signals.direction == -1)
+
+        # Long/Short 청산 시그널: 중립으로 전환될 때
+        # direction이 0이 되는 순간 (양쪽 다 청산)
+        prev_direction = signals.direction.shift(1).fillna(0)
+        long_exits = (signals.direction != 1) & (prev_direction == 1)
+        short_exits = (signals.direction != -1) & (prev_direction == -1)
+
+        # Portfolio 생성 (from_signals with separate long/short)
+        # size=np.inf → 가용 현금 전액 사용 (반전 지원)
         portfolio = vbt.Portfolio.from_signals(
             close=df["close"],
-            entries=signals.entries,
-            exits=signals.exits,
-            size=signals.strength.abs(),  # 포지션 크기
-            size_type="percent",  # 퍼센트 기반 사이징
-            direction="both",  # 롱/숏 모두
+            entries=long_entries,
+            exits=long_exits,
+            short_entries=short_entries,
+            short_exits=short_exits,
+            size=np.inf,  # 가용 현금 전액 사용
+            upon_opposite_entry="reverse",  # Long↔Short 직접 전환
+            accumulate=False,  # 포지션 누적 안함
             init_cash=self.initial_capital,
             freq=self.freq,
             **vbt_params,
