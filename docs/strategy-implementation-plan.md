@@ -278,6 +278,8 @@ classDiagram
 
 #### 3.3.1 시그널 계산 로직
 
+VW-TSMOM은 과거 수익률(Momentum)에 거래량 신뢰도(Volume Weight)를 결합하여 추세 강도를 산출합니다.
+
 ```python
 # 의사 코드 (Pseudo-code)
 def calculate_vw_tsmom_signal(
@@ -289,8 +291,8 @@ def calculate_vw_tsmom_signal(
     """
     Volume-Weighted Time Series Momentum Signal.
     
-    1. 거래량 가중 수익률 계산
-    2. 변동성 스케일링 적용
+    1. 거래량 가중 수익률 계산 (Volume-Weighted Returns)
+    2. 변동성 스케일링 적용 (Volatility Scaling)
     3. 포지션 방향 및 크기 결정
     """
     # Step 1: Volume-Weighted Returns
@@ -300,14 +302,35 @@ def calculate_vw_tsmom_signal(
     vw_momentum = vw_returns / total_volume
     
     # Step 2: Volatility Scaling
+    # 실현 변동성 계산 및 연율화
     realized_vol = returns.rolling(vol_window).std() * np.sqrt(24 * 365)
     vol_scalar = vol_target / realized_vol.clip(lower=0.05)
     
     # Step 3: Signal Generation
+    # 방향(Direction) * 강도(Strength)
     raw_signal = np.sign(vw_momentum) * vol_scalar
     position = raw_signal.clip(-2, 2)  # Max 2x leverage
     
     return position
+```
+
+#### 3.3.2 아키텍처 및 설정 (Config)
+
+전략의 수학적 파라미터와 PM 설정을 분리하여 관리합니다.
+
+```python
+# 전략 설정 (Strategy Config)
+class TSMOMConfig(BaseModel):
+    lookback: int = 24
+    vol_window: int = 24
+    vol_target: float = 0.15
+
+# 포트폴리오 설정 (PM Config)
+class PortfolioConfig(BaseModel):
+    init_cash: float = 10000.0
+    leverage: float = 10.0
+    sl_stop: float = 0.02       # 전략적 손절 (격리 마진 안전장치)
+    order_size_pct: float = 1.0 # Equity 대비 비중
 ```
 
 #### 3.3.2 포지션 사이징

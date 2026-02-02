@@ -23,6 +23,7 @@ alwaysApply: false
     - **Fees:** 수수료 없는 백테스팅은 사기입니다. 반드시 `fees` 파라미터를 설정합니다. (예: 바이낸스 기준 `0.0004` ~ `0.001`)
     - **Slippage:** 시장가 주문 시 슬리피지를 고려하여 `slippage` 파라미터를 설정합니다.
     - **Freq:** 연환산 수익률(Sharpe 등) 계산의 정확도를 위해 데이터의 주기(`freq='1h'`, `'15m'` 등)를 반드시 명시합니다.
+- **Look-Ahead Bias Prevention:** 신호 발생 시점(`close`)과 체결 시점(`next open`)을 엄격히 구분합니다. (Rule `portfolio-manager.md` 연동)
 
 ## 4. Optimization & Memory Management
 - **Chunking:** 수만 개의 파라미터 조합을 테스트할 때는 메모리 폭발(OOM)을 막기 위해 `chunked=True` 옵션이나 엔진 설정을 활용합니다.

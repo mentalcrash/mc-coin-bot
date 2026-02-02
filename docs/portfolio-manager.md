@@ -1,6 +1,6 @@
 ---
 title: Advanced Portfolio Manager Architecture
-last_updated: 2026-02-02
+last_updated: 2026-02-03
 status: implemented
 type: explanation
 tags: [architecture, portfolio-manager, vectorbt, risk-management]
@@ -15,6 +15,11 @@ tags: [architecture, portfolio-manager, vectorbt, risk-management]
 
 ## 1. 핵심 설계 철학 (Core Philosophy)
 
+### 🔹 관심사의 분리 (Separation of Concerns)
+좋은 아키텍처는 전략이 엔진(백테스팅 or 실전)에 영향을 받지 않아야 합니다.
+- **Strategy Layer (Signal Logic):** 시장 데이터를 분석하여 **방향(Direction)**과 **신호 강도(Strength)**를 계산합니다. 자금 상태를 독립적으로 유지하며 수학적 논리에 집중합니다.
+- **PM Layer (Money Management):** 전략의 신호를 받아 계좌 상태(Balance)와 리스크 성향을 고려해 **실제 주문량(Size)**을 결정합니다.
+
 ### 🔹 Target Weights 기반 아키텍처
 단순히 "사라/팔아라"는 `entries/exits` 신호 대신, **"현재 이 자산의 적정 비중은 X%이다"**라는 `Target Weights`를 관리합니다. 이는 VW-TSMOM(Volatility Weighted Time Series Momentum)과 같은 전략에서 변동성에 따른 정밀한 비중 조절을 가능하게 합니다.
 
@@ -22,7 +27,9 @@ tags: [architecture, portfolio-manager, vectorbt, risk-management]
 `Signal at Close` → `Execute at Next Open` 원칙을 시스템 레벨에서 강제합니다. 오늘 종가 데이터를 기반으로 계산된 목표 비중은 반드시 다음 캔들의 시가(Open)에 집행됩니다.
 
 ### 🔹 Fail-Safe & 리스크 표준
-단순 손절매를 넘어 펀딩비가 고려된 실질 수익률(Net Return) 관리와 CDaR(Conditional Drawdown at Risk) 기반의 동적 변동성 타겟팅을 적용합니다.
+- **격리 마진 (Isolated Margin):** 포지션별로 증거금을 독립시켜, 강제 청산 시 해당 포지션의 증거금만 손실되도록 합니다.
+- **단방향 모드 (One-Way Mode):** 하나의 종목에 대해 Long 또는 Short 중 하나만 보유합니다.
+- **서버 사이드 스탑 (Server-side Stop):** 주문 시 자동으로 손절 주문을 함께 등록하여 봇 장애 시에도 자산을 보호합니다.
 
 ---
 
@@ -57,13 +64,34 @@ graph TD
 
 ## 3. 핵심 모듈 상세 (Module Details)
 
-### 3.1. 자금 관리 (Money Management)
+### 3.1. 설정 객체 분리 (Config Separation)
+전략의 수학적 파라미터와 자금 운용 파라미터를 Pydantic 모델로 엄격히 분리합니다.
+
+```python
+from pydantic import BaseModel, Field
+
+# 1. 전략 설정 (수학적 논리)
+class TSMOMConfig(BaseModel):
+    lookback: int = 24          # 모멘텀 기간
+    vol_window: int = 24        # 변동성 기간
+    vol_target: float = 0.15    # 목표 변동성 (신호 강도 계산용)
+
+# 2. PM 설정 (자금 및 리스크)
+class PortfolioConfig(BaseModel):
+    init_cash: float = 10000.0
+    leverage: float = 10.0
+    sl_stop: float = 0.02       # 전략적 손절 (2%)
+    order_size_pct: float = 1.0 # 자산 대비 투입 비중 (100%)
+    fees: float = 0.0004
+```
+
+### 3.2. 자금 관리 (Money Management)
 `vectorbt`의 `from_orders` 엔진을 활용하여 연속적인 리밸런싱을 수행합니다.
 
 - **Size Type:** `targetpercent`를 사용하여 현재 보유량과 목표 비중의 차이만큼만 매매를 발생시켜 거래 비용을 최적화합니다.
 - **Continuous Rebalancing:** 신호가 유지되더라도 변동성 변화에 따라 비중을 동적으로 조절합니다.
 
-### 3.2. 실행 및 비용 모델 (Execution & Cost Model)
+### 3.3. 실행 및 비용 모델 (Execution & Cost Model)
 실전과 백테스트의 괴리를 최소화하기 위해 보수적인 비용 모델을 적용합니다.
 
 | 항목 | 설정값 (권장) | 비고 |
@@ -72,13 +100,12 @@ graph TD
 | **Slippage** | 0.01% | 고정 슬리피지 적용 |
 | **Execution Price** | Next Open | 신호 발생 다음 봉 시가 체결 |
 
-### 3.3. 리스크 엔진 (Risk Engine)
+### 3.4. 리스크 엔진 (Risk Engine)
 이중 구조의 리스크 관리 체계를 구축합니다.
 
 1.  **전략 레벨 청산:** ATR 기반 동적 손절 등 전략 로직에 의한 청산.
 2.  **엔진 레벨 가드레일:** `sl_stop` (예: 5~10%)을 통한 시스템 오류 및 블랙 스완 대비 최후 방어선.
-
----
+3.  **Reduce-Only:** 손절 주문은 반드시 `reduceOnly: True` 옵션을 주어 의도치 않은 포지션 생성을 방지합니다.
 
 ## 4. 2026 퀀트 트렌드 반영
 
