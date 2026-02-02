@@ -24,7 +24,11 @@ from src.models.backtest import (
     PerformanceMetrics,
     TradeRecord,
 )
+from src.portfolio.config import PortfolioManagerConfig
 from src.strategy.base import BaseStrategy
+
+# 전략 생성 (파라미터 주입)
+from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
 
 # VectorBT is an optional dependency
 # TYPE_CHECKING import removed to avoid unused import warning
@@ -34,17 +38,23 @@ class BacktestEngine:
     """VectorBT 기반 백테스트 엔진.
 
     전략과 데이터를 받아 VectorBT로 시뮬레이션을 수행합니다.
-    수수료, 슬리피지 등 현실적인 비용을 적용합니다.
+    PortfolioManagerConfig를 통해 집행 규칙, 리스크 가드레일, 비용을 설정합니다.
 
     Attributes:
-        cost_model: 거래 비용 모델
+        portfolio_config: 포트폴리오 매니저 설정
+        cost_model: 거래 비용 모델 (portfolio_config에서 추출)
         initial_capital: 초기 자본
         freq: 데이터 주기 (연환산 계산용)
 
     Example:
         >>> from src.strategy.tsmom import TSMOMStrategy
+        >>> from src.portfolio import PortfolioManagerConfig
+        >>> # 기본 설정 사용
+        >>> engine = BacktestEngine(initial_capital=10000)
+        >>> result = engine.run(TSMOMStrategy(), ohlcv_df)
+        >>> # 보수적 설정 사용
         >>> engine = BacktestEngine(
-        ...     cost_model=CostModel.binance_futures(),
+        ...     portfolio_config=PortfolioManagerConfig.conservative(),
         ...     initial_capital=10000,
         ... )
         >>> result = engine.run(TSMOMStrategy(), ohlcv_df)
@@ -53,18 +63,35 @@ class BacktestEngine:
 
     def __init__(
         self,
-        cost_model: CostModel | None = None,
+        portfolio_config: PortfolioManagerConfig | None = None,
         initial_capital: float = 10000.0,
         freq: str = "1h",
+        *,
+        cost_model: CostModel | None = None,  # DEPRECATED: use portfolio_config
     ) -> None:
         """BacktestEngine 초기화.
 
         Args:
-            cost_model: 거래 비용 모델 (None이면 바이낸스 선물 기본값)
+            portfolio_config: 포트폴리오 매니저 설정 (None이면 기본값)
             initial_capital: 초기 자본 (USD)
             freq: 데이터 주기 (VectorBT용, 예: "1h", "15m")
+            cost_model: [DEPRECATED] 거래 비용 모델 - portfolio_config 사용 권장
+
+        Note:
+            cost_model 파라미터는 하위 호환성을 위해 유지됩니다.
+            portfolio_config와 cost_model 모두 제공되면 portfolio_config가 우선합니다.
         """
-        self.cost_model = cost_model or CostModel.binance_futures()
+        # portfolio_config 설정 (기본값 또는 제공된 값)
+        if portfolio_config is not None:
+            self.portfolio_config = portfolio_config
+        elif cost_model is not None:
+            # 하위 호환성: cost_model만 제공된 경우
+            self.portfolio_config = PortfolioManagerConfig(cost_model=cost_model)
+        else:
+            self.portfolio_config = PortfolioManagerConfig()
+
+        # cost_model은 portfolio_config에서 추출
+        self.cost_model = self.portfolio_config.cost_model
         self.initial_capital = initial_capital
         self.freq = freq
 
@@ -108,9 +135,7 @@ class BacktestEngine:
         metrics = self._calculate_metrics(portfolio)
 
         # 벤치마크 비교
-        benchmark = self._compare_benchmark(
-            portfolio, benchmark_data or data, symbol
-        )
+        benchmark = self._compare_benchmark(portfolio, benchmark_data or data, symbol)
 
         # 거래 기록 추출
         trades = self._extract_trades(portfolio, symbol)
@@ -238,13 +263,10 @@ class BacktestEngine:
         df: pd.DataFrame,
         signals: Any,  # StrategySignals
     ) -> Any:  # vbt.Portfolio
-        """VectorBT Portfolio 생성 (from_signals with Long/Short 분리).
+        """VectorBT Portfolio 생성 (execution_mode에 따라 라우팅).
 
-        Long과 Short 시그널을 분리하여 전달하고,
-        upon_opposite_entry="reverse"로 포지션 반전을 처리합니다.
-
-        Note: SizeType.Percent는 반전을 지원하지 않으므로,
-        고정 비율 (100%)로 진입하고 반전 시 자동으로 처리합니다.
+        PortfolioManagerConfig의 execution_mode 설정에 따라
+        적절한 포트폴리오 생성 메서드를 호출합니다.
 
         Args:
             vbt: VectorBT 모듈
@@ -254,10 +276,100 @@ class BacktestEngine:
         Returns:
             vbt.Portfolio 인스턴스
         """
-        import numpy as np
+        if self.portfolio_config.execution_mode == "orders":
+            return self._create_portfolio_from_orders(vbt, df, signals)
+        return self._create_portfolio_from_signals(vbt, df, signals)
 
-        # VectorBT 비용 파라미터
-        vbt_params = self.cost_model.to_vbt_params()
+    def _create_portfolio_from_orders(
+        self,
+        vbt: Any,  # VectorBT module
+        df: pd.DataFrame,
+        signals: Any,  # StrategySignals
+    ) -> Any:  # vbt.Portfolio
+        """VectorBT Portfolio 생성 (from_orders - 연속 리밸런싱).
+
+        VW-TSMOM과 같이 매 봉마다 목표 비중(target_weights)에 맞춰
+        리밸런싱이 필요한 전략에 사용합니다.
+
+        signals.strength를 target_weights로 사용하며:
+        - Look-Ahead Bias 방지를 위해 shift(1) 적용
+        - max_leverage_cap으로 레버리지 클램핑
+        - rebalance_threshold로 거래 비용 최적화
+
+        Args:
+            vbt: VectorBT 모듈
+            df: 전처리된 DataFrame
+            signals: 전략 시그널 (strength가 target_weights로 사용됨)
+
+        Returns:
+            vbt.Portfolio 인스턴스
+        """
+        pm = self.portfolio_config
+
+        # 1. target_weights 계산 (strength가 이미 direction * vol_scalar)
+        target_weights: pd.Series = signals.strength.copy()
+
+        # 2. Look-Ahead Bias 방지: 현재 봉의 시그널은 다음 봉에 적용
+        target_weights = pd.Series(
+            target_weights.shift(1).fillna(0),
+            index=target_weights.index,
+        )
+
+        # 3. max_leverage_cap 적용 (전략 요청과 무관한 시스템 상한)
+        target_weights = target_weights.clip(
+            lower=-pm.max_leverage_cap,
+            upper=pm.max_leverage_cap,
+        )
+
+        # 4. rebalance_threshold 적용 (거래 비용 최적화)
+        target_weights = self._apply_rebalance_threshold(
+            target_weights,
+            pm.rebalance_threshold,
+        )
+
+        # 5. price 결정 (next_open 또는 close)
+        # next_open: 시그널 발생 다음 봉 시가에 체결 (Look-Ahead Bias 방지)
+        price = df["open"] if pm.price_type == "next_open" else df["close"]
+
+        # 6. Portfolio 생성
+        portfolio = vbt.Portfolio.from_orders(
+            close=df["close"],
+            size=target_weights,
+            size_type="targetpercent",
+            price=price,
+            fees=pm.cost_model.effective_fee,
+            slippage=pm.cost_model.slippage,
+            init_cash=self.initial_capital,
+            freq=self.freq,
+        )
+
+        return portfolio
+
+    def _create_portfolio_from_signals(
+        self,
+        vbt: Any,  # VectorBT module
+        df: pd.DataFrame,
+        signals: Any,  # StrategySignals
+    ) -> Any:  # vbt.Portfolio
+        """VectorBT Portfolio 생성 (from_signals - 이벤트 기반).
+
+        단순한 entry/exit 시그널에 반응하는 전략에 사용합니다.
+        Long과 Short 시그널을 분리하여 전달하고,
+        upon_opposite_entry="reverse"로 포지션 반전을 처리합니다.
+
+        Note: SizeType.Percent는 반전을 지원하지 않으므로,
+        고정 비율 (100%)로 진입하고 반전 시 자동으로 처리합니다.
+
+        Args:
+            vbt: VectorBT 모듈
+            df: 전처리된 DataFrame
+            signals: 전략 시그널 (entries, exits, direction)
+
+        Returns:
+            vbt.Portfolio 인스턴스
+        """
+        pm_config = self.portfolio_config
+        vbt_params = pm_config.to_vbt_params()
 
         # Long/Short 진입 시그널 분리 (entries를 direction으로 분리)
         long_entries = signals.entries & (signals.direction == 1)
@@ -278,14 +390,52 @@ class BacktestEngine:
             short_entries=short_entries,
             short_exits=short_exits,
             size=np.inf,  # 가용 현금 전액 사용
-            upon_opposite_entry="reverse",  # Long↔Short 직접 전환
-            accumulate=False,  # 포지션 누적 안함
+            upon_opposite_entry=pm_config.upon_opposite_entry,
+            accumulate=pm_config.accumulate,
             init_cash=self.initial_capital,
             freq=self.freq,
             **vbt_params,
         )
 
         return portfolio
+
+    def _apply_rebalance_threshold(
+        self,
+        target_weights: pd.Series,
+        threshold: float,
+    ) -> pd.Series:
+        """리밸런싱 임계값 적용 (거래 비용 최적화).
+
+        목표 비중의 변화량이 임계값 미만이면 이전 값을 유지하여
+        불필요한 거래를 줄입니다.
+
+        Args:
+            target_weights: 목표 비중 시리즈
+            threshold: 리밸런싱 임계값 (예: 0.05 = 5%)
+
+        Returns:
+            임계값이 적용된 목표 비중 시리즈
+        """
+        if threshold <= 0:
+            return target_weights
+
+        result = target_weights.copy()
+        prev_weight = 0.0
+
+        # 벡터화가 어려운 로직이므로 iterative 처리
+        # (성능이 중요하면 Numba로 최적화 가능)
+        for i in range(len(result)):
+            current_target = result.iloc[i]
+            change = abs(current_target - prev_weight)
+
+            if change < threshold:
+                # 변화량이 임계값 미만이면 이전 비중 유지
+                result.iloc[i] = prev_weight
+            else:
+                # 변화량이 임계값 이상이면 새 비중 적용
+                prev_weight = current_target
+
+        return result
 
     def _calculate_metrics(
         self,
@@ -450,14 +600,18 @@ class BacktestEngine:
                     entry_time=entry_dt,
                     exit_time=exit_dt,
                     symbol=symbol,
-                    direction="LONG" if row.get("Direction", "Long") == "Long" else "SHORT",
+                    direction="LONG"
+                    if row.get("Direction", "Long") == "Long"
+                    else "SHORT",
                     entry_price=Decimal(str(row["Entry Price"])),
                     exit_price=Decimal(str(row["Exit Price"]))
                     if pd.notna(row.get("Exit Price"))
                     else None,
                     size=Decimal(str(row["Size"])),
                     pnl=Decimal(str(row["PnL"])) if pd.notna(row.get("PnL")) else None,
-                    pnl_pct=float(row["Return [%]"]) if pd.notna(row.get("Return [%]")) else None,
+                    pnl_pct=float(row["Return [%]"])
+                    if pd.notna(row.get("Return [%]"))
+                    else None,
                 )
                 records.append(record)
 
@@ -494,11 +648,13 @@ def run_parameter_sweep(  # noqa: PLR0913
     strategy_class: type[BaseStrategy],
     data: pd.DataFrame,
     param_grid: dict[str, list[Any]],
-    cost_model: CostModel | None = None,
+    portfolio_config: PortfolioManagerConfig | None = None,
     initial_capital: float = 10000.0,
     freq: str = "1h",
     symbol: str = "BTC/USDT",
     top_n: int = 10,
+    *,
+    cost_model: CostModel | None = None,  # DEPRECATED: use portfolio_config
 ) -> pd.DataFrame:
     """파라미터 스윕 실행.
 
@@ -509,11 +665,12 @@ def run_parameter_sweep(  # noqa: PLR0913
         strategy_class: 전략 클래스 (BaseStrategy 상속)
         data: OHLCV DataFrame
         param_grid: 파라미터 그리드 (예: {"lookback": [12, 24, 48]})
-        cost_model: 거래 비용 모델
+        portfolio_config: 포트폴리오 매니저 설정
         initial_capital: 초기 자본
         freq: 데이터 주기
         symbol: 심볼
         top_n: 상위 N개 결과만 반환
+        cost_model: [DEPRECATED] 거래 비용 모델 - portfolio_config 사용 권장
 
     Returns:
         파라미터별 성과 DataFrame (Sharpe 기준 정렬)
@@ -523,13 +680,18 @@ def run_parameter_sweep(  # noqa: PLR0913
         ...     TSMOMStrategy,
         ...     data,
         ...     param_grid={"lookback": [12, 24, 48], "vol_target": [0.10, 0.15, 0.20]},
+        ...     portfolio_config=PortfolioManagerConfig.conservative(),
         ... )
         >>> print(results.head())
     """
     from itertools import product  # noqa: PLC0415
 
+    # 하위 호환성: cost_model이 제공되면 portfolio_config로 변환
+    if portfolio_config is None and cost_model is not None:
+        portfolio_config = PortfolioManagerConfig(cost_model=cost_model)
+
     engine = BacktestEngine(
-        cost_model=cost_model or CostModel.binance_futures(),
+        portfolio_config=portfolio_config,
         initial_capital=initial_capital,
         freq=freq,
     )
@@ -542,10 +704,6 @@ def run_parameter_sweep(  # noqa: PLR0913
         params = dict(zip(param_names, combination, strict=True))
 
         try:
-            # 전략 생성 (파라미터 주입)
-            # TSMOM의 경우 TSMOMConfig 사용
-            from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy  # noqa: PLC0415
-
             if strategy_class == TSMOMStrategy:
                 config = TSMOMConfig(**params)
                 strategy = TSMOMStrategy(config)
@@ -554,26 +712,30 @@ def run_parameter_sweep(  # noqa: PLR0913
 
             result = engine.run(strategy, data, symbol)
 
-            results.append({
-                **params,
-                "sharpe_ratio": result.metrics.sharpe_ratio,
-                "total_return": result.metrics.total_return,
-                "max_drawdown": result.metrics.max_drawdown,
-                "win_rate": result.metrics.win_rate,
-                "total_trades": result.metrics.total_trades,
-                "cagr": result.metrics.cagr,
-            })
+            results.append(
+                {
+                    **params,
+                    "sharpe_ratio": result.metrics.sharpe_ratio,
+                    "total_return": result.metrics.total_return,
+                    "max_drawdown": result.metrics.max_drawdown,
+                    "win_rate": result.metrics.win_rate,
+                    "total_trades": result.metrics.total_trades,
+                    "cagr": result.metrics.cagr,
+                }
+            )
         except Exception as e:
-            results.append({
-                **params,
-                "sharpe_ratio": np.nan,
-                "total_return": np.nan,
-                "max_drawdown": np.nan,
-                "win_rate": np.nan,
-                "total_trades": 0,
-                "cagr": np.nan,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    **params,
+                    "sharpe_ratio": np.nan,
+                    "total_return": np.nan,
+                    "max_drawdown": np.nan,
+                    "win_rate": np.nan,
+                    "total_trades": 0,
+                    "cagr": np.nan,
+                    "error": str(e),
+                }
+            )
 
     # DataFrame으로 변환 및 정렬
     results_df = pd.DataFrame(results)

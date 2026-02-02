@@ -4,10 +4,18 @@
 전략 성과 평가, 비용 모델링, 성과 지표 계산을 담당합니다.
 
 Example:
-    >>> from src.backtest import BacktestEngine, CostModel
+    >>> from src.backtest import BacktestEngine, PortfolioManagerConfig
     >>> from src.strategy.tsmom import TSMOMStrategy
     >>>
-    >>> engine = BacktestEngine(cost_model=CostModel.binance_futures())
+    >>> # 기본 설정 사용
+    >>> engine = BacktestEngine(initial_capital=10000)
+    >>> result = engine.run(strategy=TSMOMStrategy(), data=ohlcv_df)
+    >>>
+    >>> # 보수적 설정 사용
+    >>> engine = BacktestEngine(
+    ...     portfolio_config=PortfolioManagerConfig.conservative(),
+    ...     initial_capital=10000,
+    ... )
     >>> result = engine.run(strategy=TSMOMStrategy(), data=ohlcv_df)
     >>> print(result.metrics.sharpe_ratio)
 """
@@ -33,14 +41,12 @@ from src.backtest.reporter import (
     generate_report_from_backtest_result,
     print_performance_summary,
 )
+from src.portfolio.config import PortfolioManagerConfig
 
 __all__ = [
-    # Engine
     "BacktestEngine",
-    "run_parameter_sweep",
-    # Cost Model
     "CostModel",
-    # Metrics
+    "PortfolioManagerConfig",
     "calculate_all_metrics",
     "calculate_cagr",
     "calculate_calmar_ratio",
@@ -53,8 +59,8 @@ __all__ = [
     "calculate_total_return",
     "calculate_volatility",
     "calculate_win_rate",
-    # Reporter
     "generate_quantstats_report",
     "generate_report_from_backtest_result",
     "print_performance_summary",
+    "run_parameter_sweep",
 ]

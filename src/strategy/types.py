@@ -47,16 +47,21 @@ class StrategySignals(NamedTuple):
     모든 전략의 `generate_signals()` 메서드는 이 타입을 반환해야 합니다.
     VectorBT 및 QuantStats와 호환되는 표준 출력 형식입니다.
 
+    Note:
+        strength는 전략이 계산한 순수 시그널 강도입니다.
+        레버리지 클램핑(max_leverage_cap)과 필터링(rebalance_threshold)은
+        PortfolioManagerConfig에서 처리됩니다.
+
     Attributes:
         entries: 진입 시그널 (True = 진입, False = 대기)
         exits: 청산 시그널 (True = 청산, False = 유지)
         direction: 방향 시리즈 (-1, 0, 1)
-        strength: 시그널 강도 (-max_leverage ~ +max_leverage)
+        strength: 시그널 강도 (레버리지 무제한, PM에서 클램핑)
 
     Example:
         >>> signals = strategy.generate_signals(df)
         >>> signals.entries  # pd.Series[bool]
-        >>> signals.strength  # pd.Series[float] for position sizing
+        >>> signals.strength  # pd.Series[float] (unbounded)
     """
 
     entries: pd.Series  # bool Series - 진입 시그널

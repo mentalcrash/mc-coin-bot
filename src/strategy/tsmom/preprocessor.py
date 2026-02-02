@@ -200,13 +200,17 @@ def preprocess(
     OHLCV DataFrame에 VW-TSMOM 전략에 필요한 모든 지표를 계산하여 추가합니다.
     모든 계산은 벡터화되어 있으며 for 루프를 사용하지 않습니다.
 
+    Note:
+        레버리지 클램핑과 시그널 필터링은 PortfolioManagerConfig에서 처리됩니다.
+        전략은 순수한 raw_signal만 생성하고, PM이 max_leverage_cap과
+        rebalance_threshold를 적용합니다.
+
     Calculated Columns:
         - returns: 수익률 (로그 또는 단순)
         - realized_vol: 실현 변동성 (연환산)
         - vw_momentum: 거래량 가중 모멘텀
         - vol_scalar: 변동성 스케일러
-        - raw_signal: 원시 시그널 (방향 x 스케일러)
-        - position_size: 포지션 크기 (레버리지 제한 적용)
+        - raw_signal: 원시 시그널 (방향 x 스케일러, 레버리지 무제한)
 
     Args:
         df: OHLCV DataFrame (DatetimeIndex 필수)
@@ -279,19 +283,9 @@ def preprocess(
 
     # 5. 원시 시그널 계산 (방향 x 스케일러)
     # np.sign()으로 방향 결정, vol_scalar로 크기 조절
+    # 레버리지 클램핑과 시그널 필터링은 PortfolioManagerConfig에서 처리
     momentum_direction = np.sign(result["vw_momentum"])
     result["raw_signal"] = momentum_direction * result["vol_scalar"]
-
-    # 6. 포지션 크기 (레버리지 제한 적용)
-    result["position_size"] = result["raw_signal"].clip(
-        lower=-config.max_leverage,
-        upper=config.max_leverage,
-    )
-
-    # 7. 시그널 임계값 필터 (선택적)
-    if config.signal_threshold > 0:
-        mask = result["position_size"].abs() < config.signal_threshold
-        result.loc[mask, "position_size"] = 0.0
 
     return result
 
@@ -318,7 +312,7 @@ def preprocess_live(
         >>> # 라이브 트레이딩 루프에서
         >>> buffer = buffer.append(new_candle).tail(200)
         >>> processed = preprocess_live(buffer, config)
-        >>> latest_signal = processed["position_size"].iloc[-1]
+        >>> latest_signal = processed["raw_signal"].iloc[-1]
     """
     # 버퍼 크기 제한
     if len(buffer) > max_rows:

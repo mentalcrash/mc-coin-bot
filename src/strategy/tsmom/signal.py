@@ -27,22 +27,26 @@ def generate_signals(
 
     Important:
         - 입력 DataFrame에는 preprocess()로 계산된 컬럼이 필요합니다.
-        - 필수 컬럼: position_size
+        - 필수 컬럼: raw_signal
         - entries/exits는 bool Series
         - direction은 -1, 0, 1 값을 가지는 int Series
-        - strength는 포지션 사이징에 사용되는 float Series
+        - strength는 순수 시그널 강도 (레버리지 제한 미적용)
+
+    Note:
+        레버리지 클램핑(max_leverage_cap)과 시그널 필터링(rebalance_threshold)은
+        PortfolioManagerConfig에서 처리됩니다. 전략은 순수한 시그널만 생성합니다.
 
     Args:
         df: 전처리된 DataFrame (preprocess() 출력)
-            필수 컬럼: position_size
-        config: TSMOM 설정 (선택적, 임계값 적용 시 사용)
+            필수 컬럼: raw_signal
+        config: TSMOM 설정 (미사용, 하위 호환성 유지)
 
     Returns:
         StrategySignals NamedTuple:
             - entries: 진입 시그널 (bool Series)
             - exits: 청산 시그널 (bool Series)
             - direction: 방향 시리즈 (-1, 0, 1)
-            - strength: 시그널 강도 (-max_leverage ~ +max_leverage)
+            - strength: 시그널 강도 (레버리지 무제한)
 
     Raises:
         ValueError: 필수 컬럼 누락 시
@@ -52,29 +56,33 @@ def generate_signals(
         >>> processed_df = preprocess(ohlcv_df, config)
         >>> signals = generate_signals(processed_df)
         >>> signals.entries  # pd.Series[bool]
-        >>> signals.strength  # pd.Series[float]
+        >>> signals.strength  # pd.Series[float] (unbounded)
     """
+    # config 파라미터는 하위 호환성을 위해 유지 (미사용)
+    _ = config
+
     # 입력 검증
-    if "position_size" not in df.columns:
-        msg = "Missing required column: 'position_size'. Run preprocess() first."
+    if "raw_signal" not in df.columns:
+        msg = "Missing required column: 'raw_signal'. Run preprocess() first."
         raise ValueError(msg)
 
     # 1. Shift(1) 적용: 전봉 기준 시그널 (미래 참조 편향 방지)
     # 현재 봉의 시그널은 전봉까지의 데이터로 계산된 값을 사용
-    position_series: pd.Series = df["position_size"]  # type: ignore[assignment]
-    position_shifted: pd.Series = position_series.shift(1)  # type: ignore[assignment]
+    signal_series: pd.Series = df["raw_signal"]  # type: ignore[assignment]
+    signal_shifted: pd.Series = signal_series.shift(1)  # type: ignore[assignment]
 
     # 2. 방향 계산 (-1, 0, 1)
-    direction_raw = pd.Series(np.sign(position_shifted), index=df.index)
+    direction_raw = pd.Series(np.sign(signal_shifted), index=df.index)
     direction = pd.Series(
         direction_raw.fillna(0).astype(int),
         index=df.index,
         name="direction",
     )
 
-    # 3. 강도 계산 (레버리지 스케일)
+    # 3. 강도 계산 (순수 시그널, 레버리지 무제한)
+    # PortfolioManagerConfig.max_leverage_cap에서 클램핑 처리
     strength = pd.Series(
-        position_shifted.fillna(0),
+        signal_shifted.fillna(0),
         index=df.index,
         name="strength",
     )
@@ -182,5 +190,3 @@ def get_current_signal(df: pd.DataFrame) -> tuple[Direction, float]:
     current_strength = float(signals.strength.iloc[-1])
 
     return current_direction, current_strength
-
-
