@@ -12,6 +12,7 @@ Rules Applied:
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
 """
 
+import logging
 from typing import Annotated
 
 import pandas as pd
@@ -77,17 +78,17 @@ def _load_silver_data(symbol: str, years: list[int]) -> pd.DataFrame:
     return combined
 
 
-def _resample_to_hourly(df: pd.DataFrame) -> pd.DataFrame:
-    """1분봉을 1시간봉으로 리샘플링.
+def _resample_to_1d(df: pd.DataFrame) -> pd.DataFrame:
+    """1분봉을 일봉으로 리샘플링.
 
     Args:
         df: 1분봉 DataFrame
 
     Returns:
-        1시간봉 DataFrame
+        일봉 DataFrame
     """
     resampled: pd.DataFrame = (
-        df.resample("1h")
+        df.resample("1D")
         .agg(
             {  # type: ignore[assignment]
                 "open": "first",
@@ -121,17 +122,17 @@ def run(  # noqa: PLR0913, PLR0915
     ] = [2024, 2025],  # noqa: B006
     lookback: Annotated[
         int,
-        typer.Option("--lookback", "-l", help="Momentum lookback period (hours)"),
-    ] = 24,
+        typer.Option("--lookback", "-l", help="Momentum lookback period (days)"),
+    ] = 30,
     vol_target: Annotated[
         float,
         typer.Option("--vol-target", "-v", help="Annual volatility target (0.0-1.0)"),
-    ] = 0.15,
+    ] = 0.40,
     # Portfolio Manager options
     max_leverage_cap: Annotated[
         float,
         typer.Option("--max-leverage", "-m", help="Maximum leverage cap (PM setting)"),
-    ] = 3.0,
+    ] = 2.0,
     rebalance_threshold: Annotated[
         float,
         typer.Option("--rebal-threshold", "-r", help="Rebalancing threshold (0.0-0.5)"),
@@ -168,14 +169,23 @@ def run(  # noqa: PLR0913, PLR0915
         uv run python -m src.cli.backtest run ETH/USDT -y 2024 --lookback 48 --vol-target 0.20
         uv run python -m src.cli.backtest run BTC/USDT -y 2025 --max-leverage 2.0 --report
     """
+    # 🔍 디버그: 로깅 설정 (verbose 모드에서 INFO 레벨)
+    if verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s | %(name)s | %(message)s",
+        )
+        logger = logging.getLogger(__name__)
+        logger.info("🔍 Debug mode enabled - detailed logs will be shown")
+
     console.print(
         Panel.fit(
             (
                 f"[bold]VW-TSMOM Backtest[/bold]\n"
                 f"Symbol: {symbol}\n"
                 f"Years: {', '.join(map(str, year))}\n"
-                f"Strategy: lookback={lookback}h, vol_target={vol_target:.0%}\n"
-                f"PM: max_lev={max_leverage_cap}x, rebal={rebalance_threshold:.0%}, mode={execution_mode}"
+                f"Strategy: lookback={lookback}d (daily candles), vol_target={vol_target:.0%}\n"
+                f"PM: max_lev={max_leverage_cap}x, rebal={rebalance_threshold:.1%}, mode={execution_mode}"
             ),
             border_style="blue",
         )
@@ -191,9 +201,9 @@ def run(  # noqa: PLR0913, PLR0915
         raise typer.Exit(code=1) from e
 
     # Step 2: 리샘플링
-    console.print("\n[bold cyan]Step 2: Resampling to 1h...[/bold cyan]")
-    hourly_df = _resample_to_hourly(df)
-    console.print(f"  Resampled: {len(hourly_df):,} hourly candles")
+    console.print("\n[bold cyan]Step 2: Resampling to 1D...[/bold cyan]")
+    daily_df = _resample_to_1d(df)
+    console.print(f"  Resampled: {len(daily_df):,} daily candles")
 
     # Step 3: 전략 설정
     console.print("\n[bold cyan]Step 3: Configuring strategy...[/bold cyan]")
@@ -264,13 +274,13 @@ def run(  # noqa: PLR0913, PLR0915
         engine = BacktestEngine(
             portfolio_config=pm_config,
             initial_capital=10000.0,
-            freq="1h",
+            freq="1D",
         )
 
         # 백테스트 실행 (리포트 생성 시 returns도 함께 반환)
         if report:
             result, strategy_returns, benchmark_returns = engine.run_with_returns(
-                strategy, hourly_df, symbol
+                strategy, daily_df, symbol
             )
 
             # 결과 출력
@@ -285,7 +295,7 @@ def run(  # noqa: PLR0913, PLR0915
             )
             console.print(f"  [green]✓[/green] Report saved: {report_path}")
         else:
-            result = engine.run(strategy, hourly_df, symbol)
+            result = engine.run(strategy, daily_df, symbol)
             print_performance_summary(result)
 
     except ImportError as e:
@@ -329,8 +339,8 @@ def optimize(
     console.print("\n[bold cyan]Loading data...[/bold cyan]")
     try:
         df = _load_silver_data(symbol, year)
-        hourly_df = _resample_to_hourly(df)
-        console.print(f"  Total: {len(hourly_df):,} hourly candles")
+        daily_df = _resample_to_1d(df)
+        console.print(f"  Total: {len(daily_df):,} daily candles")
     except FileNotFoundError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -350,7 +360,7 @@ def optimize(
         f"\n[bold cyan]Running {total_combinations} parameter combinations...[/bold cyan]"
     )
     console.print(
-        "  [dim]Note: PM settings (max_leverage_cap=3.0) applied uniformly[/dim]"
+        "  [dim]Note: PM settings (max_leverage_cap=2.0) applied uniformly[/dim]"
     )
 
     try:
@@ -359,7 +369,7 @@ def optimize(
 
         results = run_parameter_sweep(
             strategy_class=TSMOMStrategy,
-            data=hourly_df,
+            data=daily_df,
             param_grid=param_grid,
             portfolio_config=pm_config,
             symbol=symbol,
@@ -397,7 +407,7 @@ def optimize(
                     f"[bold green]Best Strategy Parameters[/bold green]\n\n"
                     f"Lookback: {int(best['lookback'])} hours\n"
                     f"Vol Target: {best['vol_target']:.0%}\n\n"
-                    f"[bold]Performance[/bold] (with PM max_leverage_cap=3.0x)\n"
+                    f"[bold]Performance[/bold] (with PM max_leverage_cap=2.0x)\n"
                     f"Sharpe: {best['sharpe_ratio']:.2f} | Return: {best['total_return']:+.1f}% | MDD: {best['max_drawdown']:.1f}%"
                 ),
                 border_style="green",

@@ -44,23 +44,23 @@ class TSMOMConfig(BaseModel):
 
     # 모멘텀 계산 파라미터
     lookback: int = Field(
-        default=24,
+        default=30,  # 30일 (일봉)
         ge=6,
-        le=168,  # 최대 1주일 (시간봉 기준)
+        le=365,  # 최대 1년 (일봉 기준)
         description="모멘텀 계산 기간 (캔들 수)",
     )
 
     # 변동성 파라미터
     vol_window: int = Field(
-        default=24,
+        default=30,  # 30일 (일봉)
         ge=6,
-        le=168,
+        le=365,
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.15,
+        default=0.40,
         ge=0.05,
-        le=0.50,
+        le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
     )
     min_volatility: float = Field(
@@ -72,9 +72,9 @@ class TSMOMConfig(BaseModel):
 
     # 시간 프레임 관련
     annualization_factor: float = Field(
-        default=8760.0,  # 24시간 * 365일 (시간봉 기준)
+        default=365.0,  # 일봉 기준
         gt=0,
-        description="연환산 계수 (시간봉: 8760, 분봉: 525600)",
+        description="연환산 계수 (일봉: 365, 4시간봉: 2190, 시간봉: 8760)",
     )
 
     # 옵션
@@ -87,6 +87,40 @@ class TSMOMConfig(BaseModel):
         ge=2,
         le=24,
         description="모멘텀 스무딩 윈도우 (선택적, EMA 적용)",
+    )
+
+    # 🆕 Z-Score 정규화 & 앙상블 옵션
+    use_zscore: bool = Field(
+        default=True,
+        description="Z-Score 정규화 사용 여부 (신호 품질 향상)",
+    )
+    ensemble_windows: tuple[int, ...] = Field(
+        default=(10, 20, 40),  # 일봉 기준: 10일, 20일, 40일
+        description="앙상블 룩백 윈도우 (캔들 수). 여러 타임프레임 평균으로 휩쏘 감소.",
+    )
+    zscore_clip: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=5.0,
+        description="Z-Score 클리핑 범위 (-clip ~ +clip)",
+    )
+
+    # 🆕 Trend Filter & Deadband (휩쏘 방지)
+    use_trend_filter: bool = Field(
+        default=True,
+        description="국면 필터 사용 여부 (상승장: Long Only, 하락장: Short Only)",
+    )
+    trend_ma_period: int = Field(
+        default=50,
+        ge=20,
+        le=500,
+        description="추세 판단용 이동평균 기간 (일봉 기준, 기본 50일)",
+    )
+    deadband_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.5,
+        description="불감대 임계값 (|신호| < threshold면 중립 유지)",
     )
 
     @model_validator(mode="after")

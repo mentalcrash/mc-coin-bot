@@ -63,7 +63,7 @@ class PortfolioManagerConfig(BaseModel):
         default="orders",
         description=(
             "백테스트 실행 모드: "
-            "orders=연속 리밸런싱 (VW-TSMOM 등), "
+            "orders=연속 리밸런싱 (VW-TSMOM 등 동적 레버리지 전략), "
             "signals=이벤트 기반 (단순 entry/exit)"
         ),
     )
@@ -98,7 +98,7 @@ class PortfolioManagerConfig(BaseModel):
     # Risk Guardrails (전략 외부 안전장치)
     # ==========================================================================
     max_leverage_cap: float = Field(
-        default=3.0,
+        default=2.0,
         ge=0.5,
         le=10.0,
         description="최대 레버리지 상한 (전략 요청과 무관한 시스템 제한)",

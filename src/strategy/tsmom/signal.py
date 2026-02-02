@@ -9,11 +9,15 @@ Rules Applied:
     - Shift(1) Rule: 미래 참조 편향 방지
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 
 from src.strategy.tsmom.config import TSMOMConfig
 from src.strategy.types import Direction, StrategySignals
+
+logger = logging.getLogger(__name__)
 
 
 def generate_signals(
@@ -79,15 +83,35 @@ def generate_signals(
         name="direction",
     )
 
-    # 3. 강도 계산 (순수 시그널, 레버리지 무제한)
-    # PortfolioManagerConfig.max_leverage_cap에서 클램핑 처리
+    # 3. 🔧 FIX: Trend Filter 적용 (shift 후)
+    # shift된 신호와 shift된 추세를 매칭하여 필터링
+    signal_filtered = signal_shifted.copy()
+
+    if "trend_regime" in df.columns:
+        trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
+        trend_regime_shifted = trend_regime.shift(1)
+
+        # 상승장(shift된)인데 숏 신호(shift된)면 0으로
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == 1) & (signal_shifted < 0), 0, signal_filtered
+        )
+        # 하락장(shift된)인데 롱 신호(shift된)면 0으로
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == -1) & (signal_shifted > 0),
+            0,
+            signal_filtered_array,
+        )
+        # numpy array를 Series로 변환
+        signal_filtered = pd.Series(signal_filtered_array, index=df.index)
+
+    # 4. 강도 계산 (필터링된 시그널 사용)
     strength = pd.Series(
-        signal_shifted.fillna(0),
+        signal_filtered.fillna(0),
         index=df.index,
         name="strength",
     )
 
-    # 4. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 5. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -103,7 +127,7 @@ def generate_signals(
         name="entries",
     )
 
-    # 5. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 6. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
     to_neutral = (direction == Direction.NEUTRAL) & (
         prev_direction != Direction.NEUTRAL
@@ -115,6 +139,30 @@ def generate_signals(
         index=df.index,
         name="exits",
     )
+
+    # 🔍 디버그: 시그널 통계
+    valid_strength = strength[strength != 0]
+    long_signals = strength[strength > 0]
+    short_signals = strength[strength < 0]
+
+    logger.info(
+        f"📊 Signal Statistics | Total: {len(valid_strength)} signals, Long: {len(long_signals)} ({len(long_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%), Short: {len(short_signals)} ({len(short_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%)",
+    )
+    logger.info(
+        f"🎯 Entry/Exit Events | Long entries: {long_entry.sum()}, Short entries: {short_entry.sum()}, Exits: {exits.sum()}, Reversals: {reversal.sum()}",
+    )
+
+    # 샘플 롱/숏 진입 시점
+    if long_entry.sum() > 0:
+        first_long = long_entry[long_entry].index[0]
+        logger.info(
+            f"  📈 First Long Entry: {first_long}, Strength: {strength.loc[first_long]:.2f}"
+        )
+    if short_entry.sum() > 0:
+        first_short = short_entry[short_entry].index[0]
+        logger.info(
+            f"  📉 First Short Entry: {first_short}, Strength: {strength.loc[first_short]:.2f}"
+        )
 
     return StrategySignals(
         entries=entries,

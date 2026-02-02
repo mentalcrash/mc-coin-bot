@@ -9,6 +9,7 @@ Rules Applied:
     - #12 Data Engineering: Vectorization
 """
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -29,6 +30,8 @@ from src.strategy.base import BaseStrategy
 
 # 전략 생성 (파라미터 주입)
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
+
+logger = logging.getLogger(__name__)
 
 # VectorBT is an optional dependency
 # TYPE_CHECKING import removed to avoid unused import warning
@@ -307,24 +310,42 @@ class BacktestEngine:
         pm = self.portfolio_config
 
         # 1. target_weights 계산 (strength가 이미 direction * vol_scalar)
+        # Note: signal.py에서 이미 shift(1) 적용됨 → 여기서 추가 shift 불필요
         target_weights: pd.Series = signals.strength.copy()
 
-        # 2. Look-Ahead Bias 방지: 현재 봉의 시그널은 다음 봉에 적용
-        target_weights = pd.Series(
-            target_weights.shift(1).fillna(0),
-            index=target_weights.index,
-        )
+        # 🔍 디버그: Raw target weights (레버리지 클램핑 전)
+        valid_weights = target_weights.dropna()
+        if len(valid_weights) > 0:
+            logger.info(
+                f"📈 Raw Target Weights | Range: [{valid_weights.min():.2f}, {valid_weights.max():.2f}], Mean: {valid_weights.mean():.2f}, Std: {valid_weights.std():.2f}",
+            )
 
-        # 3. max_leverage_cap 적용 (전략 요청과 무관한 시스템 상한)
+        # 2. max_leverage_cap 적용 (전략 요청과 무관한 시스템 상한)
+        weights_before_cap = target_weights.copy()
         target_weights = target_weights.clip(
             lower=-pm.max_leverage_cap,
             upper=pm.max_leverage_cap,
         )
 
+        # 🔍 디버그: 레버리지 클램핑 효과
+        capped_count = (weights_before_cap.abs() > pm.max_leverage_cap).sum()
+        if capped_count > 0:
+            logger.warning(
+                f"⚠️ Leverage Capping | {capped_count} signals exceeded {pm.max_leverage_cap}x limit and were capped",
+            )
+
         # 4. rebalance_threshold 적용 (거래 비용 최적화)
+        weights_before_threshold = target_weights.copy()
         target_weights = self._apply_rebalance_threshold(
             target_weights,
             pm.rebalance_threshold,
+        )
+
+        # 🔍 디버그: Rebalance threshold 효과
+        num_before = weights_before_threshold.notna().sum()
+        num_after = target_weights.notna().sum()
+        logger.info(
+            f"🎯 Rebalance Threshold Effect | Before: {num_before} signals, After: {num_after} orders (Filtered: {num_before - num_after}, {(1 - num_after / num_before) * 100 if num_before > 0 else 0:.1f}%)",
         )
 
         # 5. price 결정 (next_open 또는 close)
@@ -336,6 +357,7 @@ class BacktestEngine:
             close=df["close"],
             size=target_weights,
             size_type="targetpercent",
+            direction="both",  # 🔧 FIX: 숏 포지션 허용
             price=price,
             fees=pm.cost_model.effective_fee,
             slippage=pm.cost_model.slippage,
@@ -406,34 +428,38 @@ class BacktestEngine:
     ) -> pd.Series:
         """리밸런싱 임계값 적용 (거래 비용 최적화).
 
-        목표 비중의 변화량이 임계값 미만이면 이전 값을 유지하여
-        불필요한 거래를 줄입니다.
+        목표 비중의 변화량이 임계값 미만이면 np.nan으로 설정하여
+        VectorBT가 해당 캔들에서 주문을 생성하지 않도록 합니다.
+        (np.nan = "주문 없음(Hold)" 의미)
 
         Args:
             target_weights: 목표 비중 시리즈
             threshold: 리밸런싱 임계값 (예: 0.05 = 5%)
 
         Returns:
-            임계값이 적용된 목표 비중 시리즈
+            임계값이 적용된 목표 비중 시리즈 (변화 없는 구간은 NaN)
         """
         if threshold <= 0:
             return target_weights
 
-        result = target_weights.copy()
-        prev_weight = 0.0
+        # 기본값은 모두 NaN (Hold)
+        result = pd.Series(np.nan, index=target_weights.index)
+        last_executed_weight = 0.0
 
         # 벡터화가 어려운 로직이므로 iterative 처리
-        # (성능이 중요하면 Numba로 최적화 가능)
-        for i in range(len(result)):
-            current_target = result.iloc[i]
-            change = abs(current_target - prev_weight)
+        # (직전 '실행된' 비중을 기억해야 하기 때문)
+        for i in range(len(target_weights)):
+            current_target = target_weights.iloc[i]
+            change = abs(current_target - last_executed_weight)
 
-            if change < threshold:
-                # 변화량이 임계값 미만이면 이전 비중 유지
-                result.iloc[i] = prev_weight
-            else:
-                # 변화량이 임계값 이상이면 새 비중 적용
-                prev_weight = current_target
+            # 임계값을 넘거나, 포지션 없는데 진입해야 하는 경우
+            if change >= threshold or (
+                last_executed_weight == 0 and current_target != 0
+            ):
+                # 주문 실행!
+                result.iloc[i] = current_target
+                last_executed_weight = current_target
+            # else: 변화가 작으면 NaN 유지 (주문 없음)
 
         return result
 
@@ -603,17 +629,61 @@ class BacktestEngine:
                     direction="LONG"
                     if row.get("Direction", "Long") == "Long"
                     else "SHORT",
-                    entry_price=Decimal(str(row["Entry Price"])),
-                    exit_price=Decimal(str(row["Exit Price"]))
-                    if pd.notna(row.get("Exit Price"))
+                    entry_price=Decimal(str(row["Avg Entry Price"])),
+                    exit_price=Decimal(str(row["Avg Exit Price"]))
+                    if pd.notna(row.get("Avg Exit Price"))
                     else None,
                     size=Decimal(str(row["Size"])),
                     pnl=Decimal(str(row["PnL"])) if pd.notna(row.get("PnL")) else None,
-                    pnl_pct=float(row["Return [%]"])
-                    if pd.notna(row.get("Return [%]"))
+                    pnl_pct=float(row["Return"]) * 100
+                    if pd.notna(row.get("Return"))
                     else None,
                 )
                 records.append(record)
+
+            # 🔍 디버그: 샘플 거래 내역 (롱/숏 분리)
+            # VectorBT에서 숏은 size가 아닌 direction으로 구분됨
+            long_trades = [r for r in records if r.direction == "LONG"]
+            short_trades = [r for r in records if r.direction == "SHORT"]
+
+            logger.info(
+                f"📋 Trade Summary | Total: {len(records)}, Long: {len(long_trades)}, Short: {len(short_trades)}",
+            )
+
+            # 🔍 H1: VectorBT 원본 레코드 확인
+            if not trades_df.empty:
+                logger.info(f"📋 VectorBT Raw | Columns: {list(trades_df.columns)}")
+                if "Direction" in trades_df.columns:
+                    dir_counts = trades_df["Direction"].value_counts().to_dict()
+                    logger.info(f"📋 VectorBT Direction | {dir_counts}")
+
+            # 첫 3개 롱 거래
+            if long_trades:
+                logger.info("  📈 Sample Long Trades (first 3):")
+                for i, trade in enumerate(long_trades[:3], 1):
+                    logger.info(
+                        "    {idx}. Entry: {time}, Price: ${price:.2f}, Size: {size:.4f}, PnL: {pnl:+.2f}%".format(
+                            idx=i,
+                            time=trade.entry_time.strftime("%Y-%m-%d"),
+                            price=trade.entry_price,
+                            size=trade.size,
+                            pnl=trade.pnl_pct or 0.0,
+                        ),
+                    )
+
+            # 첫 3개 숏 거래
+            if short_trades:
+                logger.info("  📉 Sample Short Trades (first 3):")
+                for i, trade in enumerate(short_trades[:3], 1):
+                    logger.info(
+                        "    {idx}. Entry: {time}, Price: ${price:.2f}, Size: {size:.4f}, PnL: {pnl:+.2f}%".format(
+                            idx=i,
+                            time=trade.entry_time.strftime("%Y-%m-%d"),
+                            price=trade.entry_price,
+                            size=trade.size,
+                            pnl=trade.pnl_pct or 0.0,
+                        ),
+                    )
 
             return tuple(records)
         except Exception:

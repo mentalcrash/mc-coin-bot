@@ -248,3 +248,4 @@ config.local.yml
 *.db
 *.sqlite
 backtest_results/
+reports/
