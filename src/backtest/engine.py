@@ -152,6 +152,35 @@ class BacktestEngine:
         logger.debug("BacktestEngine.run() 완료")
         logger.debug("=" * 60)
 
+        # #region agent log
+        import json as _json
+
+        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+        _f.write(
+            _json.dumps(
+                {
+                    "location": "engine.py:run:final_result",
+                    "message": "Backtest final results",
+                    "data": {
+                        "total_return": metrics.total_return,
+                        "sharpe_ratio": metrics.sharpe_ratio,
+                        "max_drawdown": metrics.max_drawdown,
+                        "total_trades": metrics.total_trades,
+                        "win_rate": metrics.win_rate,
+                        "benchmark_alpha": benchmark.alpha,
+                        "total_entries": int(signals.entries.sum()),
+                        "symbol": data.symbol,
+                        "periods": data.periods,
+                    },
+                    "timestamp": __import__("time").time(),
+                    "sessionId": "debug-session",
+                    "hypothesisId": "ALL",
+                }
+            )
+            + "\n"
+        )
+        _f.close()
+        # #endregion
         return BacktestResult(
             config=config,
             metrics=metrics,
@@ -307,7 +336,34 @@ class BacktestEngine:
             logger.warning(
                 f"Leverage Capping | {capped_count} signals exceeded {pm.max_leverage_cap}x limit and were capped",
             )
+        # #region agent log
+        import json as _json
 
+        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+        _f.write(
+            _json.dumps(
+                {
+                    "location": "engine.py:_create_portfolio_from_orders:leverage_cap",
+                    "message": "Leverage capping stats",
+                    "data": {
+                        "max_leverage_cap": pm.max_leverage_cap,
+                        "capped_count": int(capped_count),
+                        "weights_before_cap_max": float(weights_before_cap.abs().max())
+                        if len(weights_before_cap.dropna()) > 0
+                        else 0.0,
+                        "weights_after_cap_max": float(target_weights.abs().max())
+                        if len(target_weights.dropna()) > 0
+                        else 0.0,
+                    },
+                    "timestamp": __import__("time").time(),
+                    "sessionId": "debug-session",
+                    "hypothesisId": "H5",
+                }
+            )
+            + "\n"
+        )
+        _f.close()
+        # #endregion
         # 3. rebalance_threshold 적용 (거래 비용 최적화)
         weights_before_threshold = target_weights.copy()
         target_weights = self._apply_rebalance_threshold(
@@ -322,7 +378,39 @@ class BacktestEngine:
         logger.info(
             f"Rebalance Threshold Effect | Before: {num_before} signals, After: {num_after} orders (Filtered: {num_before - num_after}, {filtered_pct:.1f}%)",
         )
+        # #region agent log
+        import json as _json
 
+        _valid_weights = target_weights.dropna()
+        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+        _f.write(
+            _json.dumps(
+                {
+                    "location": "engine.py:_create_portfolio_from_orders:rebalance",
+                    "message": "Rebalance threshold effect",
+                    "data": {
+                        "rebalance_threshold": pm.rebalance_threshold,
+                        "signals_before": int(num_before),
+                        "orders_after": int(num_after),
+                        "filtered_by_threshold": int(num_before - num_after),
+                        "filtered_pct": float(filtered_pct),
+                        "final_weights_mean": float(_valid_weights.mean())
+                        if len(_valid_weights) > 0
+                        else 0.0,
+                        "final_weights_abs_mean": float(_valid_weights.abs().mean())
+                        if len(_valid_weights) > 0
+                        else 0.0,
+                        "max_leverage_cap": pm.max_leverage_cap,
+                    },
+                    "timestamp": __import__("time").time(),
+                    "sessionId": "debug-session",
+                    "hypothesisId": "H4",
+                }
+            )
+            + "\n"
+        )
+        _f.close()
+        # #endregion
         # 4. price 결정 (next_open 또는 close)
         price = df["open"] if pm.price_type == "next_open" else df["close"]
 

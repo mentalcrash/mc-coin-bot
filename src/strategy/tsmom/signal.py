@@ -122,11 +122,49 @@ def generate_signals(
                 total_count,
                 filtered_pct,
             )
+            # #region agent log
+            import json as _json
+
+            _mom_valid = momentum_shifted.dropna()
+            _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+            _f.write(
+                _json.dumps(
+                    {
+                        "location": "signal.py:generate_signals:deadband",
+                        "message": "Deadband filter applied",
+                        "data": {
+                            "threshold": config.deadband_threshold,
+                            "filtered_count": filtered_count,
+                            "total_count": total_count,
+                            "filtered_pct": float(filtered_pct),
+                            "momentum_abs_mean": float(_mom_valid.abs().mean()),
+                            "momentum_abs_median": float(_mom_valid.abs().median()),
+                            "momentum_below_threshold_pct": float(
+                                (
+                                    (_mom_valid.abs() < config.deadband_threshold).sum()
+                                    / len(_mom_valid)
+                                )
+                                * 100
+                            ),
+                        },
+                        "timestamp": __import__("time").time(),
+                        "sessionId": "debug-session",
+                        "hypothesisId": "H1",
+                    }
+                )
+                + "\n"
+            )
+            _f.close()
+            # #endregion
 
     # 4. Trend Filter 적용 (shift 후): 국면 반대 방향 시그널 제거
     if "trend_regime" in df.columns:
         trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
         trend_regime_shifted = trend_regime.shift(1)
+
+        # #region agent log
+        _before_trend_filter_nonzero = int((signal_filtered != 0).sum())
+        # #endregion
 
         # 상승장(shift된)인데 숏 신호(shift된)면 0으로
         signal_filtered_array = np.where(
@@ -140,6 +178,43 @@ def generate_signals(
         )
         # numpy array를 Series로 변환
         signal_filtered = pd.Series(signal_filtered_array, index=df.index)
+
+        # #region agent log
+        _after_trend_filter_nonzero = int((signal_filtered != 0).sum())
+        _uptrend_cnt = int((trend_regime_shifted == 1).sum())
+        _downtrend_cnt = int((trend_regime_shifted == -1).sum())
+        import json as _json
+
+        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+        _f.write(
+            _json.dumps(
+                {
+                    "location": "signal.py:generate_signals:trend_filter",
+                    "message": "Trend filter applied",
+                    "data": {
+                        "signals_before": _before_trend_filter_nonzero,
+                        "signals_after": _after_trend_filter_nonzero,
+                        "signals_removed_by_trend": _before_trend_filter_nonzero
+                        - _after_trend_filter_nonzero,
+                        "uptrend_days": _uptrend_cnt,
+                        "downtrend_days": _downtrend_cnt,
+                        "trend_filter_removal_pct": float(
+                            (_before_trend_filter_nonzero - _after_trend_filter_nonzero)
+                            / _before_trend_filter_nonzero
+                            * 100
+                        )
+                        if _before_trend_filter_nonzero > 0
+                        else 0.0,
+                    },
+                    "timestamp": __import__("time").time(),
+                    "sessionId": "debug-session",
+                    "hypothesisId": "H2",
+                }
+            )
+            + "\n"
+        )
+        _f.close()
+        # #endregion
 
     # 5. Direction 계산 (필터링된 시그널에서)
     direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
@@ -209,6 +284,99 @@ def generate_signals(
             f"  📉 First Short Entry: {first_short}, Strength: {strength.loc[first_short]:.2f}"
         )
 
+    # #region agent log
+    # H6: 진입 시점 모멘텀 분석 - 왜 숏이 더 많은가?
+    _long_entry_indices = long_entry[long_entry].index.tolist()
+    _short_entry_indices = short_entry[short_entry].index.tolist()
+    _long_mom_at_entry = (
+        [float(df["vw_momentum"].loc[idx]) for idx in _long_entry_indices[:10]]
+        if _long_entry_indices
+        else []
+    )
+    _short_mom_at_entry = (
+        [float(df["vw_momentum"].loc[idx]) for idx in _short_entry_indices[:10]]
+        if _short_entry_indices
+        else []
+    )
+    _long_strength_at_entry = (
+        [float(strength.loc[idx]) for idx in _long_entry_indices]
+        if _long_entry_indices
+        else []
+    )
+    _short_strength_at_entry = (
+        [float(strength.loc[idx]) for idx in _short_entry_indices]
+        if _short_entry_indices
+        else []
+    )
+    import json as _json
+
+    _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+    _f.write(
+        _json.dumps(
+            {
+                "location": "signal.py:generate_signals:entry_analysis",
+                "message": "Entry point momentum analysis",
+                "data": {
+                    "long_entries_count": len(_long_entry_indices),
+                    "short_entries_count": len(_short_entry_indices),
+                    "long_momentum_at_entry_sample": _long_mom_at_entry,
+                    "short_momentum_at_entry_sample": _short_mom_at_entry,
+                    "long_strength_mean": float(
+                        sum(_long_strength_at_entry) / len(_long_strength_at_entry)
+                    )
+                    if _long_strength_at_entry
+                    else 0.0,
+                    "short_strength_mean": float(
+                        sum(_short_strength_at_entry) / len(_short_strength_at_entry)
+                    )
+                    if _short_strength_at_entry
+                    else 0.0,
+                    "momentum_mean_all": float(df["vw_momentum"].mean()),
+                    "momentum_positive_pct": float(
+                        (df["vw_momentum"] > 0).sum() / len(df) * 100
+                    ),
+                },
+                "timestamp": __import__("time").time(),
+                "sessionId": "debug-session",
+                "hypothesisId": "H6",
+            }
+        )
+        + "\n"
+    )
+    _f.close()
+    # #endregion
+    # #region agent log
+    import json as _json
+
+    _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
+    _f.write(
+        _json.dumps(
+            {
+                "location": "signal.py:generate_signals:final",
+                "message": "Final signal statistics",
+                "data": {
+                    "total_entries": int(entries.sum()),
+                    "long_entries": int(long_entry.sum()),
+                    "short_entries": int(short_entry.sum()),
+                    "total_exits": int(exits.sum()),
+                    "reversals": int(reversal.sum()),
+                    "nonzero_strength_count": int((strength != 0).sum()),
+                    "strength_mean": float(strength[strength != 0].mean())
+                    if (strength != 0).any()
+                    else 0.0,
+                    "strength_abs_mean": float(strength[strength != 0].abs().mean())
+                    if (strength != 0).any()
+                    else 0.0,
+                },
+                "timestamp": __import__("time").time(),
+                "sessionId": "debug-session",
+                "hypothesisId": "H1,H2",
+            }
+        )
+        + "\n"
+    )
+    _f.close()
+    # #endregion
     return StrategySignals(
         entries=entries,
         exits=exits,

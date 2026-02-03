@@ -95,8 +95,8 @@ class TSMOMConfig(BaseModel):
         description="Z-Score 정규화 사용 여부 (신호 품질 향상)",
     )
     ensemble_windows: tuple[int, ...] = Field(
-        default=(10, 20, 40),  # 일봉 기준: 10일, 20일, 40일
-        description="앙상블 룩백 윈도우 (캔들 수). 여러 타임프레임 평균으로 휩쏘 감소.",
+        default=(20, 40, 60),  # 일봉 기준: 20일, 40일, 60일 (장기 추세 강화)
+        description="앙상블 룩백 윈도우 (캔들 수). 단기 노이즈 제거를 위해 최소 20일 권장.",
     )
     zscore_clip: float = Field(
         default=2.0,
@@ -117,10 +117,10 @@ class TSMOMConfig(BaseModel):
         description="추세 판단용 이동평균 기간 (일봉 기준, 기본 50일)",
     )
     deadband_threshold: float = Field(
-        default=0.5,
+        default=0.2,
         ge=0.0,
         le=1.5,
-        description="불감대 임계값 (|신호| < threshold면 중립 유지)",
+        description="불감대 임계값 (|신호| < threshold면 중립 유지). Z-Score 중앙값(~0.6) 대비 1/3 수준 권장.",
     )
 
     @model_validator(mode="after")
