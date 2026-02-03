@@ -18,6 +18,7 @@ from decimal import Decimal
 from typing import Annotated
 
 import typer
+from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -35,8 +36,66 @@ from src.logging.context import get_strategy_logger
 from src.portfolio import Portfolio
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
 
-# Global Console Instance
+# Global Console Instance (Rich UI for user-facing output)
 console = Console()
+
+
+def _print_startup_panel(
+    symbol: str,
+    years: list[int],
+    capital: float,
+    strategy: TSMOMStrategy,
+    portfolio: Portfolio,
+) -> None:
+    """백테스트 시작 정보 패널 출력.
+
+    전략과 포트폴리오의 핵심 설정값을 사용자에게 표시합니다.
+
+    Args:
+        symbol: 거래 심볼
+        years: 백테스트 연도 목록
+        capital: 초기 자본금
+        strategy: 전략 인스턴스
+        portfolio: 포트폴리오 인스턴스
+    """
+    cfg = strategy.config
+    pm_cfg = portfolio.config
+
+    # 전략 설정 요약
+    strategy_info = (
+        f"  lookback: {cfg.lookback}일, "
+        f"vol_target: {cfg.vol_target:.0%}, "
+        f"vol_window: {cfg.vol_window}일"
+    )
+    if cfg.use_trend_filter:
+        strategy_info += f"\n  trend_filter: MA({cfg.trend_ma_period}), "
+        strategy_info += f"deadband: {cfg.deadband_threshold}"
+
+    # 포트폴리오 설정 요약
+    stop_loss_str = (
+        f"{pm_cfg.system_stop_loss:.0%}" if pm_cfg.system_stop_loss else "Disabled"
+    )
+    portfolio_info = (
+        f"  max_leverage: {pm_cfg.max_leverage_cap}x, "
+        f"stop_loss: {stop_loss_str}, "
+        f"rebalance: {pm_cfg.rebalance_threshold:.0%}"
+    )
+    portfolio_info += f"\n  execution: {pm_cfg.execution_mode}, "
+    portfolio_info += f"cost: {pm_cfg.cost_model.round_trip_cost:.2%} RT"
+
+    panel_content = (
+        f"[bold]VW-TSMOM Backtest[/bold]\n"
+        f"Symbol: {symbol}\n"
+        f"Years: {', '.join(map(str, years))}\n"
+        f"Capital: ${capital:,.0f}\n\n"
+        f"[bold cyan]Strategy (TSMOMConfig)[/bold cyan]\n"
+        f"{strategy_info}\n\n"
+        f"[bold cyan]Portfolio[/bold cyan]\n"
+        f"{portfolio_info}"
+    )
+
+    console.print(Panel.fit(panel_content, border_style="blue"))
+
 
 # Typer App
 app = typer.Typer(
@@ -93,22 +152,21 @@ def run(
     if verbose:
         ctx_logger.info("Debug mode enabled - detailed logs will be shown")
 
-    console.print(
-        Panel.fit(
-            (
-                f"[bold]VW-TSMOM Backtest[/bold]\n"
-                f"Symbol: {symbol}\n"
-                f"Years: {', '.join(map(str, year))}\n"
-                f"Capital: ${capital:,.0f}\n"
-                f"Strategy: TSMOMConfig (defaults)\n"
-                f"Portfolio: Default settings"
-            ),
-            border_style="blue",
-        )
+    # 전략 및 포트폴리오 생성 (설정값 표시를 위해 먼저 생성)
+    strategy = TSMOMStrategy()  # Uses default TSMOMConfig
+    portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
+
+    # 시작 정보 패널 (실제 설정값 표시)
+    _print_startup_panel(
+        symbol=symbol,
+        years=year,
+        capital=capital,
+        strategy=strategy,
+        portfolio=portfolio,
     )
 
     # Step 1: 데이터 로드 (MarketDataService 사용)
-    console.print("\n[bold cyan]Step 1: Loading data...[/bold cyan]")
+    logger.info("Step 1: Loading data...")
     try:
         settings = get_settings()
         data_service = MarketDataService(settings)
@@ -125,18 +183,18 @@ def run(
         )
 
         data = data_service.get(data_request)
-        console.print(
-            f"  [green]✓[/green] Loaded {data.symbol}: {data.periods:,} daily candles"
+        logger.success(
+            f"Loaded {data.symbol}: {data.periods:,} daily candles ({data.start.date()} ~ {data.end.date()})"
         )
-        console.print(f"  Period: {data.start.date()} ~ {data.end.date()}")
     except DataNotFoundError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        logger.error(f"Data load failed: {e}")
         raise typer.Exit(code=1) from e
 
-    # Step 2: 전략 설정 (기본값 사용)
-    console.print("\n[bold cyan]Step 2: Configuring strategy...[/bold cyan]")
-    strategy = TSMOMStrategy()  # Uses default TSMOMConfig
-    console.print("  [green]✓[/green] Using default TSMOMConfig")
+    # Step 2: 전략 설정 확인
+    logger.info("Step 2: Configuring strategy...")
+    logger.success(
+        f"Using TSMOMConfig (lookback={strategy.config.lookback}, vol_target={strategy.config.vol_target:.0%})"
+    )
 
     if verbose:
         config_table = Table(title="Strategy Configuration (TSMOMConfig)")
@@ -146,10 +204,9 @@ def run(
             config_table.add_row(key, str(value))
         console.print(config_table)
 
-    # Step 3: 포트폴리오 설정
-    console.print("\n[bold cyan]Step 3: Configuring portfolio...[/bold cyan]")
-    portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
-    console.print(f"  [green]✓[/green] {portfolio}")
+    # Step 3: 포트폴리오 설정 확인
+    logger.info("Step 3: Configuring portfolio...")
+    logger.success(f"Portfolio ready: {portfolio}")
 
     if verbose:
         pm_table = Table(title="Portfolio Configuration")
@@ -160,7 +217,7 @@ def run(
         console.print(pm_table)
 
     # Step 4: 백테스트 실행
-    console.print("\n[bold cyan]Step 4: Running backtest...[/bold cyan]")
+    logger.info("Step 4: Running backtest...")
     ctx_logger.info("Starting backtest engine")
 
     try:
@@ -190,13 +247,13 @@ def run(
             )
 
             # HTML 리포트 생성
-            console.print("\n[bold cyan]Step 5: Generating report...[/bold cyan]")
+            logger.info("Step 5: Generating report...")
             report_path = generate_quantstats_report(
                 returns=strategy_returns,
                 benchmark_returns=benchmark_returns,
                 title=f"{strategy.name} Backtest - {symbol}",
             )
-            console.print(f"  [green]✓[/green] Report saved: {report_path}")
+            logger.success(f"Report saved: {report_path}")
             ctx_logger.success(f"Report generated: {report_path}")
         else:
             result = engine.run(request)
@@ -209,8 +266,8 @@ def run(
 
     except ImportError as e:
         ctx_logger.exception("VectorBT import failed")
-        console.print(f"[bold yellow]Warning:[/bold yellow] {e}")
-        console.print("Install VectorBT with: pip install vectorbt")
+        logger.warning(f"VectorBT import failed: {e}")
+        logger.info("Install VectorBT with: pip install vectorbt")
         raise typer.Exit(code=1) from e
 
 
@@ -256,7 +313,7 @@ def optimize(
     )
 
     # 데이터 로드
-    console.print("\n[bold cyan]Loading data...[/bold cyan]")
+    logger.info("Loading data...")
     opt_logger.info("Starting parameter optimization")
     try:
         settings = get_settings()
@@ -273,10 +330,10 @@ def optimize(
                 end=end_date,
             )
         )
-        console.print(f"  [green]✓[/green] Loaded {data.periods:,} daily candles")
+        logger.success(f"Loaded {data.periods:,} daily candles")
     except DataNotFoundError as e:
         opt_logger.exception("Data load failed")
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        logger.error(f"Data load failed: {e}")
         raise typer.Exit(code=1) from e
 
     # 파라미터 그리드 정의 (전략 파라미터만)
@@ -289,12 +346,8 @@ def optimize(
     for values in param_grid.values():
         total_combinations *= len(values)
 
-    console.print(
-        f"\n[bold cyan]Running {total_combinations} parameter combinations...[/bold cyan]"
-    )
-    console.print(
-        "  [dim]Note: Portfolio settings (max_leverage_cap=2.0) applied uniformly[/dim]"
-    )
+    logger.info(f"Running {total_combinations} parameter combinations...")
+    logger.debug("Portfolio settings (max_leverage_cap=2.0) applied uniformly")
 
     try:
         # 포트폴리오 설정
@@ -356,7 +409,7 @@ def optimize(
 
     except ImportError as e:
         opt_logger.exception("VectorBT import failed")
-        console.print(f"[bold yellow]Warning:[/bold yellow] {e}")
+        logger.warning(f"VectorBT import failed: {e}")
         raise typer.Exit(code=1) from e
 
 

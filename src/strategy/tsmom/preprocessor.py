@@ -186,9 +186,15 @@ def calculate_zscore_momentum(
     결과는 보통 -2 ~ +2 (Sigma) 범위의 값으로, 신호 강도를 명확히 표현합니다.
 
     Formula:
-        cumulative_vw_return = sum(vw_returns over window)
-        vol = std(returns) * sqrt(window)  # 기간 스케일링된 변동성
-        z_score = cumulative_vw_return / vol
+        avg_vw_return = sum(returns * log_volume) / sum(log_volume)  # 가중 평균 수익률
+        total_vw_return = avg_vw_return * window  # 기간 누적 수익률로 변환
+        period_vol = std(returns) * sqrt(window)  # 기간 스케일링된 변동성
+        z_score = total_vw_return / period_vol
+
+    Note:
+        - 가중 평균을 기간 누적으로 스케일링하여 추세 강도를 정확히 반영
+        - 변동성도 √N 스케일링으로 기간 변동성으로 변환
+        - 결과적으로 통계적으로 유의미한 모멘텀 Z-Score 생성
 
     Args:
         returns: 수익률 시리즈
@@ -208,8 +214,7 @@ def calculate_zscore_momentum(
     # 1. 로그 볼륨 가중치 계산
     log_volume = np.log1p(volume)
 
-    # 2. 가중 수익률의 **정규화된 누적 합계** (윈도우 기간 동안)
-    # 🔧 FIX (H2): sum(returns * log_volume) / sum(log_volume) 으로 정규화
+    # 2. 가중 '평균' 수익률 계산
     weighted_returns = returns * log_volume
     sum_weighted_returns: pd.Series = weighted_returns.rolling(  # type: ignore[assignment]
         window=window, min_periods=min_periods
@@ -217,21 +222,25 @@ def calculate_zscore_momentum(
     sum_log_volume: pd.Series = log_volume.rolling(  # type: ignore[assignment]
         window=window, min_periods=min_periods
     ).sum()
-    # 정규화된 누적 수익률 (가중 평균)
-    sum_log_volume_safe = sum_log_volume.replace(0, np.nan)
-    cumulative_vw_ret: pd.Series = sum_weighted_returns / sum_log_volume_safe  # type: ignore[assignment]
 
-    # 3. 변동성 계산
-    # 🔧 FIX (H6): cumulative_vw_ret이 평균이므로 sqrt(window) 스케일링 불필요
-    # sqrt(window)는 누적 합계를 사용할 때만 필요 (분산의 가산성)
-    vol: pd.Series = returns.rolling(  # type: ignore[assignment]
+    sum_log_volume_safe = sum_log_volume.replace(0, np.nan)
+    avg_vw_ret: pd.Series = sum_weighted_returns / sum_log_volume_safe  # type: ignore[assignment]
+
+    # 🔧 FIX 1: 평균 수익률을 '기간 누적 수익률'로 변환
+    # 기간 내 평균적으로 avg_vw_ret만큼 수익이 났으므로, window를 곱해 총 추세를 구함
+    total_vw_ret: pd.Series = avg_vw_ret * window  # type: ignore[assignment]
+
+    # 3. 변동성 계산 (기간 스케일링 적용)
+    # 🔧 FIX 2: 일간 변동성을 기간 변동성으로 변환 (std * sqrt(window))
+    daily_vol: pd.Series = returns.rolling(  # type: ignore[assignment]
         window=window, min_periods=min_periods
     ).std()
+    period_vol: pd.Series = daily_vol * np.sqrt(window)  # type: ignore[assignment]
 
-    # 4. Z-Score 계산: 정규화된 가중평균수익률 / 변동성
+    # 4. Z-Score 계산: (Total Return) / (Period Volatility)
     # 0으로 나누기 방지
-    vol_safe = vol.replace(0, np.nan)
-    z_score: pd.Series = cumulative_vw_ret / vol_safe  # type: ignore[assignment]
+    period_vol_safe = period_vol.replace(0, np.nan)
+    z_score: pd.Series = total_vw_ret / period_vol_safe  # type: ignore[assignment]
 
     return z_score
 
