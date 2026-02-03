@@ -75,15 +75,7 @@ def generate_signals(
     signal_series: pd.Series = df["raw_signal"]  # type: ignore[assignment]
     signal_shifted: pd.Series = signal_series.shift(1)  # type: ignore[assignment]
 
-    # 2. 방향 계산 (-1, 0, 1)
-    direction_raw = pd.Series(np.sign(signal_shifted), index=df.index)
-    direction = pd.Series(
-        direction_raw.fillna(0).astype(int),
-        index=df.index,
-        name="direction",
-    )
-
-    # 3. 🔧 FIX: Trend Filter 적용 (shift 후)
+    # 2. 🔧 FIX: Trend Filter 적용 (shift 후) - direction 계산 전에 적용
     # shift된 신호와 shift된 추세를 매칭하여 필터링
     signal_filtered = signal_shifted.copy()
 
@@ -103,6 +95,15 @@ def generate_signals(
         )
         # numpy array를 Series로 변환
         signal_filtered = pd.Series(signal_filtered_array, index=df.index)
+
+    # 3. 🔧 FIX (H1): direction을 signal_filtered (필터 후)에서 계산
+    # 이렇게 해야 direction과 strength가 동일한 소스에서 나옴
+    direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
+    direction = pd.Series(
+        direction_raw.fillna(0).astype(int),
+        index=df.index,
+        name="direction",
+    )
 
     # 4. 강도 계산 (필터링된 시그널 사용)
     strength = pd.Series(

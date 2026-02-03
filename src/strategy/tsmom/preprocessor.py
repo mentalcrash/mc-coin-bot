@@ -208,23 +208,30 @@ def calculate_zscore_momentum(
     # 1. 로그 볼륨 가중치 계산
     log_volume = np.log1p(volume)
 
-    # 2. 가중 수익률의 **누적 합계** (윈도우 기간 동안)
+    # 2. 가중 수익률의 **정규화된 누적 합계** (윈도우 기간 동안)
+    # 🔧 FIX (H2): sum(returns * log_volume) / sum(log_volume) 으로 정규화
     weighted_returns = returns * log_volume
-    cumulative_vw_ret: pd.Series = weighted_returns.rolling(  # type: ignore[assignment]
+    sum_weighted_returns: pd.Series = weighted_returns.rolling(  # type: ignore[assignment]
         window=window, min_periods=min_periods
     ).sum()
+    sum_log_volume: pd.Series = log_volume.rolling(  # type: ignore[assignment]
+        window=window, min_periods=min_periods
+    ).sum()
+    # 정규화된 누적 수익률 (가중 평균)
+    sum_log_volume_safe = sum_log_volume.replace(0, np.nan)
+    cumulative_vw_ret: pd.Series = sum_weighted_returns / sum_log_volume_safe  # type: ignore[assignment]
 
-    # 3. 변동성 계산 (기간 스케일링)
-    # vol_period = std(returns) → vol_cumulative = vol_period * sqrt(n)
+    # 3. 변동성 계산
+    # 🔧 FIX (H6): cumulative_vw_ret이 평균이므로 sqrt(window) 스케일링 불필요
+    # sqrt(window)는 누적 합계를 사용할 때만 필요 (분산의 가산성)
     vol: pd.Series = returns.rolling(  # type: ignore[assignment]
         window=window, min_periods=min_periods
     ).std()
-    scaled_vol = vol * np.sqrt(window)
 
-    # 4. Z-Score 계산: 누적수익률 / 누적변동성
+    # 4. Z-Score 계산: 정규화된 가중평균수익률 / 변동성
     # 0으로 나누기 방지
-    scaled_vol_safe = scaled_vol.replace(0, np.nan)
-    z_score: pd.Series = cumulative_vw_ret / scaled_vol_safe  # type: ignore[assignment]
+    vol_safe = vol.replace(0, np.nan)
+    z_score: pd.Series = cumulative_vw_ret / vol_safe  # type: ignore[assignment]
 
     return z_score
 
