@@ -1,58 +1,39 @@
 {
-    "[python]": {
-      // 1. 기본 포매터로 Ruff 지정
-      "editor.defaultFormatter": "charliermarsh.ruff",
-      
-      // 2. 저장 시 자동 포맷팅 (Format on Save)
-      "editor.formatOnSave": true,
-      
-      // 3. 저장 시 자동 수정 (Fix on Save) - 핵심!
-      // import 정렬, 미사용 변수 제거, 구문법 업데이트가 자동으로 수행됨
-      "editor.codeActionsOnSave": {
-        "source.fixAll": "explicit",
-        "source.organizeImports": "explicit"
-      }
-    },
-    
-    // 4. Ruff 확장 프로그램 전용 설정
-    "ruff.enable": true,
-    "ruff.organizeImports": true,
-    "ruff.fixAll": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    }
+  },
+  
+  // 4. Ruff 확장 프로그램 전용 설정
+  "ruff.enable": true,
+  "ruff.organizeImports": true,
+  "ruff.fixAll": true,
 
-  // [Cursor Pyright 엔진 설정]
-  // 2026년 기준: Pylance 대신 BasedPyright 기반 엔진 사용
-  "cursorpyright.disableLanguageServices": false,
+  // 1. 기본 분석 활성화 (기본값이 off이므로 반드시 켜야 함)
+  // 'openFilesOnly'는 열린 파일만 검사하여 성능을 높입니다. 
+  // 전체 프로젝트 검사가 필요하면 "workspace"로 변경하세요.
+  "cursorpyright.analysis.typeCheckingMode": "standard", 
 
-  // [핵심: 분석 모드 및 오류 제어]
-  // "reportMissingTypeStubs"는 최상위 키가 아니라 Overrides 안에 있어야 합니다.
-  "cursorpyright.analysis.typeCheckingMode": "standard", // basic, standard, strict 중 택1
-  "cursorpyright.analysis.diagnosticSeverityOverrides": {
-    "reportMissingTypeStubs": "none",        // 외부 라이브러리 스텁 누락 경고 무시 (가장 흔한 오류)
-    "reportUnknownMemberType": "none",       // 동적 타이핑 라이브러리 오탐지 방지
-    "reportUnknownArgumentType": "none",
-    "reportUnknownVariableType": "none"
+  // 2. Inlay Hints 활성화 (기본값이 비활성이므로 켜줍니다)
+  "cursorpyright.analysis.inlayHints.variableTypes": false,      // 변수 타입은 너무 시끄러울 수 있음
+  "cursorpyright.analysis.inlayHints.functionReturnTypes": true, // 함수 반환 타입은 추천
+  "cursorpyright.analysis.inlayHints.callArgumentNames": false,  // 인자 이름 힌트
+  "cursorpyright.analysis.inlayHints.genericTypes": false,
+
+  // 3. 메모리 및 성능 최적화
+  // 워크스페이스 심볼 기능이 너무 무거우면 true로 설정하세요.
+  "cursorpyright.analysis.disableWorkspaceSymbol": false,
+
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/*/**": true,
+    "**/.venv/**": true,
+    "**/__pycache__/**": true
   },
 
-  // [Inlay Hints: 코드 내 타입 힌트 표시]
-  // BasedPyright 기능 활성화 (Pylance 스타일)
-  "cursorpyright.analysis.inlayHints.variableTypes": false,      // 변수 타입 표시 (너무 시끄러우면 false)
-  "cursorpyright.analysis.inlayHints.functionReturnTypes": true, // 함수 반환 타입 표시 (추천)
-  "cursorpyright.analysis.inlayHints.callArgumentNames": false,  // 인자 이름 표시
-  "cursorpyright.analysis.inlayHints.genericTypes": false,       // 제네릭 타입 표시
-
-  // [가상환경 자동 감지 최적화]
-  // Cursor는 표준 python 확장의 venv 경로를 참조합니다.
-  "python.venvPath": ".", 
-
-  // [파일 인덱싱 제한 해결]
-  // 'userFileIndexingLimit' 키가 오류가 난다면, exclude를 통해 범위를 좁혀 성능을 확보해야 합니다.
-  "cursorpyright.analysis.exclude": [
-    "**/node_modules",
-    "**/__pycache__",
-    "**/.git",
-    "**/.venv"
-  ],
-  "cursorpyright.analysis.ignore": [
-    "**/*.pyi" // 스텁 파일 무시 예시
-  ]
 }

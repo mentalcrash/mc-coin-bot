@@ -1,4 +1,4 @@
-"""Loguru logging configuration with dual sinks.
+"""Loguru logging configuration with production-ready features.
 
 This module provides a centralized logging setup following the project's
 logging standards (Rules #15). All logging in the application should use
@@ -6,96 +6,298 @@ the configured loguru logger.
 
 Features:
     - Dual sinks: Console (human-readable) + File (JSON serialized)
-    - Async-safe with enqueue=True
-    - Rotation: 100MB / Retention: 30 days
+    - Bounded queue for memory-safe async logging (solves Issue #1419)
+    - Discord webhook integration for ERROR+ alerts
+    - OpenTelemetry context injection for observability
     - Structured logging with context binding
 
 Rules Applied:
-    - #15 Logging Standards: Loguru, dual sinks, enqueue=True
+    - #15 Logging Standards: Loguru, dual sinks, bounded queue
+    - #22 Notification Standards: Discord webhooks for alerts
+    - #23 Exception Handling: Alert hooks for critical errors
 """
 
+from __future__ import annotations
+
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from src.logging.config import LoggingConfig, get_logging_config
+from src.logging.context import get_trading_logger
+from src.logging.sinks.bounded_queue import BoundedQueueSink, DropPolicy
+from src.logging.sinks.discord import DiscordWebhookSink
+from src.logging.sinks.otel import create_otel_patcher, is_otel_available
+
 if TYPE_CHECKING:
     from loguru import Logger
 
-# 기본 핸들러 제거 (중복 로그 방지)
+# =============================================================================
+# Module-level logger (re-exported for convenience)
+# =============================================================================
+
+# Remove default handler to prevent duplicate logs
 logger.remove()
+
+
+# =============================================================================
+# Console Format Templates
+# =============================================================================
+
+CONSOLE_FORMAT_DEFAULT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+    "<level>{message}</level>"
+)
+
+CONSOLE_FORMAT_WITH_CONTEXT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+    "<dim>[{extra[symbol]}/{extra[strategy]}]</dim> "
+    "<level>{message}</level>"
+)
+
+
+# =============================================================================
+# Sink Manager (encapsulates global state)
+# =============================================================================
+
+
+class _SinkManager:
+    """Manages active sink references for cleanup.
+
+    This class encapsulates the global state for sinks, avoiding
+    the use of global statements which are discouraged by linters.
+    """
+
+    def __init__(self) -> None:
+        self.active_sinks: list[BoundedQueueSink] = []
+        self.discord_sink: DiscordWebhookSink | None = None
+
+    def add_sink(self, sink: BoundedQueueSink) -> None:
+        """Add a sink to the active list."""
+        self.active_sinks.append(sink)
+
+    def set_discord_sink(self, sink: DiscordWebhookSink) -> None:
+        """Set the Discord sink reference."""
+        self.discord_sink = sink
+
+    def cleanup(self) -> None:
+        """Clean up all active sinks."""
+        for sink in self.active_sinks:
+            sink.stop()
+        self.active_sinks.clear()
+
+        if self.discord_sink is not None:
+            self.discord_sink.stop()
+            self.discord_sink = None
+
+
+# Module-level sink manager instance
+_sink_manager = _SinkManager()
+
+
+# =============================================================================
+# Setup Functions
+# =============================================================================
+
+
+def setup_logger_from_config(config: LoggingConfig | None = None) -> None:
+    """Initialize logger from Pydantic config model.
+
+    This is the recommended way to set up the logger. It loads
+    configuration from environment variables if not provided.
+
+    Args:
+        config: LoggingConfig instance (loads from env if None)
+
+    Example:
+        >>> from src.core.logger import setup_logger_from_config
+        >>> setup_logger_from_config()  # Loads from LOG_* env vars
+    """
+    if config is None:
+        config = get_logging_config()
+
+    _setup_logger_internal(config)
 
 
 def setup_logger(
     log_dir: Path | str = Path("logs"),
     console_level: str = "INFO",
     file_level: str = "DEBUG",
-    rotation: str = "100 MB",
-    retention: str = "30 days",
+    *,
+    enable_discord: bool = False,
+    discord_webhook_url: str | None = None,
 ) -> None:
-    """로거 설정 초기화.
+    """Initialize the logger with minimal configuration.
 
-    듀얼 싱크(Console + File)로 로거를 구성합니다.
-    - Console: 사람이 읽기 쉬운 컬러 포맷
-    - File: JSON 직렬화 (ELK 스택 연동 가능)
+    For full configuration options, use setup_logger_from_config()
+    with a LoggingConfig instance.
 
     Args:
-        log_dir: 로그 파일 저장 디렉토리 (기본: "logs")
-        console_level: 콘솔 출력 로그 레벨 (기본: "INFO")
-        file_level: 파일 출력 로그 레벨 (기본: "DEBUG")
-        rotation: 파일 로테이션 조건 (기본: "100 MB")
-        retention: 파일 보관 기간 (기본: "30 days")
+        log_dir: Directory for log files (default: "logs")
+        console_level: Console output level (default: "INFO")
+        file_level: File output level (default: "DEBUG")
+        enable_discord: Enable Discord webhook alerts
+        discord_webhook_url: Discord webhook URL for alerts
 
     Example:
         >>> from src.core.logger import setup_logger, logger
         >>> setup_logger(log_dir="logs", console_level="DEBUG")
         >>> logger.info("Application started")
     """
-    # 기존 핸들러 모두 제거
-    logger.remove()
+    config = LoggingConfig(
+        log_dir=Path(log_dir),
+        console_level=console_level,  # type: ignore[arg-type]
+        file_level=file_level,  # type: ignore[arg-type]
+        enable_discord=enable_discord,
+        discord_webhook_url=discord_webhook_url,
+    )
+    _setup_logger_internal(config)
 
-    # 로그 디렉토리 생성
-    log_path = Path(log_dir)
+
+def _setup_logger_internal(config: LoggingConfig) -> None:
+    """Internal logger setup using config object.
+
+    Args:
+        config: LoggingConfig instance with all settings
+    """
+    # Remove existing handlers and clean up sinks
+    logger.remove()
+    _sink_manager.cleanup()
+
+    # Create log directory
+    log_path = Path(config.log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
-    # 1. Console Handler (Human-readable)
-    logger.add(
+    # Apply OpenTelemetry patcher if available
+    patched_logger = logger
+    if is_otel_available():
+        patcher = create_otel_patcher()
+        patched_logger = logger.patch(patcher)
+
+    # 1. Console Handler (Human-readable, synchronous)
+    patched_logger.add(
         sys.stderr,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
-            "<level>{message}</level>"
-        ),
-        level=console_level,
+        format=CONSOLE_FORMAT_DEFAULT,
+        level=config.console_level,
         colorize=True,
-        backtrace=True,
-        diagnose=True,
+        backtrace=config.backtrace,
+        diagnose=config.diagnose,
     )
 
-    # 2. File Handler (JSON, Async-safe)
-    logger.add(
-        log_path / "ingestion_{time:YYYY-MM-DD}.json",
-        format="{message}",
-        level=file_level,
-        rotation=rotation,
-        retention=retention,
-        compression="gz",
-        serialize=True,  # JSON 직렬화
-        enqueue=True,  # [중요] 비동기 안전 - 이벤트 루프 차단 방지
-        backtrace=True,
-        diagnose=False,  # 프로덕션에서는 민감 정보 노출 방지
-    )
+    # 2. File Handler with Bounded Queue (JSON, async-safe)
+    if config.json_logs:
+        _setup_json_file_sink(patched_logger, log_path, config)
+    else:
+        _setup_text_file_sink(patched_logger, log_path, config)
+
+    # 3. Discord Handler (optional, for ERROR+)
+    if config.enable_discord and config.discord_webhook_url:
+        _setup_discord_sink(config.discord_webhook_url, config.discord_min_level)
 
     logger.info(
         "Logger initialized",
-        extra={
-            "log_dir": str(log_path),
-            "console_level": console_level,
-            "file_level": file_level,
-        },
+        log_dir=str(log_path),
+        console_level=config.console_level,
+        file_level=config.file_level,
+        discord_enabled=config.enable_discord,
+        otel_enabled=is_otel_available(),
     )
+
+
+def _setup_json_file_sink(
+    patched_logger: Logger,
+    log_path: Path,
+    config: LoggingConfig,
+) -> None:
+    """Set up JSON file sink with bounded queue.
+
+    Args:
+        patched_logger: Logger instance (possibly with OTel patcher)
+        log_path: Path to log directory
+        config: Logging configuration
+    """
+    # Create file path template
+    file_template = log_path / "trading_{time}.json"
+
+    def file_sink_writer(msg: str) -> None:
+        current_time = datetime.now(UTC).strftime("%Y-%m-%d_%H")
+        file_name = str(file_template).replace("{time}", current_time)
+        with Path(file_name).open("a", encoding="utf-8") as f:
+            f.write(msg)
+
+    bounded_file_sink = BoundedQueueSink(
+        sink=file_sink_writer,
+        maxsize=config.bounded_queue_size,
+        drop_policy=DropPolicy.OLDEST,
+        name="FileWriter",
+    )
+    _sink_manager.add_sink(bounded_file_sink)
+
+    patched_logger.add(
+        bounded_file_sink.write,
+        format="{message}",
+        level=config.file_level,
+        serialize=True,
+        backtrace=config.backtrace,
+        diagnose=False,
+    )
+
+
+def _setup_text_file_sink(
+    patched_logger: Logger,
+    log_path: Path,
+    config: LoggingConfig,
+) -> None:
+    """Set up text file sink with loguru's built-in rotation.
+
+    Args:
+        patched_logger: Logger instance
+        log_path: Path to log directory
+        config: Logging configuration
+    """
+    patched_logger.add(
+        log_path / "trading_{time:YYYY-MM-DD}.log",
+        format=CONSOLE_FORMAT_DEFAULT,
+        level=config.file_level,
+        rotation=config.rotation,
+        retention=config.retention,
+        compression=config.compression,
+        enqueue=True,
+        backtrace=config.backtrace,
+        diagnose=False,
+    )
+
+
+def _setup_discord_sink(webhook_url: str, min_level: str = "ERROR") -> None:
+    """Set up Discord webhook sink for alerts.
+
+    Args:
+        webhook_url: Discord webhook URL
+        min_level: Minimum level to forward to Discord
+    """
+    discord_sink = DiscordWebhookSink(
+        webhook_url=webhook_url,
+        min_level=min_level,
+    )
+    _sink_manager.set_discord_sink(discord_sink)
+
+    logger.add(
+        discord_sink.write,
+        level=min_level,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+    )
+
+
+# =============================================================================
+# Context Logger Functions (Backward Compatibility)
+# =============================================================================
 
 
 def get_context_logger(
@@ -104,35 +306,41 @@ def get_context_logger(
     exchange: str | None = None,
     operation: str | None = None,
     **extra: str,
-) -> "Logger":
-    """컨텍스트가 바인딩된 로거 반환.
+) -> Logger:
+    """Get a context-bound logger (backward compatible).
 
-    비동기 환경에서 로그가 뒤섞이는 것을 방지하기 위해
-    logger.bind()를 사용하여 메타데이터를 주입합니다.
+    This function is maintained for backward compatibility.
+    For new code, use get_trading_logger from src.logging.context.
 
     Args:
-        symbol: 거래 심볼 (예: "BTC/USDT")
-        exchange: 거래소 이름 (예: "binance")
-        operation: 작업 유형 (예: "fetch", "save")
-        **extra: 추가 컨텍스트 키-값
+        symbol: Trading symbol (e.g., "BTC/USDT")
+        exchange: Exchange name (e.g., "binance")
+        operation: Operation type (e.g., "fetch", "save")
+        **extra: Additional context key-values
 
     Returns:
-        컨텍스트가 바인딩된 loguru logger
+        Logger with context bound
 
     Example:
         >>> ctx_logger = get_context_logger(symbol="BTC/USDT", operation="fetch")
         >>> ctx_logger.info("Fetching data...")
     """
-    context: dict[str, str] = {}
-    if symbol:
-        context["symbol"] = symbol
-    if exchange:
-        context["exchange"] = exchange
-    if operation:
-        context["operation"] = operation
-    context.update(extra)
-    return logger.bind(**context)
+    return get_trading_logger(
+        symbol=symbol,
+        exchange=exchange,
+        operation=operation,  # type: ignore[arg-type]
+        **extra,
+    )
 
 
-# 모듈 레벨에서 logger 재export (편의성)
-__all__ = ["get_context_logger", "logger", "setup_logger"]
+# =============================================================================
+# Module Exports
+# =============================================================================
+
+__all__ = [
+    "get_context_logger",
+    "get_trading_logger",
+    "logger",
+    "setup_logger",
+    "setup_logger_from_config",
+]

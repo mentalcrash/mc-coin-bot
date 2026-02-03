@@ -12,13 +12,13 @@
 ## 2. Zero-Tolerance Lint Policy (Critical)
 모든 코드 변경은 다음 린트 도구의 에러가 **0개**여야 합니다.
 - **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL)을 준수해야 합니다.
-- **Pyright:** `strict` 모드 수준의 타입 체크를 통과해야 합니다. (단, 외부 라이브러리 스터브 누락 등 `pyproject.toml`에서 허용된 예외 제외)
+- **Basedpyright:** `strict` 모드 수준의 타입 체크를 통과해야 합니다. (단, 외부 라이브러리 스터브 누락 등 `pyproject.toml`에서 허용된 예외 제외)
 
 > [!IMPORTANT]
 > **Lint & Type Check 실행 방식:**
 > 모든 검사는 반드시 `uv run`을 접두어로 사용하여 프로젝트 환경에서 실행해야 합니다.
 > - `uv run ruff check .`
-> - `uv run pyright`
+> - `uv run basedpyright`
 
 > **AI 지침:** 코드를 작성한 후 반드시 위 명령어를 실행하여 에러가 없는지 확인하십시오.
 

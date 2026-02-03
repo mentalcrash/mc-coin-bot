@@ -69,7 +69,7 @@ AI는 코드를 생성하거나 수정할 때, 아래의 디렉토리별 책임�
 
 ## 3. Cross-cutting Concerns (Global Rules)
 모든 디렉토리의 `.py` 파일에 공통적으로 적용되는 규칙입니다.
-- **Code Quality:** `10-python-standards.mdc`, `13-ruff-compliance.mdc`, `16-pyright-typing.mdc`
+- **Code Quality:** `10-python-standards.mdc`, `13-ruff-compliance.mdc`, `16-basedpyright-typing.mdc`
 - **Stability:** `15-logging-standards.mdc`, `23-exception-handling.mdc`
 - **Security:** `19-git-security.mdc`
 - **Testing:** `17-testing-standards.mdc` (모든 `tests/` 및 `test_*.py`)

@@ -9,10 +9,10 @@ Commands:
     - report: QuantStats 리포트 생성
 
 Rules Applied:
+    - #15 Logging Standards: Loguru, structured logging
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
 """
 
-import logging
 from typing import Annotated
 
 import pandas as pd
@@ -21,11 +21,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.backtest.cost_model import CostModel
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.reporter import generate_quantstats_report, print_performance_summary
 from src.config.settings import get_settings
+from src.core.logger import setup_logger
 from src.data.silver import SilverProcessor
+from src.logging.context import get_strategy_logger
 from src.portfolio import PortfolioManagerConfig
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
 
@@ -53,18 +54,24 @@ def _load_silver_data(symbol: str, years: list[int]) -> pd.DataFrame:
     settings = get_settings()
     processor = SilverProcessor(settings)
 
+    # 데이터 로딩용 컨텍스트 로거
+    load_logger = get_strategy_logger(strategy="DataLoader", symbol=symbol)
+
     dfs = []
     for year in years:
         try:
             df = processor.load(symbol, year)
             dfs.append(df)
+            load_logger.debug(f"Loaded {year}: {len(df):,} candles")
             console.print(
                 f"  [green]✓[/green] Loaded {symbol} {year}: {len(df):,} candles"
             )
         except FileNotFoundError:
+            load_logger.warning(f"Data not found for {year}, skipping")
             console.print(f"  [yellow]![/yellow] {symbol} {year} not found, skipping")
 
     if not dfs:
+        load_logger.error("No data found")
         msg = f"No data found for {symbol}"
         raise FileNotFoundError(msg)
 
@@ -75,6 +82,7 @@ def _load_silver_data(symbol: str, years: list[int]) -> pd.DataFrame:
         msg = "Expected DataFrame from concat"
         raise TypeError(msg)
 
+    load_logger.info(f"Total loaded: {len(combined):,} candles")
     return combined
 
 
@@ -111,7 +119,7 @@ def _resample_to_1d(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @app.command()
-def run(  # noqa: PLR0913, PLR0915
+def run(  # noqa: PLR0915
     symbol: Annotated[
         str,
         typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
@@ -120,33 +128,6 @@ def run(  # noqa: PLR0913, PLR0915
         list[int],
         typer.Option("--year", "-y", help="Year(s) to backtest"),
     ] = [2024, 2025],  # noqa: B006
-    lookback: Annotated[
-        int,
-        typer.Option("--lookback", "-l", help="Momentum lookback period (days)"),
-    ] = 30,
-    vol_target: Annotated[
-        float,
-        typer.Option("--vol-target", "-v", help="Annual volatility target (0.0-1.0)"),
-    ] = 0.40,
-    # Portfolio Manager options
-    max_leverage_cap: Annotated[
-        float,
-        typer.Option("--max-leverage", "-m", help="Maximum leverage cap (PM setting)"),
-    ] = 2.0,
-    rebalance_threshold: Annotated[
-        float,
-        typer.Option("--rebal-threshold", "-r", help="Rebalancing threshold (0.0-0.5)"),
-    ] = 0.05,
-    execution_mode: Annotated[
-        str,
-        typer.Option("--exec-mode", "-e", help="Execution mode (orders, signals)"),
-    ] = "orders",
-    cost_model: Annotated[
-        str,
-        typer.Option(
-            "--cost", "-c", help="Cost model (binance_futures, conservative, zero)"
-        ),
-    ] = "binance_futures",
     report: Annotated[
         bool,
         typer.Option("--report/--no-report", help="Generate QuantStats HTML report"),
@@ -158,25 +139,26 @@ def run(  # noqa: PLR0913, PLR0915
 ) -> None:
     """Run VW-TSMOM backtest on historical data.
 
-    Strategy parameters (TSMOMConfig):
-        --lookback, --vol-target: Strategy-specific signal generation
+    Uses default configurations for both strategy and portfolio management:
+        - TSMOMConfig: Default strategy parameters (use `info` command to see)
+        - PortfolioManagerConfig: Default PM settings (use `info` command to see)
 
-    Portfolio Manager parameters (PortfolioManagerConfig):
-        --max-leverage, --rebal-threshold, --exec-mode: Execution settings
+    For parameter optimization, use the `optimize` command instead.
 
     Example:
         uv run python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
-        uv run python -m src.cli.backtest run ETH/USDT -y 2024 --lookback 48 --vol-target 0.20
-        uv run python -m src.cli.backtest run BTC/USDT -y 2025 --max-leverage 2.0 --report
+        uv run python -m src.cli.backtest run BTC/USDT -y 2024 --report
+        uv run python -m src.cli.backtest run ETH/USDT -y 2025 --verbose
     """
-    # 🔍 디버그: 로깅 설정 (verbose 모드에서 INFO 레벨)
+    # 로깅 설정: verbose 모드에서 DEBUG 레벨, 아니면 WARNING 레벨
+    console_level = "DEBUG" if verbose else "WARNING"
+    setup_logger(console_level=console_level)
+
+    # 전략 컨텍스트가 바인딩된 로거 생성
+    ctx_logger = get_strategy_logger(strategy="VW-TSMOM", symbol=symbol)
+
     if verbose:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(levelname)s | %(name)s | %(message)s",
-        )
-        logger = logging.getLogger(__name__)
-        logger.info("🔍 Debug mode enabled - detailed logs will be shown")
+        ctx_logger.info("Debug mode enabled - detailed logs will be shown")
 
     console.print(
         Panel.fit(
@@ -184,8 +166,8 @@ def run(  # noqa: PLR0913, PLR0915
                 f"[bold]VW-TSMOM Backtest[/bold]\n"
                 f"Symbol: {symbol}\n"
                 f"Years: {', '.join(map(str, year))}\n"
-                f"Strategy: lookback={lookback}d (daily candles), vol_target={vol_target:.0%}\n"
-                f"PM: max_lev={max_leverage_cap}x, rebal={rebalance_threshold:.1%}, mode={execution_mode}"
+                f"Strategy: TSMOMConfig (defaults)\n"
+                f"PM: PortfolioManagerConfig (defaults)"
             ),
             border_style="blue",
         )
@@ -205,59 +187,23 @@ def run(  # noqa: PLR0913, PLR0915
     daily_df = _resample_to_1d(df)
     console.print(f"  Resampled: {len(daily_df):,} daily candles")
 
-    # Step 3: 전략 설정
+    # Step 3: 전략 설정 (기본값 사용)
     console.print("\n[bold cyan]Step 3: Configuring strategy...[/bold cyan]")
-    strategy_config = TSMOMConfig(
-        lookback=lookback,
-        vol_window=lookback,
-        vol_target=vol_target,
-    )
-    strategy = TSMOMStrategy(strategy_config)
+    strategy = TSMOMStrategy()  # Uses default TSMOMConfig
+    console.print("  [green]✓[/green] Using default TSMOMConfig")
 
     if verbose:
         config_table = Table(title="Strategy Configuration (TSMOMConfig)")
         config_table.add_column("Parameter", style="cyan")
         config_table.add_column("Value", style="green")
-        for key, value in strategy_config.model_dump().items():
+        for key, value in strategy.config.model_dump().items():
             config_table.add_row(key, str(value))
         console.print(config_table)
 
-    # Step 4: 포트폴리오 매니저 설정
-    cost_models = {
-        "binance_futures": CostModel.binance_futures,
-        "binance_spot": CostModel.binance_spot,
-        "conservative": CostModel.conservative,
-        "optimistic": CostModel.optimistic,
-        "zero": CostModel.zero,
-    }
-
-    if cost_model not in cost_models:
-        console.print(f"[bold red]Unknown cost model:[/bold red] {cost_model}")
-        console.print(f"Available: {', '.join(cost_models.keys())}")
-        raise typer.Exit(code=1)
-
-    # execution_mode 검증
-    if execution_mode not in ("orders", "signals"):
-        console.print(f"[bold red]Unknown execution mode:[/bold red] {execution_mode}")
-        console.print("Available: orders, signals")
-        raise typer.Exit(code=1)
-
-    selected_cost_model = cost_models[cost_model]()
-
-    # PortfolioManagerConfig 생성
-    pm_config = PortfolioManagerConfig(
-        execution_mode=execution_mode,  # type: ignore[arg-type]
-        max_leverage_cap=max_leverage_cap,
-        rebalance_threshold=rebalance_threshold,
-        cost_model=selected_cost_model,
-    )
-
-    console.print(f"  Execution mode: {execution_mode}")
-    console.print(f"  Max leverage cap: {max_leverage_cap}x")
-    console.print(f"  Rebalance threshold: {rebalance_threshold:.0%}")
-    console.print(
-        f"  Cost model: {cost_model} (round-trip: {selected_cost_model.round_trip_cost:.2%})"
-    )
+    # Step 4: 포트폴리오 매니저 설정 (기본값 사용)
+    pm_config = PortfolioManagerConfig()  # Uses defaults
+    console.print("\n[bold cyan]Step 4: Configuring portfolio manager...[/bold cyan]")
+    console.print("  [green]✓[/green] Using default PortfolioManagerConfig")
 
     if verbose:
         pm_table = Table(title="Portfolio Manager Configuration")
@@ -269,6 +215,7 @@ def run(  # noqa: PLR0913, PLR0915
 
     # Step 5: 백테스트 실행
     console.print("\n[bold cyan]Step 5: Running backtest...[/bold cyan]")
+    ctx_logger.info("Starting backtest engine")
 
     try:
         engine = BacktestEngine(
@@ -279,12 +226,18 @@ def run(  # noqa: PLR0913, PLR0915
 
         # 백테스트 실행 (리포트 생성 시 returns도 함께 반환)
         if report:
+            ctx_logger.debug("Running with returns for report generation")
             result, strategy_returns, benchmark_returns = engine.run_with_returns(
                 strategy, daily_df, symbol
             )
 
             # 결과 출력
             print_performance_summary(result)
+            ctx_logger.info(
+                "Backtest completed",
+                total_return=result.metrics.total_return,
+                sharpe=result.metrics.sharpe_ratio,
+            )
 
             # HTML 리포트 생성
             console.print("\n[bold cyan]Step 6: Generating report...[/bold cyan]")
@@ -294,11 +247,18 @@ def run(  # noqa: PLR0913, PLR0915
                 title=f"{strategy.name} Backtest - {symbol}",
             )
             console.print(f"  [green]✓[/green] Report saved: {report_path}")
+            ctx_logger.success(f"Report generated: {report_path}")
         else:
             result = engine.run(strategy, daily_df, symbol)
             print_performance_summary(result)
+            ctx_logger.info(
+                "Backtest completed",
+                total_return=result.metrics.total_return,
+                sharpe=result.metrics.sharpe_ratio,
+            )
 
     except ImportError as e:
+        ctx_logger.exception("VectorBT import failed")
         console.print(f"[bold yellow]Warning:[/bold yellow] {e}")
         console.print("Install VectorBT with: pip install vectorbt")
         raise typer.Exit(code=1) from e
@@ -324,6 +284,10 @@ def optimize(
     Example:
         uv run python -m src.cli.backtest optimize BTC/USDT --year 2024 --year 2025
     """
+    # 로깅 설정 (WARNING 레벨로 최소화)
+    setup_logger(console_level="WARNING")
+    opt_logger = get_strategy_logger(strategy="Optimizer", symbol=symbol)
+
     console.print(
         Panel.fit(
             (
@@ -337,11 +301,13 @@ def optimize(
 
     # 데이터 로드
     console.print("\n[bold cyan]Loading data...[/bold cyan]")
+    opt_logger.info("Starting parameter optimization")
     try:
         df = _load_silver_data(symbol, year)
         daily_df = _resample_to_1d(df)
         console.print(f"  Total: {len(daily_df):,} daily candles")
     except FileNotFoundError as e:
+        opt_logger.exception("Data load failed")
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
 
@@ -401,6 +367,12 @@ def optimize(
 
         # 최적 파라미터
         best = results.iloc[0]
+        opt_logger.success(
+            "Optimization completed",
+            best_lookback=int(best["lookback"]),
+            best_vol_target=best["vol_target"],
+            best_sharpe=best["sharpe_ratio"],
+        )
         console.print(
             Panel(
                 (
@@ -415,6 +387,7 @@ def optimize(
         )
 
     except ImportError as e:
+        opt_logger.exception("VectorBT import failed")
         console.print(f"[bold yellow]Warning:[/bold yellow] {e}")
         raise typer.Exit(code=1) from e
 

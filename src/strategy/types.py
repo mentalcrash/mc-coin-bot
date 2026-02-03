@@ -5,7 +5,7 @@
 
 Rules Applied:
     - #10 Python Standards: Modern typing (X | None, list[])
-    - #16 Pyright Typing: type keyword for aliases
+    - #16 Basedpyright Typing: type keyword for aliases
 """
 
 from enum import Enum, IntEnum

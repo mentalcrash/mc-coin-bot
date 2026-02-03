@@ -63,7 +63,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.14.14", # 버전 통일됨
     "pre-commit>=4.0.0",
-    "pyright>=1.1.408",
+    "basedpyright>=1.37.3",
 ]
 
 # 연구/분석용 도구 (노트북, 백테스팅) -> uv run --group research ...
@@ -156,38 +156,44 @@ indent-style = "space"            # 들여쓰기 (space 추천)
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.pyright]
-# 1. 프로젝트 범위 및 환경 설정
-include = ["src"]        # src 레이아웃 권장
-exclude = ["**/__pycache__", "tests"]
-
-# [uv 통합 핵심] uv가 생성한 .venv를 Pyright가 인식하도록 설정
+[tool.basedpyright]
+# 1. 기본 설정 (Pyright와 동일)
+include = ["src"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "tests",
+    "research",
+    "build",
+    "dist"
+]
 venvPath = "."
 venv = ".venv"
-
-# 2. 타겟 파이썬 버전 (프로젝트에 맞게 수정)
 pythonVersion = "3.13"
 
-# 3. 타입 체크 모드: 'strict'를 권장하되, 예외를 둡니다.
-# standard: 2026년의 새로운 기본값 (basic보다 강하고 strict보다 약함)
-# strict: 모든 타입 힌트 강제 (추천)
+# 2. 타입 체크 모드
+# BasedPyright의 'strict'는 기존 Pyright보다 훨씬 엄격합니다.
+# 너무 까다롭다면 'standard'로 낮추는 것을 고려하세요.
 typeCheckingMode = "strict"
 
-# 4. Ruff와의 역할 분담 (충돌 방지)
-# import 정렬과 미사용 import 감지는 Ruff가 훨씬 빠르고 자동 수정이 가능하므로 끕니다.
+# 3. BasedPyright 전용 강력한 규칙 (선택 사항)
+# True로 설정하면 코드 내의 모든 'Any' 타입을 에러로 처리합니다 (매우 엄격함).
+reportAny = false 
+reportExplicitAny = false
+
+# 4. 실용적 예외 처리 (기존 유지)
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnnecessaryCast = false
 reportUnusedImport = false
 reportUnusedClass = false
+reportUnusedVariable = false
 
-# 5. 실용적 예외 처리 (Pragmatic Overrides)
-# 외부 라이브러리에 타입 정보가 없을 때 발생하는 노이즈를 제거합니다.
-reportMissingTypeStubs = false    # "Stub file not found" 에러 무시 (가장 중요)
-reportUnknownMemberType = false   # 외부 라이브러리 멤버의 타입을 모를 때 무시
-reportUnknownArgumentType = false # 인자 타입 추론 불가 시 무시
-
-# 6. 엄격함 유지
-# 하지만, 내 코드 내부의 타입 누락은 엄격하게 잡습니다.
-reportMissingImports = true       # 임포트 경로가 잘못되면 에러
-reportImplicitStringConcatenation = true # "s" "tr" 같은 암시적 문자열 병합 금지 (버그 유발)
+# 5. 안전장치 (기존 유지)
+reportImplicitStringConcatenation = true
+reportMissingImports = true
 
 # ============================================
 # pytest 설정

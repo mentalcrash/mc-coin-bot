@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## 1. Modern Syntax (Annotated First)
 - **Use `Annotated`:** Typer의 인자 설정은 반드시 `typing.Annotated`를 사용합니다. (Python 3.13 표준)
-    - 이는 Pydantic V2 및 Pyright와 가장 호환성이 좋은 패턴입니다.
+    - 이는 Pydantic V2 및 Basedpyright와 가장 호환성이 좋은 패턴입니다.
     - ✅ `def main(name: Annotated[str, typer.Option(help="...")]):`
     - ❌ `def main(name: str = typer.Option(..., help="...")): ` (Legacy)
 
