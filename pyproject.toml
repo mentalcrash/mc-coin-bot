@@ -131,6 +131,7 @@ ignore = [
     "S311",   # random 모듈 사용 허용 (보안이 필요 없는 경우)
     "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
     "TRY003", # 긴 에러 메시지를 예외 클래스에 직접 넣기 금지 -> 허용 (빠른 개발 위해)
+    "PLR0915", 
 ]
 
 # Allow autofix for all enabled rules

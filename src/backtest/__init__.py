@@ -1,25 +1,35 @@
 """Backtesting module for strategy evaluation.
 
 이 모듈은 VectorBT 기반 백테스팅 인프라를 제공합니다.
-전략 성과 평가, 비용 모델링, 성과 지표 계산을 담당합니다.
+Clean Architecture 원칙에 따라 설계되었습니다.
+
+Core Components:
+    - BacktestEngine: Stateless 백테스트 실행자
+    - BacktestRequest: 실행 요청 DTO (Command Pattern)
+    - PerformanceAnalyzer: 성과 분석 전담
 
 Example:
-    >>> from src.backtest import BacktestEngine, PortfolioManagerConfig
+    >>> from src.backtest import BacktestEngine, BacktestRequest, PerformanceAnalyzer
+    >>> from src.data import MarketDataService, MarketDataRequest
+    >>> from src.portfolio import Portfolio
     >>> from src.strategy.tsmom import TSMOMStrategy
     >>>
-    >>> # 기본 설정 사용
-    >>> engine = BacktestEngine(initial_capital=10000)
-    >>> result = engine.run(strategy=TSMOMStrategy(), data=ohlcv_df)
+    >>> # 데이터 로드
+    >>> data = MarketDataService().get(MarketDataRequest(...))
     >>>
-    >>> # 보수적 설정 사용
-    >>> engine = BacktestEngine(
-    ...     portfolio_config=PortfolioManagerConfig.conservative(),
-    ...     initial_capital=10000,
+    >>> # 백테스트 요청 생성
+    >>> request = BacktestRequest(
+    ...     data=data,
+    ...     strategy=TSMOMStrategy(),
+    ...     portfolio=Portfolio.create(initial_capital=10000),
     ... )
-    >>> result = engine.run(strategy=TSMOMStrategy(), data=ohlcv_df)
+    >>>
+    >>> # 실행
+    >>> result = BacktestEngine().run(request)
     >>> print(result.metrics.sharpe_ratio)
 """
 
+from src.backtest.analyzer import PerformanceAnalyzer
 from src.backtest.cost_model import CostModel
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.metrics import (
@@ -41,11 +51,15 @@ from src.backtest.reporter import (
     generate_report_from_backtest_result,
     print_performance_summary,
 )
-from src.portfolio.config import PortfolioManagerConfig
+from src.backtest.request import BacktestRequest
+from src.portfolio import Portfolio, PortfolioManagerConfig
 
 __all__ = [
     "BacktestEngine",
+    "BacktestRequest",
     "CostModel",
+    "PerformanceAnalyzer",
+    "Portfolio",
     "PortfolioManagerConfig",
     "calculate_all_metrics",
     "calculate_cagr",

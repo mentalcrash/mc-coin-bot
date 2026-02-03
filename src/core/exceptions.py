@@ -151,6 +151,17 @@ class DataIntegrityError(DataValidationError):
     """데이터 무결성 오류 (결측치, 중복 등)."""
 
 
+class DataNotFoundError(DataValidationError):
+    """데이터 미존재 오류 (요청한 기간/심볼의 데이터 없음).
+
+    Example:
+        >>> raise DataNotFoundError(
+        ...     "No data found for BTC/USDT in 2025",
+        ...     context={"symbol": "BTC/USDT", "year": 2025}
+        ... )
+    """
+
+
 # =============================================================================
 # Critical Errors (Unrecoverable - Immediate Stop)
 # =============================================================================
