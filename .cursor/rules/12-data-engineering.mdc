@@ -36,7 +36,11 @@ alwaysApply: false
     - 최종 사용자에게 보여주거나 `QuantStats` 리포트를 생성할 때는 **단순 수익률(Simple Returns)**로 변환합니다.
     - 공식: `np.expm1(log_returns)` (정밀도가 `np.exp(x) - 1` 보다 우수함)
 
-## 5. VectorBT (Backtesting) Rules
+## 5. Standardized Strategy Interface
+- **Standardized Input:** 모든 전략은 `open`, `high`, `low`, `close`, `volume` 컬럼을 포함한 `pd.DataFrame`을 입력받아야 합니다. (Rule `01-project-structure.mdc` 연동)
+- **Standardized Output:** 전략의 결과물은 반드시 `Signal Series` (1, -1, 0) 또는 `Weight Series` (0.0 ~ 1.0)여야 합니다.
+
+## 6. VectorBT (Backtesting) Rules
 - **Indicator Construction:** 기술적 지표 생성 시 `vbt.IndicatorFactory`를 사용하여 벡터화된 지표를 생성합니다.
 - **Portfolio Simulation:**
     - `vbt.Portfolio.from_signals()` 또는 `vbt.Portfolio.from_orders()`를 사용하여 전체 기간의 시뮬레이션을 단일 연산으로 처리합니다.

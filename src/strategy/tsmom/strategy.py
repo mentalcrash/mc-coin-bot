@@ -75,13 +75,16 @@ class TSMOMStrategy(BaseStrategy):
 
         OHLCV 데이터에 VW-TSMOM 지표를 계산하여 추가합니다.
 
+        Note:
+            레버리지 클램핑은 PortfolioManagerConfig에서 처리됩니다.
+            전략은 순수한 raw_signal만 생성합니다.
+
         Calculated Columns:
             - returns: 수익률
             - realized_vol: 실현 변동성
             - vw_momentum: 거래량 가중 모멘텀
             - vol_scalar: 변동성 스케일러
-            - raw_signal: 원시 시그널
-            - position_size: 포지션 크기
+            - raw_signal: 원시 시그널 (레버리지 무제한)
 
         Args:
             df: OHLCV DataFrame (DatetimeIndex 필수)

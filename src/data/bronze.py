@@ -73,9 +73,9 @@ class BronzeStorage:
 
         # timestamp를 인덱스로 설정 (UTC timezone 유지)
         if not df.empty:
-            df.set_index("timestamp", inplace=True)
+            df = df.set_index("timestamp")
             df.index = pd.to_datetime(df.index, utc=True)
-            df.sort_index(inplace=True)
+            df = df.sort_index()
 
         return df
 
@@ -126,14 +126,13 @@ class BronzeStorage:
                     "size_bytes": path.stat().st_size,
                 },
             )
-
-            return path
-
         except Exception as e:
             raise StorageError(
                 f"Failed to save Bronze data to {path}",
                 context={"path": str(path), "error": str(e)},
             ) from e
+        else:
+            return path
 
     def load(self, symbol: str, year: int) -> pd.DataFrame:
         """Bronze 데이터 로드.
@@ -170,14 +169,13 @@ class BronzeStorage:
                     "rows": len(df),
                 },
             )
-
-            return df
-
         except Exception as e:
             raise StorageError(
                 f"Failed to load Bronze data from {path}",
                 context={"path": str(path), "error": str(e)},
             ) from e
+        else:
+            return df
 
     def exists(self, symbol: str, year: int) -> bool:
         """Bronze 파일 존재 여부 확인.
@@ -250,7 +248,7 @@ class BronzeStorage:
             # 병합 및 중복 제거
             combined_df = cast("pd.DataFrame", pd.concat([existing_df, new_df]))
             combined_df = combined_df[~combined_df.index.duplicated(keep="last")]
-            combined_df.sort_index(inplace=True)
+            combined_df = combined_df.sort_index()
 
             # 저장
             combined_df.to_parquet(path, compression="zstd", index=True)
@@ -264,11 +262,10 @@ class BronzeStorage:
                     "total_rows": len(combined_df),
                 },
             )
-
-            return path
-
         except Exception as e:
             raise StorageError(
                 f"Failed to append Bronze data to {path}",
                 context={"path": str(path), "error": str(e)},
             ) from e
+        else:
+            return path

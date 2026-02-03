@@ -9,11 +9,15 @@ Rules Applied:
     - Shift(1) Rule: 미래 참조 편향 방지
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 
 from src.strategy.tsmom.config import TSMOMConfig
 from src.strategy.types import Direction, StrategySignals
+
+logger = logging.getLogger(__name__)
 
 
 def generate_signals(
@@ -27,22 +31,26 @@ def generate_signals(
 
     Important:
         - 입력 DataFrame에는 preprocess()로 계산된 컬럼이 필요합니다.
-        - 필수 컬럼: position_size
+        - 필수 컬럼: raw_signal
         - entries/exits는 bool Series
         - direction은 -1, 0, 1 값을 가지는 int Series
-        - strength는 포지션 사이징에 사용되는 float Series
+        - strength는 순수 시그널 강도 (레버리지 제한 미적용)
+
+    Note:
+        레버리지 클램핑(max_leverage_cap)과 시그널 필터링(rebalance_threshold)은
+        PortfolioManagerConfig에서 처리됩니다. 전략은 순수한 시그널만 생성합니다.
 
     Args:
         df: 전처리된 DataFrame (preprocess() 출력)
-            필수 컬럼: position_size
-        config: TSMOM 설정 (선택적, 임계값 적용 시 사용)
+            필수 컬럼: raw_signal
+        config: TSMOM 설정 (미사용, 하위 호환성 유지)
 
     Returns:
         StrategySignals NamedTuple:
             - entries: 진입 시그널 (bool Series)
             - exits: 청산 시그널 (bool Series)
             - direction: 방향 시리즈 (-1, 0, 1)
-            - strength: 시그널 강도 (-max_leverage ~ +max_leverage)
+            - strength: 시그널 강도 (레버리지 무제한)
 
     Raises:
         ValueError: 필수 컬럼 누락 시
@@ -52,34 +60,58 @@ def generate_signals(
         >>> processed_df = preprocess(ohlcv_df, config)
         >>> signals = generate_signals(processed_df)
         >>> signals.entries  # pd.Series[bool]
-        >>> signals.strength  # pd.Series[float]
+        >>> signals.strength  # pd.Series[float] (unbounded)
     """
+    # config 파라미터는 하위 호환성을 위해 유지 (미사용)
+    _ = config
+
     # 입력 검증
-    if "position_size" not in df.columns:
-        msg = "Missing required column: 'position_size'. Run preprocess() first."
+    if "raw_signal" not in df.columns:
+        msg = "Missing required column: 'raw_signal'. Run preprocess() first."
         raise ValueError(msg)
 
     # 1. Shift(1) 적용: 전봉 기준 시그널 (미래 참조 편향 방지)
     # 현재 봉의 시그널은 전봉까지의 데이터로 계산된 값을 사용
-    position_series: pd.Series = df["position_size"]  # type: ignore[assignment]
-    position_shifted: pd.Series = position_series.shift(1)  # type: ignore[assignment]
+    signal_series: pd.Series = df["raw_signal"]  # type: ignore[assignment]
+    signal_shifted: pd.Series = signal_series.shift(1)  # type: ignore[assignment]
 
     # 2. 방향 계산 (-1, 0, 1)
-    direction_raw = pd.Series(np.sign(position_shifted), index=df.index)
+    direction_raw = pd.Series(np.sign(signal_shifted), index=df.index)
     direction = pd.Series(
         direction_raw.fillna(0).astype(int),
         index=df.index,
         name="direction",
     )
 
-    # 3. 강도 계산 (레버리지 스케일)
+    # 3. 🔧 FIX: Trend Filter 적용 (shift 후)
+    # shift된 신호와 shift된 추세를 매칭하여 필터링
+    signal_filtered = signal_shifted.copy()
+
+    if "trend_regime" in df.columns:
+        trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
+        trend_regime_shifted = trend_regime.shift(1)
+
+        # 상승장(shift된)인데 숏 신호(shift된)면 0으로
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == 1) & (signal_shifted < 0), 0, signal_filtered
+        )
+        # 하락장(shift된)인데 롱 신호(shift된)면 0으로
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == -1) & (signal_shifted > 0),
+            0,
+            signal_filtered_array,
+        )
+        # numpy array를 Series로 변환
+        signal_filtered = pd.Series(signal_filtered_array, index=df.index)
+
+    # 4. 강도 계산 (필터링된 시그널 사용)
     strength = pd.Series(
-        position_shifted.fillna(0),
+        signal_filtered.fillna(0),
         index=df.index,
         name="strength",
     )
 
-    # 4. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 5. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -95,7 +127,7 @@ def generate_signals(
         name="entries",
     )
 
-    # 5. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 6. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
     to_neutral = (direction == Direction.NEUTRAL) & (
         prev_direction != Direction.NEUTRAL
@@ -107,6 +139,30 @@ def generate_signals(
         index=df.index,
         name="exits",
     )
+
+    # 🔍 디버그: 시그널 통계
+    valid_strength = strength[strength != 0]
+    long_signals = strength[strength > 0]
+    short_signals = strength[strength < 0]
+
+    logger.info(
+        f"📊 Signal Statistics | Total: {len(valid_strength)} signals, Long: {len(long_signals)} ({len(long_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%), Short: {len(short_signals)} ({len(short_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%)",
+    )
+    logger.info(
+        f"🎯 Entry/Exit Events | Long entries: {long_entry.sum()}, Short entries: {short_entry.sum()}, Exits: {exits.sum()}, Reversals: {reversal.sum()}",
+    )
+
+    # 샘플 롱/숏 진입 시점
+    if long_entry.sum() > 0:
+        first_long = long_entry[long_entry].index[0]
+        logger.info(
+            f"  📈 First Long Entry: {first_long}, Strength: {strength.loc[first_long]:.2f}"
+        )
+    if short_entry.sum() > 0:
+        first_short = short_entry[short_entry].index[0]
+        logger.info(
+            f"  📉 First Short Entry: {first_short}, Strength: {strength.loc[first_short]:.2f}"
+        )
 
     return StrategySignals(
         entries=entries,
@@ -182,5 +238,3 @@ def get_current_signal(df: pd.DataFrame) -> tuple[Direction, float]:
     current_strength = float(signals.strength.iloc[-1])
 
     return current_direction, current_strength
-
-

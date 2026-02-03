@@ -19,11 +19,14 @@ class TSMOMConfig(BaseModel):
     Volume-Weighted Time Series Momentum 전략의 모든 파라미터를 정의합니다.
     학술 연구(SSRN #4825389)에 기반한 기본값을 사용합니다.
 
+    Note:
+        레버리지 제한(max_leverage_cap)과 시그널 필터링(rebalance_threshold)은
+        PortfolioManagerConfig에서 관리합니다. 전략은 순수한 시그널만 생성합니다.
+
     Attributes:
         lookback: 모멘텀 계산 기간 (캔들 수, 보통 시간봉 기준)
         vol_window: 변동성 계산 윈도우 (캔들 수)
         vol_target: 연간 목표 변동성 (0.0~1.0, 예: 0.15 = 15%)
-        max_leverage: 최대 레버리지 배수
         min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
         annualization_factor: 연환산 계수 (시간봉 기준: 24*365 = 8760)
         use_log_returns: 로그 수익률 사용 여부
@@ -34,7 +37,6 @@ class TSMOMConfig(BaseModel):
         ...     lookback=24,
         ...     vol_window=24,
         ...     vol_target=0.15,
-        ...     max_leverage=2.0,
         ... )
     """
 
@@ -42,23 +44,23 @@ class TSMOMConfig(BaseModel):
 
     # 모멘텀 계산 파라미터
     lookback: int = Field(
-        default=24,
+        default=30,  # 30일 (일봉)
         ge=6,
-        le=168,  # 최대 1주일 (시간봉 기준)
+        le=365,  # 최대 1년 (일봉 기준)
         description="모멘텀 계산 기간 (캔들 수)",
     )
 
     # 변동성 파라미터
     vol_window: int = Field(
-        default=24,
+        default=30,  # 30일 (일봉)
         ge=6,
-        le=168,
+        le=365,
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.15,
+        default=0.40,
         ge=0.05,
-        le=0.50,
+        le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
     )
     min_volatility: float = Field(
@@ -68,19 +70,11 @@ class TSMOMConfig(BaseModel):
         description="최소 변동성 클램프 (0으로 나누기 방지)",
     )
 
-    # 레버리지 제한
-    max_leverage: float = Field(
-        default=2.0,
-        ge=0.5,
-        le=5.0,
-        description="최대 레버리지 배수",
-    )
-
     # 시간 프레임 관련
     annualization_factor: float = Field(
-        default=8760.0,  # 24시간 * 365일 (시간봉 기준)
+        default=365.0,  # 일봉 기준
         gt=0,
-        description="연환산 계수 (시간봉: 8760, 분봉: 525600)",
+        description="연환산 계수 (일봉: 365, 4시간봉: 2190, 시간봉: 8760)",
     )
 
     # 옵션
@@ -95,12 +89,38 @@ class TSMOMConfig(BaseModel):
         description="모멘텀 스무딩 윈도우 (선택적, EMA 적용)",
     )
 
-    # 시그널 필터링
-    signal_threshold: float = Field(
-        default=0.0,
+    # 🆕 Z-Score 정규화 & 앙상블 옵션
+    use_zscore: bool = Field(
+        default=True,
+        description="Z-Score 정규화 사용 여부 (신호 품질 향상)",
+    )
+    ensemble_windows: tuple[int, ...] = Field(
+        default=(10, 20, 40),  # 일봉 기준: 10일, 20일, 40일
+        description="앙상블 룩백 윈도우 (캔들 수). 여러 타임프레임 평균으로 휩쏘 감소.",
+    )
+    zscore_clip: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=5.0,
+        description="Z-Score 클리핑 범위 (-clip ~ +clip)",
+    )
+
+    # 🆕 Trend Filter & Deadband (휩쏘 방지)
+    use_trend_filter: bool = Field(
+        default=True,
+        description="국면 필터 사용 여부 (상승장: Long Only, 하락장: Short Only)",
+    )
+    trend_ma_period: int = Field(
+        default=50,
+        ge=20,
+        le=500,
+        description="추세 판단용 이동평균 기간 (일봉 기준, 기본 50일)",
+    )
+    deadband_threshold: float = Field(
+        default=0.5,
         ge=0.0,
-        le=0.5,
-        description="시그널 임계값 (절대값 기준, 이하면 무시)",
+        le=1.5,
+        description="불감대 임계값 (|신호| < threshold면 중립 유지)",
     )
 
     @model_validator(mode="after")
@@ -146,7 +166,7 @@ class TSMOMConfig(BaseModel):
             해당 타임프레임에 최적화된 TSMOMConfig
 
         Example:
-            >>> config = TSMOMConfig.for_timeframe("1h", max_leverage=3.0)
+            >>> config = TSMOMConfig.for_timeframe("1h", vol_target=0.20)
         """
         # 타임프레임별 연환산 계수
         annualization_map: dict[str, float] = {
@@ -180,7 +200,10 @@ class TSMOMConfig(BaseModel):
 
     @classmethod
     def conservative(cls) -> "TSMOMConfig":
-        """보수적 설정 (낮은 레버리지, 높은 변동성 타겟).
+        """보수적 설정 (긴 lookback, 낮은 변동성 타겟).
+
+        Note:
+            레버리지 제한은 PortfolioManagerConfig.conservative()를 함께 사용하세요.
 
         Returns:
             보수적 파라미터의 TSMOMConfig
@@ -189,13 +212,15 @@ class TSMOMConfig(BaseModel):
             lookback=48,
             vol_window=48,
             vol_target=0.10,
-            max_leverage=1.5,
             min_volatility=0.08,
         )
 
     @classmethod
     def aggressive(cls) -> "TSMOMConfig":
-        """공격적 설정 (높은 레버리지, 빠른 반응).
+        """공격적 설정 (짧은 lookback, 높은 변동성 타겟).
+
+        Note:
+            레버리지 제한은 PortfolioManagerConfig.aggressive()를 함께 사용하세요.
 
         Returns:
             공격적 파라미터의 TSMOMConfig
@@ -204,7 +229,6 @@ class TSMOMConfig(BaseModel):
             lookback=12,
             vol_window=12,
             vol_target=0.20,
-            max_leverage=3.0,
             min_volatility=0.05,
         )
 

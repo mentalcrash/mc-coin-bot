@@ -144,7 +144,9 @@ class SilverProcessor:
             expected_count=expected_count,
             actual_count=actual_count,
             gap_count=gap_count,
-            gap_percentage=(gap_count / expected_count * 100) if expected_count > 0 else 0,
+            gap_percentage=(gap_count / expected_count * 100)
+            if expected_count > 0
+            else 0,
             first_timestamp=first_timestamp,
             last_timestamp=last_timestamp,
         )
@@ -213,7 +215,12 @@ class SilverProcessor:
                 if invalid > 0:
                     logger.warning(
                         f"Found {invalid} zero/negative {col} values",
-                        extra={"symbol": symbol, "year": year, "column": col, "count": invalid},
+                        extra={
+                            "symbol": symbol,
+                            "year": year,
+                            "column": col,
+                            "count": invalid,
+                        },
                     )
 
         # 3. 거래량 검사 (음수)
@@ -292,14 +299,13 @@ class SilverProcessor:
                     "size_bytes": silver_path.stat().st_size,
                 },
             )
-
-            return silver_path
-
         except Exception as e:
             raise StorageError(
                 f"Failed to save Silver data to {silver_path}",
                 context={"path": str(silver_path), "error": str(e)},
             ) from e
+        else:
+            return silver_path
 
     def load(self, symbol: str, year: int) -> pd.DataFrame:
         """Silver 데이터 로드.
@@ -332,14 +338,13 @@ class SilverProcessor:
                 f"Silver data loaded: {path}",
                 extra={"path": str(path), "rows": len(df)},
             )
-
-            return df
-
         except Exception as e:
             raise StorageError(
                 f"Failed to load Silver data from {path}",
                 context={"path": str(path), "error": str(e)},
             ) from e
+        else:
+            return df
 
     def exists(self, symbol: str, year: int) -> bool:
         """Silver 파일 존재 여부 확인.
