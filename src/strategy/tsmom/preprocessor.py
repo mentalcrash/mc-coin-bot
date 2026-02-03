@@ -314,26 +314,27 @@ def calculate_volatility_scalar(
     return vol_target / clamped_vol
 
 
-def preprocess(  # noqa: PLR0915
+def preprocess(
     df: pd.DataFrame,
     config: TSMOMConfig,
 ) -> pd.DataFrame:
-    """VW-TSMOM 전처리 (모든 지표 계산).
+    """VW-TSMOM 전처리 (순수 지표 계산).
 
-    OHLCV DataFrame에 VW-TSMOM 전략에 필요한 모든 지표를 계산하여 추가합니다.
+    OHLCV DataFrame에 VW-TSMOM 전략에 필요한 기술적 지표를 계산하여 추가합니다.
     모든 계산은 벡터화되어 있으며 for 루프를 사용하지 않습니다.
 
     Note:
-        레버리지 클램핑과 시그널 필터링은 PortfolioManagerConfig에서 처리됩니다.
-        전략은 순수한 raw_signal만 생성하고, PM이 max_leverage_cap과
-        rebalance_threshold를 적용합니다.
+        이 모듈은 순수 지표 계산만 담당합니다.
+        시그널 생성(scaled_momentum, deadband 적용 등)은 signal.py에서 처리됩니다.
+        레버리지 클램핑은 PortfolioManagerConfig에서 처리됩니다.
 
     Calculated Columns:
         - returns: 수익률 (로그 또는 단순)
         - realized_vol: 실현 변동성 (연환산)
-        - vw_momentum: 거래량 가중 모멘텀
+        - vw_momentum: 거래량 가중 모멘텀 (Z-Score 정규화 또는 원시)
         - vol_scalar: 변동성 스케일러
-        - raw_signal: 원시 시그널 (방향 x 스케일러, 레버리지 무제한)
+        - trend_ma: 추세 판단용 이동평균 (선택적)
+        - trend_regime: 추세 국면 메타데이터 (선택적)
 
     Args:
         df: OHLCV DataFrame (DatetimeIndex 필수)
@@ -419,19 +420,7 @@ def preprocess(  # noqa: PLR0915
         min_volatility=config.min_volatility,
     )
 
-    # 5. 원시 시그널 계산
-    if config.use_zscore:
-        # 🆕 Z-Score 모드: 모멘텀 자체가 이미 정규화됨
-        # 모멘텀 강도를 직접 사용 (방향 포함)
-        # vol_scalar로 목표 변동성에 맞춰 스케일링
-        result["raw_signal"] = result["vw_momentum"] * result["vol_scalar"]
-        logger.info("📈 Z-Score Signal | Momentum (normalized) used directly")
-    else:
-        # 기존 모드: 방향만 추출하고 vol_scalar로 크기 조절
-        momentum_direction = np.sign(result["vw_momentum"])
-        result["raw_signal"] = momentum_direction * result["vol_scalar"]
-
-    # 6. 🆕 Trend Filter (국면 필터) - 메타데이터만 저장
+    # 5. Trend Filter (국면 필터) - 메타데이터만 저장
     # 실제 필터링은 signal.py에서 shift(1) 후 적용
     if config.use_trend_filter:
         trend_ma: pd.Series = close_series.rolling(  # type: ignore[assignment]
@@ -453,28 +442,6 @@ def preprocess(  # noqa: PLR0915
             downtrend_count,
         )
 
-    # 7. 🆕 Deadband (불감대)
-    # 신호 강도가 임계값 이하면 중립 유지 (확실한 추세에서만 진입)
-    if config.deadband_threshold > 0:
-        momentum: pd.Series = result["vw_momentum"]  # type: ignore[assignment]
-
-        # |momentum| < threshold 면 신호를 0으로 (Z-Score 기준)
-        deadband_mask = np.abs(momentum) < config.deadband_threshold
-        result["raw_signal"] = np.where(deadband_mask, 0, result["raw_signal"])
-
-        # 통계 로깅
-        filtered_count = int(deadband_mask.sum())
-        total_count = len(momentum.dropna())
-        if total_count > 0:
-            filtered_pct = filtered_count / total_count * 100
-            logger.info(
-                "🚫 Deadband | Threshold: %.2f, Filtered: %d/%d (%.1f%%)",
-                config.deadband_threshold,
-                filtered_count,
-                total_count,
-                filtered_pct,
-            )
-
     # 🔍 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()
     if len(valid_data) > 0:
@@ -482,16 +449,12 @@ def preprocess(  # noqa: PLR0915
         mom_max = valid_data["vw_momentum"].max()
         vs_min = valid_data["vol_scalar"].min()
         vs_max = valid_data["vol_scalar"].max()
-        sig_min = valid_data["raw_signal"].min()
-        sig_max = valid_data["raw_signal"].max()
         logger.info(
-            "📊 VW-TSMOM | Mom: [%.4f, %.4f] Vol: [%.2f, %.2f] Sig: [%.2f, %.2f]",
+            "📊 VW-TSMOM Indicators | Momentum: [%.4f, %.4f], Vol Scalar: [%.2f, %.2f]",
             mom_min,
             mom_max,
             vs_min,
             vs_max,
-            sig_min,
-            sig_max,
         )
         # 방향성 검증: 가격 vs 모멘텀
         price_change = (result["close"].iloc[-1] / result["close"].iloc[0] - 1) * 100

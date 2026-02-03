@@ -29,9 +29,16 @@ def generate_signals(
     전처리된 DataFrame에서 진입/청산 시그널과 강도를 계산합니다.
     Shift(1) Rule을 적용하여 미래 참조 편향을 방지합니다.
 
+    Signal Generation Pipeline:
+        1. scaled_momentum 계산: vw_momentum * vol_scalar
+        2. Shift(1) 적용: 미래 참조 편향 방지
+        3. Deadband 적용: 노이즈 필터링
+        4. Trend Filter 적용: 국면 반대 방향 시그널 제거
+        5. Entry/Exit 시그널 생성
+
     Important:
-        - 입력 DataFrame에는 preprocess()로 계산된 컬럼이 필요합니다.
-        - 필수 컬럼: raw_signal
+        - 입력 DataFrame에는 preprocess()로 계산된 지표가 필요합니다.
+        - 필수 컬럼: vw_momentum, vol_scalar
         - entries/exits는 bool Series
         - direction은 -1, 0, 1 값을 가지는 int Series
         - strength는 순수 시그널 강도 (레버리지 제한 미적용)
@@ -42,8 +49,8 @@ def generate_signals(
 
     Args:
         df: 전처리된 DataFrame (preprocess() 출력)
-            필수 컬럼: raw_signal
-        config: TSMOM 설정 (미사용, 하위 호환성 유지)
+            필수 컬럼: vw_momentum, vol_scalar
+        config: TSMOM 설정 (deadband, use_zscore 등)
 
     Returns:
         StrategySignals NamedTuple:
@@ -58,46 +65,83 @@ def generate_signals(
     Example:
         >>> from src.strategy.tsmom.preprocessor import preprocess
         >>> processed_df = preprocess(ohlcv_df, config)
-        >>> signals = generate_signals(processed_df)
+        >>> signals = generate_signals(processed_df, config)
         >>> signals.entries  # pd.Series[bool]
         >>> signals.strength  # pd.Series[float] (unbounded)
     """
-    # config 파라미터는 하위 호환성을 위해 유지 (미사용)
-    _ = config
+    # 기본 config 설정
+    if config is None:
+        config = TSMOMConfig()
 
     # 입력 검증
-    if "raw_signal" not in df.columns:
-        msg = "Missing required column: 'raw_signal'. Run preprocess() first."
+    required_cols = {"vw_momentum", "vol_scalar"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        msg = f"Missing required columns: {missing}. Run preprocess() first."
         raise ValueError(msg)
 
-    # 1. Shift(1) 적용: 전봉 기준 시그널 (미래 참조 편향 방지)
-    # 현재 봉의 시그널은 전봉까지의 데이터로 계산된 값을 사용
-    signal_series: pd.Series = df["raw_signal"]  # type: ignore[assignment]
-    signal_shifted: pd.Series = signal_series.shift(1)  # type: ignore[assignment]
+    # 1. Scaled Momentum 계산 (시그널의 원재료)
+    momentum_series: pd.Series = df["vw_momentum"]  # type: ignore[assignment]
+    vol_scalar_series: pd.Series = df["vol_scalar"]  # type: ignore[assignment]
 
-    # 2. 🔧 FIX: Trend Filter 적용 (shift 후) - direction 계산 전에 적용
-    # shift된 신호와 shift된 추세를 매칭하여 필터링
+    if config.use_zscore:
+        # Z-Score 모드: 모멘텀 강도 자체가 이미 정규화됨
+        # 모멘텀 강도를 직접 사용하고 vol_scalar로 목표 변동성에 맞춰 스케일링
+        scaled_momentum = momentum_series * vol_scalar_series
+    else:
+        # 기존 모드: 방향만 추출하고 vol_scalar로 크기 조절
+        momentum_direction = np.sign(momentum_series)
+        scaled_momentum = momentum_direction * vol_scalar_series
+
+    # 2. Shift(1) 적용: 전봉 기준 시그널 (미래 참조 편향 방지)
+    # 현재 봉의 시그널은 전봉까지의 데이터로 계산된 값을 사용
+    signal_shifted: pd.Series = scaled_momentum.shift(1)  # type: ignore[assignment]
+
+    # 3. Deadband 적용 (shift 후): 노이즈 필터링
+    # |momentum| < threshold 인 경우 신호를 0으로
     signal_filtered = signal_shifted.copy()
 
+    if config.deadband_threshold > 0:
+        # shift된 momentum 값으로 판단해야 함
+        momentum_shifted = momentum_series.shift(1)
+        deadband_mask = np.abs(momentum_shifted) < config.deadband_threshold
+        signal_filtered = pd.Series(
+            np.where(deadband_mask, 0, signal_filtered),
+            index=df.index,
+        )
+
+        # 통계 로깅
+        filtered_count = int(deadband_mask.sum())
+        total_count = len(momentum_shifted.dropna())
+        if total_count > 0:
+            filtered_pct = filtered_count / total_count * 100
+            logger.info(
+                "🚫 Deadband | Threshold: %.2f, Filtered: %d/%d (%.1f%%)",
+                config.deadband_threshold,
+                filtered_count,
+                total_count,
+                filtered_pct,
+            )
+
+    # 4. Trend Filter 적용 (shift 후): 국면 반대 방향 시그널 제거
     if "trend_regime" in df.columns:
         trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
         trend_regime_shifted = trend_regime.shift(1)
 
         # 상승장(shift된)인데 숏 신호(shift된)면 0으로
         signal_filtered_array = np.where(
-            (trend_regime_shifted == 1) & (signal_shifted < 0), 0, signal_filtered
+            (trend_regime_shifted == 1) & (signal_filtered < 0), 0, signal_filtered
         )
         # 하락장(shift된)인데 롱 신호(shift된)면 0으로
         signal_filtered_array = np.where(
-            (trend_regime_shifted == -1) & (signal_shifted > 0),
+            (trend_regime_shifted == -1) & (signal_filtered > 0),
             0,
             signal_filtered_array,
         )
         # numpy array를 Series로 변환
         signal_filtered = pd.Series(signal_filtered_array, index=df.index)
 
-    # 3. 🔧 FIX (H1): direction을 signal_filtered (필터 후)에서 계산
-    # 이렇게 해야 direction과 strength가 동일한 소스에서 나옴
+    # 5. Direction 계산 (필터링된 시그널에서)
     direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
     direction = pd.Series(
         direction_raw.fillna(0).astype(int),
@@ -105,14 +149,14 @@ def generate_signals(
         name="direction",
     )
 
-    # 4. 강도 계산 (필터링된 시그널 사용)
+    # 6. 강도 계산 (필터링된 시그널 사용)
     strength = pd.Series(
         signal_filtered.fillna(0),
         index=df.index,
         name="strength",
     )
 
-    # 5. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 7. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -128,7 +172,7 @@ def generate_signals(
         name="entries",
     )
 
-    # 6. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 8. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
     to_neutral = (direction == Direction.NEUTRAL) & (
         prev_direction != Direction.NEUTRAL
