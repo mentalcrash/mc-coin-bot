@@ -532,7 +532,9 @@ def _diagnose_breakout(
     # 로깅 설정
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
-    ctx_logger = get_strategy_logger(strategy="AdaptiveBreakout-Diagnosis", symbol=symbol)
+    ctx_logger = get_strategy_logger(
+        strategy="AdaptiveBreakout-Diagnosis", symbol=symbol
+    )
 
     config = AdaptiveBreakoutConfig()
 
@@ -567,7 +569,7 @@ def _diagnose_breakout(
         )
         logger.success(
             f"Loaded {data.symbol}: {data.periods:,} daily candles "
-            f"({data.start.date()} ~ {data.end.date()})"
+            + f"({data.start.date()} ~ {data.end.date()})"
         )
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
@@ -626,9 +628,15 @@ def _diagnose_breakout(
     position_table.add_column("Days", justify="right")
     position_table.add_column("Percentage", justify="right")
 
-    position_table.add_row("Long", f"{long_days:,}", f"{long_days / total_days * 100:.1f}%")
-    position_table.add_row("Short", f"{short_days:,}", f"{short_days / total_days * 100:.1f}%")
-    position_table.add_row("Neutral", f"{neutral_days:,}", f"{neutral_days / total_days * 100:.1f}%")
+    position_table.add_row(
+        "Long", f"{long_days:,}", f"{long_days / total_days * 100:.1f}%"
+    )
+    position_table.add_row(
+        "Short", f"{short_days:,}", f"{short_days / total_days * 100:.1f}%"
+    )
+    position_table.add_row(
+        "Neutral", f"{neutral_days:,}", f"{neutral_days / total_days * 100:.1f}%"
+    )
     console.print(position_table)
 
     # 돌파 분석 테이블
@@ -680,7 +688,9 @@ def _diagnose_breakout(
 
     benchmark_table.add_row("Buy & Hold Return", f"{total_benchmark:+.1f}%")
     benchmark_table.add_row("Strategy Return", f"{strategy_return:+.1f}%")
-    benchmark_table.add_row("Alpha (vs B&H)", f"{strategy_return - total_benchmark:+.1f}%")
+    benchmark_table.add_row(
+        "Alpha (vs B&H)", f"{strategy_return - total_benchmark:+.1f}%"
+    )
     benchmark_table.add_row("Market Exposure", f"{exposure * 100:.1f}%")
     console.print(benchmark_table)
 
@@ -692,7 +702,10 @@ def _diagnose_breakout(
     vol_table.add_row("ATR Mean", f"${float(processed_df['atr'].mean()):,.2f}")
     vol_table.add_row("Threshold Mean", f"${float(threshold.mean()):,.2f}")
     vol_table.add_row("Band Width Mean", f"${float((upper - lower).mean()):,.2f}")
-    vol_table.add_row("Threshold/Band Ratio", f"{float((threshold / (upper - lower)).mean()) * 100:.1f}%")
+    vol_table.add_row(
+        "Threshold/Band Ratio",
+        f"{float((threshold / (upper - lower)).mean()) * 100:.1f}%",
+    )
     console.print(vol_table)
 
     # 권장사항
@@ -702,7 +715,7 @@ def _diagnose_breakout(
     if neutral_days / total_days > BREAKOUT_LOW_EXPOSURE_THRESHOLD:
         issues.append(
             f"[yellow]Low Exposure:[/yellow] {neutral_days / total_days * 100:.0f}% in cash. "
-            "Consider lowering k_value (e.g., 0.5~0.75)."
+            + "Consider lowering k_value (e.g., 0.5~0.75)."
         )
 
     if threshold_short == 0:
@@ -713,7 +726,7 @@ def _diagnose_breakout(
     if long_days > short_days * 5 and short_days > 0:
         issues.append(
             f"[yellow]Long Bias:[/yellow] {long_days}x Long vs {short_days}x Short. "
-            "Strategy may underperform in bear markets."
+            + "Strategy may underperform in bear markets."
         )
 
     if strategy_return > total_benchmark:
@@ -723,19 +736,29 @@ def _diagnose_breakout(
     elif strategy_return > 0:
         recommendations.append(
             "[yellow]Underperforming:[/yellow] Positive return but below B&H. "
-            "Consider k_value=0.5 for more signals."
+            + "Consider k_value=0.5 for more signals."
         )
 
     if long_correct == long_days and long_days > 0:
-        recommendations.append("[green]100% Long Hit Rate:[/green] ATR threshold is effective at filtering noise.")
+        recommendations.append(
+            "[green]100% Long Hit Rate:[/green] ATR threshold is effective at filtering noise."
+        )
 
     if issues:
         issues_content = "\n".join(f"  • {issue}" for issue in issues)
-        console.print(Panel(f"[bold]Issues Detected[/bold]\n\n{issues_content}", border_style="red"))
+        console.print(
+            Panel(
+                f"[bold]Issues Detected[/bold]\n\n{issues_content}", border_style="red"
+            )
+        )
 
     if recommendations:
-        rec_content = "\n".join(f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations))
-        console.print(Panel(f"[bold]Assessment[/bold]\n\n{rec_content}", border_style="green"))
+        rec_content = "\n".join(
+            f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations)
+        )
+        console.print(
+            Panel(f"[bold]Assessment[/bold]\n\n{rec_content}", border_style="green")
+        )
 
     ctx_logger.success(
         "Diagnosis completed",
@@ -909,7 +932,9 @@ def diagnose(  # noqa: PLR0912
     if attribution.lost_to_vol_scaling > 0:
         beta_panel_content += f" [red](-{attribution.lost_to_vol_scaling:.3f})[/red]"
     elif attribution.lost_to_vol_scaling < 0:
-        beta_panel_content += f" [green](+{-attribution.lost_to_vol_scaling:.3f})[/green]"
+        beta_panel_content += (
+            f" [green](+{-attribution.lost_to_vol_scaling:.3f})[/green]"
+        )
 
     beta_panel_content += (
         f"\n  3. After Deadband:           {attribution.beta_after_deadband:>7.3f}"
@@ -925,7 +950,9 @@ def diagnose(  # noqa: PLR0912
     if attribution.lost_to_trend_filter > 0:
         beta_panel_content += f" [red](-{attribution.lost_to_trend_filter:.3f})[/red]"
     elif attribution.lost_to_trend_filter < 0:
-        beta_panel_content += f" [green](+{-attribution.lost_to_trend_filter:.3f})[/green]"
+        beta_panel_content += (
+            f" [green](+{-attribution.lost_to_trend_filter:.3f})[/green]"
+        )
 
     beta_panel_content += (
         f"\n\n  [bold]Realized Beta:             {attribution.realized_beta:>7.3f}[/bold]"
@@ -933,7 +960,9 @@ def diagnose(  # noqa: PLR0912
     )
 
     console.print(
-        Panel(beta_panel_content, title="Beta Attribution Analysis", border_style="cyan")
+        Panel(
+            beta_panel_content, title="Beta Attribution Analysis", border_style="cyan"
+        )
     )
 
     # 포지션 분포 테이블
@@ -960,15 +989,24 @@ def diagnose(  # noqa: PLR0912
     market_table.add_column("Value", justify="right")
 
     market_table.add_row("Total Days", f"{total_days:,}")
-    market_table.add_row("Bull Market Days", f"{bull_days:,} ({bull_days / total_days * 100:.1f}%)")
-    market_table.add_row("Bear Market Days", f"{bear_days:,} ({bear_days / total_days * 100:.1f}%)")
+    market_table.add_row(
+        "Bull Market Days", f"{bull_days:,} ({bull_days / total_days * 100:.1f}%)"
+    )
+    market_table.add_row(
+        "Bear Market Days", f"{bear_days:,} ({bear_days / total_days * 100:.1f}%)"
+    )
     market_table.add_row("Benchmark Return", f"{total_benchmark_return:+.1f}%")
-    market_table.add_row("Benchmark Up Days", f"{benchmark_positive_days:,} ({benchmark_positive_days / total_days * 100:.1f}%)")
+    market_table.add_row(
+        "Benchmark Up Days",
+        f"{benchmark_positive_days:,} ({benchmark_positive_days / total_days * 100:.1f}%)",
+    )
     market_table.add_row("Avg Signal Strength", f"{avg_signal_strength:.4f}")
     market_table.add_row("Avg Final Weight", f"{avg_final_weight:.4f}")
     market_table.add_row(
         "Signal Efficiency",
-        f"{avg_final_weight / avg_signal_strength * 100:.1f}%" if avg_signal_strength > 0 else "N/A",
+        f"{avg_final_weight / avg_signal_strength * 100:.1f}%"
+        if avg_signal_strength > 0
+        else "N/A",
     )
 
     console.print(market_table)
@@ -979,24 +1017,54 @@ def diagnose(  # noqa: PLR0912
     long_returns = benchmark_returns[long_mask]
     short_returns = benchmark_returns[short_mask]
 
-    long_pnl = float((diagnostics_df.loc[long_mask, "final_target_weight"] * benchmark_returns[long_mask]).sum()) * 100
-    short_pnl = float((diagnostics_df.loc[short_mask, "final_target_weight"] * benchmark_returns[short_mask]).sum()) * 100
+    long_pnl = (
+        float(
+            (
+                diagnostics_df.loc[long_mask, "final_target_weight"]
+                * benchmark_returns[long_mask]
+            ).sum()
+        )
+        * 100
+    )
+    short_pnl = (
+        float(
+            (
+                diagnostics_df.loc[short_mask, "final_target_weight"]
+                * benchmark_returns[short_mask]
+            ).sum()
+        )
+        * 100
+    )
 
     # Long이 수익인 날 / Short이 수익인 날
     long_profitable_days = int((long_returns > 0).sum()) if len(long_returns) > 0 else 0
-    short_profitable_days = int((short_returns < 0).sum()) if len(short_returns) > 0 else 0  # Short은 하락 시 수익
+    short_profitable_days = (
+        int((short_returns < 0).sum()) if len(short_returns) > 0 else 0
+    )  # Short은 하락 시 수익
 
     # Bull/Bear 별 전략 성과
     if "trend_regime" in diagnostics_df.columns:
         bull_mask_diag = diagnostics_df["trend_regime"] == 1
         bear_mask_diag = diagnostics_df["trend_regime"] == -1
 
-        bull_strategy_return = float(
-            (diagnostics_df.loc[bull_mask_diag, "final_target_weight"] * benchmark_returns[bull_mask_diag]).sum()
-        ) * 100
-        bear_strategy_return = float(
-            (diagnostics_df.loc[bear_mask_diag, "final_target_weight"] * benchmark_returns[bear_mask_diag]).sum()
-        ) * 100
+        bull_strategy_return = (
+            float(
+                (
+                    diagnostics_df.loc[bull_mask_diag, "final_target_weight"]
+                    * benchmark_returns[bull_mask_diag]
+                ).sum()
+            )
+            * 100
+        )
+        bear_strategy_return = (
+            float(
+                (
+                    diagnostics_df.loc[bear_mask_diag, "final_target_weight"]
+                    * benchmark_returns[bear_mask_diag]
+                ).sum()
+            )
+            * 100
+        )
 
         bull_benchmark_return = float(benchmark_returns[bull_mask_diag].sum()) * 100
         bear_benchmark_return = float(benchmark_returns[bear_mask_diag].sum()) * 100
@@ -1014,12 +1082,16 @@ def diagnose(  # noqa: PLR0912
     signal_direction = pd.Series(np.sign(final_weights), index=diagnostics_df.index)
 
     # 인덱스를 맞춤 (diagnostics_df 기준)
-    next_day_return = benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
+    next_day_return = (
+        benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
+    )
     next_day_direction = pd.Series(np.sign(next_day_return), index=diagnostics_df.index)
 
     correct_signals = (signal_direction == next_day_direction) & (signal_direction != 0)
     total_signals = int((signal_direction != 0).sum())
-    hit_rate = float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
+    hit_rate = (
+        float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
+    )
 
     # 레버리지 캡 영향 분석
     leverage_capped_mask = suppression_stats.get("leverage_cap", {})
@@ -1029,12 +1101,14 @@ def diagnose(  # noqa: PLR0912
     # 레버리지 캡으로 인한 손실 추정 (캡이 없었다면 얼마나 더 벌었을까)
     if leverage_cap_count > 0:
         # 캡된 날들의 원래 시그널 강도
-        capped_days = diagnostics_df[diagnostics_df["signal_suppression_reason"] == "leverage_cap"]
+        capped_days = diagnostics_df[
+            diagnostics_df["signal_suppression_reason"] == "leverage_cap"
+        ]
         scaled_mom: pd.Series = capped_days["scaled_momentum"]  # type: ignore[assignment]
         bench_at_capped: pd.Series = benchmark_returns.loc[capped_days.index]  # type: ignore[assignment]
-        potential_extra_return = float(
-            ((scaled_mom.abs() - 2.0) * bench_at_capped.abs()).sum()
-        ) * 100
+        potential_extra_return = (
+            float(((scaled_mom.abs() - 2.0) * bench_at_capped.abs()).sum()) * 100
+        )
     else:
         potential_extra_return = 0.0
 
@@ -1056,13 +1130,19 @@ def diagnose(  # noqa: PLR0912
     )
     direction_table.add_row(
         "Profitable Days",
-        f"{long_profitable_days:,} ({long_profitable_days / long_count * 100:.1f}%)" if long_count > 0 else "N/A",
-        f"{short_profitable_days:,} ({short_profitable_days / short_count * 100:.1f}%)" if short_count > 0 else "N/A",
+        f"{long_profitable_days:,} ({long_profitable_days / long_count * 100:.1f}%)"
+        if long_count > 0
+        else "N/A",
+        f"{short_profitable_days:,} ({short_profitable_days / short_count * 100:.1f}%)"
+        if short_count > 0
+        else "N/A",
     )
     direction_table.add_row(
         "Avg Daily Return",
         f"{float(long_returns.mean()) * 100:+.2f}%" if len(long_returns) > 0 else "N/A",
-        f"{float(short_returns.mean()) * 100:+.2f}%" if len(short_returns) > 0 else "N/A",
+        f"{float(short_returns.mean()) * 100:+.2f}%"
+        if len(short_returns) > 0
+        else "N/A",
     )
 
     console.print(direction_table)
@@ -1090,8 +1170,12 @@ def diagnose(  # noqa: PLR0912
     )
     regime_table.add_row(
         "Capture Rate",
-        f"{bull_strategy_return / bull_benchmark_return * 100:.1f}%" if bull_benchmark_return != 0 else "N/A",
-        f"{bear_strategy_return / bear_benchmark_return * 100:.1f}%" if bear_benchmark_return != 0 else "N/A",
+        f"{bull_strategy_return / bull_benchmark_return * 100:.1f}%"
+        if bull_benchmark_return != 0
+        else "N/A",
+        f"{bear_strategy_return / bear_benchmark_return * 100:.1f}%"
+        if bear_benchmark_return != 0
+        else "N/A",
     )
 
     console.print(regime_table)
@@ -1129,7 +1213,9 @@ def diagnose(  # noqa: PLR0912
         "",
     )
     lost_return_assessment = (
-        "[yellow]Consider higher cap[/yellow]" if potential_extra_return > LOST_RETURN_THRESHOLD else ""
+        "[yellow]Consider higher cap[/yellow]"
+        if potential_extra_return > LOST_RETURN_THRESHOLD
+        else ""
     )
     quality_table.add_row(
         "Est. Lost Return (Capping)",
@@ -1213,7 +1299,10 @@ def diagnose(  # noqa: PLR0912
             + "Filters may be too aggressive."
         )
 
-    if long_ratio < LONG_RATIO_LOW and total_benchmark_return > BENCHMARK_RETURN_SIGNIFICANT:
+    if (
+        long_ratio < LONG_RATIO_LOW
+        and total_benchmark_return > BENCHMARK_RETURN_SIGNIFICANT
+    ):
         issues.append(
             f"[yellow]Missing Bull:[/yellow] Only {long_ratio:.0%} long days in +{total_benchmark_return:.0f}% market. "
             + "Strategy is missing upside."
