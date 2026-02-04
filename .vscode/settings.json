@@ -1,39 +1,36 @@
 {
+  // Claude Code 위치를 사이드바로 설정
+  "claudeCode.preferredLocation": "sidebar",
+
+  // Python 기본 설정
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.fixAll": "explicit",
-      "source.organizeImports": "explicit"
+      "source.organizeImports": "explicit",
+      "source.fixAll": "explicit"
     }
   },
-  
+  "python.analysis.typeCheckingMode": "basic",
+
+  // 일반 에디터 설정
+  "editor.fontSize": 14,
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "files.autoSave": "afterDelay",
+  "files.trimTrailingWhitespace": true,
+
+  // Git 설정
+  "git.autofetch": true,
+  "git.confirmSync": false,
+
+  // 터미널 설정
+  "terminal.integrated.fontSize": 13,
+
   // 4. Ruff 확장 프로그램 전용 설정
   "ruff.enable": true,
   "ruff.organizeImports": true,
   "ruff.fixAll": true,
-
-  // 1. 기본 분석 활성화 (기본값이 off이므로 반드시 켜야 함)
-  // 'openFilesOnly'는 열린 파일만 검사하여 성능을 높입니다. 
-  // 전체 프로젝트 검사가 필요하면 "workspace"로 변경하세요.
-  "cursorpyright.analysis.typeCheckingMode": "standard", 
-
-  // 2. Inlay Hints 활성화 (기본값이 비활성이므로 켜줍니다)
-  "cursorpyright.analysis.inlayHints.variableTypes": false,      // 변수 타입은 너무 시끄러울 수 있음
-  "cursorpyright.analysis.inlayHints.functionReturnTypes": true, // 함수 반환 타입은 추천
-  "cursorpyright.analysis.inlayHints.callArgumentNames": false,  // 인자 이름 힌트
-  "cursorpyright.analysis.inlayHints.genericTypes": false,
-
-  // 3. 메모리 및 성능 최적화
-  // 워크스페이스 심볼 기능이 너무 무거우면 true로 설정하세요.
-  "cursorpyright.analysis.disableWorkspaceSymbol": false,
-
-  "files.watcherExclude": {
-    "**/.git/objects/**": true,
-    "**/.git/subtree-cache/**": true,
-    "**/node_modules/*/**": true,
-    "**/.venv/**": true,
-    "**/__pycache__/**": true
-  },
-
 }

@@ -82,7 +82,7 @@ research = [
 
 [tool.ruff]
 target-version = "py313"
-line-length = 88
+line-length = 100
 cache-dir = "~/.cache/ruff"
 
 # Exclude common directories
@@ -133,7 +133,7 @@ ignore = [
     "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
     "TRY003", # 긴 에러 메시지를 예외 클래스에 직접 넣기 금지 -> 허용 (빠른 개발 위해)
     "ISC003", # basedpyright의 reportImplicitStringConcatenation과 충돌하므로 명시적 연결 허용
-    "PLR0915", 
+    "PLR0915",
     "PLR0913",
     "PLC0415",
 ]
@@ -183,7 +183,7 @@ typeCheckingMode = "strict"
 
 # 3. BasedPyright 전용 강력한 규칙 (선택 사항)
 # True로 설정하면 코드 내의 모든 'Any' 타입을 에러로 처리합니다 (매우 엄격함).
-reportAny = false 
+reportAny = false
 reportExplicitAny = false
 
 # 4. 실용적 예외 처리 (기존 유지)
