@@ -19,12 +19,12 @@ Example:
     >>> print(list_strategies())  # ['adaptive-breakout', 'tsmom']
 """
 
+# pyright: reportUnusedImport=false
+
 # 전략 자동 등록 (import 시 @register 데코레이터 실행)
 # NOTE: 각 전략 모듈이 임포트될 때 Registry에 등록됨
-from src.strategy import (
-    breakout as _breakout,  # noqa: F401
-    tsmom as _tsmom,  # noqa: F401
-)
+import src.strategy.breakout  # 전략 등록 side effect
+import src.strategy.tsmom  # 전략 등록 side effect
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import (
     get_strategy,

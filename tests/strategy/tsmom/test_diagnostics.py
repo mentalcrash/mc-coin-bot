@@ -26,7 +26,7 @@ class TestSignalDiagnosticRecord:
         record = SignalDiagnosticRecord(
             timestamp=datetime.now(UTC),
             symbol="BTC/USDT",
-            close_price=Decimal("50000"),
+            close_price=Decimal(50000),
             realized_vol_annualized=0.65,
             benchmark_return=0.02,
             raw_momentum=0.15,
@@ -45,7 +45,7 @@ class TestSignalDiagnosticRecord:
         )
 
         assert record.symbol == "BTC/USDT"
-        assert record.close_price == Decimal("50000")
+        assert record.close_price == Decimal(50000)
         assert record.signal_suppression_reason == "none"
         assert record.is_signal_suppressed is False
 
@@ -54,7 +54,7 @@ class TestSignalDiagnosticRecord:
         record = SignalDiagnosticRecord(
             timestamp=datetime.now(UTC),
             symbol="BTC/USDT",
-            close_price=Decimal("50000"),
+            close_price=Decimal(50000),
             realized_vol_annualized=0.65,
             benchmark_return=0.02,
             raw_momentum=0.15,
@@ -90,7 +90,7 @@ class TestSignalDiagnosticRecord:
         record = SignalDiagnosticRecord(
             timestamp=datetime.now(UTC),
             symbol="BTC/USDT",
-            close_price=Decimal("50000"),
+            close_price=Decimal(50000),
             realized_vol_annualized=0.65,
             benchmark_return=0.02,
             raw_momentum=0.15,

@@ -48,7 +48,7 @@ class TradeRecord(BaseModel):
     size: Decimal = Field(..., gt=0)
     pnl: Decimal | None = None
     pnl_pct: float | None = None
-    fees: Decimal = Field(default=Decimal("0"))
+    fees: Decimal = Field(default=Decimal(0))
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -407,7 +407,7 @@ class BacktestConfig(BaseModel):
     timeframe: str
     start_date: datetime
     end_date: datetime
-    initial_capital: Decimal = Field(default=Decimal("10000"))
+    initial_capital: Decimal = Field(default=Decimal(10000))
     maker_fee: float = Field(default=0.0002, ge=0, description="메이커 수수료 (%)")
     taker_fee: float = Field(default=0.0004, ge=0, description="테이커 수수료 (%)")
     slippage: float = Field(default=0.0005, ge=0, description="슬리피지 (%)")

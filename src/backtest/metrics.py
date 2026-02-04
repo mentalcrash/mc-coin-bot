@@ -8,6 +8,9 @@ Rules Applied:
     - #12 Data Engineering: Log returns for calculation
 """
 
+# pyright: reportArgumentType=false, reportOperatorIssue=false
+# pandas Scalar 타입은 실제로 숫자형이지만 타입 체커가 모든 가능성(complex, datetime 등)을 고려함
+
 import numpy as np
 import pandas as pd
 
@@ -26,7 +29,9 @@ def calculate_returns(
         수익률 시리즈
     """
     if log_returns:
-        return np.log(prices / prices.shift(1))
+        # np.log 결과를 명시적으로 Series로 변환
+        result = np.log(prices / prices.shift(1))
+        return pd.Series(result, index=prices.index)
     return prices.pct_change()
 
 
@@ -39,8 +44,10 @@ def calculate_total_return(returns: pd.Series) -> float:
     Returns:
         총 수익률 (%)
     """
-    cumulative = (1 + returns.fillna(0)).prod()
-    return float((cumulative - 1) * 100)
+    cumulative_value = (1 + returns.fillna(0)).prod()
+    # pandas prod()는 Scalar 타입을 반환하므로 명시적으로 float 변환
+    cumulative_float = float(cumulative_value)
+    return (cumulative_float - 1) * 100
 
 
 def calculate_cagr(
@@ -59,14 +66,15 @@ def calculate_cagr(
     if len(returns) == 0:
         return 0.0
 
-    total_return = (1 + returns.fillna(0)).prod()
+    total_return_value = (1 + returns.fillna(0)).prod()
+    total_return_float = float(total_return_value)
     years = len(returns) / periods_per_year
 
-    if years <= 0 or total_return <= 0:
+    if years <= 0 or total_return_float <= 0:
         return 0.0
 
-    cagr = (total_return ** (1 / years) - 1) * 100
-    return float(cagr)
+    cagr = (total_return_float ** (1 / years) - 1) * 100
+    return cagr
 
 
 def calculate_sharpe_ratio(
@@ -84,7 +92,8 @@ def calculate_sharpe_ratio(
     Returns:
         샤프 비율
     """
-    if len(returns) == 0 or returns.std() == 0:
+    returns_std = float(returns.std())
+    if len(returns) == 0 or returns_std == 0:
         return 0.0
 
     # 기간별 무위험 수익률
@@ -94,8 +103,10 @@ def calculate_sharpe_ratio(
     excess_returns = returns - rf_per_period
 
     # 샤프 비율 (연환산)
-    sharpe = (excess_returns.mean() / excess_returns.std()) * np.sqrt(periods_per_year)
-    return float(sharpe)
+    mean_excess = float(excess_returns.mean())
+    std_excess = float(excess_returns.std())
+    sharpe = (mean_excess / std_excess) * np.sqrt(periods_per_year)
+    return sharpe
 
 
 def calculate_sortino_ratio(
@@ -127,12 +138,13 @@ def calculate_sortino_ratio(
     if len(downside_returns) == 0:
         return float("inf")  # 손실 없음
 
-    downside_std = downside_returns.std()
-    if downside_std == 0:
+    downside_std_value = float(downside_returns.std())
+    if downside_std_value == 0:
         return 0.0
 
-    sortino = (excess_returns.mean() / downside_std) * np.sqrt(periods_per_year)
-    return float(sortino)
+    mean_excess = float(excess_returns.mean())
+    sortino = (mean_excess / downside_std_value) * np.sqrt(periods_per_year)
+    return sortino
 
 
 def calculate_max_drawdown(
@@ -166,8 +178,8 @@ def calculate_max_drawdown(
     drawdown = (curve - running_max) / running_max
 
     # Maximum drawdown
-    mdd = float(drawdown.min() * 100)
-    return mdd
+    mdd_value = float(drawdown.min())
+    return mdd_value * 100
 
 
 def calculate_calmar_ratio(
@@ -206,10 +218,10 @@ def calculate_win_rate(
     if len(trade_returns) == 0:
         return 0.0
 
-    wins = (trade_returns > 0).sum()
+    wins = int((trade_returns > 0).sum())
     total = len(trade_returns)
 
-    return float((wins / total) * 100)
+    return (wins / total) * 100
 
 
 def calculate_profit_factor(
@@ -228,13 +240,13 @@ def calculate_profit_factor(
     if len(trade_returns) == 0:
         return None
 
-    gross_profit = trade_returns[trade_returns > 0].sum()
-    gross_loss = abs(trade_returns[trade_returns < 0].sum())
+    gross_profit_value = float(trade_returns[trade_returns > 0].sum())
+    gross_loss_value = float(abs(trade_returns[trade_returns < 0].sum()))
 
-    if gross_loss == 0:
-        return float("inf") if gross_profit > 0 else None
+    if gross_loss_value == 0:
+        return float("inf") if gross_profit_value > 0 else None
 
-    return float(gross_profit / gross_loss)
+    return gross_profit_value / gross_loss_value
 
 
 def calculate_volatility(
@@ -253,8 +265,9 @@ def calculate_volatility(
     if len(returns) == 0:
         return 0.0
 
-    vol = returns.std() * np.sqrt(periods_per_year) * 100
-    return float(vol)
+    std_value = float(returns.std())
+    vol = std_value * np.sqrt(periods_per_year) * 100
+    return vol
 
 
 MIN_SAMPLES_SKEWNESS = 3
@@ -272,7 +285,8 @@ def calculate_skewness(returns: pd.Series) -> float:
     """
     if len(returns) < MIN_SAMPLES_SKEWNESS:
         return 0.0
-    return float(returns.skew())
+    skew_value = returns.skew()
+    return float(skew_value)
 
 
 def calculate_kurtosis(returns: pd.Series) -> float:
@@ -289,7 +303,8 @@ def calculate_kurtosis(returns: pd.Series) -> float:
     """
     if len(returns) < MIN_SAMPLES_KURTOSIS:
         return 0.0
-    return float(returns.kurtosis())
+    kurtosis_value = returns.kurtosis()
+    return float(kurtosis_value)
 
 
 def calculate_drawdown_series(

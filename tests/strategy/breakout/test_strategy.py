@@ -117,7 +117,7 @@ class TestAdaptiveBreakoutStrategy:
         try:
             portfolio = AdaptiveBreakoutStrategy.recommended_portfolio(initial_capital=50000)
 
-            assert portfolio.initial_capital == Decimal("50000")
+            assert portfolio.initial_capital == Decimal(50000)
             assert portfolio.config.max_leverage_cap == 2.5
             assert portfolio.config.system_stop_loss == 0.08
             assert portfolio.config.rebalance_threshold == 0.03

@@ -70,7 +70,7 @@ class Portfolio(BaseModel):
     @classmethod
     def create(
         cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
+        initial_capital: Decimal | float | int = Decimal(10000),
         config: PortfolioManagerConfig | None = None,
     ) -> Self:
         """기본 포트폴리오 생성.
@@ -97,7 +97,7 @@ class Portfolio(BaseModel):
     @classmethod
     def conservative(
         cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
+        initial_capital: Decimal | float | int = Decimal(10000),
     ) -> Self:
         """보수적 포트폴리오 생성.
 
@@ -117,7 +117,7 @@ class Portfolio(BaseModel):
     @classmethod
     def aggressive(
         cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
+        initial_capital: Decimal | float | int = Decimal(10000),
     ) -> Self:
         """공격적 포트폴리오 생성.
 
@@ -137,7 +137,7 @@ class Portfolio(BaseModel):
     @classmethod
     def paper_trading(
         cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
+        initial_capital: Decimal | float | int = Decimal(10000),
     ) -> Self:
         """페이퍼 트레이딩 포트폴리오 생성.
 
@@ -160,7 +160,7 @@ class Portfolio(BaseModel):
     @classmethod
     def binance_vip(
         cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
+        initial_capital: Decimal | float | int = Decimal(10000),
         vip_level: int = 1,
     ) -> Self:
         """바이낸스 VIP 등급별 포트폴리오 생성.
