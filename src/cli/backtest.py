@@ -25,10 +25,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.backtest.analyzer import PerformanceAnalyzer
-from src.backtest.beta_attribution import (
-    calculate_beta_attribution,
-    summarize_suppression_impact,
-)
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.reporter import generate_quantstats_report, print_performance_summary
 from src.backtest.request import BacktestRequest
@@ -41,31 +37,16 @@ from src.logging.context import get_strategy_logger
 from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
-# NOTE: Legacy imports for backward compatibility (diagnose command)
-# TODO: Migrate diagnose command to use Strategy-agnostic diagnostics
+# TSMOM strategy imports for diagnose/optimize commands
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
 from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
 # Global Console Instance (Rich UI for user-facing output)
 console = Console()
 
-# Beta Attribution Thresholds
-BETA_LOSS_THRESHOLD_LOW = 0.1
-BETA_LOSS_THRESHOLD_HIGH = 0.2
-BETA_RETENTION_GOOD = 0.7
-BETA_RETENTION_WARNING = 0.5
-BETA_RETENTION_CRITICAL = 0.3
-VOL_SCALING_AMPLIFICATION_THRESHOLD = -0.1
-NEUTRAL_RATIO_HIGH = 0.5
-LONG_RATIO_LOW = 0.1
-BENCHMARK_RETURN_SIGNIFICANT = 20
-
 # Signal Quality Thresholds
 HIT_RATE_GOOD = 55
 HIT_RATE_AVERAGE = 50
-LEVERAGE_CAP_LOW = 20
-LEVERAGE_CAP_MEDIUM = 50
-LOST_RETURN_THRESHOLD = 5
 
 # Breakout Diagnosis Thresholds
 BREAKOUT_LOW_EXPOSURE_THRESHOLD = 0.95
@@ -769,7 +750,7 @@ def _diagnose_breakout(
 
 
 @app.command()
-def diagnose(  # noqa: PLR0912
+def diagnose(
     symbol: Annotated[
         str,
         typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
@@ -786,39 +767,32 @@ def diagnose(  # noqa: PLR0912
         list[int],
         typer.Option("--year", "-y", help="Year(s) to backtest"),
     ] = [2024, 2025],  # noqa: B006
-    window: Annotated[
-        int,
-        typer.Option("--window", "-w", help="Rolling window for Beta calculation"),
-    ] = 60,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-V", help="Enable verbose output"),
     ] = False,
-    capital: Annotated[
-        float,
-        typer.Option("--capital", "-c", help="Initial capital (USD)"),
-    ] = 10000.0,
 ) -> None:
-    """Run signal pipeline diagnosis for trading strategies.
+    """Run signal pipeline diagnosis for trading strategies (Pure TSMOM).
 
-    Analyzes why the strategy may not be capturing market upside by
-    examining signal generation pipeline and filter effects.
+    Analyzes signal generation and Long/Short performance without filters.
 
     Supported Strategies:
-        - tsmom: Beta Attribution analysis (Trend Filter, Deadband, Vol Scaling)
+        - tsmom: Pure TSMOM + Vol Target signal analysis
         - adaptive-breakout: Breakout detection analysis (ATR Threshold, Channel)
 
     Example:
         uv run python -m src.cli.backtest diagnose BTC/USDT -s tsmom -y 2024 -y 2025
         uv run python -m src.cli.backtest diagnose BTC/USDT -s adaptive-breakout -y 2024
-        uv run python -m src.cli.backtest diagnose ETH/USDT -s tsmom --verbose
     """
+    import numpy as np
+    import pandas as pd
+
     # 전략 분기: adaptive-breakout은 별도 진단 함수 호출
     if strategy_name == "adaptive-breakout":
         _diagnose_breakout(symbol, year, verbose)
         return
 
-    # TSMOM 전략 진단 (기존 로직)
+    # TSMOM 전략 진단
     from src.strategy.tsmom.preprocessor import preprocess
 
     # 로깅 설정
@@ -830,10 +804,9 @@ def diagnose(  # noqa: PLR0912
     console.print(
         Panel.fit(
             (
-                f"[bold]VW-TSMOM Beta Attribution Diagnosis[/bold]\n"
+                f"[bold]Pure VW-TSMOM Signal Diagnosis[/bold]\n"
                 f"Symbol: {symbol}\n"
-                f"Years: {', '.join(map(str, year))}\n"
-                f"Rolling Window: {window} days"
+                f"Years: {', '.join(map(str, year))}"
             ),
             border_style="yellow",
         )
@@ -857,8 +830,8 @@ def diagnose(  # noqa: PLR0912
 
         data = data_service.get(data_request)
         logger.success(
-            f"Loaded {data.symbol}: {data.periods:,} daily candles "
-            + f"({data.start.date()} ~ {data.end.date()})"
+            f"Loaded {data.symbol}: {data.periods:,} daily candles " +
+            f"({data.start.date()} ~ {data.end.date()})"
         )
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
@@ -869,30 +842,18 @@ def diagnose(  # noqa: PLR0912
     config = TSMOMConfig()
     processed_df = preprocess(data.ohlcv, config)
 
-    # Step 3: 진단 데이터 수집과 함께 시그널 생성
-    ctx_logger.info("Generating signals with diagnostics")
+    # Step 3: 시그널 생성
+    ctx_logger.info("Generating signals")
     result = generate_signals_with_diagnostics(processed_df, config, symbol)
     diagnostics_df = result.diagnostics_df
 
     logger.success(f"Generated {len(diagnostics_df)} diagnostic records")
 
     # Step 4: 벤치마크 수익률 계산
-    logger.info("Step 3: Calculating benchmark returns...")
     close_series = data.ohlcv["close"]
     benchmark_returns = close_series.pct_change().dropna()
 
-    # Step 5: Beta Attribution 분석
-    logger.info("Step 4: Running Beta Attribution analysis...")
-    attribution = calculate_beta_attribution(
-        diagnostics_df,
-        benchmark_returns,  # type: ignore[arg-type]
-        window=window,
-    )
-
-    # Step 6: 시그널 억제 통계
-    suppression_stats = summarize_suppression_impact(diagnostics_df)
-
-    # ========== 추가 분석: Long/Short별, 시그널 효율성 ==========
+    # ========== 분석 ==========
 
     # Long/Short 방향별 분석
     long_mask = diagnostics_df["final_target_weight"] > 0
@@ -904,18 +865,8 @@ def diagnose(  # noqa: PLR0912
     neutral_count = int(neutral_mask.sum())
     total_days = len(diagnostics_df)
 
-    # 시장 국면별 분석
-    if "trend_regime" in diagnostics_df.columns:
-        bull_mask = diagnostics_df["trend_regime"] == 1
-        bear_mask = diagnostics_df["trend_regime"] == -1
-        bull_days = int(bull_mask.sum())
-        bear_days = int(bear_mask.sum())
-    else:
-        bull_days = bear_days = 0
-
     # 시그널 강도 분석
     avg_signal_strength = float(diagnostics_df["scaled_momentum"].abs().mean())
-    avg_final_weight = float(diagnostics_df["final_target_weight"].abs().mean())
 
     # 벤치마크 수익률 통계
     total_benchmark_return = float(benchmark_returns.sum()) * 100
@@ -923,47 +874,15 @@ def diagnose(  # noqa: PLR0912
 
     # ========== 결과 출력 ==========
 
-    # Beta Attribution Summary Panel (파이프라인 순서 반영)
-    beta_panel_content = (
-        f"[bold cyan]Beta Pipeline (Correct Order)[/bold cyan]\n"
-        f"  1. Potential Beta (Raw):     {attribution.potential_beta:>7.3f}\n"
-        f"  2. After Vol Scaling:        {attribution.potential_beta - attribution.lost_to_vol_scaling:>7.3f}"
+    # 전략 설정 패널
+    config_panel = (
+        f"[bold cyan]Strategy Configuration[/bold cyan]\n"
+        f"  Lookback: {config.lookback} days\n"
+        f"  Vol Target: {config.vol_target:.0%}\n"
+        f"  Vol Window: {config.vol_window} days\n"
+        f"  Mode: Long/Short (Pure TSMOM)"
     )
-    if attribution.lost_to_vol_scaling > 0:
-        beta_panel_content += f" [red](-{attribution.lost_to_vol_scaling:.3f})[/red]"
-    elif attribution.lost_to_vol_scaling < 0:
-        beta_panel_content += (
-            f" [green](+{-attribution.lost_to_vol_scaling:.3f})[/green]"
-        )
-
-    beta_panel_content += (
-        f"\n  3. After Deadband:           {attribution.beta_after_deadband:>7.3f}"
-    )
-    if attribution.lost_to_deadband > 0:
-        beta_panel_content += f" [red](-{attribution.lost_to_deadband:.3f})[/red]"
-    elif attribution.lost_to_deadband < 0:
-        beta_panel_content += f" [green](+{-attribution.lost_to_deadband:.3f})[/green]"
-
-    beta_panel_content += (
-        f"\n  4. After Trend Filter:       {attribution.realized_beta:>7.3f}"
-    )
-    if attribution.lost_to_trend_filter > 0:
-        beta_panel_content += f" [red](-{attribution.lost_to_trend_filter:.3f})[/red]"
-    elif attribution.lost_to_trend_filter < 0:
-        beta_panel_content += (
-            f" [green](+{-attribution.lost_to_trend_filter:.3f})[/green]"
-        )
-
-    beta_panel_content += (
-        f"\n\n  [bold]Realized Beta:             {attribution.realized_beta:>7.3f}[/bold]"
-        f"\n  [bold green]Beta Retention:            {attribution.beta_retention_ratio:>6.1%}[/bold green]"
-    )
-
-    console.print(
-        Panel(
-            beta_panel_content, title="Beta Attribution Analysis", border_style="cyan"
-        )
-    )
+    console.print(Panel(config_panel, title="Configuration", border_style="cyan"))
 
     # 포지션 분포 테이블
     position_table = Table(title="Position Distribution")
@@ -989,29 +908,14 @@ def diagnose(  # noqa: PLR0912
     market_table.add_column("Value", justify="right")
 
     market_table.add_row("Total Days", f"{total_days:,}")
-    market_table.add_row(
-        "Bull Market Days", f"{bull_days:,} ({bull_days / total_days * 100:.1f}%)"
-    )
-    market_table.add_row(
-        "Bear Market Days", f"{bear_days:,} ({bear_days / total_days * 100:.1f}%)"
-    )
     market_table.add_row("Benchmark Return", f"{total_benchmark_return:+.1f}%")
     market_table.add_row(
         "Benchmark Up Days",
         f"{benchmark_positive_days:,} ({benchmark_positive_days / total_days * 100:.1f}%)",
     )
     market_table.add_row("Avg Signal Strength", f"{avg_signal_strength:.4f}")
-    market_table.add_row("Avg Final Weight", f"{avg_final_weight:.4f}")
-    market_table.add_row(
-        "Signal Efficiency",
-        f"{avg_final_weight / avg_signal_strength * 100:.1f}%"
-        if avg_signal_strength > 0
-        else "N/A",
-    )
 
     console.print(market_table)
-
-    # ========== 심층 분석: Long/Short 별 성과, 시그널 정확도 ==========
 
     # Long/Short 별 수익률 분석
     long_returns = benchmark_returns[long_mask]
@@ -1040,48 +944,12 @@ def diagnose(  # noqa: PLR0912
     long_profitable_days = int((long_returns > 0).sum()) if len(long_returns) > 0 else 0
     short_profitable_days = (
         int((short_returns < 0).sum()) if len(short_returns) > 0 else 0
-    )  # Short은 하락 시 수익
-
-    # Bull/Bear 별 전략 성과
-    if "trend_regime" in diagnostics_df.columns:
-        bull_mask_diag = diagnostics_df["trend_regime"] == 1
-        bear_mask_diag = diagnostics_df["trend_regime"] == -1
-
-        bull_strategy_return = (
-            float(
-                (
-                    diagnostics_df.loc[bull_mask_diag, "final_target_weight"]
-                    * benchmark_returns[bull_mask_diag]
-                ).sum()
-            )
-            * 100
-        )
-        bear_strategy_return = (
-            float(
-                (
-                    diagnostics_df.loc[bear_mask_diag, "final_target_weight"]
-                    * benchmark_returns[bear_mask_diag]
-                ).sum()
-            )
-            * 100
-        )
-
-        bull_benchmark_return = float(benchmark_returns[bull_mask_diag].sum()) * 100
-        bear_benchmark_return = float(benchmark_returns[bear_mask_diag].sum()) * 100
-    else:
-        bull_strategy_return = bear_strategy_return = 0.0
-        bull_benchmark_return = bear_benchmark_return = 0.0
+    )
 
     # 시그널 방향 정확도 (Hit Rate)
-    # Long 시그널이 맞았을 때: 다음 날 가격 상승
-    # Short 시그널이 맞았을 때: 다음 날 가격 하락
-    import numpy as np
-    import pandas as pd
-
     final_weights: pd.Series = diagnostics_df["final_target_weight"]  # type: ignore[assignment]
     signal_direction = pd.Series(np.sign(final_weights), index=diagnostics_df.index)
 
-    # 인덱스를 맞춤 (diagnostics_df 기준)
     next_day_return = (
         benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
     )
@@ -1092,25 +960,6 @@ def diagnose(  # noqa: PLR0912
     hit_rate = (
         float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
     )
-
-    # 레버리지 캡 영향 분석
-    leverage_capped_mask = suppression_stats.get("leverage_cap", {})
-    leverage_cap_count = int(leverage_capped_mask.get("count", 0))
-    leverage_cap_avg_weight = float(leverage_capped_mask.get("avg_potential_weight", 0))
-
-    # 레버리지 캡으로 인한 손실 추정 (캡이 없었다면 얼마나 더 벌었을까)
-    if leverage_cap_count > 0:
-        # 캡된 날들의 원래 시그널 강도
-        capped_days = diagnostics_df[
-            diagnostics_df["signal_suppression_reason"] == "leverage_cap"
-        ]
-        scaled_mom: pd.Series = capped_days["scaled_momentum"]  # type: ignore[assignment]
-        bench_at_capped: pd.Series = benchmark_returns.loc[capped_days.index]  # type: ignore[assignment]
-        potential_extra_return = (
-            float(((scaled_mom.abs() - 2.0) * bench_at_capped.abs()).sum()) * 100
-        )
-    else:
-        potential_extra_return = 0.0
 
     # Long/Short 성과 테이블
     direction_table = Table(title="Long/Short Performance Analysis")
@@ -1147,41 +996,8 @@ def diagnose(  # noqa: PLR0912
 
     console.print(direction_table)
 
-    # Bull/Bear 시장 별 성과 테이블
-    regime_table = Table(title="Bull/Bear Market Performance")
-    regime_table.add_column("Metric", style="cyan")
-    regime_table.add_column("Bull (Price > MA)", justify="right", style="green")
-    regime_table.add_column("Bear (Price < MA)", justify="right", style="red")
-
-    regime_table.add_row(
-        "Days",
-        f"{bull_days:,} ({bull_days / total_days * 100:.1f}%)",
-        f"{bear_days:,} ({bear_days / total_days * 100:.1f}%)",
-    )
-    regime_table.add_row(
-        "Benchmark Return",
-        f"{bull_benchmark_return:+.1f}%",
-        f"{bear_benchmark_return:+.1f}%",
-    )
-    regime_table.add_row(
-        "Strategy Return",
-        f"{bull_strategy_return:+.1f}%",
-        f"{bear_strategy_return:+.1f}%",
-    )
-    regime_table.add_row(
-        "Capture Rate",
-        f"{bull_strategy_return / bull_benchmark_return * 100:.1f}%"
-        if bull_benchmark_return != 0
-        else "N/A",
-        f"{bear_strategy_return / bear_benchmark_return * 100:.1f}%"
-        if bear_benchmark_return != 0
-        else "N/A",
-    )
-
-    console.print(regime_table)
-
     # 시그널 품질 테이블
-    quality_table = Table(title="Signal Quality & Leverage Analysis")
+    quality_table = Table(title="Signal Quality")
     quality_table.add_column("Metric", style="cyan")
     quality_table.add_column("Value", justify="right")
     quality_table.add_column("Assessment", justify="right")
@@ -1195,157 +1011,35 @@ def diagnose(  # noqa: PLR0912
         hit_assessment = "[red]Poor[/red]"
     quality_table.add_row("Signal Hit Rate", f"{hit_rate:.1f}%", hit_assessment)
 
-    # 레버리지 캡 영향
-    if leverage_cap_count < LEVERAGE_CAP_LOW:
-        leverage_assessment = "[green]Low[/green]"
-    elif leverage_cap_count < LEVERAGE_CAP_MEDIUM:
-        leverage_assessment = "[yellow]Medium[/yellow]"
+    # Total Strategy Return
+    total_strategy_return = long_pnl + short_pnl
+    if total_strategy_return > total_benchmark_return:
+        strat_assessment = "[green]Outperforming[/green]"
+    elif total_strategy_return > 0:
+        strat_assessment = "[yellow]Positive[/yellow]"
     else:
-        leverage_assessment = "[red]High[/red]"
+        strat_assessment = "[red]Negative[/red]"
     quality_table.add_row(
-        "Leverage Capped Days",
-        f"{leverage_cap_count:,} ({leverage_cap_count / total_days * 100:.1f}%)",
-        leverage_assessment,
-    )
-    quality_table.add_row(
-        "Avg Capped Signal",
-        f"{leverage_cap_avg_weight:.2f}x" if leverage_cap_count > 0 else "N/A",
-        "",
-    )
-    lost_return_assessment = (
-        "[yellow]Consider higher cap[/yellow]"
-        if potential_extra_return > LOST_RETURN_THRESHOLD
-        else ""
-    )
-    quality_table.add_row(
-        "Est. Lost Return (Capping)",
-        f"{potential_extra_return:+.1f}%",
-        lost_return_assessment,
+        "Strategy Return", f"{total_strategy_return:+.1f}%", strat_assessment
     )
 
     console.print(quality_table)
 
-    # Signal Suppression Table
-    suppression_table = Table(title="Signal Suppression Analysis")
-    suppression_table.add_column("Reason", style="cyan")
-    suppression_table.add_column("Count", justify="right")
-    suppression_table.add_column("Percentage", justify="right")
-    suppression_table.add_column("Avg Weight", justify="right")
-
-    for reason, stats in suppression_stats.items():
-        style = "green" if reason == "none" else "yellow"
-        suppression_table.add_row(
-            reason,
-            f"{int(stats['count']):,}",
-            f"{stats['percentage']:.1f}%",
-            f"{stats['avg_potential_weight']:.3f}",
-            style=style,
-        )
-
-    console.print(suppression_table)
-
-    # 권장사항 패널 (더 구체적인 분석)
-    recommendations: list[str] = []
-    issues: list[str] = []
-
-    # 1. Beta 보존율 분석
-    if attribution.beta_retention_ratio < BETA_RETENTION_CRITICAL:
-        issues.append(
-            f"[bold red]Critical:[/bold red] Beta retention is very low ({attribution.beta_retention_ratio:.0%}). "
-            + "Strategy is missing most market moves."
-        )
-    elif attribution.beta_retention_ratio < BETA_RETENTION_WARNING:
-        issues.append(
-            f"[yellow]Warning:[/yellow] Beta retention is low ({attribution.beta_retention_ratio:.0%}). "
-            + "Consider relaxing filters."
-        )
-
-    # 2. Vol Scaling 영향 분석
-    if attribution.lost_to_vol_scaling > BETA_LOSS_THRESHOLD_HIGH:
-        recommendations.append(
-            f"[yellow]Vol Scaling[/yellow]: Lost {attribution.lost_to_vol_scaling:.3f} Beta. "
-            + f"Current vol_target={config.vol_target:.0%}. "
-            + "Consider raising to 50-60% to increase exposure."
-        )
-    elif attribution.lost_to_vol_scaling < VOL_SCALING_AMPLIFICATION_THRESHOLD:
-        recommendations.append(
-            f"[cyan]Vol Scaling[/cyan]: Added {-attribution.lost_to_vol_scaling:.3f} Beta (leverage). "
-            + "Vol scaling is amplifying positions."
-        )
-
-    # 3. Deadband 영향 분석
-    if attribution.lost_to_deadband > BETA_LOSS_THRESHOLD_LOW:
-        recommendations.append(
-            f"[yellow]Deadband[/yellow]: Lost {attribution.lost_to_deadband:.3f} Beta. "
-            + f"Current threshold={config.deadband_threshold:.2f}. "
-            + "Consider lowering to 0.1 or disabling."
-        )
-
-    # 4. Trend Filter 영향 분석
-    if attribution.lost_to_trend_filter > BETA_LOSS_THRESHOLD_LOW:
-        recommendations.append(
-            f"[yellow]Trend Filter[/yellow]: Lost {attribution.lost_to_trend_filter:.3f} Beta. "
-            + f"MA period={config.trend_ma_period}. "
-            + "Consider disabling (use_trend_filter=False) or longer MA (100+)."
-        )
-
-    # 5. 포지션 불균형 분석
-    long_ratio = long_count / total_days if total_days > 0 else 0
-    neutral_ratio = neutral_count / total_days if total_days > 0 else 0
-
-    if neutral_ratio > NEUTRAL_RATIO_HIGH:
-        issues.append(
-            f"[yellow]High Neutral:[/yellow] {neutral_ratio:.0%} of days with no position. "
-            + "Filters may be too aggressive."
-        )
-
-    if (
-        long_ratio < LONG_RATIO_LOW
-        and total_benchmark_return > BENCHMARK_RETURN_SIGNIFICANT
-    ):
-        issues.append(
-            f"[yellow]Missing Bull:[/yellow] Only {long_ratio:.0%} long days in +{total_benchmark_return:.0f}% market. "
-            + "Strategy is missing upside."
-        )
-
-    # 6. 성공 케이스
-    if attribution.beta_retention_ratio > BETA_RETENTION_GOOD:
-        recommendations.append(
-            f"[green]Good![/green] Strategy retains {attribution.beta_retention_ratio:.0%} of market beta. "
-            + "Filters are well-calibrated."
-        )
-
-    # 출력
-    if issues:
-        issues_content = "\n".join(f"  • {issue}" for issue in issues)
-        console.print(
-            Panel(
-                f"[bold]Issues Detected[/bold]\n\n{issues_content}",
-                border_style="red",
-            )
-        )
-
-    if recommendations:
-        rec_content = "\n".join(
-            f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations)
-        )
-        border = (
-            "green"
-            if attribution.beta_retention_ratio > BETA_RETENTION_GOOD
-            else "yellow"
-        )
-        console.print(
-            Panel(
-                f"[bold]Recommendations[/bold]\n\n{rec_content}",
-                border_style=border,
-            )
-        )
+    # 요약 패널
+    summary = (
+        f"Strategy captured {total_strategy_return / total_benchmark_return * 100:.1f}% " +
+        f"of benchmark return ({total_strategy_return:+.1f}% vs {total_benchmark_return:+.1f}%)"
+        if total_benchmark_return != 0
+        else "Benchmark return is 0%"
+    )
+    border = "green" if total_strategy_return > 0 else "red"
+    console.print(Panel(summary, title="Summary", border_style=border))
 
     ctx_logger.success(
         "Diagnosis completed",
-        potential_beta=attribution.potential_beta,
-        realized_beta=attribution.realized_beta,
-        retention=f"{attribution.beta_retention_ratio:.1%}",
+        long_pnl=f"{long_pnl:.1f}%",
+        short_pnl=f"{short_pnl:.1f}%",
+        hit_rate=f"{hit_rate:.1f}%",
     )
 
 

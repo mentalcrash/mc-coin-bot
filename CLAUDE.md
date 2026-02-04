@@ -63,7 +63,7 @@
 #### 3. Autonomous Zone (자율 실행 가능)
 다음 작업은 승인 없이 자율 실행 가능:
 - 린트/포맷 수정 (`ruff check --fix`, `ruff format`)
-- 타입 힌트 추가 (basedpyright 오류 해결)
+- 타입 힌트 추가 (pyright 오류 해결)
 - 단위 테스트 작성 및 실행
 - 문서화 주석 추가 (docstring, type hints)
 - 로그 메시지 개선
@@ -77,12 +77,24 @@
 ### Zero-Tolerance Lint Policy
 **모든 코드는 다음 린트 도구의 에러가 0개여야 합니다:**
 - **Ruff:** 코드 품질 및 스타일 검사
-- **Basedpyright:** Strict 모드 타입 검사
+- **Pyright:** Strict 모드 타입 검사
 
 **검사 실행:**
 ```bash
 uv run ruff check .
-uv run basedpyright
+uv run pyright src/
+```
+
+**코드 생성 후 필수 워크플로우:**
+```bash
+# 1. Ruff로 스타일 수정
+uv run ruff check --fix . && uv run ruff format .
+
+# 2. Pyright로 타입 검증
+uv run pyright src/
+
+# 3. 테스트 실행
+uv run pytest --cov=src
 ```
 
 > [!CAUTION]
@@ -100,7 +112,7 @@ uv sync --group dev --group research
 
 # 코드 품질 검사
 uv run ruff check --fix .
-uv run basedpyright src/
+uv run pyright src/
 
 # 테스트 실행
 uv run pytest --cov=src

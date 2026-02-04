@@ -13,7 +13,11 @@
 uv run ruff check .
 uv run ruff format .
 
-# Pyright 검사 (VSCode Pylance가 자동으로 실행)
+# Pyright 검사 (두 가지 방법)
+# 1. CLI로 직접 실행 (권장: 코드 생성 후 즉시 검증)
+uv run pyright src/
+
+# 2. VSCode Pylance가 자동으로 실행
 # .vscode/settings.json: python.analysis.typeCheckingMode = "strict"
 ```
 
@@ -82,7 +86,22 @@ uv run ruff format .
 - **N802:** 함수명 `snake_case`
 - **N806:** 변수명 `snake_case`
 - **SIM:** `if len(x) > 0` → `if x`, `x == None` → `x is None`
-- **ISC001:** `"a" "b"` 암시적 연결 금지 → `"a" + "b"` 또는 `textwrap.dedent`
+- **ISC001/ISC003:** 암시적 문자열 연결 금지
+  ```python
+  # ❌ Bad (암시적 연결)
+  message = "Hello " "World"
+  logger.info(
+      f"Line 1 "
+      f"Line 2"
+  )
+
+  # ✅ Good (명시적 연결)
+  message = "Hello " + "World"
+  logger.info(
+      f"Line 1 " +
+      f"Line 2"
+  )
+  ```
 
 ---
 
@@ -132,6 +151,40 @@ uv run ruff format .
 - `await` 누락 시 `reportUnusedCoroutine`
 - 코루틴 반환값은 반드시 await
 
+#### 🚫 암시적 문자열 연결 (reportImplicitStringConcatenation)
+- Pyright strict 모드에서 에러로 처리
+- 여러 줄 문자열을 자동 연결하는 것을 금지
+```python
+# ❌ Bad (Pyright error)
+logger.success(
+    f"Loaded {symbol}: {periods} candles "
+    f"({start} ~ {end})"
+)
+
+# ✅ Good (명시적 + 연산자)
+logger.success(
+    f"Loaded {symbol}: {periods} candles " +
+    f"({start} ~ {end})"
+)
+```
+
+#### ⚙️ 불필요한 타입 체크 (reportUnnecessaryIsInstance)
+- 함수 시그니처에 이미 타입이 명시된 경우 isinstance 체크 불필요
+- Strict 모드는 함수 호출 시점에 타입을 검증하므로 런타임 체크는 중복
+```python
+# ❌ Bad (불필요한 isinstance)
+def calculate_returns(close: pd.Series) -> pd.Series:
+    if not isinstance(close, pd.Series):  # 불필요!
+        raise TypeError("Expected Series")
+    return close.pct_change()
+
+# ✅ Good (타입 힌트만으로 충분)
+def calculate_returns(close: pd.Series) -> pd.Series:
+    if len(close) == 0:  # 실제 필요한 검증만
+        raise ValueError("Empty Series")
+    return close.pct_change()
+```
+
 ---
 
 ## 3. Example Patterns
@@ -180,8 +233,16 @@ def process(id):  # reportMissingParameterType, reportReturnType
     except:  # TRY002: 구체적 예외 명시 필요
         pass
 
-    # 암시적 문자열 연결 (ISC001)
+    # 암시적 문자열 연결 (ISC001, reportImplicitStringConcatenation)
     message = "Order " "processed"  # ❌
+    logger.info(
+        "Multi-line "
+        "implicit concat"  # ❌
+    )
+
+    # 불필요한 isinstance (reportUnnecessaryIsInstance)
+    if not isinstance(id, str):  # ❌ 타입 힌트로 이미 보장됨
+        raise TypeError("Invalid type")
 ```
 
 ---
@@ -189,4 +250,21 @@ def process(id):  # reportMissingParameterType, reportReturnType
 ## 4. Ruff vs Pyright 역할 분담
 
 - **Ruff:** Import 정리, 미사용 변수, 스타일, PD/TRY/ASYNC, FURB/SLOT 등
-- **Pyright (VSCode Pylance):** 타입 호환성, Optional, 반환 타입, 암시적 문자열 연결
+- **Pyright:** 타입 호환성, Optional, 반환 타입, 암시적 문자열 연결, 불필요한 isinstance
+
+### 검사 워크플로우
+```bash
+# 1단계: Ruff로 스타일 및 품질 검사
+uv run ruff check --fix .
+uv run ruff format .
+
+# 2단계: Pyright로 타입 검사
+uv run pyright src/
+
+# 3단계: 테스트 실행
+uv run pytest --cov=src
+```
+
+> [!TIP]
+> **코드 생성 후 반드시 Pyright 검사를 실행하세요.**
+> VSCode Pylance는 편집 중에만 작동하므로, CLI로 명시적 검사가 필요합니다.

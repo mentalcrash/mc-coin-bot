@@ -1,7 +1,12 @@
 """VW-TSMOM Preprocessor (Indicator Calculation).
 
-이 모듈은 VW-TSMOM 전략에 필요한 모든 지표를 벡터화된 연산으로 계산합니다.
+이 모듈은 VW-TSMOM 전략에 필요한 지표를 벡터화된 연산으로 계산합니다.
 백테스팅과 라이브 트레이딩 모두에서 동일한 코드를 사용합니다.
+
+Pure TSMOM + Vol Target 구현:
+    1. 거래량 가중 모멘텀 (vw_momentum)
+    2. 실현 변동성 (realized_vol)
+    3. 변동성 스케일러 (vol_scalar = vol_target / realized_vol)
 
 Rules Applied:
     - #12 Data Engineering: Vectorization (No loops)
@@ -10,7 +15,6 @@ Rules Applied:
 """
 
 import logging
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_returns(
-    close: pd.Series | Any,
+    close: pd.Series,
     use_log: bool = True,
 ) -> pd.Series:
     """수익률 계산 (로그 또는 단순).
@@ -36,11 +40,6 @@ def calculate_returns(
     Example:
         >>> returns = calculate_returns(df["close"], use_log=True)
     """
-    # Series 타입 검증
-    if not isinstance(close, pd.Series):
-        msg = f"Expected pd.Series, got {type(close)}"
-        raise TypeError(msg)
-
     if len(close) == 0:
         msg = "Empty Series provided"
         raise ValueError(msg)
@@ -56,7 +55,7 @@ def calculate_returns(
 def calculate_realized_volatility(
     returns: pd.Series,
     window: int,
-    annualization_factor: float = 8760.0,
+    annualization_factor: float = 365.0,
     min_periods: int | None = None,
 ) -> pd.Series:
     """실현 변동성 계산 (연환산).
@@ -67,14 +66,14 @@ def calculate_realized_volatility(
     Args:
         returns: 수익률 시리즈
         window: Rolling 윈도우 크기
-        annualization_factor: 연환산 계수 (시간봉: 8760)
+        annualization_factor: 연환산 계수 (일봉: 365)
         min_periods: 최소 관측치 수 (None이면 window 사용)
 
     Returns:
         연환산 변동성 시리즈
 
     Example:
-        >>> vol = calculate_realized_volatility(returns, window=24)
+        >>> vol = calculate_realized_volatility(returns, window=30)
     """
     if min_periods is None:
         min_periods = window
@@ -112,7 +111,7 @@ def calculate_volume_weighted_returns(
 
     Example:
         >>> vw_returns = calculate_volume_weighted_returns(
-        ...     df["returns"], df["volume"], window=24
+        ...     df["returns"], df["volume"], window=30
         ... )
     """
     if min_periods is None:
@@ -159,7 +158,7 @@ def calculate_vw_momentum(
 
     Example:
         >>> momentum = calculate_vw_momentum(
-        ...     df["returns"], df["volume"], lookback=24
+        ...     df["returns"], df["volume"], lookback=30
         ... )
     """
     # 거래량 가중 수익률 계산
@@ -174,127 +173,6 @@ def calculate_vw_momentum(
     return vw_returns
 
 
-def calculate_zscore_momentum(
-    returns: pd.Series,
-    volume: pd.Series,
-    window: int,
-    min_periods: int | None = None,
-) -> pd.Series:
-    """Z-Score 정규화된 거래량 가중 모멘텀 계산.
-
-    모멘텀을 변동성으로 나누어 표준화합니다 (Risk-Adjusted Return).
-    결과는 보통 -2 ~ +2 (Sigma) 범위의 값으로, 신호 강도를 명확히 표현합니다.
-
-    Formula:
-        avg_vw_return = sum(returns * log_volume) / sum(log_volume)  # 가중 평균 수익률
-        total_vw_return = avg_vw_return * window  # 기간 누적 수익률로 변환
-        period_vol = std(returns) * sqrt(window)  # 기간 스케일링된 변동성
-        z_score = total_vw_return / period_vol
-
-    Note:
-        - 가중 평균을 기간 누적으로 스케일링하여 추세 강도를 정확히 반영
-        - 변동성도 √N 스케일링으로 기간 변동성으로 변환
-        - 결과적으로 통계적으로 유의미한 모멘텀 Z-Score 생성
-
-    Args:
-        returns: 수익률 시리즈
-        volume: 거래량 시리즈
-        window: 룩백 윈도우
-        min_periods: 최소 관측치 수
-
-    Returns:
-        Z-Score 정규화된 모멘텀 시리즈 (보통 -2 ~ +2 범위)
-
-    Example:
-        >>> zscore = calculate_zscore_momentum(returns, volume, window=60)
-    """
-    if min_periods is None:
-        min_periods = window // 2  # 앙상블에서 더 빠르게 신호 생성
-
-    # 1. 로그 볼륨 가중치 계산
-    log_volume = np.log1p(volume)
-
-    # 2. 가중 '평균' 수익률 계산
-    weighted_returns = returns * log_volume
-    sum_weighted_returns: pd.Series = weighted_returns.rolling(  # type: ignore[assignment]
-        window=window, min_periods=min_periods
-    ).sum()
-    sum_log_volume: pd.Series = log_volume.rolling(  # type: ignore[assignment]
-        window=window, min_periods=min_periods
-    ).sum()
-
-    sum_log_volume_safe = sum_log_volume.replace(0, np.nan)
-    avg_vw_ret: pd.Series = sum_weighted_returns / sum_log_volume_safe  # type: ignore[assignment]
-
-    # 🔧 FIX 1: 평균 수익률을 '기간 누적 수익률'로 변환
-    # 기간 내 평균적으로 avg_vw_ret만큼 수익이 났으므로, window를 곱해 총 추세를 구함
-    total_vw_ret: pd.Series = avg_vw_ret * window  # type: ignore[assignment]
-
-    # 3. 변동성 계산 (기간 스케일링 적용)
-    # 🔧 FIX 2: 일간 변동성을 기간 변동성으로 변환 (std * sqrt(window))
-    daily_vol: pd.Series = returns.rolling(  # type: ignore[assignment]
-        window=window, min_periods=min_periods
-    ).std()
-    period_vol: pd.Series = daily_vol * np.sqrt(window)  # type: ignore[assignment]
-
-    # 4. Z-Score 계산: (Total Return) / (Period Volatility)
-    # 0으로 나누기 방지
-    period_vol_safe = period_vol.replace(0, np.nan)
-    z_score: pd.Series = total_vw_ret / period_vol_safe  # type: ignore[assignment]
-
-    return z_score
-
-
-def calculate_ensemble_momentum(
-    returns: pd.Series,
-    volume: pd.Series,
-    windows: tuple[int, ...],
-    clip_value: float = 2.0,
-) -> pd.Series:
-    """앙상블 모멘텀 계산 (여러 윈도우의 Z-Score 평균).
-
-    여러 타임프레임의 모멘텀을 Z-Score로 정규화한 후 평균을 냅니다.
-    효과: 단기 변동(휩쏘)에 덜 민감하고, 여러 시간대의 추세 합의를 반영.
-
-    Example:
-        windows = (60, 120, 240)  # 10일, 20일, 40일 (4시간봉 기준)
-        - 10일 선이 꺾여도 40일 선이 살아있으면 롱 유지
-        - 모든 윈도우가 같은 방향일 때만 강한 신호
-
-    Args:
-        returns: 수익률 시리즈
-        volume: 거래량 시리즈
-        windows: 앙상블 윈도우 튜플 (예: (60, 120, 240))
-        clip_value: Z-Score 클리핑 범위 (기본 ±2.0 sigma)
-
-    Returns:
-        앙상블 모멘텀 시리즈 (클리핑된 Z-Score 평균)
-
-    Example:
-        >>> ensemble = calculate_ensemble_momentum(
-        ...     returns, volume, windows=(60, 120, 240), clip_value=2.0
-        ... )
-    """
-    if not windows:
-        msg = "ensemble_windows must not be empty"
-        raise ValueError(msg)
-
-    # 각 윈도우별 Z-Score 계산
-    z_scores: list[pd.Series] = []
-    for w in windows:
-        z = calculate_zscore_momentum(returns, volume, w)
-        z_scores.append(z)
-
-    # DataFrame으로 결합 후 행 평균 계산
-    z_df = pd.concat(z_scores, axis=1)
-    ensemble_mean: pd.Series = z_df.mean(axis=1)  # type: ignore[assignment]
-
-    # 클리핑: 이상치 제거 (-clip ~ +clip)
-    clipped: pd.Series = ensemble_mean.clip(lower=-clip_value, upper=clip_value)
-
-    return clipped
-
-
 def calculate_volatility_scalar(
     realized_vol: pd.Series,
     vol_target: float,
@@ -307,14 +185,14 @@ def calculate_volatility_scalar(
 
     Args:
         realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성 (예: 0.15)
+        vol_target: 연간 목표 변동성 (예: 0.40)
         min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
 
     Returns:
         변동성 스케일러 시리즈
 
     Example:
-        >>> scalar = calculate_volatility_scalar(vol, vol_target=0.15)
+        >>> scalar = calculate_volatility_scalar(vol, vol_target=0.40)
     """
     # 최소 변동성으로 클램프 (0으로 나누기 방지)
     clamped_vol = realized_vol.clip(lower=min_volatility)
@@ -334,16 +212,14 @@ def preprocess(
 
     Note:
         이 모듈은 순수 지표 계산만 담당합니다.
-        시그널 생성(scaled_momentum, deadband 적용 등)은 signal.py에서 처리됩니다.
+        시그널 생성(scaled_momentum 등)은 signal.py에서 처리됩니다.
         레버리지 클램핑은 PortfolioManagerConfig에서 처리됩니다.
 
     Calculated Columns:
         - returns: 수익률 (로그 또는 단순)
         - realized_vol: 실현 변동성 (연환산)
-        - vw_momentum: 거래량 가중 모멘텀 (Z-Score 정규화 또는 원시)
+        - vw_momentum: 거래량 가중 모멘텀
         - vol_scalar: 변동성 스케일러
-        - trend_ma: 추세 판단용 이동평균 (선택적)
-        - trend_regime: 추세 국면 메타데이터 (선택적)
 
     Args:
         df: OHLCV DataFrame (DatetimeIndex 필수)
@@ -357,7 +233,7 @@ def preprocess(
         ValueError: 필수 컬럼 누락 시
 
     Example:
-        >>> config = TSMOMConfig(lookback=24, vol_target=0.15)
+        >>> config = TSMOMConfig(lookback=30, vol_target=0.40)
         >>> processed_df = preprocess(ohlcv_df, config)
         >>> processed_df["vw_momentum"]  # 모멘텀 시리즈
     """
@@ -399,28 +275,13 @@ def preprocess(
 
     realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
 
-    # 3. 거래량 가중 모멘텀 계산 (앙상블 또는 단일 윈도우)
-    if config.use_zscore and config.ensemble_windows:
-        # 🆕 앙상블 모드: 여러 윈도우의 Z-Score 정규화 평균
-        result["vw_momentum"] = calculate_ensemble_momentum(
-            returns_series,
-            volume_series,
-            windows=config.ensemble_windows,
-            clip_value=config.zscore_clip,
-        )
-        logger.info(
-            "🔄 Ensemble Mode | Windows: %s, Z-Score Clip: ±%.1f",
-            config.ensemble_windows,
-            config.zscore_clip,
-        )
-    else:
-        # 기존 단일 윈도우 모드
-        result["vw_momentum"] = calculate_vw_momentum(
-            returns_series,
-            volume_series,
-            lookback=config.lookback,
-            smoothing=config.momentum_smoothing,
-        )
+    # 3. 거래량 가중 모멘텀 계산
+    result["vw_momentum"] = calculate_vw_momentum(
+        returns_series,
+        volume_series,
+        lookback=config.lookback,
+        smoothing=config.momentum_smoothing,
+    )
 
     # 4. 변동성 스케일러 계산
     result["vol_scalar"] = calculate_volatility_scalar(
@@ -429,49 +290,7 @@ def preprocess(
         min_volatility=config.min_volatility,
     )
 
-    # 5. Trend Filter (국면 필터) - 메타데이터만 저장
-    # 실제 필터링은 signal.py에서 shift(1) 후 적용
-    if config.use_trend_filter:
-        # 장기 MA (느린 추세)
-        trend_ma_slow: pd.Series = close_series.rolling(  # type: ignore[assignment]
-            window=config.trend_ma_period, min_periods=config.trend_ma_period // 2
-        ).mean()
-        result["trend_ma"] = trend_ma_slow
-
-        if config.use_dual_ma:
-            # 듀얼 MA 크로스오버: 단기 MA vs 장기 MA
-            trend_ma_fast: pd.Series = close_series.rolling(  # type: ignore[assignment]
-                window=config.trend_ma_fast, min_periods=config.trend_ma_fast // 2
-            ).mean()
-            result["trend_ma_fast"] = trend_ma_fast
-
-            # 추세 판단: 단기 MA > 장기 MA → 상승장, 단기 MA < 장기 MA → 하락장
-            # 듀얼 MA는 단순 가격 기준보다 빠르게 추세 전환 감지
-            result["trend_regime"] = np.where(trend_ma_fast > trend_ma_slow, 1, -1)
-
-            uptrend_count = int((result["trend_regime"] == 1).sum())
-            downtrend_count = int((result["trend_regime"] == -1).sum())
-            logger.info(
-                "🎯 Dual MA Filter | MA(%d/%d): Uptrend %d days, Downtrend %d days",
-                config.trend_ma_fast,
-                config.trend_ma_period,
-                uptrend_count,
-                downtrend_count,
-            )
-        else:
-            # 기존 방식: 가격 > MA → 상승장
-            result["trend_regime"] = np.where(close_series > trend_ma_slow, 1, -1)
-
-            uptrend_count = int((result["trend_regime"] == 1).sum())
-            downtrend_count = int((result["trend_regime"] == -1).sum())
-            logger.info(
-                "🎯 Trend Filter | MA(%d): Uptrend %d days, Downtrend %d days",
-                config.trend_ma_period,
-                uptrend_count,
-                downtrend_count,
-            )
-
-    # 🔍 디버그: 지표 통계 (NaN 제외)
+    # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()
     if len(valid_data) > 0:
         mom_min = valid_data["vw_momentum"].min()
