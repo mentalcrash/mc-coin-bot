@@ -17,8 +17,10 @@ Rules Applied:
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from loguru import logger
+from numba import njit
 
 from src.backtest.analyzer import PerformanceAnalyzer
 from src.backtest.request import BacktestRequest
@@ -29,6 +31,115 @@ from src.strategy.base import BaseStrategy
 
 # 전략 생성 (파라미터 주입) - run_parameter_sweep용
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
+
+# =============================================================================
+# Numba 최적화 함수들 (모듈 레벨에 정의 - JIT 컴파일 캐싱)
+# =============================================================================
+
+
+@njit(cache=True)  # type: ignore[misc]
+def apply_stop_loss_to_weights(
+    weights: npt.NDArray[np.float64],
+    close: npt.NDArray[np.float64],
+    high: npt.NDArray[np.float64],
+    low: npt.NDArray[np.float64],
+    stop_loss_pct: float,
+) -> npt.NDArray[np.float64]:
+    """목표 비중 배열에 손절매 로직을 적용합니다 (Long/Short 모두 지원).
+
+    진입가 대비 특정 비율 이상 손실 시 비중을 0으로 강제합니다.
+
+    Args:
+        weights: 목표 비중 배열 (양수=롱, 음수=숏)
+        close: 종가 배열 (진입가 기록용)
+        high: 고가 배열 (숏 손절 체크용)
+        low: 저가 배열 (롱 손절 체크용)
+        stop_loss_pct: 손절 비율 (예: 0.10 = 10%)
+
+    Returns:
+        손절이 적용된 비중 배열
+    """
+    out_weights = weights.copy()
+    entry_price = 0.0
+    position_direction = 0  # 1=롱, -1=숏, 0=중립
+
+    for i in range(len(weights)):
+        current_weight = weights[i]
+
+        # 1. 포지션이 없다가 새로 생기는 경우 (진입)
+        if position_direction == 0 and current_weight != 0:
+            entry_price = close[i]
+            position_direction = 1 if current_weight > 0 else -1
+
+        # 2. 이미 포지션이 있는 경우
+        elif position_direction != 0:
+            # 전략에 의해 청산된 경우 (신호가 0이 됨)
+            if current_weight == 0:
+                position_direction = 0
+                entry_price = 0.0
+                continue
+
+            # 방향 전환된 경우 (롱→숏 또는 숏→롱)
+            new_direction = 1 if current_weight > 0 else -1
+            if new_direction != position_direction:
+                # 새 포지션으로 진입가 갱신
+                entry_price = close[i]
+                position_direction = new_direction
+                continue
+
+            # 손절 조건 체크 (close 기준으로 변경 - 더 반응적)
+            stop_triggered = False
+
+            if position_direction == 1:  # 롱 포지션
+                # 종가가 진입가 대비 stop_loss_pct 이상 하락
+                if close[i] < entry_price * (1 - stop_loss_pct):
+                    stop_triggered = True
+            # 숏 포지션: 종가가 진입가 대비 stop_loss_pct 이상 상승
+            elif close[i] > entry_price * (1 + stop_loss_pct):
+                stop_triggered = True
+
+            if stop_triggered:
+                out_weights[i] = 0.0
+                position_direction = 0
+                entry_price = 0.0
+
+    return out_weights
+
+
+@njit(cache=True)  # type: ignore[misc]
+def apply_rebalance_threshold_numba(
+    weights: npt.NDArray[np.float64],
+    threshold: float,
+) -> npt.NDArray[np.float64]:
+    """리밸런싱 임계값 적용 (Numba 최적화 버전).
+
+    목표 비중의 변화량이 임계값 미만이면 NaN으로 설정합니다.
+
+    Args:
+        weights: 목표 비중 배열
+        threshold: 리밸런싱 임계값 (예: 0.05 = 5%)
+
+    Returns:
+        임계값이 적용된 비중 배열 (NaN 포함)
+    """
+    result = np.empty(len(weights))
+    result[:] = np.nan
+    last_executed_weight = 0.0
+
+    for i in range(len(weights)):
+        current_target = weights[i]
+
+        # NaN 체크 (Numba에서는 != 자기자신으로 NaN 판별)
+        if current_target != current_target:
+            continue
+
+        change = abs(current_target - last_executed_weight)
+
+        if change >= threshold or (last_executed_weight == 0 and current_target != 0):
+            result[i] = current_target
+            last_executed_weight = current_target
+
+    return result
 
 
 class BacktestEngine:
@@ -152,35 +263,6 @@ class BacktestEngine:
         logger.debug("BacktestEngine.run() 완료")
         logger.debug("=" * 60)
 
-        # #region agent log
-        import json as _json
-
-        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
-        _f.write(
-            _json.dumps(
-                {
-                    "location": "engine.py:run:final_result",
-                    "message": "Backtest final results",
-                    "data": {
-                        "total_return": metrics.total_return,
-                        "sharpe_ratio": metrics.sharpe_ratio,
-                        "max_drawdown": metrics.max_drawdown,
-                        "total_trades": metrics.total_trades,
-                        "win_rate": metrics.win_rate,
-                        "benchmark_alpha": benchmark.alpha,
-                        "total_entries": int(signals.entries.sum()),
-                        "symbol": data.symbol,
-                        "periods": data.periods,
-                    },
-                    "timestamp": __import__("time").time(),
-                    "sessionId": "debug-session",
-                    "hypothesisId": "ALL",
-                }
-            )
-            + "\n"
-        )
-        _f.close()
-        # #endregion
         return BacktestResult(
             config=config,
             metrics=metrics,
@@ -336,40 +418,38 @@ class BacktestEngine:
             logger.warning(
                 f"Leverage Capping | {capped_count} signals exceeded {pm.max_leverage_cap}x limit and were capped",
             )
-        # #region agent log
-        import json as _json
 
-        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
-        _f.write(
-            _json.dumps(
-                {
-                    "location": "engine.py:_create_portfolio_from_orders:leverage_cap",
-                    "message": "Leverage capping stats",
-                    "data": {
-                        "max_leverage_cap": pm.max_leverage_cap,
-                        "capped_count": int(capped_count),
-                        "weights_before_cap_max": float(weights_before_cap.abs().max())
-                        if len(weights_before_cap.dropna()) > 0
-                        else 0.0,
-                        "weights_after_cap_max": float(target_weights.abs().max())
-                        if len(target_weights.dropna()) > 0
-                        else 0.0,
-                    },
-                    "timestamp": __import__("time").time(),
-                    "sessionId": "debug-session",
-                    "hypothesisId": "H5",
-                }
+        # 3. 시스템 손절매 적용 (System Stop Loss)
+        stop_loss_count = 0
+        if pm.system_stop_loss is not None and pm.system_stop_loss > 0:
+            weights_before_sl = target_weights.copy()
+            target_weights_sl = apply_stop_loss_to_weights(
+                np.asarray(target_weights.fillna(0).values, dtype=np.float64),
+                np.asarray(df["close"].values, dtype=np.float64),
+                np.asarray(df["high"].values, dtype=np.float64),
+                np.asarray(df["low"].values, dtype=np.float64),
+                pm.system_stop_loss,
             )
-            + "\n"
-        )
-        _f.close()
-        # #endregion
-        # 3. rebalance_threshold 적용 (거래 비용 최적화)
+            target_weights = pd.Series(target_weights_sl, index=target_weights.index)
+            # NaN 복원 (원래 NaN이었던 곳은 유지)
+            target_weights = target_weights.where(
+                weights_before_sl.notna() | (target_weights != 0), np.nan
+            )
+            stop_loss_count = int(
+                ((weights_before_sl != 0) & (target_weights == 0)).sum()
+            )
+            if stop_loss_count > 0:
+                logger.warning(
+                    f"Stop Loss Triggered | {stop_loss_count} positions closed at {pm.system_stop_loss:.0%} loss limit",
+                )
+
+        # 4. rebalance_threshold 적용 (거래 비용 최적화) - Numba 최적화
         weights_before_threshold = target_weights.copy()
-        target_weights = self._apply_rebalance_threshold(
-            target_weights,
+        target_weights_arr = apply_rebalance_threshold_numba(
+            np.asarray(target_weights.fillna(0).values, dtype=np.float64),
             pm.rebalance_threshold,
         )
+        target_weights = pd.Series(target_weights_arr, index=target_weights.index)
 
         # 디버그: Rebalance threshold 효과
         num_before = weights_before_threshold.notna().sum()
@@ -378,43 +458,11 @@ class BacktestEngine:
         logger.info(
             f"Rebalance Threshold Effect | Before: {num_before} signals, After: {num_after} orders (Filtered: {num_before - num_after}, {filtered_pct:.1f}%)",
         )
-        # #region agent log
-        import json as _json
 
-        _valid_weights = target_weights.dropna()
-        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
-        _f.write(
-            _json.dumps(
-                {
-                    "location": "engine.py:_create_portfolio_from_orders:rebalance",
-                    "message": "Rebalance threshold effect",
-                    "data": {
-                        "rebalance_threshold": pm.rebalance_threshold,
-                        "signals_before": int(num_before),
-                        "orders_after": int(num_after),
-                        "filtered_by_threshold": int(num_before - num_after),
-                        "filtered_pct": float(filtered_pct),
-                        "final_weights_mean": float(_valid_weights.mean())
-                        if len(_valid_weights) > 0
-                        else 0.0,
-                        "final_weights_abs_mean": float(_valid_weights.abs().mean())
-                        if len(_valid_weights) > 0
-                        else 0.0,
-                        "max_leverage_cap": pm.max_leverage_cap,
-                    },
-                    "timestamp": __import__("time").time(),
-                    "sessionId": "debug-session",
-                    "hypothesisId": "H4",
-                }
-            )
-            + "\n"
-        )
-        _f.close()
-        # #endregion
-        # 4. price 결정 (next_open 또는 close)
+        # 5. price 결정 (next_open 또는 close)
         price = df["open"] if pm.price_type == "next_open" else df["close"]
 
-        # 5. Portfolio 생성
+        # 6. Portfolio 생성
         vbt_portfolio = vbt.Portfolio.from_orders(
             close=df["close"],
             size=target_weights,
@@ -487,6 +535,10 @@ class BacktestEngine:
     ) -> pd.Series:  # type: ignore[type-arg]
         """리밸런싱 임계값 적용 (거래 비용 최적화).
 
+        .. deprecated::
+            Numba 최적화 버전 `apply_rebalance_threshold_numba()`를 직접 사용하세요.
+            이 메서드는 하위 호환성을 위해 유지됩니다.
+
         목표 비중의 변화량이 임계값 미만이면 np.nan으로 설정하여
         VectorBT가 해당 캔들에서 주문을 생성하지 않도록 합니다.
 
@@ -497,23 +549,12 @@ class BacktestEngine:
         Returns:
             임계값이 적용된 목표 비중 시리즈
         """
-        if threshold <= 0:
-            return target_weights
-
-        result = pd.Series(np.nan, index=target_weights.index)
-        last_executed_weight = 0.0
-
-        for i in range(len(target_weights)):
-            current_target = target_weights.iloc[i]
-            change = abs(current_target - last_executed_weight)
-
-            if change >= threshold or (
-                last_executed_weight == 0 and current_target != 0
-            ):
-                result.iloc[i] = current_target
-                last_executed_weight = current_target
-
-        return result
+        # Numba 최적화 버전으로 위임
+        result_arr = apply_rebalance_threshold_numba(
+            np.asarray(target_weights.fillna(0).values, dtype=np.float64),
+            threshold,
+        )
+        return pd.Series(result_arr, index=target_weights.index)
 
 
 def run_parameter_sweep(

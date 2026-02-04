@@ -361,32 +361,6 @@ def preprocess(
         >>> processed_df = preprocess(ohlcv_df, config)
         >>> processed_df["vw_momentum"]  # 모멘텀 시리즈
     """
-    # #region agent log
-    import json as _json
-
-    _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
-    _f.write(
-        _json.dumps(
-            {
-                "location": "preprocessor.py:preprocess:entry",
-                "message": "Preprocess started",
-                "data": {
-                    "config_lookback": config.lookback,
-                    "config_vol_target": config.vol_target,
-                    "config_deadband": config.deadband_threshold,
-                    "config_ensemble_windows": list(config.ensemble_windows),
-                    "config_use_zscore": config.use_zscore,
-                    "df_len": len(df),
-                },
-                "timestamp": __import__("time").time(),
-                "sessionId": "debug-session",
-                "hypothesisId": "H3,H5",
-            }
-        )
-        + "\n"
-    )
-    _f.close()
-    # #endregion
     # 입력 검증
     required_cols = {"close", "volume"}
     missing = required_cols - set(df.columns)
@@ -504,36 +478,6 @@ def preprocess(
             avg_momentum,
             status,
         )
-        # #region agent log
-        import json as _json
-
-        _f = open("/Users/user/Project/mc-coin-bot/.cursor/debug.log", "a")
-        _f.write(
-            _json.dumps(
-                {
-                    "location": "preprocessor.py:preprocess:indicators",
-                    "message": "Indicator statistics",
-                    "data": {
-                        "mom_min": float(mom_min),
-                        "mom_max": float(mom_max),
-                        "mom_mean": float(avg_momentum),
-                        "mom_std": float(valid_data["vw_momentum"].std()),
-                        "vol_scalar_min": float(vs_min),
-                        "vol_scalar_max": float(vs_max),
-                        "vol_scalar_mean": float(valid_data["vol_scalar"].mean()),
-                        "realized_vol_mean": float(valid_data["realized_vol"].mean()),
-                        "price_change_pct": float(price_change),
-                        "valid_rows": len(valid_data),
-                    },
-                    "timestamp": __import__("time").time(),
-                    "sessionId": "debug-session",
-                    "hypothesisId": "H3,H5",
-                }
-            )
-            + "\n"
-        )
-        _f.close()
-        # #endregion
 
     return result
 
