@@ -31,6 +31,7 @@ alwaysApply: true
 ## 5. The "Delete" Mindset (YAGNI)
 - **You Aren't Gonna Need It:** "나중에 필요할 것 같아서" 작성한 코드는 100% 기술 부채가 됩니다. 현재 요구사항에 필요한 코드만 작성하십시오.
 - **Dead Code:** 주석 처리된 코드나 사용되지 않는 함수는 발견 즉시 삭제합니다. (Git이 기억하고 있습니다)
+- **No Backward Compatibility Layers:** 코드 수정 시 하위호환을 위한 코드를 남기지 않습니다. `@deprecated` 데코레이터, 구버전용 래퍼, alias, 호환성 분기 등은 유지하지 않고, 항상 **전체적인 수정(Full Refactor)**을 지향합니다. Git이 이전 버전을 보관하므로, 필요 시 과거 코드를 참조할 수 있습니다.
 
 ## 6. AI-Readability
 - **Context is King:** AI가 파일 하나만 읽어도 문맥을 파악할 수 있도록, 의존성이나 설정값이 너무 암시적(Implicit)이지 않게 작성합니다. 매직 넘버나 하드코딩된 문자열 대신 상수를 활용합니다.

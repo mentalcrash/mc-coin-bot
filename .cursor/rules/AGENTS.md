@@ -11,8 +11,26 @@
 
 ## 2. Zero-Tolerance Lint Policy (Critical)
 모든 코드 변경은 다음 린트 도구의 에러가 **0개**여야 합니다.
-- **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL)을 준수해야 하며, 특히 **Implicit string concatenation (`ISC001`)**을 절대 사용하지 않습니다.
+- **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, C4, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL, ISC)을 준수해야 합니다.
 - **Basedpyright:** `strict` 모드 수준의 타입 체크를 통과해야 합니다. (단, 외부 라이브러리 스터브 누락 등 `pyproject.toml`에서 허용된 예외 제외)
+
+> [!IMPORTANT]
+> **코드 생성 시 Ruff 준수 (생성 전 검증):**
+> 코드를 **생성하기 전** `13-ruff-compliance.mdc`의 체크리스트를 머릿속으로 실행하십시오. 생성 후 수정 횟수를 최소화하는 것이 목표입니다.
+> - Import 순서: StdLib → Third Party → `from src.*`
+> - 문자열: Double quotes (`"`)만 사용, **ISC001** 암시적 연결 금지
+> - `inplace=True` 금지, `except:` 금지, async 내 블로킹 호출 금지
+> - 상세 규칙: `.cursor/rules/13-ruff-compliance.mdc` 참조
+> - **`# noqa` / `# ruff: noqa` 사용 금지:** Ruff 무력화 주석은 최후의 수단. 가능하면 코드 수정으로 규칙을 준수하십시오.
+
+> [!IMPORTANT]
+> **코드 생성 시 Basedpyright 준수 (생성 전 검증):**
+> 코드를 **생성하기 전** `16-basedpyright-typing.mdc`의 체크리스트를 머릿속으로 실행하십시오.
+> - 모든 함수 인자·반환값에 타입 힌트 (`-> None` 포함)
+> - `list[]`, `dict[]`, `X | Y` 등 Python 3.13 문법
+> - Optional 사용 전 narrowing (`if x is not None:`)
+> - 상세 규칙: `.cursor/rules/16-basedpyright-typing.mdc` 참조
+> - **`# type: ignore` 사용 금지:** Basedpyright 무력화는 최후의 수단. 가능하면 타입을 명시하십시오.
 
 > [!IMPORTANT]
 > **Lint & Type Check 실행 방식:**
@@ -36,6 +54,7 @@
 - **Style Guide:** Google Python Style Guide를 기반으로 하되, **Type Hinting은 필수**입니다.
 
 ## 4. Architecture Principles
+- **No Backward Compatibility Layers:** 코드 수정 시 하위호환을 위한 코드를 남기지 않습니다. `@deprecated`, 구버전 래퍼, alias 등 호환성 레이어를 유지하지 않고, 항상 **전체적인 수정(Full Refactor)**을 지향합니다.
 - **Separation of Concerns:**
     - `src/strategy/`: 매매 판단 (Signal 생성) - **Stateless**
     - `src/execution/`: 주문 집행 및 리스크 관리 - **Stateful**

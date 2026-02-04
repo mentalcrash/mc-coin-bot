@@ -1,53 +1,91 @@
 ---
-description: Basedpyright Static Type Checking Rules (Strict Mode)
+description: Basedpyright Static Type Checking Rules (Strict Mode) - 코드 생성 시 즉시 준수
 globs: **/*.py
-alwaysApply: false
+alwaysApply: true
 ---
 
 # 🔍 Basedpyright Typing Standards (Strict Mode)
 
-## 1. Core Philosophy: "Strict but Pragmatic"
-- **Mode:** `strict` 모드를 기본으로 합니다. 이는 모든 변수와 함수에 **명시적인 타입**이 있어야 함을 의미합니다.
-- **Ruff vs Basedpyright:**
-    - **Ruff:** 스타일, 미사용 임포트, 코드 구조 개선 (Linter).
-    - **Basedpyright:** 타입 호환성, 논리적 모순, `None` 처리 검사 (Type Checker).
-    - **Rule:** Basedpyright가 `reportUnusedImport` 등을 무시하도록 설정했으므로, 관련 정리는 Ruff에 의존합니다.
+> [!IMPORTANT]
+> **생성 전 검증:** 코드를 출력하기 **직전**에 아래 체크리스트를 머릿속으로 실행하십시오. Ruff와 함께 생성 후 수정 횟수를 0에 가깝게 만드는 것이 목표입니다.
 
-## 2. Typing Syntax (Python 3.13)
-- **Modern Generics:** `List`, `Dict`, `Tuple` (typing 모듈) 대신 내장 `list[]`, `dict[]`, `tuple[]`을 사용합니다.
-- **Union Types:** `Union[X, Y]` 대신 `X | Y` 문법을 사용합니다.
-- **Type Aliases:** 복잡한 타입 정의 시 `type` 키워드(Python 3.12+)를 사용합니다.
-    - ✅ `type Price = Decimal`
-    - ❌ `Price = Decimal`
-- **Self Type:** 메서드가 자기 자신을 반환하거나 클래스 타입을 참조할 때 `typing.Self`를 사용합니다.
+> [!CAUTION]
+> **`# type: ignore` / `# pyright: ignore` 사용 금지:** Basedpyright를 주석으로 무력화하는 것은 Ruff의 `# noqa`와 마찬가지로 **절대 사용하지 않습니다**. 진짜 최악의 상황에서만 예외적으로 허용되며, 사용 시 반드시 **구체적인 에러 코드**를 명시해야 합니다. 가능하면 **타입을 명시하거나 구조를 수정**하여 규칙을 준수하십시오.
 
-## 3. Handling "Any" & External Libraries
-- **Avoid `Any`:** `Any` 사용은 최대한 지양합니다. 데이터 구조를 모를 경우 `object`나 `dict[str, Any]`로 범위를 좁히십시오.
-- **External Libs (Pandas/CCXT):**
-    - 라이브러리가 타입 정보를 제공하지 않아 에러가 발생할 경우, 최후의 수단으로 `# type: ignore`를 사용하되 반드시 **구체적인 에러 코드**를 명시해야 합니다.
-    - ✅ `data = exchange.fetch_ticker() # type: ignore [reportUnknownMemberType]`
-    - ❌ `data = exchange.fetch_ticker() # type: ignore` (모든 에러 무시 금지)
-- **Casting:** 타입 체커가 추론하지 못하는 확실한 타입은 `typing.cast()`를 사용하여 명시합니다.
+## 1. Code Generation Checklist (출력 전 필수)
 
-## 4. Specific Patterns for This Project
+코드 생성 시 다음을 **반드시** 확인한 후 출력하십시오:
 
-### 💰 Decimal & Numbers
-- 모든 금융 데이터는 `Decimal` 타입을 가집니다. `float`와 혼용 시 Basedpyright가 에러를 뱉도록 설계되어 있으므로, 명시적 변환(`Decimal(str(float_val))`)을 수행해야 합니다.
+| # | 규칙 | 확인 |
+|---|------|------|
+| 1 | **모든 함수/메서드 인자에 타입 힌트** (reportMissingParameterType) | |
+| 2 | **모든 함수/메서드에 반환 타입** `-> None` 포함 (reportReturnType) | |
+| 3 | **내장 제네릭 사용:** `list[]`, `dict[]`, `tuple[]` (not `List[]`, `Dict[]`) | |
+| 4 | **Union:** `Union[X,Y]` 대신 파이프 문법 사용 (예: `str \| None`) | |
+| 5 | **Optional 처리:** None 가능 타입 사용 전 `if x is not None:` 등으로 narrowing | |
+| 6 | **암시적 문자열 연결 금지** (reportImplicitStringConcatenation) — Ruff ISC001과 동일 | |
+| 7 | **금융 데이터:** `Decimal` 사용, `float` 혼용 시 명시적 변환 | |
+| 8 | **Self 반환:** `-> Self` (typing.Self) | |
+| 9 | **타입 별칭:** `type OrderID = str` (Python 3.12+) | |
+| 10 | **`# type: ignore` 사용 금지** — 최후의 수단, 사용 시 에러 코드 명시 | |
 
-### 🛡️ Pydantic Models
-- Pydantic V2 모델은 Basedpyright와 호환성이 좋으나, `model_validate` 사용 시 입력 데이터 타입을 추론하기 어려울 수 있습니다. 이 경우 입력 데이터의 기대 타입을 명확히 하십시오.
+## 2. pyproject.toml 설정 요약
 
-### 🧩 Async Tasks
-- `asyncio.TaskGroup` 사용 시, 비동기 함수의 반환 타입이 `Coroutine[Any, Any, None]` 형태인지 확인하십시오.
+**기본:** `typeCheckingMode = "strict"`, `pythonVersion = "3.13"`, `include = ["src"]`
 
-## 5. Example Pattern
+**활성화된 검사 (strict 모드 기본 + 명시적):**
+- `reportMissingParameterType` — 인자 타입 필수
+- `reportReturnType` — 반환 타입 필수
+- `reportImplicitStringConcatenation = true` — 암시적 문자열 연결 에러
+- `reportMissingImports = true` — import 존재 검사
+- `reportOptionalMemberAccess`, `reportOptionalCall` 등 — Optional 안전 사용
+- `reportArgumentType`, `reportAssignmentType` — 타입 호환성
 
-### ✅ Good (Strict Compliant)
+**비활성화됨 (신경 쓰지 않아도 됨):**
+- `reportMissingTypeStubs`, `reportUnknownMemberType`, `reportUnknownArgumentType`, `reportUnknownVariableType`
+- `reportUnusedImport`, `reportUnusedClass`, `reportUnusedVariable` — Ruff가 처리
+- `reportUnnecessaryCast`, `reportAny`, `reportExplicitAny`
+
+**범위:** `src/`만 검사, `tests/`, `research/` 제외
+
+## 3. 규칙별 상세 (자주 위반되는 항목)
+
+### 📝 타입 힌트 필수
+- **reportMissingParameterType:** `def foo(x):` ❌ → `def foo(x: int) -> None:` ✅
+- **reportReturnType:** 반환값 없으면 `-> None` 명시
+- `self`, `cls`는 예외
+
+### 🔤 Python 3.13 문법
+- **제네릭:** `list[str]`, `dict[str, int]`, `tuple[int, str]`
+- **Union:** `str | None`, `int | float`
+- **Type Alias:** `type Price = Decimal`
+- **Self:** `def copy(self) -> Self:`
+
+### ⚠️ Optional 안전 처리
+- `x: str | None`일 때 `x.upper()` ❌ — 먼저 `if x is not None:` 등으로 narrowing
+- `Optional[X]` 대신 `X | None` 권장
+
+### 💰 Decimal & 금융 데이터
+- 가격, 수량 등은 `Decimal`
+- `float` → `Decimal`: `Decimal(str(val))`
+
+### 🛡️ Pydantic
+- `model_validate` 입력 타입 명확히 (예: `dict[str, Any]`)
+
+### 🧩 Async
+- `await` 누락 시 `reportUnusedCoroutine` — 코루틴 반환값은 반드시 await
+
+## 4. Ruff vs Basedpyright 역할 분담
+- **Ruff:** Import 정리, 미사용 변수, 스타일, PD/TRY/ASYNC 등
+- **Basedpyright:** 타입 호환성, Optional, 반환 타입, 암시적 문자열 연결
+
+## 5. 예시
+
+### ✅ 준수 코드
 ```python
 from decimal import Decimal
-from typing import Self, cast, Any
+from typing import Self
 
-# Python 3.12+ Type Alias
 type OrderID = str
 
 class Position:
@@ -59,29 +97,17 @@ class Position:
         self.size += amount
         return self
 
-    def get_metadata(self) -> dict[str, Any]:
-        return {"created_at": "2026-01-27"}
-
-def process_data(raw_data: object) -> None:
-    # Safe Casting
-    if isinstance(raw_data, str):
-        print(f"String data: {raw_data}")
-    else:
-        # Unknown type handling
-        val = cast(int, raw_data) # Only if you are 100% sure
-
+def process(order_id: OrderID, price: Decimal | None) -> None:
+    if price is not None:
+        print(f"{order_id}: {price}")
 ```
 
-### ❌ Bad (Loose Typing)
-
+### ❌ 위반 코드
 ```python
-from typing import List, Union # Legacy imports
+from typing import List, Union  # Legacy
 
-def calculate(data) -> float: # Missing input type, Dangerous return type (float)
-    # Implicit 'Any' type for 'data' triggers reportMissingParameterType
-    return data * 1.5 
+def calculate(data):  # reportMissingParameterType
+    return data * 1.5  # reportReturnType 누락
 
-x = calculate(10)
-x.invalid_method() # Basedpyright won't catch this because x is inferred as Any/float
-
+x = calculate(10)  # x가 Any로 추론됨
 ```

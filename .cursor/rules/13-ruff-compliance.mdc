@@ -1,86 +1,123 @@
-description: Ruff Linter & Formatter Compliance Standards (Strict Mode)
+---
+description: Ruff Linter & Formatter Compliance Standards (Strict Mode) - 코드 생성 시 즉시 준수
 globs: **/*.py
-alwaysApply: false
+alwaysApply: true
 ---
 
 # 🧹 Ruff Compliance & Code Quality Standards
 
-## 1. Core Protocol (Pre-Linting)
-- **Mindset:** 코드를 생성할 때, 당신의 머릿속에서 실시간으로 `ruff check --fix`와 `ruff format`이 실행되고 있다고 가정하십시오.
-- **Goal:** 사용자가 코드를 붙여넣었을 때, 추가적인 린팅 에러가 '0'이어야 합니다.
-- **Reference:** 프로젝트 루트의 `pyproject.toml` 내 `[tool.ruff]` 섹션을 기준으로 합니다.
+> [!IMPORTANT]
+> **생성 전 검증:** 코드를 출력하기 **직전**에 아래 체크리스트를 머릿속으로 실행하십시오. 생성 후 수정 횟수를 0에 가깝게 만드는 것이 목표입니다.
 
-## 2. Specific Rule Enforcements
+> [!CAUTION]
+> **`# noqa`, `# ruff: noqa` 등 Ruff 무력화 주석 금지:** 코드 생성 시 Ruff 규칙을 주석으로 무력화하는 것은 **절대 사용하지 않습니다**. 진짜 최악의 최악의 최악의 상황에서만 예외적으로 허용되며, 가능하면 **코드를 수정하여 규칙을 준수**하는 방향으로 작성하십시오.
 
-### 🐼 Pandas Hygiene (Ruleset: PD)
-- **Immutable Operations (Strict):** `inplace=True` 사용은 엄격히 금지됩니다. (Rule `PD002`)
-    - Pandas 3.0+ 트렌드에 맞춰 불변성을 유지하십시오.
-    - ❌ `df.fillna(0, inplace=True)`
-    - ✅ `df = df.fillna(0)`
-- **No Iteration:** `iterrows`, `itertuples`는 절대 사용하지 않습니다. (Vectorization Rule 참조)
+## 1. Code Generation Checklist (출력 전 필수)
 
-### 🛡️ Error Handling (Ruleset: TRY, B)
-- **No Bare Except:** `except:` 또는 `except Exception:`과 같은 포괄적 예외 처리는 금지됩니다. 반드시 구체적인 예외를 명시하십시오. (`TRY002`)
-- **Verbose Exceptions:** `raise ValueError` 내부에 긴 설명 문자열을 넣지 말고, 상황이 복잡하다면 커스텀 예외 클래스를 사용하십시오. (`TRY003`)
+코드 생성 시 다음을 **반드시** 확인한 후 출력하십시오:
 
-### ⚡ Async Safety (Ruleset: ASYNC)
-- **No Blocking I/O:** `async def` 함수 내부에서 `time.sleep()`, `requests.get()` 등 동기 함수 호출은 절대 금지입니다. (`ASYNC101`, `ASYNC102`)
-    - 반드시 `await asyncio.sleep()`, `await client.get()`을 사용하십시오.
+| # | 규칙 | 확인 |
+|---|------|------|
+| 1 | Import: StdLib → Third Party → `from src.*` 순서, `combine-as-imports` (같은 모듈은 한 줄) | |
+| 2 | 미사용 import/변수 없음 (F401, F841) | |
+| 3 | 문자열: **Double quotes (`"`)** 만 사용 | |
+| 4 | **ISC001:** 암시적 문자열 연결 금지 (`"a" "b"` ❌ → `"a" + "b"` 또는 `textwrap.dedent` 사용) | |
+| 5 | `inplace=True` 금지 (PD002), Pandas는 불변 연산 | |
+| 6 | `except:` / `except Exception:` 금지 → 구체적 예외 명시 (TRY002) | |
+| 7 | `async def` 내부에 `time.sleep()`, `requests.get()` 등 블로킹 호출 금지 (ASYNC101/102) | |
+| 8 | `len(x) > 0` → `if x:` 등 SIM 규칙 적용 | |
+| 9 | 경로: `os.path` 대신 `pathlib.Path` (PTH) | |
+| 10 | 타입 힌트: 모든 함수 인자·반환값에 명시 | |
+| 11 | **`# noqa` / `# ruff: noqa` 사용 금지** — 코드 수정으로 규칙 준수, 주석 무력화는 최후의 수단 | |
 
-### 🧹 Imports & Sorting (Ruleset: I, F)
-- **Sectioning:** Import는 `Standard Lib` -> `Third Party` -> `First Party (src)` 순서로 그룹화하여 정렬하십시오.
-- **Cleanliness:** 사용하지 않는 Import(`F401`)나 변수(`F841`)는 생성 코드에 포함하지 마십시오.
+## 2. pyproject.toml 규칙셋 요약
 
-### 📜 Naming & Style (Ruleset: N, PL, ISC)
-- **Snake Case:** 변수와 함수명은 `snake_case`를 따르십시오. (`N802`, `N806`)
-- **Double Quotes:** 모든 문자열은 Double Quotes (`"`)를 사용하십시오. (Ruff Format 기본값)
-- **No Implicit String Concatenation:** 여러 줄에 걸친 문자열 생성 시 암시적 연결(Implicit Concatenation)을 사용하지 마십시오. (`ISC001`)
-    - ❌ `text = "First line " "Second line"`
-    - ✅ `text = "First line " + "Second line"` 또는 하나의 f-string/연속된 문자열로 작성하십시오.
-- **Type Casting:** `len() > 0` 대신 `if seq:`를 사용하는 등 Pythonic한 간소화 규칙(`SIM`)을 적용하십시오.
+**적용 규칙:** E, W, F, I, B, UP, N, SIM, C4, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL, ISC
 
-## 3. Security (Ruleset: S)
-- **No Hardcoded Secrets:** API Key, Password 등 민감 정보는 코드 내 문자열로 절대 포함하지 마십시오. (`S101`)
-- **No Shell Injection:** `subprocess` 사용 시 `shell=True`는 금지됩니다. (`S602`)
+**무시 규칙 (이미 허용됨, 신경 쓰지 않아도 됨):**
+- `E501` (줄 길이) — formatter가 처리
+- `B008` (함수 호출 인자) — FastAPI Depends 등
+- `S101` (assert) — 테스트에서 허용
+- `S311` (random) — 보안 불필요 시
+- `RUF012` (클래스 변수 타입)
+- `TRY003` (긴 에러 메시지) — 허용
+- `ISC003` (명시적 문자열 연결)
+- `PLR0915`, `PLR0913`, `PLC0415` (인자/메서드 수)
 
-## 4. Example Pattern
+**Per-file:** `tests/**/*` → S101, PLR2004, PD, N802 무시 | `research/**/*` → T201, PD 무시
 
-### ✅ Compliant Code (Clean & Safe)
+## 3. 규칙별 상세 (자주 위반되는 항목)
+
+### 🐼 Pandas (PD)
+- **PD002:** `inplace=True` 금지 → `df = df.fillna(0)`
+- **PD901:** `df` 변수명 지양 → `prices_df`, `ohlcv` 등 구체적 이름
+- 벡터화: `iterrows`, `itertuples` 사용 금지
+
+### 🛡️ 예외 처리 (TRY, B)
+- **TRY002:** `except:` 금지 → `except ValueError:` 등 구체적 예외
+- **B904:** `raise X from e` 형태로 체인 유지
+
+### ⚡ 비동기 (ASYNC)
+- **ASYNC101/102:** `async def` 내 `time.sleep()`, `requests.get()` 금지
+- → `await asyncio.sleep()`, `aiohttp` 등 사용
+
+### 🧹 Import (I, F)
+- **I001:** StdLib → Third Party → First Party (`src`) 순서
+- **combine-as-imports:** `from foo import a, b` 한 줄로
+- **known-first-party:** `src` 패키지는 First Party
+- **F401:** 미사용 import 금지
+- **F841:** 미사용 변수 금지
+
+### 📜 스타일 (N, SIM, ISC)
+- **N802:** 함수명 `snake_case`
+- **N806:** 변수명 `snake_case`
+- **SIM:** `if len(x) > 0` → `if x`, `x == None` → `x is None`
+- **ISC001:** `"a" "b"` 암시적 연결 금지 → `"a" + "b"` 또는 `textwrap.dedent`
+
+### 📁 경로 (PTH)
+- **PTH119:** `Path(__file__).parent` 등 pathlib 사용
+
+### 🔒 보안 (S)
+- **S101:** assert에 민감정보 금지 (테스트 제외)
+- **S602:** `subprocess` 시 `shell=True` 금지
+
+## 4. Format 설정 (ruff format)
+
+- **quote-style:** `"double"`
+- **indent-style:** `space`
+- **line-length:** 88
+- **skip-magic-trailing-comma:** false (trailing comma 유지)
+
+## 5. 예시
+
+### ✅ 준수 코드
 ```python
 import asyncio
-from decimal import Decimal
+from pathlib import Path
 
-from loguru import logger  # Third Party
+from loguru import logger
 from pydantic import ValidationError
 
-from src.models import Order  # First Party
+from src.models import Order
 
 async def process_order(order_id: str) -> None:
     try:
-        # ASYNC safe sleep
         await asyncio.sleep(0.1)
-        
-        # Double quotes & Snake case
         logger.info(f"Processing order: {order_id}")
-        
     except ValidationError as e:
-        # Specific exception handling
         logger.error(f"Validation failed: {e}")
-        raise  # Re-raise nicely
-
+        raise
 ```
 
-### ❌ Non-Compliant Code (Ruff Errors)
-
+### ❌ 위반 코드
 ```python
-import time # ASYNC101 violation potential
-from src.models import Order # Import order wrong (should be last)
+import time  # ASYNC101
+from src.models import Order  # I001: First party should be last
 
-def process(id): # Missing type hints
+def process(id):  # N802, 타입 힌트 누락
     try:
-        time.sleep(1) # Blocking call in potentially async context
-        print('done') # T201 (print used instead of logger)
-    except: # TRY002 (Bare except)
+        time.sleep(1)  # ASYNC101
+        print("done")  # LOG: logger 사용
+    except:  # TRY002
         pass
-
 ```
