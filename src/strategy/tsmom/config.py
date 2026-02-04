@@ -14,29 +14,35 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TSMOMConfig(BaseModel):
-    """VW-TSMOM 전략 설정.
+    """VW-TSMOM 전략 설정 (Pure TSMOM + Vol Target).
 
-    Volume-Weighted Time Series Momentum 전략의 모든 파라미터를 정의합니다.
-    학술 연구(SSRN #4825389)에 기반한 기본값을 사용합니다.
+    Volume-Weighted Time Series Momentum 전략의 핵심 파라미터만 정의합니다.
+    학술 연구(SSRN #4825389)에 기반한 순수한 TSMOM 구현입니다.
 
     Note:
         레버리지 제한(max_leverage_cap)과 시그널 필터링(rebalance_threshold)은
         PortfolioManagerConfig에서 관리합니다. 전략은 순수한 시그널만 생성합니다.
 
+    Signal Formula:
+        1. vw_momentum = 거래량 가중 수익률 (lookback 기간)
+        2. vol_scalar = vol_target / realized_vol
+        3. direction = sign(vw_momentum)
+        4. strength = direction * vol_scalar
+
     Attributes:
-        lookback: 모멘텀 계산 기간 (캔들 수, 보통 시간봉 기준)
+        lookback: 모멘텀 계산 기간 (캔들 수)
         vol_window: 변동성 계산 윈도우 (캔들 수)
-        vol_target: 연간 목표 변동성 (0.0~1.0, 예: 0.15 = 15%)
+        vol_target: 연간 목표 변동성 (0.0~1.0, 예: 0.40 = 40%)
         min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
-        annualization_factor: 연환산 계수 (시간봉 기준: 24*365 = 8760)
+        annualization_factor: 연환산 계수 (일봉: 365)
         use_log_returns: 로그 수익률 사용 여부
         momentum_smoothing: 모멘텀 스무딩 윈도우 (선택적)
 
     Example:
         >>> config = TSMOMConfig(
-        ...     lookback=24,
-        ...     vol_window=24,
-        ...     vol_target=0.15,
+        ...     lookback=30,
+        ...     vol_window=30,
+        ...     vol_target=0.40,
         ... )
     """
 
@@ -44,21 +50,21 @@ class TSMOMConfig(BaseModel):
 
     # 모멘텀 계산 파라미터
     lookback: int = Field(
-        default=30,  # 30일이 적정 (20, 40일과 동일한 결과)
+        default=30,
         ge=6,
-        le=365,  # 최대 1년 (일봉 기준)
+        le=365,
         description="모멘텀 계산 기간 (캔들 수)",
     )
 
     # 변동성 파라미터
     vol_window: int = Field(
-        default=30,  # 30일 (일봉)
+        default=30,
         ge=6,
         le=365,
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.40,  # 40%가 최적 (60%보다 좋음)
+        default=0.40,
         ge=0.05,
         le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
@@ -72,7 +78,7 @@ class TSMOMConfig(BaseModel):
 
     # 시간 프레임 관련
     annualization_factor: float = Field(
-        default=365.0,  # 일봉 기준
+        default=365.0,
         gt=0,
         description="연환산 계수 (일봉: 365, 4시간봉: 2190, 시간봉: 8760)",
     )
@@ -87,60 +93,6 @@ class TSMOMConfig(BaseModel):
         ge=2,
         le=24,
         description="모멘텀 스무딩 윈도우 (선택적, EMA 적용)",
-    )
-
-    # 🆕 Z-Score 정규화 & 앙상블 옵션
-    use_zscore: bool = Field(
-        default=True,
-        description="Z-Score 정규화 사용 여부 (신호 품질 향상)",
-    )
-    ensemble_windows: tuple[int, ...] = Field(
-        default=(20, 40, 60),  # 일봉 기준: 20일, 40일, 60일 (장기 추세 강화)
-        description="앙상블 룩백 윈도우 (캔들 수). 단기 노이즈 제거를 위해 최소 20일 권장.",
-    )
-    zscore_clip: float = Field(
-        default=2.0,
-        ge=1.0,
-        le=5.0,
-        description="Z-Score 클리핑 범위 (-clip ~ +clip)",
-    )
-
-    # 🆕 Trend Filter & Deadband (휩쏘 방지)
-    long_only: bool = Field(
-        default=True,  # 분석 결과: Short이 손실이므로 Long-Only 권장
-        description="Long-Only 모드 (Short 시그널을 Neutral로 변환)",
-    )
-    use_trend_filter: bool = Field(
-        default=False,  # Trend Filter 비활성화 테스트
-        description="국면 필터 사용 여부 (상승장: Long Only, 하락장: Short Only)",
-    )
-    trend_ma_period: int = Field(
-        default=20,  # 장기 MA (50 → 20: 초단기 추세 감지)
-        ge=20,
-        le=500,
-        description="장기 이동평균 기간 (일봉 기준, 기본 20일)",
-    )
-    trend_ma_fast: int = Field(
-        default=5,  # 단기 MA (10 → 5: 초단기 추세 감지)
-        ge=5,
-        le=100,
-        description="단기 이동평균 기간 (듀얼 MA 크로스오버용, 기본 5일)",
-    )
-    use_dual_ma: bool = Field(
-        default=True,  # 듀얼 MA 크로스오버로 Bear 감지 개선
-        description="듀얼 MA 크로스오버 사용 (단기 MA < 장기 MA면 Bear)",
-    )
-    deadband_threshold: float = Field(
-        default=0.2,  # 0.2가 최적 (0.1보다 좋음)
-        ge=0.0,
-        le=1.5,
-        description="불감대 임계값 (|신호| < threshold면 중립 유지). Z-Score 중앙값(~0.6) 대비 1/3 수준 권장.",
-    )
-    short_threshold: float = Field(
-        default=-0.8,  # Short은 더 강한 하락 신호일 때만 진입 (Z-Score -0.8 이하)
-        ge=-3.0,
-        le=0.0,
-        description="Short 진입 임계값. 모멘텀이 이 값 이하일 때만 Short 진입. (예: -0.8)",
     )
 
     @model_validator(mode="after")

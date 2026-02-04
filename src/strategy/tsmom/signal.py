@@ -1,7 +1,12 @@
-"""VW-TSMOM Signal Generator.
+"""VW-TSMOM Signal Generator (Pure TSMOM + Vol Target).
 
 이 모듈은 전처리된 데이터에서 매매 시그널을 생성합니다.
 VectorBT 및 QuantStats와 호환되는 표준 출력을 제공합니다.
+
+Signal Formula:
+    1. scaled_momentum = sign(vw_momentum) * vol_scalar
+    2. direction = sign(scaled_momentum)
+    3. strength = scaled_momentum (변동성 스케일링된 시그널 강도)
 
 Rules Applied:
     - #12 Data Engineering: Vectorization (No loops)
@@ -34,17 +39,15 @@ def generate_signals(
     df: pd.DataFrame,
     config: TSMOMConfig | None = None,
 ) -> StrategySignals:
-    """VW-TSMOM 시그널 생성.
+    """VW-TSMOM 시그널 생성 (Pure TSMOM + Vol Target).
 
     전처리된 DataFrame에서 진입/청산 시그널과 강도를 계산합니다.
     Shift(1) Rule을 적용하여 미래 참조 편향을 방지합니다.
 
     Signal Generation Pipeline:
-        1. scaled_momentum 계산: vw_momentum * vol_scalar
+        1. scaled_momentum 계산: sign(vw_momentum) * vol_scalar
         2. Shift(1) 적용: 미래 참조 편향 방지
-        3. Deadband 적용: 노이즈 필터링
-        4. Trend Filter 적용: 국면 반대 방향 시그널 제거
-        5. Entry/Exit 시그널 생성
+        3. Entry/Exit 시그널 생성
 
     Important:
         - 입력 DataFrame에는 preprocess()로 계산된 지표가 필요합니다.
@@ -60,7 +63,7 @@ def generate_signals(
     Args:
         df: 전처리된 DataFrame (preprocess() 출력)
             필수 컬럼: vw_momentum, vol_scalar
-        config: TSMOM 설정 (deadband, use_zscore 등)
+        config: TSMOM 설정 (현재 사용되지 않음, 향후 확장용)
 
     Returns:
         StrategySignals NamedTuple:
@@ -79,7 +82,7 @@ def generate_signals(
         >>> signals.entries  # pd.Series[bool]
         >>> signals.strength  # pd.Series[float] (unbounded)
     """
-    # 기본 config 설정
+    # 기본 config 설정 (현재는 사용하지 않지만 인터페이스 유지)
     if config is None:
         config = TSMOMConfig()
 
@@ -91,101 +94,34 @@ def generate_signals(
         raise ValueError(msg)
 
     # 1. Scaled Momentum 계산 (시그널의 원재료)
+    # 모멘텀 방향 * 변동성 스케일러 = 변동성 조정된 시그널
     momentum_series: pd.Series = df["vw_momentum"]  # type: ignore[assignment]
     vol_scalar_series: pd.Series = df["vol_scalar"]  # type: ignore[assignment]
 
-    if config.use_zscore:
-        # Z-Score 모드: 모멘텀 강도 자체가 이미 정규화됨
-        # 모멘텀 강도를 직접 사용하고 vol_scalar로 목표 변동성에 맞춰 스케일링
-        scaled_momentum = momentum_series * vol_scalar_series
-    else:
-        # 기존 모드: 방향만 추출하고 vol_scalar로 크기 조절
-        momentum_direction = np.sign(momentum_series)
-        scaled_momentum = momentum_direction * vol_scalar_series
+    # 모멘텀 방향 추출하고 vol_scalar로 크기 조절
+    momentum_direction = np.sign(momentum_series)
+    scaled_momentum = momentum_direction * vol_scalar_series
 
     # 2. Shift(1) 적용: 전봉 기준 시그널 (미래 참조 편향 방지)
     # 현재 봉의 시그널은 전봉까지의 데이터로 계산된 값을 사용
     signal_shifted: pd.Series = scaled_momentum.shift(1)  # type: ignore[assignment]
 
-    # 3. Deadband 적용 (shift 후): 노이즈 필터링
-    # |momentum| < threshold 인 경우 신호를 0으로
-    signal_filtered = signal_shifted.copy()
-
-    if config.deadband_threshold > 0:
-        # shift된 momentum 값으로 판단해야 함
-        momentum_shifted = momentum_series.shift(1)
-        deadband_mask = np.abs(momentum_shifted) < config.deadband_threshold
-        signal_filtered = pd.Series(
-            np.where(deadband_mask, 0, signal_filtered),
-            index=df.index,
-        )
-
-        # 통계 로깅
-        filtered_count = int(deadband_mask.sum())
-        total_count = len(momentum_shifted.dropna())
-        if total_count > 0:
-            filtered_pct = filtered_count / total_count * 100
-            logger.info(
-                "🚫 Deadband | Threshold: %.2f, Filtered: %d/%d (%.1f%%)",
-                config.deadband_threshold,
-                filtered_count,
-                total_count,
-                filtered_pct,
-            )
-
-    # 4. Short Threshold 적용: 강한 하락 신호일 때만 Short 진입
-    if config.short_threshold < 0:
-        # 모멘텀이 short_threshold보다 높으면(덜 음수면) Short 진입 금지
-        momentum_shifted = momentum_series.shift(1)
-        weak_short_mask = (signal_filtered < 0) & (momentum_shifted > config.short_threshold)
-        weak_short_count = int(weak_short_mask.sum())
-
-        signal_filtered = pd.Series(
-            np.where(weak_short_mask, 0, signal_filtered),
-            index=df.index,
-        )
-
-        if weak_short_count > 0:
-            logger.info(
-                "🛡️ Short Threshold | Blocked %d weak shorts (momentum > %.2f)",
-                weak_short_count,
-                config.short_threshold,
-            )
-
-    # 5. Trend Filter 적용 (shift 후): 국면 반대 방향 시그널 제거
-    if "trend_regime" in df.columns:
-        trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
-        trend_regime_shifted = trend_regime.shift(1)
-
-        # 상승장(shift된)인데 숏 신호(shift된)면 0으로
-        signal_filtered_array = np.where(
-            (trend_regime_shifted == 1) & (signal_filtered < 0), 0, signal_filtered
-        )
-        # 하락장(shift된)인데 롱 신호(shift된)면 0으로
-        signal_filtered_array = np.where(
-            (trend_regime_shifted == -1) & (signal_filtered > 0),
-            0,
-            signal_filtered_array,
-        )
-        # numpy array를 Series로 변환
-        signal_filtered = pd.Series(signal_filtered_array, index=df.index)
-
-    # 5. Direction 계산 (필터링된 시그널에서)
-    direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
+    # 3. Direction 계산
+    direction_raw = pd.Series(np.sign(signal_shifted), index=df.index)
     direction = pd.Series(
         direction_raw.fillna(0).astype(int),
         index=df.index,
         name="direction",
     )
 
-    # 6. 강도 계산 (필터링된 시그널 사용)
+    # 4. 강도 계산
     strength = pd.Series(
-        signal_filtered.fillna(0),
+        signal_shifted.fillna(0),
         index=df.index,
         name="strength",
     )
 
-    # 7. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 5. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -201,7 +137,7 @@ def generate_signals(
         name="entries",
     )
 
-    # 8. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 6. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
     to_neutral = (direction == Direction.NEUTRAL) & (
         prev_direction != Direction.NEUTRAL
@@ -214,60 +150,26 @@ def generate_signals(
         name="exits",
     )
 
-    # 🔍 디버그: 시그널 통계
+    # 디버그: 시그널 통계
     valid_strength = strength[strength != 0]
     long_signals = strength[strength > 0]
     short_signals = strength[strength < 0]
 
-    logger.info(
-        f"📊 Signal Statistics | Total: {len(valid_strength)} signals, Long: {len(long_signals)} ({len(long_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%), Short: {len(short_signals)} ({len(short_signals) / len(valid_strength) * 100 if len(valid_strength) > 0 else 0:.1f}%)",
-    )
-    logger.info(
-        f"🎯 Entry/Exit Events | Long entries: {long_entry.sum()}, Short entries: {short_entry.sum()}, Exits: {exits.sum()}, Reversals: {reversal.sum()}",
-    )
-
-    # 샘플 롱/숏 진입 시점
-    if long_entry.sum() > 0:
-        first_long = long_entry[long_entry].index[0]
+    if len(valid_strength) > 0:
         logger.info(
-            f"  📈 First Long Entry: {first_long}, Strength: {strength.loc[first_long]:.2f}"
+            "📊 Signal Statistics | Total: %d signals, Long: %d (%.1f%%), Short: %d (%.1f%%)",
+            len(valid_strength),
+            len(long_signals),
+            len(long_signals) / len(valid_strength) * 100,
+            len(short_signals),
+            len(short_signals) / len(valid_strength) * 100,
         )
-    if short_entry.sum() > 0:
-        first_short = short_entry[short_entry].index[0]
         logger.info(
-            f"  📉 First Short Entry: {first_short}, Strength: {strength.loc[first_short]:.2f}"
-        )
-
-    # 9. Long-Only 모드 적용 (config.long_only가 True인 경우)
-    if config.long_only:
-        # Short 시그널을 Neutral로 변환
-        direction = pd.Series(
-            direction.clip(lower=0),
-            index=df.index,
-            name="direction",
-        )
-        strength = pd.Series(
-            strength.clip(lower=0),
-            index=df.index,
-            name="strength",
-        )
-
-        # 진입/청산 재계산 (Long-Only 기준)
-        prev_direction = direction.shift(1).fillna(0)
-        long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
-        exits = pd.Series(
-            (direction == Direction.NEUTRAL) & (prev_direction == Direction.LONG),
-            index=df.index,
-            name="exits",
-        )
-        entries = pd.Series(
-            long_entry,
-            index=df.index,
-            name="entries",
-        )
-
-        logger.info(
-            f"📈 Long-Only Mode | Long entries: {long_entry.sum()}, Exits: {exits.sum()}"
+            "🎯 Entry/Exit Events | Long entries: %d, Short entries: %d, Exits: %d, Reversals: %d",
+            int(long_entry.sum()),
+            int(short_entry.sum()),
+            int(exits.sum()),
+            int(reversal.sum()),
         )
 
     return StrategySignals(
@@ -286,7 +188,7 @@ def generate_signals_with_diagnostics(
     """VW-TSMOM 시그널 생성 + 진단 데이터 수집.
 
     generate_signals()와 동일한 시그널 생성 로직을 수행하되,
-    각 필터 단계의 중간 값을 기록하여 Beta Attribution 분석에 사용합니다.
+    진단 데이터를 함께 반환합니다.
 
     Args:
         df: 전처리된 DataFrame (preprocess() 출력)
@@ -303,9 +205,6 @@ def generate_signals_with_diagnostics(
         >>> signals = result.signals
         >>> diagnostics = result.diagnostics_df
     """
-    # Lazy import to avoid circular dependency
-    from src.strategy.tsmom.diagnostics import collect_diagnostics_from_pipeline
-
     # 기본 config 설정
     if config is None:
         config = TSMOMConfig()
@@ -317,194 +216,33 @@ def generate_signals_with_diagnostics(
         msg = f"Missing required columns: {missing}. Run preprocess() first."
         raise ValueError(msg)
 
-    # 1. Scaled Momentum 계산 (시그널의 원재료)
+    # 시그널 생성
+    signals = generate_signals(df, config)
+
+    # 진단 DataFrame 생성
     momentum_series: pd.Series = df["vw_momentum"]  # type: ignore[assignment]
     vol_scalar_series: pd.Series = df["vol_scalar"]  # type: ignore[assignment]
 
-    if config.use_zscore:
-        scaled_momentum = momentum_series * vol_scalar_series
-    else:
-        momentum_direction = np.sign(momentum_series)
-        scaled_momentum = momentum_direction * vol_scalar_series
+    # 벤치마크 수익률 계산
+    close_series: pd.Series = df["close"]  # type: ignore[assignment]
+    benchmark_returns = close_series.pct_change().fillna(0)
 
-    # 2. Shift(1) 적용
-    signal_shifted: pd.Series = scaled_momentum.shift(1)  # type: ignore[assignment]
-
-    # 3. Deadband 적용
-    signal_after_deadband = signal_shifted.copy()
-    deadband_mask = pd.Series(False, index=df.index)
-
-    if config.deadband_threshold > 0:
-        momentum_shifted = momentum_series.shift(1)
-        deadband_mask = pd.Series(
-            np.abs(momentum_shifted) < config.deadband_threshold,
-            index=df.index,
-        )
-        signal_after_deadband = pd.Series(
-            np.where(deadband_mask, 0, signal_shifted),
-            index=df.index,
-        )
-
-    # 4. Short Threshold 적용: 강한 하락 신호일 때만 Short 진입
-    signal_after_short_filter = signal_after_deadband.copy()
-    if config.short_threshold < 0:
-        momentum_shifted = momentum_series.shift(1)
-        weak_short_mask = (signal_after_deadband < 0) & (
-            momentum_shifted > config.short_threshold
-        )
-        signal_after_short_filter = pd.Series(
-            np.where(weak_short_mask, 0, signal_after_deadband),
-            index=df.index,
-        )
-
-    # 📊 진단: Trend Filter 적용 전 시그널 저장
-    signal_before_trend = signal_after_short_filter.copy()
-
-    # 5. Trend Filter 적용
-    signal_after_trend = signal_after_short_filter.copy()
-
-    if "trend_regime" in df.columns:
-        trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
-        trend_regime_shifted = trend_regime.shift(1)
-
-        signal_filtered_array = np.where(
-            (trend_regime_shifted == 1) & (signal_after_short_filter < 0),
-            0,
-            signal_after_short_filter,
-        )
-        signal_filtered_array = np.where(
-            (trend_regime_shifted == -1) & (signal_filtered_array > 0),
-            0,
-            signal_filtered_array,
-        )
-        signal_after_trend = pd.Series(signal_filtered_array, index=df.index)
-
-    # 5. Direction & Strength 계산
-    signal_filtered = signal_after_trend
-    direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
-    direction = pd.Series(
-        direction_raw.fillna(0).astype(int),
+    diagnostics_df = pd.DataFrame(
+        {
+            "symbol": symbol,
+            "close_price": df["close"],
+            "realized_vol_annualized": df.get("realized_vol", 0.0),
+            "benchmark_return": benchmark_returns,
+            "raw_momentum": momentum_series,
+            "vol_scalar": vol_scalar_series,
+            "scaled_momentum": signals.strength,
+            "final_target_weight": signals.strength,
+            "signal_suppression_reason": "none",
+        },
         index=df.index,
-        name="direction",
-    )
-
-    strength = pd.Series(
-        signal_filtered.fillna(0),
-        index=df.index,
-        name="strength",
-    )
-
-    # 6. 진입/청산 시그널 생성
-    prev_direction = direction.shift(1).fillna(0)
-    long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
-    short_entry = (direction == Direction.SHORT) & (prev_direction != Direction.SHORT)
-
-    entries = pd.Series(
-        long_entry | short_entry,
-        index=df.index,
-        name="entries",
-    )
-
-    to_neutral = (direction == Direction.NEUTRAL) & (
-        prev_direction != Direction.NEUTRAL
-    )
-    reversal = direction * prev_direction < 0
-
-    exits = pd.Series(
-        to_neutral | reversal,
-        index=df.index,
-        name="exits",
-    )
-
-    # 7. Long-Only 모드 적용 (config.long_only가 True인 경우)
-    if config.long_only:
-        # Short 시그널을 Neutral로 변환
-        direction = pd.Series(
-            direction.clip(lower=0),
-            index=df.index,
-            name="direction",
-        )
-        strength = pd.Series(
-            strength.clip(lower=0),
-            index=df.index,
-            name="strength",
-        )
-
-        # 진입/청산 재계산 (Long-Only 기준)
-        prev_direction = direction.shift(1).fillna(0)
-        long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
-        exits = pd.Series(
-            (direction == Direction.NEUTRAL) & (prev_direction == Direction.LONG),
-            index=df.index,
-            name="exits",
-        )
-        entries = pd.Series(
-            long_entry,
-            index=df.index,
-            name="entries",
-        )
-
-    # 📊 진단 DataFrame 생성
-    # NOTE: leverage_capped_weight와 rebalance_mask는 PortfolioManager에서 처리되므로
-    # 여기서는 strength를 raw_target_weight로 사용
-    diagnostics_df = collect_diagnostics_from_pipeline(
-        processed_df=df,
-        symbol=symbol,
-        signal_before_trend=signal_before_trend,
-        signal_after_trend=signal_after_trend,
-        signal_after_deadband=signal_after_deadband,
-        deadband_mask=deadband_mask,
-        final_weights=strength,
-    )
-
-    signals = StrategySignals(
-        entries=entries,
-        exits=exits,
-        direction=direction,
-        strength=strength,
     )
 
     return SignalsWithDiagnostics(signals=signals, diagnostics_df=diagnostics_df)
-
-
-def generate_signals_for_long_only(
-    df: pd.DataFrame,
-    config: TSMOMConfig | None = None,
-) -> StrategySignals:
-    """롱 온리 VW-TSMOM 시그널 생성.
-
-    숏 포지션을 허용하지 않는 환경(현물)에서 사용합니다.
-    숏 시그널은 중립(현금)으로 처리됩니다.
-
-    Args:
-        df: 전처리된 DataFrame
-        config: TSMOM 설정
-
-    Returns:
-        StrategySignals (롱 온리)
-    """
-    # 기본 시그널 생성
-    signals = generate_signals(df, config)
-
-    # 숏 시그널을 중립으로 변환
-    direction_long_only = signals.direction.clip(lower=0)
-    strength_long_only = signals.strength.clip(lower=0)
-
-    # 진입/청산 재계산
-    prev_direction = direction_long_only.shift(1).fillna(0)
-    entries_long_only = (direction_long_only == Direction.LONG) & (
-        prev_direction != Direction.LONG
-    )
-    exits_long_only = (direction_long_only == Direction.NEUTRAL) & (
-        prev_direction == Direction.LONG
-    )
-
-    return StrategySignals(
-        entries=entries_long_only,
-        exits=exits_long_only,
-        direction=direction_long_only,
-        strength=strength_long_only,
-    )
 
 
 def get_current_signal(df: pd.DataFrame) -> tuple[Direction, float]:

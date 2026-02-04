@@ -180,14 +180,9 @@ class TSMOMStrategy(BaseStrategy):
             파라미터명-값 딕셔너리 (사용자 친화적 포맷)
         """
         cfg = self._config
-        info: dict[str, str] = {
+        return {
             "lookback": f"{cfg.lookback}일",
             "vol_target": f"{cfg.vol_target:.0%}",
             "vol_window": f"{cfg.vol_window}일",
+            "mode": "Long/Short",
         }
-        if cfg.use_trend_filter:
-            info["trend_filter"] = f"MA({cfg.trend_ma_period})"
-        if cfg.deadband_threshold > 0:
-            info["deadband"] = f"{cfg.deadband_threshold}"
-        info["mode"] = "Long-Only" if cfg.long_only else "Long/Short"
-        return info
