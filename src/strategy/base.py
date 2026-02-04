@@ -10,13 +10,19 @@ Rules Applied:
     - #26 VectorBT Standards: Broadcasting compatible output
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from pydantic import BaseModel
 
-from src.strategy.types import StrategySignals
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from src.portfolio import Portfolio
+    from src.strategy.types import StrategySignals
 
 
 class BaseStrategy(ABC):
@@ -194,6 +200,39 @@ class BaseStrategy(ABC):
         processed_df = self.preprocess(df)
         signals = self.generate_signals(processed_df)
         return processed_df, signals
+
+    @classmethod
+    def recommended_portfolio(
+        cls,
+        initial_capital: Decimal | float | int = Decimal("10000"),
+    ) -> Portfolio:
+        """이 전략에 권장되는 Portfolio 설정을 반환합니다.
+
+        서브클래스에서 오버라이드하여 전략별 최적 설정을 제공합니다.
+        기본 구현은 Portfolio.create()를 반환합니다.
+
+        Args:
+            initial_capital: 초기 자본 (USD)
+
+        Returns:
+            전략에 최적화된 Portfolio 인스턴스
+        """
+        from src.portfolio import Portfolio
+
+        return Portfolio.create(initial_capital=Decimal(str(initial_capital)))
+
+    def get_startup_info(self) -> dict[str, str]:
+        """CLI 시작 패널에 표시할 전략 정보를 반환합니다.
+
+        서브클래스에서 오버라이드하여 전략별 핵심 파라미터를 노출합니다.
+        기본 구현은 config의 모든 파라미터를 문자열로 변환합니다.
+
+        Returns:
+            파라미터명-값 딕셔너리
+        """
+        if self.config is not None:
+            return {k: str(v) for k, v in self.config.model_dump().items()}
+        return {}
 
     def __repr__(self) -> str:
         """전략 문자열 표현."""

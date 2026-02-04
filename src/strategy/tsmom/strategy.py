@@ -9,15 +9,25 @@ Rules Applied:
     - #26 VectorBT Standards: Compatible output
 """
 
-import pandas as pd
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from src.strategy.base import BaseStrategy
+from src.strategy.registry import register
 from src.strategy.tsmom.config import TSMOMConfig
 from src.strategy.tsmom.preprocessor import preprocess
 from src.strategy.tsmom.signal import generate_signals
-from src.strategy.types import StrategySignals
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from src.portfolio import Portfolio
+    from src.strategy.types import StrategySignals
 
 
+@register("tsmom")
 class TSMOMStrategy(BaseStrategy):
     """Volume-Weighted Time Series Momentum Strategy.
 
@@ -108,7 +118,7 @@ class TSMOMStrategy(BaseStrategy):
         return generate_signals(df, self._config)
 
     @classmethod
-    def conservative(cls) -> "TSMOMStrategy":
+    def conservative(cls) -> TSMOMStrategy:
         """보수적 설정의 전략 인스턴스 생성.
 
         Returns:
@@ -117,7 +127,7 @@ class TSMOMStrategy(BaseStrategy):
         return cls(TSMOMConfig.conservative())
 
     @classmethod
-    def aggressive(cls) -> "TSMOMStrategy":
+    def aggressive(cls) -> TSMOMStrategy:
         """공격적 설정의 전략 인스턴스 생성.
 
         Returns:
@@ -126,7 +136,7 @@ class TSMOMStrategy(BaseStrategy):
         return cls(TSMOMConfig.aggressive())
 
     @classmethod
-    def for_timeframe(cls, timeframe: str, **kwargs: object) -> "TSMOMStrategy":
+    def for_timeframe(cls, timeframe: str, **kwargs: object) -> TSMOMStrategy:
         """특정 타임프레임에 최적화된 전략 생성.
 
         Args:
@@ -146,3 +156,52 @@ class TSMOMStrategy(BaseStrategy):
             전략 계산에 필요한 최소 캔들 수
         """
         return self._config.warmup_periods()
+
+    @classmethod
+    def recommended_portfolio(
+        cls,
+        initial_capital: Decimal | float | int = Decimal("10000"),
+    ) -> Portfolio:
+        """VW-TSMOM 전략에 권장되는 Portfolio 설정.
+
+        - Momentum은 추세 추종으로 느린 진입/청산
+        - 레버리지 2.0x로 보수적 운용
+        - 10% system stop loss로 큰 손실 방지
+        - 5% rebalance threshold로 잦은 거래 방지
+
+        Args:
+            initial_capital: 초기 자본 (USD)
+
+        Returns:
+            TSMOM에 최적화된 Portfolio 인스턴스
+        """
+        from src.portfolio import Portfolio
+        from src.portfolio.config import PortfolioManagerConfig
+
+        return Portfolio.create(
+            initial_capital=Decimal(str(initial_capital)),
+            config=PortfolioManagerConfig(
+                max_leverage_cap=2.0,
+                system_stop_loss=0.10,
+                rebalance_threshold=0.05,
+            ),
+        )
+
+    def get_startup_info(self) -> dict[str, str]:
+        """CLI 시작 패널에 표시할 핵심 파라미터.
+
+        Returns:
+            파라미터명-값 딕셔너리 (사용자 친화적 포맷)
+        """
+        cfg = self._config
+        info: dict[str, str] = {
+            "lookback": f"{cfg.lookback}일",
+            "vol_target": f"{cfg.vol_target:.0%}",
+            "vol_window": f"{cfg.vol_window}일",
+        }
+        if cfg.use_trend_filter:
+            info["trend_filter"] = f"MA({cfg.trend_ma_period})"
+        if cfg.deadband_threshold > 0:
+            info["deadband"] = f"{cfg.deadband_threshold}"
+        info["mode"] = "Long-Only" if cfg.long_only else "Long/Short"
+        return info

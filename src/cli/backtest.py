@@ -1,11 +1,12 @@
 """Typer CLI for backtesting strategies.
 
-이 모듈은 VW-TSMOM 전략 백테스팅을 위한 CLI를 제공합니다.
-Clean Architecture에 따라 MarketDataService, BacktestRequest를 사용합니다.
+이 모듈은 다양한 트레이딩 전략의 백테스팅을 위한 CLI를 제공합니다.
+Strategy Registry Pattern을 사용하여 전략 독립적으로 설계되었습니다.
 
 Commands:
     - run: 단일 백테스트 실행
     - optimize: 파라미터 최적화 실행
+    - strategies: 사용 가능한 전략 목록
     - info: 전략 정보 출력
 
 Rules Applied:
@@ -38,6 +39,10 @@ from src.data.market_data import MarketDataRequest
 from src.data.service import MarketDataService
 from src.logging.context import get_strategy_logger
 from src.portfolio import Portfolio
+from src.strategy import BaseStrategy, get_strategy, list_strategies
+
+# NOTE: Legacy imports for backward compatibility (diagnose command)
+# TODO: Migrate diagnose command to use Strategy-agnostic diagnostics
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
 from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
@@ -62,37 +67,34 @@ LEVERAGE_CAP_LOW = 20
 LEVERAGE_CAP_MEDIUM = 50
 LOST_RETURN_THRESHOLD = 5
 
+# Breakout Diagnosis Thresholds
+BREAKOUT_LOW_EXPOSURE_THRESHOLD = 0.95
+
 
 def _print_startup_panel(
     symbol: str,
     years: list[int],
     capital: float,
-    strategy: TSMOMStrategy,
+    strategy: BaseStrategy,
     portfolio: Portfolio,
 ) -> None:
     """백테스트 시작 정보 패널 출력.
 
     전략과 포트폴리오의 핵심 설정값을 사용자에게 표시합니다.
+    전략 독립적으로 get_startup_info()를 사용합니다.
 
     Args:
         symbol: 거래 심볼
         years: 백테스트 연도 목록
         capital: 초기 자본금
-        strategy: 전략 인스턴스
+        strategy: 전략 인스턴스 (BaseStrategy)
         portfolio: 포트폴리오 인스턴스
     """
-    cfg = strategy.config
     pm_cfg = portfolio.config
 
-    # 전략 설정 요약
-    strategy_info = (
-        f"  lookback: {cfg.lookback}일, "
-        f"vol_target: {cfg.vol_target:.0%}, "
-        f"vol_window: {cfg.vol_window}일"
-    )
-    if cfg.use_trend_filter:
-        strategy_info += f"\n  trend_filter: MA({cfg.trend_ma_period}), "
-        strategy_info += f"deadband: {cfg.deadband_threshold}"
+    # 전략 설정 요약 (전략이 제공하는 메타데이터 사용)
+    strategy_info_dict = strategy.get_startup_info()
+    strategy_info = "\n".join(f"  {k}: {v}" for k, v in strategy_info_dict.items())
 
     # 포트폴리오 설정 요약
     stop_loss_str = (
@@ -107,11 +109,11 @@ def _print_startup_panel(
     portfolio_info += f"cost: {pm_cfg.cost_model.round_trip_cost:.2%} RT"
 
     panel_content = (
-        f"[bold]VW-TSMOM Backtest[/bold]\n"
+        f"[bold]{strategy.name} Backtest[/bold]\n"
         f"Symbol: {symbol}\n"
         f"Years: {', '.join(map(str, years))}\n"
         f"Capital: ${capital:,.0f}\n\n"
-        f"[bold cyan]Strategy (TSMOMConfig)[/bold cyan]\n"
+        f"[bold cyan]Strategy ({strategy.name})[/bold cyan]\n"
         f"{strategy_info}\n\n"
         f"[bold cyan]Portfolio[/bold cyan]\n"
         f"{portfolio_info}"
@@ -123,7 +125,7 @@ def _print_startup_panel(
 # Typer App
 app = typer.Typer(
     name="backtest",
-    help="VW-TSMOM Strategy Backtesting CLI",
+    help="Strategy Backtesting CLI (supports multiple strategies via Registry)",
     no_args_is_help=True,
 )
 
@@ -134,6 +136,14 @@ def run(
         str,
         typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
     ] = "BTC/USDT",
+    strategy_name: Annotated[
+        str,
+        typer.Option(
+            "--strategy",
+            "-s",
+            help="Strategy name (use 'strategies' command to list available)",
+        ),
+    ] = "tsmom",
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s) to backtest"),
@@ -150,41 +160,61 @@ def run(
         float,
         typer.Option("--capital", "-c", help="Initial capital (USD)"),
     ] = 10000.0,
+    use_recommended: Annotated[
+        bool,
+        typer.Option(
+            "--recommended/--custom",
+            help="Use strategy's recommended portfolio settings",
+        ),
+    ] = True,
 ) -> None:
-    """Run VW-TSMOM backtest on historical data.
+    """Run strategy backtest on historical data.
 
-    Uses default configurations for both strategy and portfolio management:
-        - TSMOMConfig: Default strategy parameters (use `info` command to see)
-        - Portfolio: Default settings (use `info` command to see)
-
-    For parameter optimization, use the `optimize` command instead.
+    Supports multiple strategies via the Registry pattern.
+    Use --strategy to select a strategy (default: tsmom).
+    Use --recommended to use the strategy's optimized portfolio settings.
 
     Example:
         uv run python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
-        uv run python -m src.cli.backtest run BTC/USDT -y 2024 --report
-        uv run python -m src.cli.backtest run ETH/USDT -y 2025 --verbose
-        uv run python -m src.cli.backtest run BTC/USDT -c 50000 --report
+        uv run python -m src.cli.backtest run BTC/USDT -s adaptive-breakout -y 2024
+        uv run python -m src.cli.backtest run BTC/USDT -s tsmom --custom -c 50000
+        uv run python -m src.cli.backtest run ETH/USDT -y 2025 --verbose --report
     """
     # 로깅 설정: verbose 모드에서 DEBUG 레벨, 아니면 WARNING 레벨
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
 
+    # 전략 클래스 로드 (Registry에서)
+    try:
+        strategy_class = get_strategy(strategy_name)
+    except KeyError as e:
+        logger.error(f"Strategy not found: {e}")
+        available = ", ".join(list_strategies())
+        console.print(f"[red]Error:[/red] Strategy '{strategy_name}' not found.")
+        console.print(f"Available strategies: {available}")
+        raise typer.Exit(code=1) from e
+
     # 전략 컨텍스트가 바인딩된 로거 생성
-    ctx_logger = get_strategy_logger(strategy="VW-TSMOM", symbol=symbol)
+    strategy_instance = strategy_class()
+    ctx_logger = get_strategy_logger(strategy=strategy_instance.name, symbol=symbol)
 
     if verbose:
         ctx_logger.info("Debug mode enabled - detailed logs will be shown")
 
-    # 전략 및 포트폴리오 생성 (설정값 표시를 위해 먼저 생성)
-    strategy = TSMOMStrategy()  # Uses default TSMOMConfig
-    portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
+    # 포트폴리오 생성 (권장 설정 또는 기본 설정)
+    if use_recommended:
+        portfolio = strategy_class.recommended_portfolio(initial_capital=capital)
+        ctx_logger.debug(f"Using recommended portfolio for {strategy_instance.name}")
+    else:
+        portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
+        ctx_logger.debug("Using default portfolio settings")
 
     # 시작 정보 패널 (실제 설정값 표시)
     _print_startup_panel(
         symbol=symbol,
         years=year,
         capital=capital,
-        strategy=strategy,
+        strategy=strategy_instance,
         portfolio=portfolio,
     )
 
@@ -215,15 +245,14 @@ def run(
 
     # Step 2: 전략 설정 확인
     logger.info("Step 2: Configuring strategy...")
-    logger.success(
-        f"Using TSMOMConfig (lookback={strategy.config.lookback}, vol_target={strategy.config.vol_target:.0%})"
-    )
+    strategy_info = strategy_instance.get_startup_info()
+    logger.success(f"Using {strategy_instance.name} strategy")
 
     if verbose:
-        config_table = Table(title="Strategy Configuration (TSMOMConfig)")
+        config_table = Table(title=f"Strategy Configuration ({strategy_instance.name})")
         config_table.add_column("Parameter", style="cyan")
         config_table.add_column("Value", style="green")
-        for key, value in strategy.config.model_dump().items():
+        for key, value in strategy_info.items():
             config_table.add_row(key, str(value))
         console.print(config_table)
 
@@ -249,7 +278,7 @@ def run(
         # 백테스트 요청 생성
         request = BacktestRequest(
             data=data,
-            strategy=strategy,
+            strategy=strategy_instance,
             portfolio=portfolio,
             analyzer=PerformanceAnalyzer() if report else None,
         )
@@ -274,7 +303,7 @@ def run(
             report_path = generate_quantstats_report(
                 returns=strategy_returns,
                 benchmark_returns=benchmark_returns,
-                title=f"{strategy.name} Backtest - {symbol}",
+                title=f"{strategy_instance.name} Backtest - {symbol}",
             )
             logger.success(f"Report saved: {report_path}")
             ctx_logger.success(f"Report generated: {report_path}")
@@ -292,6 +321,50 @@ def run(
         logger.warning(f"VectorBT import failed: {e}")
         logger.info("Install VectorBT with: pip install vectorbt")
         raise typer.Exit(code=1) from e
+
+
+@app.command()
+def strategies() -> None:
+    """List all available strategies.
+
+    Shows registered strategies with their descriptions and recommended settings.
+
+    Example:
+        uv run python -m src.cli.backtest strategies
+    """
+    available = list_strategies()
+
+    if not available:
+        console.print("[yellow]No strategies registered.[/yellow]")
+        raise typer.Exit(code=0)
+
+    table = Table(title="Available Strategies")
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Description", style="green")
+    table.add_column("Recommended Portfolio", style="yellow")
+
+    for name in available:
+        strategy_class = get_strategy(name)
+
+        # 전략 설명 (docstring 첫 줄)
+        doc = strategy_class.__doc__ or "No description"
+        description = doc.split("\n")[0].strip()
+
+        # 권장 포트폴리오 설정 요약
+        try:
+            portfolio = strategy_class.recommended_portfolio()
+            pm_cfg = portfolio.config
+            if pm_cfg.system_stop_loss:
+                portfolio_info = f"Lev: {pm_cfg.max_leverage_cap}x, SL: {pm_cfg.system_stop_loss:.0%}"
+            else:
+                portfolio_info = f"Lev: {pm_cfg.max_leverage_cap}x, SL: Disabled"
+        except Exception:
+            portfolio_info = "N/A"
+
+        table.add_row(name, description, portfolio_info)
+
+    console.print(table)
+    console.print("\nUse [cyan]--strategy <name>[/cyan] with the run command.")
 
 
 @app.command()
@@ -436,12 +509,252 @@ def optimize(
         raise typer.Exit(code=1) from e
 
 
+def _diagnose_breakout(
+    symbol: str,
+    year: list[int],
+    verbose: bool,
+) -> None:
+    """Adaptive Breakout 전략 진단.
+
+    ATR 기반 임계값 필터링과 돌파 감지 효율을 분석합니다.
+
+    Args:
+        symbol: 거래 심볼
+        year: 분석 연도 목록
+        verbose: 상세 로그 출력 여부
+    """
+    from src.strategy.breakout import AdaptiveBreakoutConfig, AdaptiveBreakoutStrategy
+
+    # 로깅 설정
+    console_level = "DEBUG" if verbose else "WARNING"
+    setup_logger(console_level=console_level)
+    ctx_logger = get_strategy_logger(strategy="AdaptiveBreakout-Diagnosis", symbol=symbol)
+
+    config = AdaptiveBreakoutConfig()
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]Adaptive Breakout Signal Diagnosis[/bold]\n"
+                f"Symbol: {symbol}\n"
+                f"Years: {', '.join(map(str, year))}\n"
+                f"k_value: {config.k_value}x ATR"
+            ),
+            border_style="yellow",
+        )
+    )
+
+    # Step 1: 데이터 로드
+    logger.info("Step 1: Loading data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        data = data_service.get(
+            MarketDataRequest(
+                symbol=symbol,
+                timeframe="1D",
+                start=start_date,
+                end=end_date,
+            )
+        )
+        logger.success(
+            f"Loaded {data.symbol}: {data.periods:,} daily candles "
+            f"({data.start.date()} ~ {data.end.date()})"
+        )
+    except DataNotFoundError as e:
+        logger.error(f"Data load failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    # Step 2: 전략 실행 및 시그널 생성
+    logger.info("Step 2: Preprocessing and generating signals...")
+    strategy = AdaptiveBreakoutStrategy(config)
+    processed_df, signals = strategy.run(data.ohlcv)
+
+    logger.success(f"Generated signals for {len(processed_df)} candles")
+
+    # Step 3: 벤치마크 수익률
+    benchmark_returns = data.ohlcv["close"].pct_change().dropna()
+    returns_aligned = benchmark_returns.reindex(processed_df.index).fillna(0)
+
+    # ========== 분석 ==========
+    close = processed_df["close"]
+    upper = processed_df["upper_band"].shift(1)
+    lower = processed_df["lower_band"].shift(1)
+    threshold = processed_df["threshold"].shift(1)
+
+    # 시그널 분포
+    long_days = int((signals.direction == 1).sum())
+    short_days = int((signals.direction == -1).sum())
+    neutral_days = int((signals.direction == 0).sum())
+    total_days = len(signals.direction)
+
+    # 돌파 통계
+    simple_long = int((close > upper).sum())
+    simple_short = int((close < lower).sum())
+    threshold_long = int((close > (upper + threshold)).sum())
+    threshold_short = int((close < (lower - threshold)).sum())
+
+    # 방향별 수익
+    long_mask = signals.direction == 1
+    short_mask = signals.direction == -1
+    long_returns = returns_aligned[long_mask]
+    short_returns = returns_aligned[short_mask]
+
+    long_pnl = float((signals.strength[long_mask] * long_returns).sum()) * 100
+    short_pnl = float((signals.strength[short_mask] * short_returns).sum()) * 100
+    long_correct = int((long_returns > 0).sum()) if long_days > 0 else 0
+    short_correct = int((short_returns < 0).sum()) if short_days > 0 else 0
+
+    # 벤치마크
+    total_benchmark = float(benchmark_returns.sum()) * 100
+    strategy_return = float((signals.strength * returns_aligned).sum()) * 100
+    exposure = (signals.direction != 0).sum() / total_days
+
+    # ========== 결과 출력 ==========
+
+    # 시그널 분포 테이블
+    position_table = Table(title="Position Distribution")
+    position_table.add_column("Position", style="cyan")
+    position_table.add_column("Days", justify="right")
+    position_table.add_column("Percentage", justify="right")
+
+    position_table.add_row("Long", f"{long_days:,}", f"{long_days / total_days * 100:.1f}%")
+    position_table.add_row("Short", f"{short_days:,}", f"{short_days / total_days * 100:.1f}%")
+    position_table.add_row("Neutral", f"{neutral_days:,}", f"{neutral_days / total_days * 100:.1f}%")
+    console.print(position_table)
+
+    # 돌파 분석 테이블
+    breakout_table = Table(title="Breakout Detection Analysis")
+    breakout_table.add_column("Type", style="cyan")
+    breakout_table.add_column("Simple", justify="right")
+    breakout_table.add_column("With Threshold", justify="right")
+    breakout_table.add_column("Filtered", justify="right", style="yellow")
+
+    long_filtered = simple_long - threshold_long
+    short_filtered = simple_short - threshold_short
+    breakout_table.add_row(
+        "Upper (Long)",
+        f"{simple_long}",
+        f"{threshold_long}",
+        f"{long_filtered} ({long_filtered / max(simple_long, 1) * 100:.0f}%)",
+    )
+    breakout_table.add_row(
+        "Lower (Short)",
+        f"{simple_short}",
+        f"{threshold_short}",
+        f"{short_filtered} ({short_filtered / max(simple_short, 1) * 100:.0f}%)",
+    )
+    console.print(breakout_table)
+
+    # 방향별 성과 테이블
+    direction_table = Table(title="Long/Short Performance")
+    direction_table.add_column("Metric", style="cyan")
+    direction_table.add_column("Long", justify="right", style="green")
+    direction_table.add_column("Short", justify="right", style="red")
+
+    direction_table.add_row(
+        "Days",
+        f"{long_days:,} ({long_days / total_days * 100:.1f}%)",
+        f"{short_days:,} ({short_days / total_days * 100:.1f}%)",
+    )
+    direction_table.add_row("Cumulative PnL", f"{long_pnl:+.1f}%", f"{short_pnl:+.1f}%")
+    direction_table.add_row(
+        "Hit Rate",
+        f"{long_correct}/{long_days} ({long_correct / max(long_days, 1) * 100:.0f}%)",
+        f"{short_correct}/{max(short_days, 1)} ({short_correct / max(short_days, 1) * 100:.0f}%)",
+    )
+    console.print(direction_table)
+
+    # 벤치마크 비교 테이블
+    benchmark_table = Table(title="Benchmark Comparison")
+    benchmark_table.add_column("Metric", style="cyan")
+    benchmark_table.add_column("Value", justify="right")
+
+    benchmark_table.add_row("Buy & Hold Return", f"{total_benchmark:+.1f}%")
+    benchmark_table.add_row("Strategy Return", f"{strategy_return:+.1f}%")
+    benchmark_table.add_row("Alpha (vs B&H)", f"{strategy_return - total_benchmark:+.1f}%")
+    benchmark_table.add_row("Market Exposure", f"{exposure * 100:.1f}%")
+    console.print(benchmark_table)
+
+    # 변동성 & 임계값 통계
+    vol_table = Table(title="Volatility & Threshold Statistics")
+    vol_table.add_column("Metric", style="cyan")
+    vol_table.add_column("Value", justify="right")
+
+    vol_table.add_row("ATR Mean", f"${float(processed_df['atr'].mean()):,.2f}")
+    vol_table.add_row("Threshold Mean", f"${float(threshold.mean()):,.2f}")
+    vol_table.add_row("Band Width Mean", f"${float((upper - lower).mean()):,.2f}")
+    vol_table.add_row("Threshold/Band Ratio", f"{float((threshold / (upper - lower)).mean()) * 100:.1f}%")
+    console.print(vol_table)
+
+    # 권장사항
+    recommendations: list[str] = []
+    issues: list[str] = []
+
+    if neutral_days / total_days > BREAKOUT_LOW_EXPOSURE_THRESHOLD:
+        issues.append(
+            f"[yellow]Low Exposure:[/yellow] {neutral_days / total_days * 100:.0f}% in cash. "
+            "Consider lowering k_value (e.g., 0.5~0.75)."
+        )
+
+    if threshold_short == 0:
+        issues.append(
+            "[yellow]No Short Signals:[/yellow] ATR threshold may be too high for downside breakouts."
+        )
+
+    if long_days > short_days * 5 and short_days > 0:
+        issues.append(
+            f"[yellow]Long Bias:[/yellow] {long_days}x Long vs {short_days}x Short. "
+            "Strategy may underperform in bear markets."
+        )
+
+    if strategy_return > total_benchmark:
+        recommendations.append(
+            f"[green]Outperforming:[/green] Strategy beats Buy & Hold by {strategy_return - total_benchmark:+.1f}%."
+        )
+    elif strategy_return > 0:
+        recommendations.append(
+            "[yellow]Underperforming:[/yellow] Positive return but below B&H. "
+            "Consider k_value=0.5 for more signals."
+        )
+
+    if long_correct == long_days and long_days > 0:
+        recommendations.append("[green]100% Long Hit Rate:[/green] ATR threshold is effective at filtering noise.")
+
+    if issues:
+        issues_content = "\n".join(f"  • {issue}" for issue in issues)
+        console.print(Panel(f"[bold]Issues Detected[/bold]\n\n{issues_content}", border_style="red"))
+
+    if recommendations:
+        rec_content = "\n".join(f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations))
+        console.print(Panel(f"[bold]Assessment[/bold]\n\n{rec_content}", border_style="green"))
+
+    ctx_logger.success(
+        "Diagnosis completed",
+        long_days=long_days,
+        short_days=short_days,
+        strategy_return=f"{strategy_return:.1f}%",
+    )
+
+
 @app.command()
 def diagnose(  # noqa: PLR0912
     symbol: Annotated[
         str,
         typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
     ] = "BTC/USDT",
+    strategy_name: Annotated[
+        str,
+        typer.Option(
+            "--strategy",
+            "-s",
+            help="Strategy name (use 'strategies' command to list available)",
+        ),
+    ] = "tsmom",
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s) to backtest"),
@@ -459,21 +772,26 @@ def diagnose(  # noqa: PLR0912
         typer.Option("--capital", "-c", help="Initial capital (USD)"),
     ] = 10000.0,
 ) -> None:
-    """Run Beta Attribution diagnosis for VW-TSMOM strategy.
+    """Run signal pipeline diagnosis for trading strategies.
 
     Analyzes why the strategy may not be capturing market upside by
-    decomposing Beta losses across each filter stage.
+    examining signal generation pipeline and filter effects.
 
-    Filter Stages Analyzed:
-        1. Trend Filter - Removes counter-trend signals
-        2. Deadband - Filters weak signals
-        3. Vol Scaling - Adjusts position size by volatility
+    Supported Strategies:
+        - tsmom: Beta Attribution analysis (Trend Filter, Deadband, Vol Scaling)
+        - adaptive-breakout: Breakout detection analysis (ATR Threshold, Channel)
 
     Example:
-        uv run python -m src.cli.backtest diagnose BTC/USDT --year 2024 --year 2025
-        uv run python -m src.cli.backtest diagnose BTC/USDT -y 2024 --window 30
-        uv run python -m src.cli.backtest diagnose ETH/USDT -y 2025 --verbose
+        uv run python -m src.cli.backtest diagnose BTC/USDT -s tsmom -y 2024 -y 2025
+        uv run python -m src.cli.backtest diagnose BTC/USDT -s adaptive-breakout -y 2024
+        uv run python -m src.cli.backtest diagnose ETH/USDT -s tsmom --verbose
     """
+    # 전략 분기: adaptive-breakout은 별도 진단 함수 호출
+    if strategy_name == "adaptive-breakout":
+        _diagnose_breakout(symbol, year, verbose)
+        return
+
+    # TSMOM 전략 진단 (기존 로직)
     from src.strategy.tsmom.preprocessor import preprocess
 
     # 로깅 설정
