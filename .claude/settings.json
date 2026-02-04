@@ -19,7 +19,6 @@
       "Bash(ruff check --fix .)",
       "Bash(ruff format .)",
       "Bash(uv run ruff *)",
-      "Bash(uv run basedpyright *)",
 
       // 테스트 실행 (Autonomous - CLAUDE.md §3)
       "Bash(uv run pytest *)",
@@ -139,17 +138,14 @@
     "test_framework": "pytest",
     "zero_tolerance_rules": [
       "ruff check (0 errors required)",
-      "basedpyright strict mode (0 errors required)",
+      "pyright strict mode (0 errors required)",
       "pytest coverage ≥80% (critical paths ≥90%)"
     ],
-    "type_checkers": {
-      "cursor": "basedpyright (Rust-based, stricter)",
-      "vscode": "pylance (strict mode = basedpyright strict)"
-    },
-    "vscode_pylance_config": {
-      "setting": "python.analysis.typeCheckingMode",
-      "value": "strict",
-      "note": ".vscode/settings.json에서 설정됨"
+    "type_checker": {
+      "tool": "pyright (VSCode Pylance)",
+      "mode": "strict",
+      "config_file": "pyproject.toml [tool.pyright]",
+      "vscode_setting": "python.analysis.typeCheckingMode = strict"
     }
   },
 

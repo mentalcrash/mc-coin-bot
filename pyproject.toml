@@ -57,13 +57,13 @@ packages = ["src"]
 
 [dependency-groups]
 # 개발용 도구 (테스트, 린팅) -> uv run --group dev ...
+# 타입 체크는 VSCode + Pylance (pyproject.toml [tool.pyright] 섹션 참조)
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
-    "ruff>=0.14.14", # 버전 통일됨
+    "ruff>=0.14.14",
     "pre-commit>=4.0.0",
-    "basedpyright>=1.37.3",
 ]
 
 # 연구/분석용 도구 (노트북, 백테스팅) -> uv run --group research ...
@@ -103,39 +103,41 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",     # pycodestyle errors (표준 에러)
-    "W",     # pycodestyle warnings (표준 경고)
-    "F",     # pyflakes (논리적 오류, 미사용 변수 등)
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes (논리 오류, 미사용 변수)
     "I",     # isort (import 정렬)
-    "B",     # flake8-bugbear (잠재적 버그 탐지)
-    "UP",    # pyupgrade (최신 문법으로 자동 변환)
-    "N",     # pep8-naming (함수/변수/클래스 네이밍 컨벤션)
-    "SIM",   # flake8-simplify (코드 단순화 제안)
-    "C4",    # flake8-comprehensions (리스트 컴프리헨션 최적화)
-    "ASYNC", # flake8-async (비동기 코드 안티패턴 탐지)
-    "S",     # flake8-bandit (보안 취약점 탐지)
-    "RUF",   # Ruff-specific rules (Ruff 자체 규칙)
-    "PERF",  # Perflint (성능 안티패턴 탐지)
+    "B",     # flake8-bugbear (잠재적 버그)
+    "UP",    # pyupgrade (최신 Python 문법)
+    "N",     # pep8-naming (네이밍 컨벤션)
+    "SIM",   # flake8-simplify (코드 단순화)
+    "C4",    # flake8-comprehensions (컴프리헨션 최적화)
+    "ASYNC", # flake8-async (비동기 안티패턴)
+    "S",     # flake8-bandit (보안 취약점)
+    "RUF",   # Ruff-specific rules
+    "PERF",  # Perflint (성능 최적화)
     "LOG",   # flake8-logging (로깅 모범 사례)
-    "TC",    # flake8-type-checking (타입 체킹 최적화)
-    "PTH",   # flake8-use-pathlib (pathlib 사용 권장)
-    "PD",   # pandas-vet (Pandas 모범 사례 강제 - Rules #12)
-    "TRY",  # tryceratops (예외 처리 강화 - Rules #10)
-    "PL",   # Pylint (코드 복잡도 및 리팩토링 제안)
-    "ISC",  # flake8-implicit-str-concat (암시적 문자열 연결 방지)
+    "TC",    # flake8-type-checking (TYPE_CHECKING 블록 최적화)
+    "PTH",   # flake8-use-pathlib (pathlib 권장)
+    "PD",    # pandas-vet (Pandas 모범 사례)
+    "TRY",   # tryceratops (예외 처리)
+    "PL",    # Pylint (복잡도, 리팩토링)
+    "ISC",   # flake8-implicit-str-concat (암시적 문자열 연결 방지)
+    "FURB",  # refurb (2026 최신 리팩토링 제안)
+    "SLOT",  # flake8-slots (__slots__ 최적화)
 ]
 
 ignore = [
-    "E501",   # 줄 길이는 ruff format이 알아서 처리하므로 lint 에러는 무시
-    "B008",   # FastAPI의 Depends() 사용 시 함수 호출 인자 허용
-    "S101",   # assert 사용 허용 (테스트 코드에서 필요)
-    "S311",   # random 모듈 사용 허용 (보안이 필요 없는 경우)
-    "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
-    "TRY003", # 긴 에러 메시지를 예외 클래스에 직접 넣기 금지 -> 허용 (빠른 개발 위해)
-    "ISC003", # basedpyright의 reportImplicitStringConcatenation과 충돌하므로 명시적 연결 허용
-    "PLR0915",
-    "PLR0913",
-    "PLC0415",
+    "E501",   # 줄 길이는 ruff format이 처리
+    "B008",   # FastAPI Depends() 함수 호출 인자 허용
+    "S101",   # assert 사용 허용 (테스트 필요)
+    "S311",   # random 모듈 사용 허용
+    "RUF012", # 클래스 변수 타입 어노테이션 완화
+    "TRY003", # 긴 에러 메시지 허용 (빠른 개발)
+    "ISC003", # 명시적 문자열 연결 허용
+    "PLR0915", # 함수 내 문장 수 제한 완화
+    "PLR0913", # 함수 인자 수 제한 완화
+    "PLC0415", # import 위치 제한 완화
 ]
 
 # Allow autofix for all enabled rules
@@ -161,8 +163,11 @@ indent-style = "space"            # 들여쓰기 (space 추천)
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.basedpyright]
-# 1. 기본 설정 (Pyright와 동일)
+# ============================================
+# Pyright (VSCode Pylance) 타입 체크 설정
+# ============================================
+[tool.pyright]
+# 1. 기본 설정
 include = ["src"]
 exclude = [
     "**/node_modules",
@@ -170,35 +175,44 @@ exclude = [
     "tests",
     "research",
     "build",
-    "dist"
+    "dist",
+    ".venv"
 ]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.13"
+pythonPlatform = "All"
 
-# 2. 타입 체크 모드
-# BasedPyright의 'strict'는 기존 Pyright보다 훨씬 엄격합니다.
-# 너무 까다롭다면 'standard'로 낮추는 것을 고려하세요.
+# 2. 타입 체크 모드 (strict - .vscode/settings.json과 동일)
 typeCheckingMode = "strict"
 
-# 3. BasedPyright 전용 강력한 규칙 (선택 사항)
-# True로 설정하면 코드 내의 모든 'Any' 타입을 에러로 처리합니다 (매우 엄격함).
-reportAny = false
-reportExplicitAny = false
+# 3. 엄격한 타입 체크 규칙
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+strictParameterNoneValue = true
 
-# 4. 실용적 예외 처리 (기존 유지)
+# 4. 실용적 예외 처리 (개발 편의성)
 reportMissingTypeStubs = false
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnnecessaryCast = false
-reportUnusedImport = false
-reportUnusedClass = false
-reportUnusedVariable = false
 
-# 5. 안전장치 (기존 유지)
+# 5. 경고 수준 설정 (VSCode 문제 패널 표시)
+reportUnusedImport = "warning"
+reportUnusedClass = "warning"
+reportUnusedVariable = "warning"
+
+# 6. 안전장치 (에러로 처리)
 reportImplicitStringConcatenation = true
-reportMissingImports = true
+reportMissingImports = "error"
+reportConstantRedefinition = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+
+# 7. Python 3.13 최신 기능
+enableTypeIgnoreComments = true
 
 # ============================================
 # pytest 설정
