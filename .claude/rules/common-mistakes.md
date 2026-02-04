@@ -302,8 +302,9 @@ uv run ruff check --fix .
 # 코드 포맷팅 (Black 호환)
 uv run ruff format .
 
-# 타입 검사 (strict 모드)
-uv run basedpyright src/
+# 타입 검사 (VSCode Pylance가 자동으로 실행)
+# .vscode/settings.json: python.analysis.typeCheckingMode = "strict"
+# pyproject.toml: [tool.pyright] 섹션 참조
 
 # 전체 테스트 실행
 uv run pytest

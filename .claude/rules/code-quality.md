@@ -1,18 +1,20 @@
-# 🧹 Code Quality Standards: Ruff & Basedpyright
+# 🧹 Code Quality Standards: Ruff & Pyright
 
 ## ⚠️ CRITICAL: Zero-Tolerance Lint Policy
 
 **모든 코드 변경은 다음 린트 도구의 에러가 0개여야 합니다.**
 
 - **Ruff:** `pyproject.toml`에 정의된 모든 규칙 준수 필수
-- **Basedpyright:** `strict` 모드 수준의 타입 체크 통과 필수
+- **Pyright (VSCode Pylance):** `strict` 모드 수준의 타입 체크 통과 필수
 
 ### 검사 실행 방식
 ```bash
-# 반드시 uv run으로 프로젝트 환경에서 실행
+# Ruff 검사 (CLI에서 실행)
 uv run ruff check .
 uv run ruff format .
-uv run basedpyright
+
+# Pyright 검사 (VSCode Pylance가 자동으로 실행)
+# .vscode/settings.json: python.analysis.typeCheckingMode = "strict"
 ```
 
 > [!CAUTION]
@@ -42,8 +44,12 @@ uv run basedpyright
 | 9 | 경로: `os.path` 대신 `pathlib.Path` (PTH) | ✓ |
 | 10 | 타입 힌트: 모든 함수 인자·반환값에 명시 | ✓ |
 
-### 적용 규칙셋
-**활성화:** E, W, F, I, B, UP, N, SIM, C4, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL, ISC
+### 적용 규칙셋 (2026 최신)
+**활성화:** E, W, F, I, B, UP, N, SIM, C4, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL, ISC, **FURB, SLOT**
+
+**2026년 추가 규칙:**
+- **FURB** (refurb) - 최신 Python 리팩토링 제안
+- **SLOT** (flake8-slots) - `__slots__` 메모리 최적화
 
 **무시됨 (신경 쓰지 않아도 됨):**
 - `E501` (줄 길이) — formatter가 처리
@@ -80,7 +86,7 @@ uv run basedpyright
 
 ---
 
-## 2. Basedpyright Typing Standards
+## 2. Pyright (VSCode Pylance) Typing Standards
 
 ### Code Generation Checklist (출력 전 필수)
 
@@ -144,7 +150,7 @@ from src.models import Order
 type OrderID = str
 
 async def process_order(order_id: OrderID, price: Decimal | None) -> None:
-    """주문 처리 (타입 안전, Ruff/Basedpyright 준수)"""
+    """주문 처리 (타입 안전, Ruff/Pyright 준수)"""
     # Guard Clause (Fail Fast)
     if price is None:
         logger.warning(f"Order {order_id}: price is None")
@@ -180,7 +186,7 @@ def process(id):  # reportMissingParameterType, reportReturnType
 
 ---
 
-## 4. Ruff vs Basedpyright 역할 분담
+## 4. Ruff vs Pyright 역할 분담
 
-- **Ruff:** Import 정리, 미사용 변수, 스타일, PD/TRY/ASYNC 등
-- **Basedpyright:** 타입 호환성, Optional, 반환 타입, 암시적 문자열 연결
+- **Ruff:** Import 정리, 미사용 변수, 스타일, PD/TRY/ASYNC, FURB/SLOT 등
+- **Pyright (VSCode Pylance):** 타입 호환성, Optional, 반환 타입, 암시적 문자열 연결
