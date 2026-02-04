@@ -1,0 +1,99 @@
+---
+description: Logging Standards (Loguru, JSON, Async Safety)
+globs: **/*.py
+alwaysApply: false
+---
+
+# 📝 Modern Logging Standards (2026)
+
+## 1. Core Library: Loguru
+- **Standard Lib Ban:** Python의 기본 `logging` 모듈 대신, **`loguru`**를 프로젝트 표준으로 사용합니다.
+- **No Print:** `print()` 문 사용은 엄격히 금지됩니다. (디버깅 목적이라도 `logger.debug()` 사용)
+- **Import:** `from loguru import logger`
+
+## 2. Configuration Principles (Production Ready)
+- **Dual Sinks:** 로깅 설정은 반드시 두 가지 출력을 동시에 지원해야 합니다.
+    1.  **Console (Human):** 개발자를 위한 컬러풀하고 가독성 높은 텍스트 포맷.
+    2.  **File (Machine):** 데이터 분석 및 ELK 스택 연동을 위한 **JSON Serialized** 포맷.
+- **Async Safety (Critical):**
+    - 트레이딩 봇의 이벤트 루프를 차단하지 않기 위해 파일 로그 기록 시 **반드시 `enqueue=True`** 옵션을 사용해야 합니다.
+    - 예: `logger.add("logs/app.log", enqueue=True, ...)`
+
+## 3. Structured Logging (Context Binding)
+- **Bind Context:** 비동기 환경에서는 로그가 뒤섞이므로, 단순 텍스트 연결보다 `logger.bind()`를 사용하여 메타데이터를 주입합니다.
+    - ✅ `logger.bind(symbol="BTC/USDT", order_id="123").info("Order Placed")`
+    - ❌ `logger.info(f"Order Placed for BTC/USDT, id: 123")`
+- **Correlation:** 주문 흐름 추적을 위해 `execution_id`나 `trace_id`를 적극적으로 바인딩합니다.
+
+## 4. Security & Privacy
+- **Secret Masking:** API Key, Secret Key 등 민감 정보는 절대 로그에 남기지 않습니다.
+    - Pydantic의 `SecretStr`을 사용하면 자동 마스킹되지만, 로그 메시지 작성 시에도 주의해야 합니다.
+- **Sanitization:** 예외 발생 시 `logger.exception()`을 사용하되, Traceback 내에 환경 변수 값이 노출되지 않도록 설정합니다.
+
+## 5. Log Levels Guidelines
+- **TRACE:** 바이너리 데이터, 웹소켓 원본 메시지 (개발 단계 한정).
+- **DEBUG:** 내부 로직 흐름, 변수 상태 변화.
+- **INFO:** 시스템 시작/종료, 주요 매매 이벤트(주문, 체결).
+- **WARNING:** 네트워크 지연, 재시도 가능한 API 오류 (시스템 지속 가능).
+- **ERROR:** 주문 실패, 데이터 무결성 깨짐 (해당 전략/루틴 중단).
+- **CRITICAL:** 자산 손실 위험, 킬 스위치(Kill Switch) 발동 (시스템 즉시 종료).
+
+## 6. Example Pattern
+
+### ✅ Good (Async-Safe & Structured)
+```python
+from loguru import logger
+import sys
+
+# [설정 예시 - src/core/logger.py]
+def setup_logger():
+    logger.remove() # 기본 핸들러 제거
+    
+    # 1. Console Handler (Readable)
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+        level="INFO"
+    )
+    
+    # 2. File Handler (JSON, Async)
+    logger.add(
+        "logs/trading.json",
+        rotation="100 MB",     # 파일 크기 기반 회전
+        retention="10 days",   # 보관 기간
+        serialize=True,        # JSON 포맷 저장
+        enqueue=True,          # [중요] 비동기 큐 사용 (Non-blocking)
+        level="DEBUG"
+    )
+
+# [사용 예시]
+async def process_trade(symbol: str, side: str):
+    # Context Binding
+    context_logger = logger.bind(symbol=symbol, side=side)
+    
+    context_logger.info("Analyzing market data...")
+    
+    try:
+        # ... logic ...
+        context_logger.success("Trade executed successfully")
+    except Exception as e:
+        # Stack trace included
+        context_logger.exception("Failed to execute trade")
+
+```
+
+### ❌ Bad (Blocking & Unsafe)
+
+```python
+import logging # Legacy
+
+def bad_logging():
+    # Blocking IO: 디스크 쓰기 지연 시 전체 봇 멈춤
+    logging.basicConfig(filename='app.log') 
+    
+    api_key = "sk_12345"
+    # 보안 위협: 키 노출 + f-string 남용
+    logging.info(f"Connecting with {api_key}") 
+    print("Done") # 프로덕션에서 확인 불가
+
+```

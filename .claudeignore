@@ -1,0 +1,63 @@
+# -----------------------------------------------------------------------------
+# .claudeignore - Optimized for Python Crypto Trading Bot
+# -----------------------------------------------------------------------------
+
+# 1. Security & Credentials (CRITICAL)
+# 에이전트가 실수로 API Key를 읽거나 학습하지 않도록 최우선 차단
+.env
+.env.*
+secrets.json
+config.json
+credentials/
+*.pem
+*.key
+
+# 2. Python & Virtual Environment
+# 표준 Python 바이너리 및 가상환경 제외
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+poetry.lock  # 의존성 문제 해결 시엔 필요할 수 있으나, 일반적으로 컨텍스트 낭비임
+
+# 3. Trading Data & Cache (Project Specific)
+# 퀀트 프로젝트의 핵심인 데이터 파일은 토큰을 엄청나게 소모하므로 반드시 차단
+# 데이터 구조 파악이 필요하면 'data_sample.csv' 같은 소형 샘플 파일만 별도 허용 권장
+data/
+*.csv
+*.xlsx
+*.parquet
+*.h5
+*.feather
+*.pkl
+*.pickle
+.vbt/        # vectorbt 캐시 디렉토리 (존재할 경우)
+
+# 4. Logs & Debugging (Loguru)
+# 실시간으로 변동되는 로그 파일은 에이전트에게 혼란(Noise)만 가중시킴
+logs/
+*.log
+*.log.* # Loguru rotation files (e.g., app.log.2026-02-04)
+debug/
+
+# 5. Output & Artifacts
+# 백테스팅 결과물 차단
+backtests/
+results/
+plots/
+*.png
+*.jpg
+*.html       # TradingView 차트 저장본 등
+
+# 6. IDE & System
+.idea/
+.vscode/
+.cursor/          # Cursor 관련 설정
+.cursor.archived/ # Cursor rules 아카이브 (참고용)
+.git/
+.DS_Store

@@ -1,0 +1,96 @@
+---
+description: Documentation Standards (Markdown, Mermaid, Diátaxis Framework)
+globs: **/*.md
+alwaysApply: false
+---
+
+# 📝 Modern Documentation Standards (2026)
+
+## 1. Documentation Framework: Diátaxis
+- **Structure:** 모든 문서는 **Diátaxis 프레임워크**의 4가지 분류 중 하나에 속해야 합니다.
+    1.  **Tutorials:** "따라하며 배우기" (Learning-oriented)
+    2.  **How-to Guides:** "특정 문제 해결하기" (Problem-oriented)
+    3.  **Reference:** "기술 명세 및 API" (Information-oriented)
+    4.  **Explanation:** "배경 및 개념 이해" (Understanding-oriented)
+- **Clear Intent:** 문서 상단에 이 문서의 목적과 대상 독자를 명시합니다.
+
+## 2. Markdown Syntax (GFM + Extras)
+- **Callouts (Alerts):** 중요 정보는 GitHub Flavored Markdown의 **Alert 문법**을 사용합니다.
+    - `> [!NOTE]`
+    - `> [!TIP]`
+    - `> [!IMPORTANT]`
+    - `> [!WARNING]`
+    - `> [!CAUTION]`
+- **Code Blocks:** 모든 코드 블록에는 반드시 언어를 명시합니다. (`python`, `bash`, `json` 등)
+- **Frontmatter:** 문서 최상단에 YAML Frontmatter를 추가하여 메타데이터(생성일, 태그, 상태)를 관리합니다.
+    ```yaml
+    ---
+    title: Trading Strategy Architecture
+    last_updated: 2026-01-27
+    status: draft
+    tags: [architecture, strategy]
+    ---
+    ```
+
+## 3. Diagrams as Code (Mermaid.js)
+- **No Binary Images:** 아키텍처, 플로우차트, 시퀀스 다이어그램은 `.png`/`.jpg` 캡처를 지양합니다.
+- **Use Mermaid:** 수정과 관리가 용이한 **Mermaid.js** 문법을 사용하여 문서 내에 직접 그립니다.
+    - AI가 코드를 이해하고 차트를 수정할 수 있는 가장 좋은 방법입니다.
+
+## 4. AI & Human Readability
+- **Header Hierarchy:** `#` (H1)은 문서당 하나만 사용하며, `##` (H2)부터 계층을 구조화합니다.
+- **Short Paragraphs:** 한 문단은 3~4줄을 넘지 않도록 하여 가독성을 높입니다.
+- **Emoji Strategy:** 제목이나 리스트에 적절한 이모지를 사용하여 시각적 스캐닝을 돕습니다. (과도한 사용은 지양)
+    - ✅ `## 🚀 Getting Started`
+    - ✅ `## ⚙️ Configuration`
+
+## 5. Example Pattern
+
+### ✅ Good (Modern Standard)
+```markdown
+---
+title: RSI Strategy Guide
+type: how-to
+---
+
+# 📈 RSI Trading Strategy Setup
+
+> [!NOTE]
+> This guide assumes you have `pandas-ta` installed.
+
+## 1. Logic Flow
+Below is the execution flow of the RSI strategy.
+
+```mermaid
+graph LR
+    A[Fetch Data] --> B{RSI < 30?}
+    B -- Yes --> C[Buy Signal]
+    B -- No --> D{RSI > 70?}
+    D -- Yes --> E[Sell Signal]
+    D -- No --> F[Hold]
+
+```
+
+## 2. Configuration
+
+Update your `.env` file:
+
+```bash
+RSI_PERIOD=14
+RSI_OVERBOUGHT=70
+
+```
+
+```
+
+### ❌ Bad (Legacy)
+```markdown
+# RSI Guide
+
+If you want to use RSI, check the code.
+Here is the flow image:
+![Flowchart](./images/flow_v1_final_final.png) 
+
+Note: Make sure to install dependencies.
+
+```

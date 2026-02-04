@@ -1,0 +1,71 @@
+---
+description: Python 3.13 Coding Standards & Modern Conventions (Asyncio, Pydantic, Typing)
+globs: **/*.py
+alwaysApply: false
+---
+
+# 🐍 Python 3.13 Modern Coding Standards
+
+## 1. Core Syntax & Versioning
+- **Version:** Python 3.13+ 문법을 엄격히 준수합니다.
+- **Modern Typing:**
+    - `Union[X, Y]` 대신 `X | Y` 문법을 사용합니다.
+    - `Optional[X]` 대신 `X | None`을 사용합니다.
+    - 리턴 타입이 자기 자신일 경우 `from typing import Self`를 사용하여 `-> Self`로 명시합니다.
+    - 컬렉션 타입은 `List`, `Dict` 대신 내장 제네릭 `list[]`, `dict[]`를 사용합니다.
+
+## 2. Async & Concurrency (Critical for Trading)
+- **Structured Concurrency:** `asyncio.gather()`보다는 예외 처리가 안전한 **`asyncio.TaskGroup`** (Python 3.11+) 패턴을 우선 사용합니다.
+- **Non-blocking:** I/O 바운드 작업(네트워크, DB)은 반드시 `await` 키워드와 함께 비동기 함수로 작성합니다. `time.sleep()`은 절대 금지이며 `await asyncio.sleep()`을 사용합니다.
+
+## 3. Data Validation & Structure
+- **Pydantic V2:** 데이터 모델링(API 응답, 설정 파일)에는 `dataclasses` 대신 `pydantic.BaseModel`을 사용합니다.
+    - 이유: 런타임 타입 검증과 강력한 직렬화 성능.
+- **Config Management:** 환경 변수 로드는 `pydantic-settings`를 활용하여 타입 안전성을 확보합니다.
+
+## 4. Quant/Financial Precision
+- **No Floats for Money:** 가격(Price), 수량(Amount), 잔고(Balance) 계산에는 절대 `float`를 사용하지 않습니다.
+    - **반드시 `decimal.Decimal`을 사용합니다.**
+    - 나눗셈 연산 시 `getcontext().prec`를 확인하거나 양자화(`quantize`) 처리를 합니다.
+
+## 5. Code Style & Quality (Ruff Style)
+- **Linter Standard:** `Ruff` 린터 규칙을 따르는 코드를 생성합니다. (불필요한 임포트 제거, 복잡도 관리)
+- **Docstrings:** Google Style Docstring을 적용합니다. 모든 Public 함수와 클래스에는 설명, 인자(Args), 반환값(Returns), 발생 예외(Raises)를 명시합니다.
+- **Early Return:** 중첩된 `if/else` 블록을 피하고, Guard Clause(조건 불만족 시 즉시 리턴) 패턴을 사용하여 가독성을 높입니다.
+
+## 6. Example Patterns
+
+### ✅ Good (Modern & Safe)
+```python
+from decimal import Decimal
+import asyncio
+from pydantic import BaseModel
+
+class Order(BaseModel):
+    symbol: str
+    price: Decimal
+    amount: Decimal
+
+async def process_orders(orders: list[Order]) -> None:
+    async with asyncio.TaskGroup() as tg:
+        for order in orders:
+            tg.create_task(execute_order(order))
+
+```
+
+### ❌ Bad (Legacy & Unsafe)
+
+```python
+# float 사용, 구형 타이핑, gather 사용
+from typing import List
+import asyncio
+
+async def process_orders(orders: List[dict]):
+    tasks = []
+    for order in orders:
+        # Dangerous float math
+        total = order['price'] * order['amount'] 
+        tasks.append(execute_order(order))
+    await asyncio.gather(*tasks) # 예외 발생 시 나머지 태스크 처리 불명확
+
+```

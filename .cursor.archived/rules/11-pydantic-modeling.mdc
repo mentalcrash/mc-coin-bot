@@ -1,0 +1,86 @@
+---
+description: Pydantic V2 Data Modeling & Validation Standards
+globs: **/models/*.py, **/schemas/*.py, **/config/*.py, **/dtos/*.py
+alwaysApply: false
+---
+
+# 🛡️ Pydantic V2 Modeling Standards
+
+## 1. Core Principles (V2 Native)
+- **Rust Core Utilization:** Pydantic V2의 성능 이점을 위해 최신 문법을 준수합니다.
+- **No V1 Syntax:** `class Config:` 대신 `model_config = ConfigDict(...)`를 사용합니다.
+- **Methods:**
+    - `dict()` (Legacy) ❌ -> **`model_dump()`** ✅
+    - `parse_obj()` (Legacy) ❌ -> **`model_validate()`** ✅
+    - `parse_raw()` (Legacy) ❌ -> **`model_validate_json()`** ✅
+
+## 2. Immutability & Safety (Immutable Models)
+- **Frozen Models:** 트레이딩 데이터(주문 정보, 체결 내역)는 생성 후 변경되면 안 됩니다.
+    - 기본적으로 `model_config = ConfigDict(frozen=True)`를 적용하여 불변 객체로 만듭니다.
+    - 이는 데이터의 스레드 안전성(Thread-safety)을 높이고 해시 가능(Hashable)하게 만듭니다.
+
+## 3. Configuration Management (pydantic-settings)
+- **BaseSettings:** 환경 변수(.env) 관리는 반드시 `pydantic-settings` 패키지의 `BaseSettings`를 상속받아 구현합니다.
+- **Secrets:** API Key, Secret Key 등은 `str` 대신 `SecretStr` 타입을 사용하여 로그 출력 시 자동으로 마스킹(`**********`)되도록 합니다.
+
+## 4. Field Validation & Logic
+- **Field Validators:** 단일 필드 검증은 `@field_validator`를 사용합니다.
+- **Model Validators:** 여러 필드 간의 관계 검증(예: 매도 주문 시 잔고 확인)은 `@model_validator(mode='after')`를 사용합니다.
+- **Computed Fields:** 직렬화 시 계산된 값을 포함해야 할 경우 `@property` 대신 `@computed_field` 데코레이터를 사용합니다.
+
+## 5. Trading Specific Rules
+- **Decimal Support:** 금액과 수량은 `float` 대신 `Decimal`을 강제합니다. Pydantic은 `Decimal` 직렬화를 완벽하게 지원합니다.
+- **Alias Handling:** 거래소 API의 응답(camelCase)을 Python 스타일(snake_case)로 매핑할 때, `Field(alias="orderId")` 또는 `alias_generator`를 적극 활용합니다.
+
+## 6. Example Pattern
+
+### ✅ Good (Modern V2 Style)
+```python
+from decimal import Decimal
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field, field_validator, SecretStr, computed_field
+
+class ExchangeConfig(BaseModel):
+    """거래소 연결 설정 모델"""
+    model_config = ConfigDict(frozen=True) # 불변 객체 설정
+
+    api_key: str
+    api_secret: SecretStr # 로그 노출 방지
+    
+    @field_validator('api_key')
+    @classmethod
+    def check_key_length(cls, v: str) -> str:
+        if len(v) < 10:
+            raise ValueError("API Key seems too short")
+        return v
+
+class TradeSignal(BaseModel):
+    """매매 신호 모델"""
+    symbol: str
+    price: Decimal = Field(..., gt=0) # 0보다 커야 함
+    quantity: Decimal = Field(..., gt=0)
+    
+    @computed_field
+    def notional_value(self) -> Decimal:
+        """총 주문 금액 자동 계산"""
+        return self.price * self.quantity
+
+```
+
+### ❌ Bad (V1 Legacy Style)
+
+```python
+from pydantic import BaseModel, validator
+
+class TradeSignal(BaseModel):
+    symbol: str
+    price: float # 위험한 float 사용
+    
+    class Config: # 구형 설정 방식
+        allow_mutation = False
+        
+    @validator('price') # 구형 검증자
+    def check_price(cls, v):
+        return v
+
+```
