@@ -1,0 +1,168 @@
+// .claude/settings.json (프로젝트 레벨 - MC Coin Bot 2026 최적화)
+{
+  // ============================================
+  // 1. Tool & Command Permissions (도구별 권한)
+  // ============================================
+  "permissions": {
+    // Autonomous Zone (승인 불필요 - 즉시 실행)
+    "allow": [
+      // 소스 코드 읽기 (모든 계층)
+      "Read(./src/**)",
+      "Read(./tests/**)",
+      "Read(./.claude/**)",
+      "Read(./docs/**)",
+      "Read(./pyproject.toml)",
+      "Read(./README.md)",
+
+      // 코드 품질 & 포맷 (Autonomous - CLAUDE.md §3)
+      "Bash(ruff check .)",
+      "Bash(ruff check --fix .)",
+      "Bash(ruff format .)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run basedpyright *)",
+
+      // 테스트 실행 (Autonomous - CLAUDE.md §3)
+      "Bash(uv run pytest *)",
+      "Bash(pytest *)",
+
+      // 데이터 검사 & 백테스트
+      "Read(./data/bronze/**)",
+      "Read(./data/silver/**)",
+      "Bash(uv run python main.py *)",
+      "Bash(python -m src.cli.*)",
+
+      // Git 조회 (read-only)
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git remote *)",
+
+      // 환경 설정 확인 (안전한 명령)
+      "Bash(uv sync *)",
+      "Bash(uv pip list)",
+      "Bash(which python)",
+      "Bash(python --version)",
+      "Bash(ls -la ./src)"
+    ],
+
+    // Decision Gates (사용자 승인 필수 - CLAUDE.md §2)
+    "require_approval": [
+      // Git 작성 작업 (commit, push, branch 생성)
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git branch -D *)",
+      "Bash(git reset *)",
+      "Bash(git rebase *)",
+
+      // 전략 & 위험 파라미터 수정 (Read만 허용, 수정은 승인 필수)
+      "Write(./src/strategy/**)",
+      "Write(./src/portfolio/**)",
+      "Write(./src/execution/**)",
+
+      // 외부 API & 데이터베이스 변경
+      "Write(./src/exchange/**)",
+      "Write(./src/data/**)",
+
+      // 의존성 변경 (pyproject.toml 수정)
+      "Write(./pyproject.toml)",
+
+      // 시스템 설정 변경
+      "Write(./src/config/**)",
+      "Write(./CLAUDE.md)",
+      "Write(./.claude/settings.json)"
+    ],
+
+    // 절대 금지 (보안 위험)
+    "deny": [
+      // 민감한 파일 읽기
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.env.local)",
+      "Read(./secrets/**)",
+
+      // 파괴적 명령
+      "Bash(rm -rf *)",
+      "Bash(rm -f *)",
+      "Bash(git clean -fd)",
+      "Bash(git reset --hard *)",
+      "Bash(git checkout .)",
+      "Bash(git restore .)",
+
+      // 민감한 정보 노출
+      "Bash(cat .env*)",
+      "Bash(echo $BINANCE_API_KEY)",
+      "Bash(curl * -H *Authorization*)"
+    ]
+  },
+
+  // ============================================
+  // 2. Resource & Rate Limits (리소스 제한)
+  // ============================================
+  "limits": {
+    "max_context_tokens": 150000,
+    "max_bash_timeout_ms": 60000,
+    "max_file_read_size_kb": 2000,
+    "rate_limit_api_calls_per_minute": 10
+  },
+
+  // ============================================
+  // 3. Agent Preferences (에이전트 선호도)
+  // ============================================
+  "agent_preferences": {
+    // Task 에이전트 선택 규칙
+    "use_explore_for": [
+      "codebase structure analysis",
+      "architecture understanding",
+      "cross-module dependencies"
+    ],
+    "use_plan_for": [
+      "implementation tasks",
+      "multi-file changes",
+      "architectural decisions"
+    ],
+
+    // 기본 모델
+    "preferred_model": "haiku",
+    "model_for_complex_tasks": "sonnet"
+  },
+
+  // ============================================
+  // 4. Development Standards (개발 표준)
+  // ============================================
+  "standards": {
+    "python_version": "3.13",
+    "type_checking_mode": "strict",
+    "lint_tool": "ruff",
+    "formatter": "ruff format",
+    "test_framework": "pytest",
+    "zero_tolerance_rules": [
+      "ruff check (0 errors required)",
+      "basedpyright strict mode (0 errors required)",
+      "pytest coverage ≥80% (critical paths ≥90%)"
+    ]
+  },
+
+  // ============================================
+  // 5. Notification & Logging (알림 & 로깅)
+  // ============================================
+  "notifications": {
+    "on_approval_required": true,
+    "on_test_failure": true,
+    "on_lint_error": true,
+    "discord_webhook_enabled": false
+  },
+
+  // ============================================
+  // 6. CLAUDE.md Compliance Checklist
+  // ============================================
+  "compliance": {
+    "agent_behavior_protocol": true,
+    "plan_confirm_implement_pattern": true,
+    "decision_gates_enforcement": true,
+    "zero_tolerance_lint_policy": true,
+    "shift_1_lookahead_bias_prevention": true,
+    "security_standards": true
+  }
+}
