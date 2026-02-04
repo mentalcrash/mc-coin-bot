@@ -38,7 +38,7 @@ from src.core.logger import setup_logger
 from src.data.market_data import MarketDataRequest
 from src.data.service import MarketDataService
 from src.logging.context import get_strategy_logger
-from src.portfolio import Portfolio
+from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
 # NOTE: Legacy imports for backward compatibility (diagnose command)
@@ -203,7 +203,11 @@ def run(
 
     # 포트폴리오 생성 (권장 설정 또는 기본 설정)
     if use_recommended:
-        portfolio = strategy_class.recommended_portfolio(initial_capital=capital)
+        config_kwargs = strategy_class.recommended_config()
+        portfolio = Portfolio.create(
+            initial_capital=Decimal(str(capital)),
+            config=PortfolioManagerConfig(**config_kwargs),
+        )
         ctx_logger.debug(f"Using recommended portfolio for {strategy_instance.name}")
     else:
         portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
@@ -352,8 +356,8 @@ def strategies() -> None:
 
         # 권장 포트폴리오 설정 요약
         try:
-            portfolio = strategy_class.recommended_portfolio()
-            pm_cfg = portfolio.config
+            config_kwargs = strategy_class.recommended_config()
+            pm_cfg = PortfolioManagerConfig(**config_kwargs)
             if pm_cfg.system_stop_loss:
                 portfolio_info = f"Lev: {pm_cfg.max_leverage_cap}x, SL: {pm_cfg.system_stop_loss:.0%}"
             else:

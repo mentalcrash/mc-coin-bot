@@ -60,32 +60,23 @@ def detect_breakout(
 
 def detect_exit_signals(
     close: pd.Series,
-    upper_band: pd.Series,
-    lower_band: pd.Series,
     middle_band: pd.Series,
     direction: pd.Series,
-    use_trailing_stop: bool = False,
-    trailing_stop_distance: pd.Series | None = None,
-    prev_high: pd.Series | None = None,
-    prev_low: pd.Series | None = None,
 ) -> pd.Series:
     """청산 시그널을 감지합니다.
 
     청산 조건:
-        - Long: 가격이 middle_band 또는 lower_band 아래로 하락
-        - Short: 가격이 middle_band 또는 upper_band 위로 상승
-        - Trailing Stop: 최고/최저점 대비 ATR * multiplier 이상 역행
+        - Long: 가격이 middle_band 아래로 하락
+        - Short: 가격이 middle_band 위로 상승
+
+    NOTE: Trailing Stop은 Portfolio 레이어(BacktestEngine)에서 처리됩니다.
+    포지션 관리(진입 후 최고/최저 추적)는 상태(State)가 필요하므로
+    Stateless한 Strategy에서는 구현하지 않습니다.
 
     Args:
         close: 종가 Series
-        upper_band: Donchian Channel 상단
-        lower_band: Donchian Channel 하단
         middle_band: Donchian Channel 중심선
         direction: 현재 방향 Series (-1, 0, 1)
-        use_trailing_stop: Trailing Stop 사용 여부
-        trailing_stop_distance: Trailing Stop 거리 (ATR * multiplier)
-        prev_high: 포지션 진입 후 최고가 (Trailing Stop용)
-        prev_low: 포지션 진입 후 최저가 (Trailing Stop용)
 
     Returns:
         청산 시그널 bool Series
@@ -100,22 +91,6 @@ def detect_exit_signals(
     short_exit = (direction == Direction.SHORT) & (close > prev_middle)
 
     exit_signal: pd.Series = long_exit | short_exit
-
-    # Trailing Stop 적용 (선택적)
-    if use_trailing_stop and trailing_stop_distance is not None:
-        if prev_high is not None:
-            # Long Trailing Stop: 최고가 대비 trailing_stop_distance 하락
-            long_trailing = (direction == Direction.LONG) & (
-                close < prev_high - trailing_stop_distance
-            )
-            exit_signal = exit_signal | long_trailing
-
-        if prev_low is not None:
-            # Short Trailing Stop: 최저가 대비 trailing_stop_distance 상승
-            short_trailing = (direction == Direction.SHORT) & (
-                close > prev_low + trailing_stop_distance
-            )
-            exit_signal = exit_signal | short_trailing
 
     return exit_signal
 
@@ -161,32 +136,33 @@ def apply_cooldown(
     return result
 
 
-def calculate_position_size(
+def calculate_signal_strength(
     vol_scalar: pd.Series,
     direction: pd.Series,
-    min_size: float = 0.0,
-    max_size: float = 3.0,
+    min_strength: float = 0.0,
+    max_strength: float = 3.0,
 ) -> pd.Series:
-    """포지션 크기를 계산합니다.
+    """변동성 스케일링된 시그널 강도를 계산합니다.
 
-    변동성 스케일링을 적용하여 포지션 크기를 결정합니다.
+    NOTE: 이 함수는 "position size"가 아닌 "signal strength"를 계산합니다.
+    실제 포지션 크기 결정(레버리지 클램핑 등)은 Portfolio 레이어의 책임입니다.
 
     Args:
         vol_scalar: 변동성 스케일러 (vol_target / realized_vol)
         direction: 방향 Series (-1, 0, 1)
-        min_size: 최소 포지션 크기
-        max_size: 최대 포지션 크기
+        min_strength: 최소 시그널 강도
+        max_strength: 최대 시그널 강도
 
     Returns:
-        포지션 크기 Series (방향 포함, -max_size ~ +max_size)
+        시그널 강도 Series (방향 포함, -max_strength ~ +max_strength)
     """
-    # 절대 크기 계산 및 클램핑
-    abs_size = vol_scalar.clip(lower=min_size, upper=max_size)
+    # 절대 강도 계산 및 클램핑
+    abs_strength = vol_scalar.clip(lower=min_strength, upper=max_strength)
 
     # 방향 적용
-    position_size: pd.Series = abs_size * direction
+    signal_strength: pd.Series = abs_strength * direction
 
-    return position_size
+    return signal_strength
 
 
 def generate_signals(
@@ -240,19 +216,16 @@ def generate_signals(
     # 5. 진입 시그널
     entries = long_breakout | short_breakout
 
-    # 6. 청산 시그널 (기본: middle band 기준)
-    # 실제 청산은 백테스트 엔진에서 처리, 여기서는 기본 청산 조건만 제공
+    # 6. 청산 시그널 (middle band 기준)
+    # NOTE: Trailing Stop은 Portfolio 레이어(BacktestEngine)에서 처리됩니다.
     exits = detect_exit_signals(
         close_series,
-        upper_band,
-        lower_band,
         middle_band,
         direction,
-        use_trailing_stop=False,  # 백테스트 엔진에서 처리
     )
 
     # 7. 포지션 크기 계산 (변동성 스케일링)
-    strength = calculate_position_size(vol_scalar, direction)
+    strength = calculate_signal_strength(vol_scalar, direction)
 
     # NaN 처리
     entries = entries.fillna(False)

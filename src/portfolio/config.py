@@ -19,7 +19,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.backtest.cost_model import CostModel
+from src.portfolio.cost_model import CostModel
 
 # 검증 임계값 상수
 MIN_REBALANCE_THRESHOLD = 0.01  # 최소 리밸런싱 임계값 (1%)
@@ -41,6 +41,8 @@ class PortfolioManagerConfig(BaseModel):
         rebalance_threshold: 리밸런싱 임계값 (비용 최적화)
         max_leverage_cap: 최대 레버리지 상한 (전략 요청과 무관)
         system_stop_loss: 시스템 레벨 손절 (최후의 방어선)
+        use_trailing_stop: Trailing Stop 활성화 여부
+        trailing_stop_atr_multiplier: Trailing Stop ATR 배수
         cash_sharing: 자산별 마진 격리 여부
         cost_model: 거래 비용 모델
 
@@ -108,6 +110,20 @@ class PortfolioManagerConfig(BaseModel):
         ge=0.01,
         le=0.50,
         description="시스템 레벨 손절 (0.10 = 10%, None = 비활성화)",
+    )
+
+    # ==========================================================================
+    # Trailing Stop (추적 손절)
+    # ==========================================================================
+    use_trailing_stop: bool = Field(
+        default=False,
+        description="Trailing Stop 활성화 여부",
+    )
+    trailing_stop_atr_multiplier: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=10.0,
+        description="Trailing Stop ATR 배수 (예: 2.0 = 2 ATR)",
     )
 
     # ==========================================================================

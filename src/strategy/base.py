@@ -13,7 +13,6 @@ Rules Applied:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -21,7 +20,6 @@ import pandas as pd
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
-    from src.portfolio import Portfolio
     from src.strategy.types import StrategySignals
 
 
@@ -202,24 +200,27 @@ class BaseStrategy(ABC):
         return processed_df, signals
 
     @classmethod
-    def recommended_portfolio(
-        cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
-    ) -> Portfolio:
-        """이 전략에 권장되는 Portfolio 설정을 반환합니다.
+    def recommended_config(cls) -> dict[str, Any]:
+        """이 전략에 권장되는 PortfolioManagerConfig 설정을 반환합니다.
 
         서브클래스에서 오버라이드하여 전략별 최적 설정을 제공합니다.
-        기본 구현은 Portfolio.create()를 반환합니다.
+        기본 구현은 빈 딕셔너리를 반환합니다 (PortfolioManagerConfig 기본값 사용).
 
-        Args:
-            initial_capital: 초기 자본 (USD)
+        NOTE: Portfolio 인스턴스 생성은 CLI 또는 상위 레이어의 책임입니다.
+        Strategy는 Portfolio를 직접 생성하지 않고 설정만 제안합니다.
 
         Returns:
-            전략에 최적화된 Portfolio 인스턴스
-        """
-        from src.portfolio import Portfolio
+            PortfolioManagerConfig 생성에 필요한 키워드 인자 딕셔너리
 
-        return Portfolio.create(initial_capital=Decimal(str(initial_capital)))
+        Example:
+            >>> config_kwargs = strategy_class.recommended_config()
+            >>> from src.portfolio import Portfolio
+            >>> portfolio = Portfolio.create(
+            ...     initial_capital=Decimal("10000"),
+            ...     config=PortfolioManagerConfig(**config_kwargs),
+            ... )
+        """
+        return {}
 
     def get_startup_info(self) -> dict[str, str]:
         """CLI 시작 패널에 표시할 전략 정보를 반환합니다.

@@ -11,7 +11,6 @@ Rules Applied:
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from src.strategy.base import BaseStrategy
@@ -23,7 +22,6 @@ from src.strategy.tsmom.signal import generate_signals
 if TYPE_CHECKING:
     import pandas as pd
 
-    from src.portfolio import Portfolio
     from src.strategy.types import StrategySignals
 
 
@@ -158,34 +156,22 @@ class TSMOMStrategy(BaseStrategy):
         return self._config.warmup_periods()
 
     @classmethod
-    def recommended_portfolio(
-        cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
-    ) -> Portfolio:
-        """VW-TSMOM 전략에 권장되는 Portfolio 설정.
+    def recommended_config(cls) -> dict[str, object]:
+        """VW-TSMOM 전략에 권장되는 PortfolioManagerConfig 설정.
 
         - Momentum은 추세 추종으로 느린 진입/청산
         - 레버리지 2.0x로 보수적 운용
         - 10% system stop loss로 큰 손실 방지
         - 5% rebalance threshold로 잦은 거래 방지
 
-        Args:
-            initial_capital: 초기 자본 (USD)
-
         Returns:
-            TSMOM에 최적화된 Portfolio 인스턴스
+            PortfolioManagerConfig 생성에 필요한 키워드 인자 딕셔너리
         """
-        from src.portfolio import Portfolio
-        from src.portfolio.config import PortfolioManagerConfig
-
-        return Portfolio.create(
-            initial_capital=Decimal(str(initial_capital)),
-            config=PortfolioManagerConfig(
-                max_leverage_cap=2.0,
-                system_stop_loss=0.10,
-                rebalance_threshold=0.05,
-            ),
-        )
+        return {
+            "max_leverage_cap": 2.0,
+            "system_stop_loss": 0.10,
+            "rebalance_threshold": 0.05,
+        }
 
     def get_startup_info(self) -> dict[str, str]:
         """CLI 시작 패널에 표시할 핵심 파라미터.

@@ -11,7 +11,6 @@ Rules Applied:
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from src.strategy.base import BaseStrategy
@@ -23,7 +22,6 @@ from src.strategy.registry import register
 if TYPE_CHECKING:
     import pandas as pd
 
-    from src.portfolio import Portfolio
     from src.strategy.types import StrategySignals
 
 
@@ -118,34 +116,22 @@ class AdaptiveBreakoutStrategy(BaseStrategy):
         return generate_signals(df, self._config)
 
     @classmethod
-    def recommended_portfolio(
-        cls,
-        initial_capital: Decimal | float | int = Decimal("10000"),
-    ) -> Portfolio:
-        """Adaptive Breakout 전략에 권장되는 Portfolio 설정.
+    def recommended_config(cls) -> dict[str, object]:
+        """Adaptive Breakout 전략에 권장되는 PortfolioManagerConfig 설정.
 
         Breakout 전략의 특성에 맞게 최적화된 설정:
             - 높은 변동성을 활용하므로 레버리지 2.5x 허용
             - Breakout은 손절이 중요하므로 8% system stop loss
             - 빈번한 진입/청산으로 낮은 rebalance threshold (3%)
 
-        Args:
-            initial_capital: 초기 자본 (USD)
-
         Returns:
-            Breakout에 최적화된 Portfolio 인스턴스
+            PortfolioManagerConfig 생성에 필요한 키워드 인자 딕셔너리
         """
-        from src.portfolio import Portfolio
-        from src.portfolio.config import PortfolioManagerConfig
-
-        return Portfolio.create(
-            initial_capital=Decimal(str(initial_capital)),
-            config=PortfolioManagerConfig(
-                max_leverage_cap=2.5,
-                system_stop_loss=0.08,
-                rebalance_threshold=0.03,
-            ),
-        )
+        return {
+            "max_leverage_cap": 2.5,
+            "system_stop_loss": 0.08,
+            "rebalance_threshold": 0.03,
+        }
 
     def get_startup_info(self) -> dict[str, str]:
         """CLI 시작 패널에 표시할 핵심 파라미터.
@@ -162,8 +148,7 @@ class AdaptiveBreakoutStrategy(BaseStrategy):
         }
         if cfg.adaptive_threshold:
             info["adaptive_threshold"] = "활성화"
-        if cfg.use_trailing_stop:
-            info["trailing_stop"] = f"{cfg.trailing_atr_multiplier}x ATR"
+        # NOTE: Trailing Stop은 PortfolioManagerConfig에서 관리
         info["mode"] = "Long-Only" if cfg.long_only else "Long/Short"
         return info
 

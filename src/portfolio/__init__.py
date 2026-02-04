@@ -6,6 +6,7 @@
 Exports:
     - Portfolio: 포트폴리오 도메인 객체 (initial_capital + config)
     - PortfolioManagerConfig: 전략-독립적인 집행 설정
+    - CostModel: 거래 비용 모델
 
 Rules Applied:
     - #01 Project Structure: src/portfolio/ 모듈
@@ -13,6 +14,7 @@ Rules Applied:
 """
 
 from src.portfolio.config import PortfolioManagerConfig
+from src.portfolio.cost_model import CostModel
 from src.portfolio.portfolio import Portfolio
 
-__all__ = ["Portfolio", "PortfolioManagerConfig"]
+__all__ = ["CostModel", "Portfolio", "PortfolioManagerConfig"]

@@ -225,7 +225,10 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
     clamped_vol = volatility.clip(lower=config.min_volatility)
 
     # 변동성 스케일러 (vol_target / realized_vol)
-    vol_scalar: pd.Series = config.vol_target / clamped_vol
+    # CRITICAL: shift(1)로 전봉 변동성 사용 (현재 봉의 변동성은 실시간에서 알 수 없음)
+    # shift(1): 이전 행의 값을 현재 행으로 가져옴 (과거 참조 = 안전)
+    prev_clamped_vol = clamped_vol.shift(1)
+    vol_scalar: pd.Series = config.vol_target / prev_clamped_vol
     result["vol_scalar"] = vol_scalar
 
     # 4. 적응형 임계값 계산
@@ -254,8 +257,7 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
     result["distance_to_upper"] = dist_upper
     result["distance_to_lower"] = dist_lower
 
-    # 6. Trailing Stop 레벨 (선택적)
-    if config.use_trailing_stop:
-        result["trailing_stop_distance"] = atr * config.trailing_atr_multiplier
+    # NOTE: Trailing Stop은 Portfolio 레이어(BacktestEngine)에서 처리됩니다.
+    # ATR은 별도 지표로 이미 포함되어 있어 BacktestEngine에서 활용 가능.
 
     return result

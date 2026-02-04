@@ -14,7 +14,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from src.strategy.types import Direction, SignalType
+from src.models.types import Direction, SignalType
 
 
 class Signal(BaseModel):

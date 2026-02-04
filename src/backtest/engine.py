@@ -107,6 +107,104 @@ def apply_stop_loss_to_weights(
 
 
 @njit(cache=True)  # type: ignore[misc]
+def apply_trailing_stop_to_weights(  # noqa: PLR0912
+    weights: npt.NDArray[np.float64],
+    close: npt.NDArray[np.float64],
+    high: npt.NDArray[np.float64],
+    low: npt.NDArray[np.float64],
+    atr: npt.NDArray[np.float64],
+    atr_multiplier: float,
+) -> npt.NDArray[np.float64]:
+    """목표 비중 배열에 Trailing Stop 로직을 적용합니다.
+
+    진입 후 최고/최저가 대비 ATR * multiplier만큼 역행하면 청산합니다.
+
+    동작 방식:
+        - Long: 진입 후 최고가(highest_since_entry) 추적
+                현재 가격이 최고가 - (ATR * multiplier) 아래로 하락 시 청산
+        - Short: 진입 후 최저가(lowest_since_entry) 추적
+                현재 가격이 최저가 + (ATR * multiplier) 위로 상승 시 청산
+
+    Args:
+        weights: 목표 비중 배열 (양수=롱, 음수=숏)
+        close: 종가 배열
+        high: 고가 배열
+        low: 저가 배열
+        atr: ATR 배열 (Average True Range)
+        atr_multiplier: ATR 배수 (예: 2.0 = 2 ATR)
+
+    Returns:
+        Trailing Stop이 적용된 비중 배열
+    """
+    out_weights = weights.copy()
+    position_direction = 0  # 1=롱, -1=숏, 0=중립
+    highest_since_entry = 0.0
+    lowest_since_entry = 0.0
+
+    for i in range(len(weights)):
+        current_weight = weights[i]
+        current_atr = atr[i]
+
+        # ATR이 NaN이면 스킵 (초기 워밍업 기간)
+        if np.isnan(current_atr):
+            continue
+
+        # 1. 포지션이 없다가 새로 생기는 경우 (진입)
+        if position_direction == 0 and current_weight != 0:
+            position_direction = 1 if current_weight > 0 else -1
+            if position_direction == 1:
+                highest_since_entry = high[i]
+            else:
+                lowest_since_entry = low[i]
+
+        # 2. 이미 포지션이 있는 경우
+        elif position_direction != 0:
+            # 전략에 의해 청산된 경우 (신호가 0이 됨)
+            if current_weight == 0:
+                position_direction = 0
+                highest_since_entry = 0.0
+                lowest_since_entry = 0.0
+                continue
+
+            # 방향 전환된 경우 (롱→숏 또는 숏→롱)
+            new_direction = 1 if current_weight > 0 else -1
+            if new_direction != position_direction:
+                position_direction = new_direction
+                if new_direction == 1:
+                    highest_since_entry = high[i]
+                    lowest_since_entry = 0.0
+                else:
+                    lowest_since_entry = low[i]
+                    highest_since_entry = 0.0
+                continue
+
+            # 최고/최저가 갱신
+            if position_direction == 1:
+                highest_since_entry = max(highest_since_entry, high[i])
+            elif low[i] < lowest_since_entry:
+                lowest_since_entry = low[i]
+
+            # Trailing Stop 조건 체크
+            stop_triggered = False
+            trailing_distance = current_atr * atr_multiplier
+
+            if position_direction == 1:  # 롱 포지션
+                # 현재 가격이 최고가 - trailing_distance 아래로 하락
+                stop_triggered = close[i] < highest_since_entry - trailing_distance
+            elif close[i] > lowest_since_entry + trailing_distance:  # 숏 포지션
+                # 현재 가격이 최저가 + trailing_distance 위로 상승
+                stop_triggered = True
+
+            if stop_triggered:
+                out_weights[i] = 0.0
+                position_direction = 0
+                highest_since_entry = 0.0
+                lowest_since_entry = 0.0
+
+    return out_weights
+
+
+@njit(cache=True)  # type: ignore[misc]
 def apply_rebalance_threshold_numba(
     weights: npt.NDArray[np.float64],
     threshold: float,
@@ -443,6 +541,31 @@ class BacktestEngine:
                     f"Stop Loss Triggered | {stop_loss_count} positions closed at {pm.system_stop_loss:.0%} loss limit",
                 )
 
+        # 3.5. Trailing Stop 적용 (선택적)
+        trailing_stop_count = 0
+        if pm.use_trailing_stop and "atr" in df.columns:
+            weights_before_ts = target_weights.copy()
+            target_weights_ts = apply_trailing_stop_to_weights(
+                np.asarray(target_weights.fillna(0).values, dtype=np.float64),
+                np.asarray(df["close"].values, dtype=np.float64),
+                np.asarray(df["high"].values, dtype=np.float64),
+                np.asarray(df["low"].values, dtype=np.float64),
+                np.asarray(df["atr"].fillna(0).values, dtype=np.float64),
+                pm.trailing_stop_atr_multiplier,
+            )
+            target_weights = pd.Series(target_weights_ts, index=target_weights.index)
+            # NaN 복원 (원래 NaN이었던 곳은 유지)
+            target_weights = target_weights.where(
+                weights_before_ts.notna() | (target_weights != 0), np.nan
+            )
+            trailing_stop_count = int(
+                ((weights_before_ts != 0) & (target_weights == 0)).sum()
+            )
+            if trailing_stop_count > 0:
+                logger.info(
+                    f"Trailing Stop Triggered | {trailing_stop_count} positions closed at {pm.trailing_stop_atr_multiplier}x ATR",
+                )
+
         # 4. rebalance_threshold 적용 (거래 비용 최적화) - Numba 최적화
         weights_before_threshold = target_weights.copy()
         target_weights_arr = apply_rebalance_threshold_numba(
@@ -460,7 +583,11 @@ class BacktestEngine:
         )
 
         # 5. price 결정 (next_open 또는 close)
-        price = df["open"] if pm.price_type == "next_open" else df["close"]
+        # CRITICAL: next_open 모드에서는 다음 봉의 시가에 체결해야 함
+        # shift(-1): 다음 행의 값을 현재 행으로 가져옴 (Look-ahead Bias 방지)
+        # 시그널이 현재 봉 종가 기준이므로, 체결은 다음 봉 시가에서 이루어져야 함
+        # NOTE: 마지막 행은 NaN이 되므로 해당 시그널은 체결 불가 (현실적)
+        price = df["open"].shift(-1) if pm.price_type == "next_open" else df["close"]
 
         # 6. Portfolio 생성
         vbt_portfolio = vbt.Portfolio.from_orders(

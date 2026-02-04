@@ -40,8 +40,6 @@ class AdaptiveBreakoutConfig(BaseModel):
         annualization_factor: 연환산 계수 (일봉: 365, 시간봉: 8760)
         adaptive_threshold: 변동성 기반 동적 임계값 사용 여부
         long_only: Long-Only 모드 (Short 시그널 비활성화)
-        use_trailing_stop: ATR 기반 Trailing Stop 사용 여부
-        trailing_atr_multiplier: Trailing Stop ATR 배수
 
     Example:
         >>> config = AdaptiveBreakoutConfig(
@@ -73,7 +71,7 @@ class AdaptiveBreakoutConfig(BaseModel):
         description="ATR 계산 기간 (캔들 수)",
     )
     k_value: float = Field(
-        default=1.0,
+        default=0.5,
         ge=0.5,
         le=5.0,
         description="ATR 배수 (돌파 확인 임계값, 높을수록 보수적). 암호화폐는 0.5~1.0 권장",
@@ -121,16 +119,8 @@ class AdaptiveBreakoutConfig(BaseModel):
         default=False,
         description="Long-Only 모드 (Short 시그널을 비활성화)",
     )
-    use_trailing_stop: bool = Field(
-        default=True,
-        description="ATR 기반 Trailing Stop 사용 여부",
-    )
-    trailing_atr_multiplier: float = Field(
-        default=2.0,
-        ge=0.5,
-        le=5.0,
-        description="Trailing Stop ATR 배수",
-    )
+    # NOTE: Trailing Stop은 PortfolioManagerConfig에서 관리합니다.
+    # 포지션 관리(stop-loss, trailing stop)는 Portfolio 레이어의 책임입니다.
 
     # =========================================================================
     # 필터 옵션
@@ -226,7 +216,7 @@ class AdaptiveBreakoutConfig(BaseModel):
 
         - 긴 channel_period로 노이즈 필터링
         - 높은 k_value로 확실한 돌파만 진입
-        - Trailing stop 활성화로 수익 보호
+        - 낮은 vol_target으로 작은 포지션
 
         Returns:
             보수적 파라미터의 AdaptiveBreakoutConfig
@@ -237,8 +227,6 @@ class AdaptiveBreakoutConfig(BaseModel):
             k_value=2.0,
             volatility_lookback=30,
             vol_target=0.30,
-            use_trailing_stop=True,
-            trailing_atr_multiplier=2.5,
         )
 
     @classmethod
@@ -258,8 +246,6 @@ class AdaptiveBreakoutConfig(BaseModel):
             k_value=1.0,
             volatility_lookback=10,
             vol_target=0.50,
-            use_trailing_stop=True,
-            trailing_atr_multiplier=1.5,
         )
 
     def warmup_periods(self) -> int:
