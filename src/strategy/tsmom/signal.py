@@ -133,7 +133,26 @@ def generate_signals(
                 filtered_pct,
             )
 
-    # 4. Trend Filter 적용 (shift 후): 국면 반대 방향 시그널 제거
+    # 4. Short Threshold 적용: 강한 하락 신호일 때만 Short 진입
+    if config.short_threshold < 0:
+        # 모멘텀이 short_threshold보다 높으면(덜 음수면) Short 진입 금지
+        momentum_shifted = momentum_series.shift(1)
+        weak_short_mask = (signal_filtered < 0) & (momentum_shifted > config.short_threshold)
+        weak_short_count = int(weak_short_mask.sum())
+
+        signal_filtered = pd.Series(
+            np.where(weak_short_mask, 0, signal_filtered),
+            index=df.index,
+        )
+
+        if weak_short_count > 0:
+            logger.info(
+                "🛡️ Short Threshold | Blocked %d weak shorts (momentum > %.2f)",
+                weak_short_count,
+                config.short_threshold,
+            )
+
+    # 5. Trend Filter 적용 (shift 후): 국면 반대 방향 시그널 제거
     if "trend_regime" in df.columns:
         trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
         trend_regime_shifted = trend_regime.shift(1)
@@ -219,6 +238,38 @@ def generate_signals(
             f"  📉 First Short Entry: {first_short}, Strength: {strength.loc[first_short]:.2f}"
         )
 
+    # 9. Long-Only 모드 적용 (config.long_only가 True인 경우)
+    if config.long_only:
+        # Short 시그널을 Neutral로 변환
+        direction = pd.Series(
+            direction.clip(lower=0),
+            index=df.index,
+            name="direction",
+        )
+        strength = pd.Series(
+            strength.clip(lower=0),
+            index=df.index,
+            name="strength",
+        )
+
+        # 진입/청산 재계산 (Long-Only 기준)
+        prev_direction = direction.shift(1).fillna(0)
+        long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
+        exits = pd.Series(
+            (direction == Direction.NEUTRAL) & (prev_direction == Direction.LONG),
+            index=df.index,
+            name="exits",
+        )
+        entries = pd.Series(
+            long_entry,
+            index=df.index,
+            name="entries",
+        )
+
+        logger.info(
+            f"📈 Long-Only Mode | Long entries: {long_entry.sum()}, Exits: {exits.sum()}"
+        )
+
     return StrategySignals(
         entries=entries,
         exits=exits,
@@ -294,20 +345,32 @@ def generate_signals_with_diagnostics(
             index=df.index,
         )
 
-    # 📊 진단: Trend Filter 적용 전 시그널 저장
-    signal_before_trend = signal_after_deadband.copy()
+    # 4. Short Threshold 적용: 강한 하락 신호일 때만 Short 진입
+    signal_after_short_filter = signal_after_deadband.copy()
+    if config.short_threshold < 0:
+        momentum_shifted = momentum_series.shift(1)
+        weak_short_mask = (signal_after_deadband < 0) & (
+            momentum_shifted > config.short_threshold
+        )
+        signal_after_short_filter = pd.Series(
+            np.where(weak_short_mask, 0, signal_after_deadband),
+            index=df.index,
+        )
 
-    # 4. Trend Filter 적용
-    signal_after_trend = signal_after_deadband.copy()
+    # 📊 진단: Trend Filter 적용 전 시그널 저장
+    signal_before_trend = signal_after_short_filter.copy()
+
+    # 5. Trend Filter 적용
+    signal_after_trend = signal_after_short_filter.copy()
 
     if "trend_regime" in df.columns:
         trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
         trend_regime_shifted = trend_regime.shift(1)
 
         signal_filtered_array = np.where(
-            (trend_regime_shifted == 1) & (signal_after_deadband < 0),
+            (trend_regime_shifted == 1) & (signal_after_short_filter < 0),
             0,
-            signal_after_deadband,
+            signal_after_short_filter,
         )
         signal_filtered_array = np.where(
             (trend_regime_shifted == -1) & (signal_filtered_array > 0),
@@ -352,6 +415,34 @@ def generate_signals_with_diagnostics(
         index=df.index,
         name="exits",
     )
+
+    # 7. Long-Only 모드 적용 (config.long_only가 True인 경우)
+    if config.long_only:
+        # Short 시그널을 Neutral로 변환
+        direction = pd.Series(
+            direction.clip(lower=0),
+            index=df.index,
+            name="direction",
+        )
+        strength = pd.Series(
+            strength.clip(lower=0),
+            index=df.index,
+            name="strength",
+        )
+
+        # 진입/청산 재계산 (Long-Only 기준)
+        prev_direction = direction.shift(1).fillna(0)
+        long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
+        exits = pd.Series(
+            (direction == Direction.NEUTRAL) & (prev_direction == Direction.LONG),
+            index=df.index,
+            name="exits",
+        )
+        entries = pd.Series(
+            long_entry,
+            index=df.index,
+            name="entries",
+        )
 
     # 📊 진단 DataFrame 생성
     # NOTE: leverage_capped_weight와 rebalance_mask는 PortfolioManager에서 처리되므로

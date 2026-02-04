@@ -44,7 +44,7 @@ class TSMOMConfig(BaseModel):
 
     # 모멘텀 계산 파라미터
     lookback: int = Field(
-        default=30,  # 30일 (일봉)
+        default=30,  # 30일이 적정 (20, 40일과 동일한 결과)
         ge=6,
         le=365,  # 최대 1년 (일봉 기준)
         description="모멘텀 계산 기간 (캔들 수)",
@@ -58,7 +58,7 @@ class TSMOMConfig(BaseModel):
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.40,
+        default=0.40,  # 40%가 최적 (60%보다 좋음)
         ge=0.05,
         le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
@@ -106,21 +106,41 @@ class TSMOMConfig(BaseModel):
     )
 
     # 🆕 Trend Filter & Deadband (휩쏘 방지)
+    long_only: bool = Field(
+        default=True,  # 분석 결과: Short이 손실이므로 Long-Only 권장
+        description="Long-Only 모드 (Short 시그널을 Neutral로 변환)",
+    )
     use_trend_filter: bool = Field(
-        default=True,
+        default=False,  # Trend Filter 비활성화 테스트
         description="국면 필터 사용 여부 (상승장: Long Only, 하락장: Short Only)",
     )
     trend_ma_period: int = Field(
-        default=50,
+        default=20,  # 장기 MA (50 → 20: 초단기 추세 감지)
         ge=20,
         le=500,
-        description="추세 판단용 이동평균 기간 (일봉 기준, 기본 50일)",
+        description="장기 이동평균 기간 (일봉 기준, 기본 20일)",
+    )
+    trend_ma_fast: int = Field(
+        default=5,  # 단기 MA (10 → 5: 초단기 추세 감지)
+        ge=5,
+        le=100,
+        description="단기 이동평균 기간 (듀얼 MA 크로스오버용, 기본 5일)",
+    )
+    use_dual_ma: bool = Field(
+        default=True,  # 듀얼 MA 크로스오버로 Bear 감지 개선
+        description="듀얼 MA 크로스오버 사용 (단기 MA < 장기 MA면 Bear)",
     )
     deadband_threshold: float = Field(
-        default=0.2,
+        default=0.2,  # 0.2가 최적 (0.1보다 좋음)
         ge=0.0,
         le=1.5,
         description="불감대 임계값 (|신호| < threshold면 중립 유지). Z-Score 중앙값(~0.6) 대비 1/3 수준 권장.",
+    )
+    short_threshold: float = Field(
+        default=-0.8,  # Short은 더 강한 하락 신호일 때만 진입 (Z-Score -0.8 이하)
+        ge=-3.0,
+        le=0.0,
+        description="Short 진입 임계값. 모멘텀이 이 값 이하일 때만 Short 진입. (예: -0.8)",
     )
 
     @model_validator(mode="after")

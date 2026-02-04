@@ -432,24 +432,44 @@ def preprocess(
     # 5. Trend Filter (국면 필터) - 메타데이터만 저장
     # 실제 필터링은 signal.py에서 shift(1) 후 적용
     if config.use_trend_filter:
-        trend_ma: pd.Series = close_series.rolling(  # type: ignore[assignment]
+        # 장기 MA (느린 추세)
+        trend_ma_slow: pd.Series = close_series.rolling(  # type: ignore[assignment]
             window=config.trend_ma_period, min_periods=config.trend_ma_period // 2
         ).mean()
-        result["trend_ma"] = trend_ma
+        result["trend_ma"] = trend_ma_slow
 
-        # 추세 판단: 1 = 상승장, -1 = 하락장
-        # signal.py에서 필터링할 때 사용할 메타데이터
-        result["trend_regime"] = np.where(close_series > trend_ma, 1, -1)
+        if config.use_dual_ma:
+            # 듀얼 MA 크로스오버: 단기 MA vs 장기 MA
+            trend_ma_fast: pd.Series = close_series.rolling(  # type: ignore[assignment]
+                window=config.trend_ma_fast, min_periods=config.trend_ma_fast // 2
+            ).mean()
+            result["trend_ma_fast"] = trend_ma_fast
 
-        # 통계 로깅
-        uptrend_count = int((result["trend_regime"] == 1).sum())
-        downtrend_count = int((result["trend_regime"] == -1).sum())
-        logger.info(
-            "🎯 Trend Filter | MA(%d): Uptrend %d days, Downtrend %d days",
-            config.trend_ma_period,
-            uptrend_count,
-            downtrend_count,
-        )
+            # 추세 판단: 단기 MA > 장기 MA → 상승장, 단기 MA < 장기 MA → 하락장
+            # 듀얼 MA는 단순 가격 기준보다 빠르게 추세 전환 감지
+            result["trend_regime"] = np.where(trend_ma_fast > trend_ma_slow, 1, -1)
+
+            uptrend_count = int((result["trend_regime"] == 1).sum())
+            downtrend_count = int((result["trend_regime"] == -1).sum())
+            logger.info(
+                "🎯 Dual MA Filter | MA(%d/%d): Uptrend %d days, Downtrend %d days",
+                config.trend_ma_fast,
+                config.trend_ma_period,
+                uptrend_count,
+                downtrend_count,
+            )
+        else:
+            # 기존 방식: 가격 > MA → 상승장
+            result["trend_regime"] = np.where(close_series > trend_ma_slow, 1, -1)
+
+            uptrend_count = int((result["trend_regime"] == 1).sum())
+            downtrend_count = int((result["trend_regime"] == -1).sum())
+            logger.info(
+                "🎯 Trend Filter | MA(%d): Uptrend %d days, Downtrend %d days",
+                config.trend_ma_period,
+                uptrend_count,
+                downtrend_count,
+            )
 
     # 🔍 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

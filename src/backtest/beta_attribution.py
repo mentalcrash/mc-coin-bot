@@ -92,46 +92,53 @@ def calculate_hypothetical_returns(
 ) -> pd.DataFrame:
     """각 필터 단계별 가상 수익률을 계산합니다.
 
+    Pipeline Order (signal.py 기준):
+        1. raw_momentum (vol_scalar 적용 전)
+        2. scaled_momentum = raw_momentum * vol_scalar (Vol Scaling 적용)
+        3. shift(1) → Deadband 적용 → signal_after_deadband
+        4. Trend Filter 적용 → signal_after_trend_filter (= final)
+
     Args:
         diagnostics_df: 진단 레코드 DataFrame
         benchmark_returns: 벤치마크 수익률 시리즈
 
     Returns:
         각 단계별 가상 수익률 DataFrame:
-            - potential_return: 필터 없이 모든 시그널 실행 시
-            - return_after_trend: Trend filter 적용 후
+            - potential_return: raw_momentum 기반 (Vol Scaling 전)
+            - return_after_vol_scaling: Vol Scaling 적용 후
             - return_after_deadband: Deadband 적용 후
-            - actual_return: 최종 (Vol scaling 적용 후)
+            - actual_return: Trend Filter 적용 후 (최종)
     """
     # 인덱스 정렬
     common_index = diagnostics_df.index.intersection(benchmark_returns.index)
     diag = diagnostics_df.loc[common_index].copy()
     bench = benchmark_returns.loc[common_index]
 
-    # 시그널을 shift(1)하여 이전 봉 시그널로 현재 수익률 계산
     # NOTE: diagnostics_df의 시그널은 이미 shift(1) 적용된 값이므로 그대로 사용
 
-    # 1. Potential Return: 필터 없는 raw momentum * benchmark
-    # scaled_momentum은 shift(1) 적용된 값
-    potential_signal = diag["scaled_momentum"].fillna(0)
+    # 1. Potential Return: raw_momentum의 방향만 사용 (Vol Scaling 전)
+    # raw_momentum * sign(raw_momentum) = |raw_momentum| 이므로 방향성만 추출
+    raw_momentum = diag["raw_momentum"].fillna(0)
+    potential_signal = np.sign(raw_momentum)  # 방향만 사용 (+1, -1, 0)
     potential_return = potential_signal * bench
 
-    # 2. Return after Trend Filter
-    after_trend_signal = diag["signal_after_trend_filter"].fillna(0)
-    return_after_trend = after_trend_signal * bench
+    # 2. Return after Vol Scaling: scaled_momentum 사용
+    # scaled_momentum = momentum * vol_scalar (또는 sign(momentum) * vol_scalar)
+    scaled_signal = diag["scaled_momentum"].fillna(0)
+    return_after_vol_scaling = scaled_signal * bench
 
-    # 3. Return after Deadband
+    # 3. Return after Deadband (파이프라인 순서: Deadband → Trend Filter)
     after_deadband_signal = diag["signal_after_deadband"].fillna(0)
     return_after_deadband = after_deadband_signal * bench
 
-    # 4. Actual Return (final_target_weight * benchmark)
+    # 4. Actual Return after Trend Filter (final_target_weight = signal_after_trend_filter)
     final_weight = diag["final_target_weight"].fillna(0)
     actual_return = final_weight * bench
 
     return pd.DataFrame(
         {
             "potential_return": potential_return,
-            "return_after_trend": return_after_trend,
+            "return_after_vol_scaling": return_after_vol_scaling,
             "return_after_deadband": return_after_deadband,
             "actual_return": actual_return,
             "benchmark_return": bench,
@@ -148,6 +155,9 @@ def calculate_beta_attribution(
     """Beta 분해 분석을 수행합니다.
 
     각 필터 단계별 Beta를 계산하고, 어디서 Beta가 손실되었는지 정량화합니다.
+
+    Pipeline Order (Correct):
+        Potential (Raw) → Vol Scaling → Deadband → Trend Filter → Realized
 
     Analysis Flow:
         1. 각 필터 단계별 가상 수익률 계산
@@ -186,24 +196,31 @@ def calculate_beta_attribution(
 
     bench = cast("pd.Series", returns_df["benchmark_return"])
 
-    # 전체 기간 Beta 계산 (각 단계별)
+    # 전체 기간 Beta 계산 (파이프라인 순서대로)
+    # 1. Potential: raw momentum 방향만 사용
     potential_beta = calculate_overall_beta(
         cast("pd.Series", returns_df["potential_return"]), bench
     )
-    beta_after_trend = calculate_overall_beta(
-        cast("pd.Series", returns_df["return_after_trend"]), bench
+
+    # 2. After Vol Scaling: scaled_momentum 사용
+    beta_after_vol_scaling = calculate_overall_beta(
+        cast("pd.Series", returns_df["return_after_vol_scaling"]), bench
     )
+
+    # 3. After Deadband: Deadband 필터 적용 후
     beta_after_deadband = calculate_overall_beta(
         cast("pd.Series", returns_df["return_after_deadband"]), bench
     )
+
+    # 4. After Trend Filter (Realized): 최종 시그널
     realized_beta = calculate_overall_beta(
         cast("pd.Series", returns_df["actual_return"]), bench
     )
 
-    # Beta 손실량 계산
-    lost_to_trend_filter = potential_beta - beta_after_trend
-    lost_to_deadband = beta_after_trend - beta_after_deadband
-    lost_to_vol_scaling = beta_after_deadband - realized_beta
+    # Beta 손실량 계산 (파이프라인 순서: Vol Scaling → Deadband → Trend Filter)
+    lost_to_vol_scaling = potential_beta - beta_after_vol_scaling
+    lost_to_deadband = beta_after_vol_scaling - beta_after_deadband
+    lost_to_trend_filter = beta_after_deadband - realized_beta
 
     # 로깅
     logger.info(
@@ -213,15 +230,21 @@ def calculate_beta_attribution(
         (realized_beta / potential_beta * 100) if potential_beta != 0 else 0,
     )
     logger.info(
-        "  Losses | Trend Filter: %.3f, Deadband: %.3f, Vol Scaling: %.3f",
-        lost_to_trend_filter,
-        lost_to_deadband,
+        "  Pipeline | Vol Scaling: %.3f -> Deadband: %.3f -> Trend Filter: %.3f",
+        beta_after_vol_scaling,
+        beta_after_deadband,
+        realized_beta,
+    )
+    logger.info(
+        "  Losses | Vol Scaling: %.3f, Deadband: %.3f, Trend Filter: %.3f",
         lost_to_vol_scaling,
+        lost_to_deadband,
+        lost_to_trend_filter,
     )
 
     return BetaAttributionResult(
         potential_beta=potential_beta,
-        beta_after_trend_filter=beta_after_trend,
+        beta_after_trend_filter=realized_beta,  # NOTE: 이름 유지, 실제로는 최종값
         beta_after_deadband=beta_after_deadband,
         realized_beta=realized_beta,
         lost_to_trend_filter=lost_to_trend_filter,
@@ -241,6 +264,8 @@ def calculate_rolling_beta_attribution(
 
     각 시점에서의 Rolling Beta를 계산하여 시간에 따른 Beta 변화를 분석합니다.
 
+    Pipeline Order: Potential → Vol Scaling → Deadband → Trend Filter → Realized
+
     Args:
         diagnostics_df: 진단 레코드 DataFrame
         benchmark_returns: 벤치마크 수익률 시리즈
@@ -249,12 +274,12 @@ def calculate_rolling_beta_attribution(
     Returns:
         Rolling Beta Attribution DataFrame:
             - potential_beta: 필터 없이 예상되는 Beta
-            - beta_after_trend_filter: Trend filter 적용 후 Beta
+            - beta_after_vol_scaling: Vol scaling 적용 후 Beta
             - beta_after_deadband: Deadband 적용 후 Beta
-            - realized_beta: 실제 Beta
-            - lost_to_trend_filter: Trend filter로 인한 손실
-            - lost_to_deadband: Deadband로 인한 손실
+            - realized_beta: 실제 Beta (Trend filter 적용 후)
             - lost_to_vol_scaling: Vol scaling으로 인한 손실
+            - lost_to_deadband: Deadband로 인한 손실
+            - lost_to_trend_filter: Trend filter로 인한 손실
 
     Example:
         >>> rolling_df = calculate_rolling_beta_attribution(diag_df, bench_ret)
@@ -268,12 +293,12 @@ def calculate_rolling_beta_attribution(
 
     bench = cast("pd.Series", returns_df["benchmark_return"])
 
-    # Rolling Beta 계산 (각 단계별)
+    # Rolling Beta 계산 (파이프라인 순서대로)
     potential_beta = calculate_rolling_beta(
         cast("pd.Series", returns_df["potential_return"]), bench, window
     )
-    beta_after_trend = calculate_rolling_beta(
-        cast("pd.Series", returns_df["return_after_trend"]), bench, window
+    beta_after_vol_scaling = calculate_rolling_beta(
+        cast("pd.Series", returns_df["return_after_vol_scaling"]), bench, window
     )
     beta_after_deadband = calculate_rolling_beta(
         cast("pd.Series", returns_df["return_after_deadband"]), bench, window
@@ -282,20 +307,20 @@ def calculate_rolling_beta_attribution(
         cast("pd.Series", returns_df["actual_return"]), bench, window
     )
 
-    # Delta 계산
-    lost_to_trend_filter = potential_beta - beta_after_trend
-    lost_to_deadband = beta_after_trend - beta_after_deadband
-    lost_to_vol_scaling = beta_after_deadband - realized_beta
+    # Delta 계산 (파이프라인 순서)
+    lost_to_vol_scaling = potential_beta - beta_after_vol_scaling
+    lost_to_deadband = beta_after_vol_scaling - beta_after_deadband
+    lost_to_trend_filter = beta_after_deadband - realized_beta
 
     return pd.DataFrame(
         {
             "potential_beta": potential_beta,
-            "beta_after_trend_filter": beta_after_trend,
+            "beta_after_vol_scaling": beta_after_vol_scaling,
             "beta_after_deadband": beta_after_deadband,
             "realized_beta": realized_beta,
-            "lost_to_trend_filter": lost_to_trend_filter,
-            "lost_to_deadband": lost_to_deadband,
             "lost_to_vol_scaling": lost_to_vol_scaling,
+            "lost_to_deadband": lost_to_deadband,
+            "lost_to_trend_filter": lost_to_trend_filter,
         },
         index=returns_df.index,
     )

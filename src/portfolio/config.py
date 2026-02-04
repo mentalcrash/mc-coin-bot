@@ -98,13 +98,13 @@ class PortfolioManagerConfig(BaseModel):
     # Risk Guardrails (전략 외부 안전장치)
     # ==========================================================================
     max_leverage_cap: float = Field(
-        default=2.0,
+        default=3.0,  # 3.0x가 적정 (4.0x와 동일한 결과)
         ge=0.5,
         le=10.0,
         description="최대 레버리지 상한 (전략 요청과 무관한 시스템 제한)",
     )
     system_stop_loss: float | None = Field(
-        default=0.10,
+        default=0.10,  # 10% Stop Loss (안전장치)
         ge=0.01,
         le=0.50,
         description="시스템 레벨 손절 (0.10 = 10%, None = 비활성화)",
