@@ -141,7 +141,16 @@
       "ruff check (0 errors required)",
       "basedpyright strict mode (0 errors required)",
       "pytest coverage ≥80% (critical paths ≥90%)"
-    ]
+    ],
+    "type_checkers": {
+      "cursor": "basedpyright (Rust-based, stricter)",
+      "vscode": "pylance (strict mode = basedpyright strict)"
+    },
+    "vscode_pylance_config": {
+      "setting": "python.analysis.typeCheckingMode",
+      "value": "strict",
+      "note": ".vscode/settings.json에서 설정됨"
+    }
   },
 
   // ============================================
