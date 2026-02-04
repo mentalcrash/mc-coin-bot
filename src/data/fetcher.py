@@ -150,7 +150,7 @@ class DataFetcher:
 
         return await _fetch()
 
-    async def _fetch_with_client(  # noqa: PLR0913
+    async def _fetch_with_client(
         self,
         client: BinanceClient,
         symbol: str,

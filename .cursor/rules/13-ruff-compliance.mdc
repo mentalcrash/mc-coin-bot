@@ -31,9 +31,12 @@ alwaysApply: false
 - **Sectioning:** Import는 `Standard Lib` -> `Third Party` -> `First Party (src)` 순서로 그룹화하여 정렬하십시오.
 - **Cleanliness:** 사용하지 않는 Import(`F401`)나 변수(`F841`)는 생성 코드에 포함하지 마십시오.
 
-### 📜 Naming & Style (Ruleset: N, PL)
+### 📜 Naming & Style (Ruleset: N, PL, ISC)
 - **Snake Case:** 변수와 함수명은 `snake_case`를 따르십시오. (`N802`, `N806`)
 - **Double Quotes:** 모든 문자열은 Double Quotes (`"`)를 사용하십시오. (Ruff Format 기본값)
+- **No Implicit String Concatenation:** 여러 줄에 걸친 문자열 생성 시 암시적 연결(Implicit Concatenation)을 사용하지 마십시오. (`ISC001`)
+    - ❌ `text = "First line " "Second line"`
+    - ✅ `text = "First line " + "Second line"` 또는 하나의 f-string/연속된 문자열로 작성하십시오.
 - **Type Casting:** `len() > 0` 대신 `if seq:`를 사용하는 등 Pythonic한 간소화 규칙(`SIM`)을 적용하십시오.
 
 ## 3. Security (Ruleset: S)

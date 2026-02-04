@@ -24,6 +24,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.backtest.analyzer import PerformanceAnalyzer
+from src.backtest.beta_attribution import (
+    calculate_beta_attribution,
+    summarize_suppression_impact,
+)
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.reporter import generate_quantstats_report, print_performance_summary
 from src.backtest.request import BacktestRequest
@@ -35,9 +39,15 @@ from src.data.service import MarketDataService
 from src.logging.context import get_strategy_logger
 from src.portfolio import Portfolio
 from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
+from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
 # Global Console Instance (Rich UI for user-facing output)
 console = Console()
+
+# Beta Attribution Thresholds
+BETA_LOSS_THRESHOLD_LOW = 0.1
+BETA_LOSS_THRESHOLD_HIGH = 0.2
+BETA_RETENTION_GOOD = 0.7
 
 
 def _print_startup_panel(
@@ -411,6 +421,221 @@ def optimize(
         opt_logger.exception("VectorBT import failed")
         logger.warning(f"VectorBT import failed: {e}")
         raise typer.Exit(code=1) from e
+
+
+@app.command()
+def diagnose(
+    symbol: Annotated[
+        str,
+        typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
+    ] = "BTC/USDT",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s) to backtest"),
+    ] = [2024, 2025],  # noqa: B006
+    window: Annotated[
+        int,
+        typer.Option("--window", "-w", help="Rolling window for Beta calculation"),
+    ] = 60,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-V", help="Enable verbose output"),
+    ] = False,
+    capital: Annotated[
+        float,
+        typer.Option("--capital", "-c", help="Initial capital (USD)"),
+    ] = 10000.0,
+) -> None:
+    """Run Beta Attribution diagnosis for VW-TSMOM strategy.
+
+    Analyzes why the strategy may not be capturing market upside by
+    decomposing Beta losses across each filter stage.
+
+    Filter Stages Analyzed:
+        1. Trend Filter - Removes counter-trend signals
+        2. Deadband - Filters weak signals
+        3. Vol Scaling - Adjusts position size by volatility
+
+    Example:
+        uv run python -m src.cli.backtest diagnose BTC/USDT --year 2024 --year 2025
+        uv run python -m src.cli.backtest diagnose BTC/USDT -y 2024 --window 30
+        uv run python -m src.cli.backtest diagnose ETH/USDT -y 2025 --verbose
+    """
+    from src.strategy.tsmom.preprocessor import preprocess
+
+    # 로깅 설정
+    console_level = "DEBUG" if verbose else "WARNING"
+    setup_logger(console_level=console_level)
+
+    ctx_logger = get_strategy_logger(strategy="VW-TSMOM-Diagnosis", symbol=symbol)
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]VW-TSMOM Beta Attribution Diagnosis[/bold]\n"
+                f"Symbol: {symbol}\n"
+                f"Years: {', '.join(map(str, year))}\n"
+                f"Rolling Window: {window} days"
+            ),
+            border_style="yellow",
+        )
+    )
+
+    # Step 1: 데이터 로드
+    logger.info("Step 1: Loading data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        data_request = MarketDataRequest(
+            symbol=symbol,
+            timeframe="1D",
+            start=start_date,
+            end=end_date,
+        )
+
+        data = data_service.get(data_request)
+        logger.success(
+            f"Loaded {data.symbol}: {data.periods:,} daily candles "
+            + f"({data.start.date()} ~ {data.end.date()})"
+        )
+    except DataNotFoundError as e:
+        logger.error(f"Data load failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    # Step 2: 전략 설정 및 전처리
+    logger.info("Step 2: Preprocessing data and generating signals...")
+    config = TSMOMConfig()
+    processed_df = preprocess(data.ohlcv, config)
+
+    # Step 3: 진단 데이터 수집과 함께 시그널 생성
+    ctx_logger.info("Generating signals with diagnostics")
+    result = generate_signals_with_diagnostics(processed_df, config, symbol)
+    diagnostics_df = result.diagnostics_df
+
+    logger.success(f"Generated {len(diagnostics_df)} diagnostic records")
+
+    # Step 4: 벤치마크 수익률 계산
+    logger.info("Step 3: Calculating benchmark returns...")
+    close_series = data.ohlcv["close"]
+    benchmark_returns = close_series.pct_change().dropna()
+
+    # Step 5: Beta Attribution 분석
+    logger.info("Step 4: Running Beta Attribution analysis...")
+    attribution = calculate_beta_attribution(
+        diagnostics_df,
+        benchmark_returns,  # type: ignore[arg-type]
+        window=window,
+    )
+
+    # Step 6: 시그널 억제 통계
+    suppression_stats = summarize_suppression_impact(diagnostics_df)
+
+    # ========== 결과 출력 ==========
+
+    # Beta Attribution Summary Panel
+    beta_panel_content = (
+        f"[bold cyan]Beta at Each Stage[/bold cyan]\n"
+        f"  Potential Beta:         {attribution.potential_beta:>7.3f}\n"
+        f"  After Trend Filter:     {attribution.beta_after_trend_filter:>7.3f}\n"
+        f"  After Deadband:         {attribution.beta_after_deadband:>7.3f}\n"
+        f"  [bold]Realized Beta:          {attribution.realized_beta:>7.3f}[/bold]\n\n"
+        f"[bold yellow]Beta Losses by Stage[/bold yellow]\n"
+        f"  Lost to Trend Filter:   {attribution.lost_to_trend_filter:>7.3f}"
+    )
+
+    if attribution.lost_to_trend_filter > 0:
+        beta_panel_content += " [red](-)[/red]"
+
+    beta_panel_content += (
+        f"\n  Lost to Deadband:       {attribution.lost_to_deadband:>7.3f}"
+    )
+    if attribution.lost_to_deadband > 0:
+        beta_panel_content += " [red](-)[/red]"
+
+    beta_panel_content += (
+        f"\n  Lost to Vol Scaling:    {attribution.lost_to_vol_scaling:>7.3f}"
+    )
+    if attribution.lost_to_vol_scaling > 0:
+        beta_panel_content += " [red](-)[/red]"
+
+    beta_panel_content += f"\n\n[bold green]Beta Retention: {attribution.beta_retention_ratio:.1%}[/bold green]"
+
+    console.print(
+        Panel(beta_panel_content, title="Beta Attribution", border_style="cyan")
+    )
+
+    # Signal Suppression Table
+    suppression_table = Table(title="Signal Suppression Analysis")
+    suppression_table.add_column("Reason", style="cyan")
+    suppression_table.add_column("Count", justify="right")
+    suppression_table.add_column("Percentage", justify="right")
+    suppression_table.add_column("Avg Weight", justify="right")
+
+    for reason, stats in suppression_stats.items():
+        style = "green" if reason == "none" else "yellow"
+        suppression_table.add_row(
+            reason,
+            f"{int(stats['count']):,}",
+            f"{stats['percentage']:.1f}%",
+            f"{stats['avg_potential_weight']:.3f}",
+            style=style,
+        )
+
+    console.print(suppression_table)
+
+    # 권장사항 패널
+    recommendations: list[str] = []
+
+    if attribution.lost_to_trend_filter > BETA_LOSS_THRESHOLD_LOW:
+        recommendations.append(
+            "[yellow]Trend Filter[/yellow]: Consider disabling or relaxing "
+            + "(use_trend_filter=False or higher trend_ma_period)"
+        )
+
+    if attribution.lost_to_deadband > BETA_LOSS_THRESHOLD_LOW:
+        recommendations.append(
+            "[yellow]Deadband[/yellow]: Consider lowering deadband_threshold "
+            + f"(current: {config.deadband_threshold})"
+        )
+
+    if attribution.lost_to_vol_scaling > BETA_LOSS_THRESHOLD_HIGH:
+        recommendations.append(
+            "[yellow]Vol Scaling[/yellow]: Consider raising vol_target "
+            + f"(current: {config.vol_target:.0%})"
+        )
+
+    if attribution.beta_retention_ratio > BETA_RETENTION_GOOD:
+        recommendations.append(
+            "[green]Good![/green] Strategy retains most of market beta "
+            + f"({attribution.beta_retention_ratio:.0%})"
+        )
+
+    if recommendations:
+        rec_content = "\n".join(
+            f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations)
+        )
+        border = (
+            "green"
+            if attribution.beta_retention_ratio > BETA_RETENTION_GOOD
+            else "yellow"
+        )
+        console.print(
+            Panel(
+                f"[bold]Recommendations[/bold]\n\n{rec_content}",
+                border_style=border,
+            )
+        )
+
+    ctx_logger.success(
+        "Diagnosis completed",
+        potential_beta=attribution.potential_beta,
+        realized_beta=attribution.realized_beta,
+        retention=f"{attribution.beta_retention_ratio:.1%}",
+    )
 
 
 @app.command()

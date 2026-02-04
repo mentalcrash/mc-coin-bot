@@ -24,7 +24,12 @@ import pandas as pd
 from loguru import logger
 
 from src.data.market_data import MarketDataSet
-from src.models.backtest import BenchmarkComparison, PerformanceMetrics, TradeRecord
+from src.models.backtest import (
+    BenchmarkComparison,
+    BetaAttributionResult,
+    PerformanceMetrics,
+    TradeRecord,
+)
 
 
 class PerformanceAnalyzer:
@@ -308,6 +313,92 @@ class PerformanceAnalyzer:
         benchmark_returns = benchmark_returns.loc[common_idx]
 
         return strategy_returns, benchmark_returns
+
+    def analyze_beta_attribution(
+        self,
+        diagnostics_df: pd.DataFrame,
+        benchmark_returns: pd.Series,  # type: ignore[type-arg]
+        window: int = 60,
+    ) -> BetaAttributionResult:
+        """Beta 분해 분석을 수행합니다.
+
+        각 필터(Trend Filter, Deadband, Vol Scaling)가 Beta에 미치는 영향을 정량화합니다.
+
+        Args:
+            diagnostics_df: 진단 레코드 DataFrame
+                (generate_signals_with_diagnostics() 출력)
+            benchmark_returns: 벤치마크 수익률 시리즈
+            window: Rolling Beta 계산용 윈도우 크기
+
+        Returns:
+            BetaAttributionResult: Beta 분해 분석 결과
+
+        Example:
+            >>> # 진단 데이터와 함께 시그널 생성
+            >>> result = generate_signals_with_diagnostics(df, config, "BTC/USDT")
+            >>> diagnostics_df = result.diagnostics_df
+            >>>
+            >>> # 벤치마크 수익률 계산
+            >>> benchmark_returns = data["close"].pct_change().dropna()
+            >>>
+            >>> # Beta Attribution 분석
+            >>> attribution = analyzer.analyze_beta_attribution(
+            ...     diagnostics_df, benchmark_returns
+            ... )
+            >>> print(attribution.summary())
+        """
+        # Lazy import to avoid circular dependency
+        from src.backtest.beta_attribution import calculate_beta_attribution
+
+        logger.info("Beta Attribution 분석 시작 | Window: %d", window)
+
+        result = calculate_beta_attribution(
+            diagnostics_df=diagnostics_df,
+            benchmark_returns=benchmark_returns,
+            window=window,
+        )
+
+        logger.info(
+            "Beta Attribution 분석 완료 | Potential: %.3f, Realized: %.3f (%.1f%% retained)",
+            result.potential_beta,
+            result.realized_beta,
+            result.beta_retention_ratio * 100,
+        )
+
+        return result
+
+    def get_rolling_beta_attribution(
+        self,
+        diagnostics_df: pd.DataFrame,
+        benchmark_returns: pd.Series,  # type: ignore[type-arg]
+        window: int = 60,
+    ) -> pd.DataFrame:
+        """시계열 Beta Attribution을 계산합니다.
+
+        각 시점에서의 Rolling Beta를 계산하여 시간에 따른 Beta 변화를 분석합니다.
+
+        Args:
+            diagnostics_df: 진단 레코드 DataFrame
+            benchmark_returns: 벤치마크 수익률 시리즈
+            window: Rolling 윈도우 크기
+
+        Returns:
+            Rolling Beta Attribution DataFrame
+
+        Example:
+            >>> rolling_df = analyzer.get_rolling_beta_attribution(
+            ...     diagnostics_df, benchmark_returns
+            ... )
+            >>> rolling_df["realized_beta"].plot()  # 시간에 따른 Beta 변화
+        """
+        # Lazy import to avoid circular dependency
+        from src.backtest.beta_attribution import calculate_rolling_beta_attribution
+
+        return calculate_rolling_beta_attribution(
+            diagnostics_df=diagnostics_df,
+            benchmark_returns=benchmark_returns,
+            window=window,
+        )
 
     @staticmethod
     def _safe_get(

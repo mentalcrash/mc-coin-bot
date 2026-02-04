@@ -11,7 +11,7 @@
 
 ## 2. Zero-Tolerance Lint Policy (Critical)
 모든 코드 변경은 다음 린트 도구의 에러가 **0개**여야 합니다.
-- **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL)을 준수해야 합니다.
+- **Ruff:** `pyproject.toml`에 정의된 모든 규칙(E, F, I, B, UP, N, SIM, ASYNC, S, RUF, PERF, LOG, TC, PTH, PD, TRY, PL)을 준수해야 하며, 특히 **Implicit string concatenation (`ISC001`)**을 절대 사용하지 않습니다.
 - **Basedpyright:** `strict` 모드 수준의 타입 체크를 통과해야 합니다. (단, 외부 라이브러리 스터브 누락 등 `pyproject.toml`에서 허용된 예외 제외)
 
 > [!IMPORTANT]

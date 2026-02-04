@@ -129,8 +129,8 @@ def apply_rebalance_threshold_numba(
     for i in range(len(weights)):
         current_target = weights[i]
 
-        # NaN 체크 (Numba에서는 != 자기자신으로 NaN 판별)
-        if current_target != current_target:
+        # NaN 체크 (Numba에서는 np.isnan 사용 권장)
+        if np.isnan(current_target):
             continue
 
         change = abs(current_target - last_executed_weight)
@@ -187,7 +187,7 @@ class BacktestEngine:
         logger.debug(f"  Request: {request}")
 
         try:
-            import vectorbt as vbt  # type: ignore[import-not-found]  # noqa: PLC0415
+            import vectorbt as vbt  # type: ignore[import-not-found]
 
             logger.debug(f"  VectorBT version: {vbt.__version__}")
         except ImportError as e:
@@ -290,7 +290,7 @@ class BacktestEngine:
             >>> generate_quantstats_report(strat_ret, bench_ret)
         """
         try:
-            import vectorbt as vbt  # type: ignore[import-not-found]  # noqa: PLC0415
+            import vectorbt as vbt  # type: ignore[import-not-found]
         except ImportError as e:
             msg = "VectorBT is required for backtesting. Install with: pip install vectorbt"
             raise ImportError(msg) from e
@@ -590,9 +590,9 @@ def run_parameter_sweep(
         ... )
         >>> print(results.head())
     """
-    from itertools import product  # noqa: PLC0415
+    from itertools import product
 
-    from src.backtest.request import BacktestRequest  # noqa: PLC0415
+    from src.backtest.request import BacktestRequest
 
     engine = BacktestEngine()
     results = []

@@ -30,6 +30,11 @@ Example:
 """
 
 from src.backtest.analyzer import PerformanceAnalyzer
+from src.backtest.beta_attribution import (
+    calculate_beta_attribution,
+    calculate_rolling_beta_attribution,
+    summarize_suppression_impact,
+)
 from src.backtest.cost_model import CostModel
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.metrics import (
@@ -62,11 +67,13 @@ __all__ = [
     "Portfolio",
     "PortfolioManagerConfig",
     "calculate_all_metrics",
+    "calculate_beta_attribution",
     "calculate_cagr",
     "calculate_calmar_ratio",
     "calculate_drawdown_series",
     "calculate_max_drawdown",
     "calculate_profit_factor",
+    "calculate_rolling_beta_attribution",
     "calculate_rolling_sharpe",
     "calculate_sharpe_ratio",
     "calculate_sortino_ratio",
@@ -77,4 +84,5 @@ __all__ = [
     "generate_report_from_backtest_result",
     "print_performance_summary",
     "run_parameter_sweep",
+    "summarize_suppression_impact",
 ]

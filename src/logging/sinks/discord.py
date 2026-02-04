@@ -79,7 +79,7 @@ class DiscordWebhookSink:
         "CRITICAL": DiscordColor.ORANGE,
     }
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         webhook_url: str,
         min_level: str = "ERROR",

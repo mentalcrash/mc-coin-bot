@@ -575,7 +575,7 @@ def _display_bulk_result(result: BulkDownloadResult) -> None:
 
 
 @app.command("bulk-download")
-def bulk_download(  # noqa: PLR0913
+def bulk_download(
     top: Annotated[
         int,
         typer.Option("--top", "-t", help="Number of top symbols to download"),

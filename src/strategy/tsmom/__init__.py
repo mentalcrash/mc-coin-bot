@@ -8,6 +8,7 @@ Components:
     - preprocess: 지표 계산 함수 (벡터화)
     - generate_signals: 시그널 생성 함수
     - TSMOMStrategy: 전략 클래스 (BaseStrategy 상속)
+    - DiagnosticCollector: 시그널 진단 수집기
 
 Example:
     >>> from src.strategy.tsmom import TSMOMStrategy, TSMOMConfig
@@ -17,19 +18,33 @@ Example:
 """
 
 from src.strategy.tsmom.config import TSMOMConfig
+from src.strategy.tsmom.diagnostics import (
+    DiagnosticCollector,
+    collect_diagnostics_from_pipeline,
+    log_diagnostic_summary,
+    log_signal_diagnostic,
+)
 from src.strategy.tsmom.preprocessor import preprocess
 from src.strategy.tsmom.signal import (
+    SignalsWithDiagnostics,
     generate_signals,
     generate_signals_for_long_only,
+    generate_signals_with_diagnostics,
     get_current_signal,
 )
 from src.strategy.tsmom.strategy import TSMOMStrategy
 
 __all__ = [
+    "DiagnosticCollector",
+    "SignalsWithDiagnostics",
     "TSMOMConfig",
     "TSMOMStrategy",
+    "collect_diagnostics_from_pipeline",
     "generate_signals",
     "generate_signals_for_long_only",
+    "generate_signals_with_diagnostics",
     "get_current_signal",
+    "log_diagnostic_summary",
+    "log_signal_diagnostic",
     "preprocess",
 ]

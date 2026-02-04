@@ -1,0 +1,78 @@
+---
+description: Universal Clean Code & Software Architecture Principles (2026 Edition)
+globs: *
+alwaysApply: true
+---
+
+# 💎 Universal Clean Code Principles (2026)
+
+## 1. Cognitive Load over Dogma
+- **Locality of Behavior (LoB):** 코드를 읽을 때, 해당 코드의 동작을 이해하기 위해 다른 파일이나 함수를 계속 찾아보게 만들지 마십시오.
+    - 무리한 DRY(Don't Repeat Yourself) 적용으로 코드가 꼬이는 것보다, 약간의 중복이 있더라도 **흐름이 한눈에 보이는 코드(WET)**가 낫습니다.
+- **Deep Modules:** 인터페이스는 단순하게, 구현은 깊게 만듭니다. 수많은 얕은 함수(Shallow Functions)로 로직을 파편화하지 마십시오.
+
+## 2. Naming as Documentation
+- **S.I.D (Short, Intuitive, Descriptive):**
+    - **Scope Rule:** 변수의 유효 범위(Scope)가 좁으면 이름은 짧아도 되지만(`i`, `x`), 전역적이거나 공개된 인터페이스라면 이름은 구체적이어야 합니다.
+- **No Generic Names:** `Manager`, `Handler`, `Processor`, `Data` 같은 모호한 단어 사용을 금지합니다.
+    - ❌ `DataManager` -> ✅ `OrderRepository`, `PriceCalculator`
+- **Unit Inclusion:** 시간이나 단위를 다루는 변수명에는 단위를 명시합니다.
+    - ❌ `timeout` -> ✅ `timeout_ms`, `timeout_sec`
+
+## 3. Structural Integrity (SOLID 2.0)
+- **Single Responsibility (SRP):** "함수는 한 가지 일만 해야 한다"는 모호한 정의 대신, **"액터(Actor)의 변경 요청에 대한 응답은 하나여야 한다"**는 원칙을 따릅니다.
+- **Composition over Inheritance:** 상속(Inheritance)은 결합도를 높입니다. 기능을 확장할 때는 반드시 **조합(Composition)**이나 **인터페이스 위임(Delegation)**을 사용합니다.
+- **Dependency Injection:** 외부 시스템(DB, API, Time)은 내부에서 직접 생성하지 말고, 외부에서 주입받도록 설계하여 테스트 용이성을 확보합니다.
+
+## 4. State Management
+- **Immutability First:** 데이터는 생성 후 변경되지 않는 것(Immutable)을 기본으로 합니다. 상태 변경은 부작용(Side-effect)을 낳고 버그의 온상이 됩니다.
+- **Fail Fast:** 잘못된 입력이나 상태가 감지되면, 억지로 수행하려 하지 말고 즉시 에러를 발생시켜 문제를 조기에 드러냅니다.
+
+## 5. The "Delete" Mindset (YAGNI)
+- **You Aren't Gonna Need It:** "나중에 필요할 것 같아서" 작성한 코드는 100% 기술 부채가 됩니다. 현재 요구사항에 필요한 코드만 작성하십시오.
+- **Dead Code:** 주석 처리된 코드나 사용되지 않는 함수는 발견 즉시 삭제합니다. (Git이 기억하고 있습니다)
+
+## 6. AI-Readability
+- **Context is King:** AI가 파일 하나만 읽어도 문맥을 파악할 수 있도록, 의존성이나 설정값이 너무 암시적(Implicit)이지 않게 작성합니다. 매직 넘버나 하드코딩된 문자열 대신 상수를 활용합니다.
+
+## 7. Example Pattern
+
+### ✅ Good (High Locality, Explicit)
+```python
+# [단위 명시, 명확한 책임, 불변성]
+class OrderService:
+    def __init__(self, exchange_client: ExchangeClient):
+        self._exchange = exchange_client
+
+    def place_limit_order(self, symbol: str, price_usd: Decimal, quantity: Decimal) -> OrderID:
+        # Guard Clause (Fail Fast)
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive")
+
+        # 로직이 한 곳에 모여있어 읽기 쉬움 (LoB)
+        order_payload = {
+            "symbol": symbol,
+            "price": str(price_usd),
+            "qty": str(quantity),
+            "type": "LIMIT"
+        }
+        
+        return self._exchange.send(order_payload)
+
+```
+
+### ❌ Bad (Fragmented, Generic)
+
+```python
+class DataManager: # 모호한 이름
+    def process(self, d): # d가 무엇인지 모름
+        self.validate(d)
+        self.calc(d) # 내부에서 상태를 변경하는지 알 수 없음
+        return self.save(d)
+    
+    # 너무 잘게 쪼개져서 전체 흐름을 파악하려면 점프해야 함
+    def validate(self, d): ...
+    def calc(self, d): ...
+    def save(self, d): ...
+
+```

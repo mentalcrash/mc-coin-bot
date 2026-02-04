@@ -90,7 +90,7 @@ class DiscordNotifier:
             await self._session.close()
             self._session = None
 
-    async def send_trade_alert(  # noqa: PLR0913
+    async def send_trade_alert(
         self,
         side: str,
         symbol: str,
@@ -204,7 +204,7 @@ class DiscordNotifier:
 
         return await self._send(self._config.error_webhook_url, embed)
 
-    async def send_daily_report(  # noqa: PLR0913
+    async def send_daily_report(
         self,
         date: str,
         total_trades: int,

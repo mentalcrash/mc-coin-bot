@@ -122,6 +122,7 @@ select = [
     "PD",   # pandas-vet (Pandas 모범 사례 강제 - Rules #12)
     "TRY",  # tryceratops (예외 처리 강화 - Rules #10)
     "PL",   # Pylint (코드 복잡도 및 리팩토링 제안)
+    "ISC",  # flake8-implicit-str-concat (암시적 문자열 연결 방지)
 ]
 
 ignore = [
@@ -131,7 +132,10 @@ ignore = [
     "S311",   # random 모듈 사용 허용 (보안이 필요 없는 경우)
     "RUF012", # 클래스 변수 타입 어노테이션 강제 완화
     "TRY003", # 긴 에러 메시지를 예외 클래스에 직접 넣기 금지 -> 허용 (빠른 개발 위해)
+    "ISC003", # basedpyright의 reportImplicitStringConcatenation과 충돌하므로 명시적 연결 허용
     "PLR0915", 
+    "PLR0913",
+    "PLC0415",
 ]
 
 # Allow autofix for all enabled rules

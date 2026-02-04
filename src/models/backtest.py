@@ -11,9 +11,12 @@ Rules Applied:
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+
+# NOTE: TYPE_CHECKING import removed - pandas DataFrame은 별도 파일로 저장
+# BetaAttributionResult에서 rolling_attribution_df는 Parquet으로 관리
 
 
 class TradeRecord(BaseModel):
@@ -161,6 +164,223 @@ class BenchmarkComparison(BaseModel):
     tracking_error: float | None = Field(default=None, description="추적 오차 (%)")
 
 
+# =============================================================================
+# Diagnostic Models (Signal Pipeline Analysis)
+# =============================================================================
+
+# Type alias for signal suppression reasons
+type SignalSuppressionReason = Literal[
+    "none",
+    "trend_filter",
+    "deadband",
+    "low_volatility",
+    "leverage_cap",
+    "rebalance_threshold",
+    "stop_loss",
+]
+
+
+class SignalDiagnosticRecord(BaseModel):
+    """매 캔들마다 기록되는 시그널 진단 데이터.
+
+    전략이 왜 시장 상승분을 포착하지 못하는지 추적하기 위한 진단 레코드입니다.
+    각 필터 단계에서의 시그널 상태와 최종 포지션 결정 과정을 기록합니다.
+
+    Attributes:
+        timestamp: 캔들 타임스탬프
+        symbol: 거래 심볼
+
+        Market State:
+            close_price: 종가
+            realized_vol_annualized: 실현 변동성 (연율화)
+            benchmark_return: 시장(BTC) 수익률
+
+        Signal Generation:
+            raw_momentum: 원시 모멘텀 값 (lookback 기간 수익률)
+            vol_scalar: vol_target / realized_vol
+            scaled_momentum: raw_momentum * vol_scalar
+
+        Filter Decisions:
+            trend_regime: 추세 국면 (1=Uptrend, -1=Downtrend, 0=Neutral)
+            signal_before_trend_filter: Trend filter 적용 전 시그널
+            signal_after_trend_filter: Trend filter 적용 후 시그널
+            deadband_applied: Deadband로 신호가 억제되었는지 여부
+            signal_after_deadband: Deadband 적용 후 시그널
+
+        Position Sizing:
+            raw_target_weight: 필터 적용 전 목표 비중
+            leverage_capped_weight: max_leverage 적용 후 비중
+            final_target_weight: 최종 목표 비중
+
+        Execution:
+            rebalance_triggered: 리밸런싱 threshold 통과 여부
+            stop_loss_triggered: Stop loss 발동 여부
+
+        Attribution:
+            signal_suppression_reason: 시그널 억제 원인
+
+    Example:
+        >>> record = SignalDiagnosticRecord(
+        ...     timestamp=datetime.now(UTC),
+        ...     symbol="BTC/USDT",
+        ...     close_price=Decimal("50000"),
+        ...     realized_vol_annualized=0.65,
+        ...     benchmark_return=0.02,
+        ...     raw_momentum=0.15,
+        ...     vol_scalar=0.62,
+        ...     scaled_momentum=0.093,
+        ...     trend_regime=1,
+        ...     signal_before_trend_filter=0.093,
+        ...     signal_after_trend_filter=0.093,
+        ...     deadband_applied=False,
+        ...     signal_after_deadband=0.093,
+        ...     raw_target_weight=0.093,
+        ...     leverage_capped_weight=0.093,
+        ...     final_target_weight=0.093,
+        ...     rebalance_triggered=True,
+        ...     stop_loss_triggered=False,
+        ... )
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # === Identifiers ===
+    timestamp: datetime
+    symbol: str
+
+    # === Market State ===
+    close_price: Decimal = Field(..., gt=0, description="종가")
+    realized_vol_annualized: float = Field(
+        ..., ge=0, description="실현 변동성 (연율화)"
+    )
+    benchmark_return: float = Field(..., description="시장(BTC) 수익률")
+
+    # === Signal Generation ===
+    raw_momentum: float = Field(..., description="원시 모멘텀 값")
+    vol_scalar: float = Field(..., ge=0, description="변동성 스케일러")
+    scaled_momentum: float = Field(..., description="스케일링된 모멘텀")
+
+    # === Filter Decisions (Critical for Beta diagnosis) ===
+    trend_regime: Literal[1, -1, 0] = Field(..., description="추세 국면")
+    signal_before_trend_filter: float = Field(
+        ..., description="Trend filter 적용 전 시그널"
+    )
+    signal_after_trend_filter: float = Field(
+        ..., description="Trend filter 적용 후 시그널"
+    )
+    deadband_applied: bool = Field(..., description="Deadband 적용 여부")
+    signal_after_deadband: float = Field(..., description="Deadband 적용 후 시그널")
+
+    # === Position Sizing ===
+    raw_target_weight: float = Field(..., description="필터 적용 전 목표 비중")
+    leverage_capped_weight: float = Field(..., description="max_leverage 적용 후 비중")
+    final_target_weight: float = Field(..., description="최종 목표 비중")
+
+    # === Execution ===
+    rebalance_triggered: bool = Field(..., description="리밸런싱 threshold 통과 여부")
+    stop_loss_triggered: bool = Field(default=False, description="Stop loss 발동 여부")
+
+    # === Attribution ===
+    signal_suppression_reason: SignalSuppressionReason = Field(
+        default="none", description="시그널 억제 원인"
+    )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_signal_suppressed(self) -> bool:
+        """시그널이 억제되었는지 여부."""
+        return self.signal_suppression_reason != "none"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def beta_contribution(self) -> float:
+        """Beta 기여도 (final_target_weight * benchmark_return)."""
+        return self.final_target_weight * self.benchmark_return
+
+
+class BetaAttributionResult(BaseModel):
+    """Beta 분해 분석 결과.
+
+    각 필터가 Beta에 미치는 영향을 정량화한 결과입니다.
+    Rolling window 기반으로 계산된 Beta 값과 각 단계별 손실을 포함합니다.
+
+    Attributes:
+        potential_beta: 필터 없이 모든 신호를 실행했을 때의 예상 Beta
+        beta_after_trend_filter: Trend filter 적용 후 Beta
+        beta_after_deadband: Deadband 적용 후 Beta
+        realized_beta: 실제 실현된 Beta
+
+        lost_to_trend_filter: Trend filter로 인해 손실된 Beta
+        lost_to_deadband: Deadband로 인해 손실된 Beta
+        lost_to_vol_scaling: Vol scaling으로 인해 손실된 Beta
+
+        analysis_window: 분석에 사용된 rolling window 크기
+        total_periods: 분석 기간 총 캔들 수
+
+    Example:
+        >>> result = BetaAttributionResult(
+        ...     potential_beta=0.85,
+        ...     beta_after_trend_filter=0.65,
+        ...     beta_after_deadband=0.55,
+        ...     realized_beta=0.40,
+        ...     lost_to_trend_filter=0.20,
+        ...     lost_to_deadband=0.10,
+        ...     lost_to_vol_scaling=0.15,
+        ...     analysis_window=60,
+        ...     total_periods=365,
+        ... )
+    """
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    # === Beta Values at Each Stage ===
+    potential_beta: float = Field(..., description="필터 없이 예상되는 Beta")
+    beta_after_trend_filter: float = Field(..., description="Trend filter 적용 후 Beta")
+    beta_after_deadband: float = Field(..., description="Deadband 적용 후 Beta")
+    realized_beta: float = Field(..., description="실제 실현된 Beta")
+
+    # === Beta Losses (Attribution) ===
+    lost_to_trend_filter: float = Field(
+        ..., description="Trend filter로 인한 Beta 손실"
+    )
+    lost_to_deadband: float = Field(..., description="Deadband로 인한 Beta 손실")
+    lost_to_vol_scaling: float = Field(
+        ..., description="Vol scaling으로 인한 Beta 손실"
+    )
+
+    # === Metadata ===
+    analysis_window: int = Field(default=60, ge=1, description="Rolling window 크기")
+    total_periods: int = Field(default=0, ge=0, description="분석 기간 총 캔들 수")
+
+    # NOTE: rolling_attribution_df는 Pydantic 직렬화 문제로 별도 저장
+    # DataFrame은 to_parquet()로 별도 파일에 저장 권장
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total_beta_loss(self) -> float:
+        """총 Beta 손실량."""
+        return self.potential_beta - self.realized_beta
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def beta_retention_ratio(self) -> float:
+        """Beta 보존 비율 (realized / potential)."""
+        if self.potential_beta == 0:
+            return 0.0
+        return self.realized_beta / self.potential_beta
+
+    def summary(self) -> dict[str, str]:
+        """요약 정보 반환."""
+        return {
+            "potential_beta": f"{self.potential_beta:.3f}",
+            "realized_beta": f"{self.realized_beta:.3f}",
+            "beta_retention": f"{self.beta_retention_ratio:.1%}",
+            "lost_to_trend_filter": f"{self.lost_to_trend_filter:.3f}",
+            "lost_to_deadband": f"{self.lost_to_deadband:.3f}",
+            "lost_to_vol_scaling": f"{self.lost_to_vol_scaling:.3f}",
+        }
+
+
 class BacktestConfig(BaseModel):
     """백테스트 설정 기록.
 
@@ -244,9 +464,7 @@ class BacktestResult(BaseModel):
     equity_curve_path: str | None = Field(
         default=None, description="Equity Curve 파일 경로"
     )
-    report_path: str | None = Field(
-        default=None, description="QuantStats 리포트 경로"
-    )
+    report_path: str | None = Field(default=None, description="QuantStats 리포트 경로")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         description="결과 생성 시각",

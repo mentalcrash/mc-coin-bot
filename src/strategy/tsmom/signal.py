@@ -9,7 +9,10 @@ Rules Applied:
     - Shift(1) Rule: 미래 참조 편향 방지
 """
 
+from __future__ import annotations
+
 import logging
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -18,6 +21,13 @@ from src.strategy.tsmom.config import TSMOMConfig
 from src.strategy.types import Direction, StrategySignals
 
 logger = logging.getLogger(__name__)
+
+
+class SignalsWithDiagnostics(NamedTuple):
+    """시그널과 진단 데이터를 함께 반환하는 결과 타입."""
+
+    signals: StrategySignals
+    diagnostics_df: pd.DataFrame
 
 
 def generate_signals(
@@ -215,6 +225,155 @@ def generate_signals(
         direction=direction,
         strength=strength,
     )
+
+
+def generate_signals_with_diagnostics(
+    df: pd.DataFrame,
+    config: TSMOMConfig | None = None,
+    symbol: str = "UNKNOWN",
+) -> SignalsWithDiagnostics:
+    """VW-TSMOM 시그널 생성 + 진단 데이터 수집.
+
+    generate_signals()와 동일한 시그널 생성 로직을 수행하되,
+    각 필터 단계의 중간 값을 기록하여 Beta Attribution 분석에 사용합니다.
+
+    Args:
+        df: 전처리된 DataFrame (preprocess() 출력)
+        config: TSMOM 설정
+        symbol: 거래 심볼 (진단 로깅용)
+
+    Returns:
+        SignalsWithDiagnostics:
+            - signals: StrategySignals NamedTuple
+            - diagnostics_df: 진단 레코드 DataFrame
+
+    Example:
+        >>> result = generate_signals_with_diagnostics(processed_df, config, "BTC/USDT")
+        >>> signals = result.signals
+        >>> diagnostics = result.diagnostics_df
+    """
+    # Lazy import to avoid circular dependency
+    from src.strategy.tsmom.diagnostics import collect_diagnostics_from_pipeline
+
+    # 기본 config 설정
+    if config is None:
+        config = TSMOMConfig()
+
+    # 입력 검증
+    required_cols = {"vw_momentum", "vol_scalar"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        msg = f"Missing required columns: {missing}. Run preprocess() first."
+        raise ValueError(msg)
+
+    # 1. Scaled Momentum 계산 (시그널의 원재료)
+    momentum_series: pd.Series = df["vw_momentum"]  # type: ignore[assignment]
+    vol_scalar_series: pd.Series = df["vol_scalar"]  # type: ignore[assignment]
+
+    if config.use_zscore:
+        scaled_momentum = momentum_series * vol_scalar_series
+    else:
+        momentum_direction = np.sign(momentum_series)
+        scaled_momentum = momentum_direction * vol_scalar_series
+
+    # 2. Shift(1) 적용
+    signal_shifted: pd.Series = scaled_momentum.shift(1)  # type: ignore[assignment]
+
+    # 3. Deadband 적용
+    signal_after_deadband = signal_shifted.copy()
+    deadband_mask = pd.Series(False, index=df.index)
+
+    if config.deadband_threshold > 0:
+        momentum_shifted = momentum_series.shift(1)
+        deadband_mask = pd.Series(
+            np.abs(momentum_shifted) < config.deadband_threshold,
+            index=df.index,
+        )
+        signal_after_deadband = pd.Series(
+            np.where(deadband_mask, 0, signal_shifted),
+            index=df.index,
+        )
+
+    # 📊 진단: Trend Filter 적용 전 시그널 저장
+    signal_before_trend = signal_after_deadband.copy()
+
+    # 4. Trend Filter 적용
+    signal_after_trend = signal_after_deadband.copy()
+
+    if "trend_regime" in df.columns:
+        trend_regime: pd.Series = df["trend_regime"]  # type: ignore[assignment]
+        trend_regime_shifted = trend_regime.shift(1)
+
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == 1) & (signal_after_deadband < 0),
+            0,
+            signal_after_deadband,
+        )
+        signal_filtered_array = np.where(
+            (trend_regime_shifted == -1) & (signal_filtered_array > 0),
+            0,
+            signal_filtered_array,
+        )
+        signal_after_trend = pd.Series(signal_filtered_array, index=df.index)
+
+    # 5. Direction & Strength 계산
+    signal_filtered = signal_after_trend
+    direction_raw = pd.Series(np.sign(signal_filtered), index=df.index)
+    direction = pd.Series(
+        direction_raw.fillna(0).astype(int),
+        index=df.index,
+        name="direction",
+    )
+
+    strength = pd.Series(
+        signal_filtered.fillna(0),
+        index=df.index,
+        name="strength",
+    )
+
+    # 6. 진입/청산 시그널 생성
+    prev_direction = direction.shift(1).fillna(0)
+    long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
+    short_entry = (direction == Direction.SHORT) & (prev_direction != Direction.SHORT)
+
+    entries = pd.Series(
+        long_entry | short_entry,
+        index=df.index,
+        name="entries",
+    )
+
+    to_neutral = (direction == Direction.NEUTRAL) & (
+        prev_direction != Direction.NEUTRAL
+    )
+    reversal = direction * prev_direction < 0
+
+    exits = pd.Series(
+        to_neutral | reversal,
+        index=df.index,
+        name="exits",
+    )
+
+    # 📊 진단 DataFrame 생성
+    # NOTE: leverage_capped_weight와 rebalance_mask는 PortfolioManager에서 처리되므로
+    # 여기서는 strength를 raw_target_weight로 사용
+    diagnostics_df = collect_diagnostics_from_pipeline(
+        processed_df=df,
+        symbol=symbol,
+        signal_before_trend=signal_before_trend,
+        signal_after_trend=signal_after_trend,
+        signal_after_deadband=signal_after_deadband,
+        deadband_mask=deadband_mask,
+        final_weights=strength,
+    )
+
+    signals = StrategySignals(
+        entries=entries,
+        exits=exits,
+        direction=direction,
+        strength=strength,
+    )
+
+    return SignalsWithDiagnostics(signals=signals, diagnostics_df=diagnostics_df)
 
 
 def generate_signals_for_long_only(

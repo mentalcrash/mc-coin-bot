@@ -135,7 +135,7 @@ def _import_quantstats() -> Any:
         ImportError: QuantStats가 설치되지 않은 경우
     """
     try:
-        import quantstats as qs  # type: ignore[import-not-found]  # noqa: PLC0415
+        import quantstats as qs  # type: ignore[import-not-found]
     except ImportError as e:
         msg = "QuantStats is required. Install with: pip install quantstats"
         raise ImportError(msg) from e
