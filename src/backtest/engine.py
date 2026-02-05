@@ -14,9 +14,12 @@ Rules Applied:
     - #15 Logging Standards: Loguru, structured logging
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from src.backtest.validation import ValidationResult
 import numpy.typing as npt
 import pandas as pd
 from loguru import logger
@@ -299,9 +302,7 @@ class BacktestEngine:
         analyzer = request.analyzer or PerformanceAnalyzer()
 
         logger.debug("[1/5] 컴포넌트 추출 완료")
-        logger.debug(
-            f"  - Data: {data.symbol} {data.timeframe} ({data.periods} periods)"
-        )
+        logger.debug(f"  - Data: {data.symbol} {data.timeframe} ({data.periods} periods)")
         logger.debug(f"  - Strategy: {strategy.name}")
         logger.debug(
             f"  - Portfolio: capital=${portfolio.initial_capital:,.0f}, leverage_cap={portfolio.config.max_leverage_cap}x"
@@ -320,9 +321,7 @@ class BacktestEngine:
         )
 
         # VectorBT Portfolio 생성
-        logger.debug(
-            f"[3/5] VectorBT Portfolio 생성 (mode={portfolio.config.execution_mode})..."
-        )
+        logger.debug(f"[3/5] VectorBT Portfolio 생성 (mode={portfolio.config.execution_mode})...")
         vbt_portfolio = self._create_vbt_portfolio(
             vbt=vbt,
             df=processed_df,
@@ -444,6 +443,44 @@ class BacktestEngine:
 
         return result, strategy_returns, benchmark_returns
 
+    def run_validated(
+        self,
+        request: BacktestRequest,
+        level: str = "quick",
+    ) -> tuple["BacktestResult", "ValidationResult"]:
+        """백테스트 + Tiered Validation 실행.
+
+        백테스트를 수행하고 지정된 레벨의 검증을 함께 수행합니다.
+
+        Args:
+            request: 백테스트 요청
+            level: 검증 레벨 ("quick", "milestone", "final")
+
+        Returns:
+            (BacktestResult, ValidationResult) 튜플
+
+        Example:
+            >>> result, validation = engine.run_validated(request, level="quick")
+            >>> print(f"Sharpe: {result.metrics.sharpe_ratio}")
+            >>> print(f"Validation: {validation.verdict}")
+        """
+        from src.backtest.validation import TieredValidator, ValidationLevel
+
+        # 기본 백테스트 실행 (전체 데이터)
+        result = self.run(request)
+
+        # 검증 실행
+        validation_level = ValidationLevel(level)
+        validator = TieredValidator(engine=self)
+        validation = validator.validate(
+            level=validation_level,
+            data=request.data,
+            strategy=request.strategy,
+            portfolio=request.portfolio,
+        )
+
+        return result, validation
+
     def _create_vbt_portfolio(
         self,
         vbt: Any,
@@ -533,9 +570,7 @@ class BacktestEngine:
             target_weights = target_weights.where(
                 weights_before_sl.notna() | (target_weights != 0), np.nan
             )
-            stop_loss_count = int(
-                ((weights_before_sl != 0) & (target_weights == 0)).sum()
-            )
+            stop_loss_count = int(((weights_before_sl != 0) & (target_weights == 0)).sum())
             if stop_loss_count > 0:
                 logger.warning(
                     f"Stop Loss Triggered | {stop_loss_count} positions closed at {pm.system_stop_loss:.0%} loss limit",
@@ -558,9 +593,7 @@ class BacktestEngine:
             target_weights = target_weights.where(
                 weights_before_ts.notna() | (target_weights != 0), np.nan
             )
-            trailing_stop_count = int(
-                ((weights_before_ts != 0) & (target_weights == 0)).sum()
-            )
+            trailing_stop_count = int(((weights_before_ts != 0) & (target_weights == 0)).sum())
             if trailing_stop_count > 0:
                 logger.info(
                     f"Trailing Stop Triggered | {trailing_stop_count} positions closed at {pm.trailing_stop_atr_multiplier}x ATR",

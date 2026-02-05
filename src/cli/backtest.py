@@ -24,6 +24,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from src.backtest.advisor import StrategyAdvisor
 from src.backtest.analyzer import PerformanceAnalyzer
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
 from src.backtest.reporter import generate_quantstats_report, print_performance_summary
@@ -38,7 +39,7 @@ from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
 # TSMOM strategy imports for diagnose/optimize commands
-from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
+from src.strategy.tsmom import ShortMode, TSMOMConfig, TSMOMStrategy
 from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
 # Global Console Instance (Rich UI for user-facing output)
@@ -101,6 +102,175 @@ def _print_startup_panel(
     console.print(Panel.fit(panel_content, border_style="blue"))
 
 
+def _print_validation_result(
+    validation_result: object,
+    level: str,
+) -> None:
+    """Validation 결과 출력.
+
+    Args:
+        validation_result: ValidationResult 객체
+        level: 검증 레벨 (quick, milestone, final)
+    """
+    from src.backtest.validation.models import ValidationResult
+
+    if not isinstance(validation_result, ValidationResult):
+        return
+
+    # 레벨별 설명
+    level_desc = {
+        "quick": "IS/OOS Split (70/30)",
+        "milestone": "Walk-Forward (5 folds)",
+        "final": "CPCV + Monte Carlo",
+    }
+
+    table = Table(title=f"Validation Result ({level_desc.get(level, level)})")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+
+    table.add_row("IS Sharpe (avg)", f"{validation_result.avg_train_sharpe:.2f}")
+    table.add_row("OOS Sharpe (avg)", f"{validation_result.avg_test_sharpe:.2f}")
+    table.add_row("Sharpe Decay", f"{validation_result.avg_sharpe_decay:.0%}")
+    table.add_row("Consistency", f"{validation_result.consistency_ratio:.0%}")
+    table.add_row("Overfit Probability", f"{validation_result.overfit_probability:.0%}")
+
+    # 통과 여부
+    verdict = validation_result.verdict
+    if verdict == "PASS":
+        verdict_str = "[green]✓ PASSED[/green]"
+    elif verdict == "WARN":
+        verdict_str = "[yellow]⚠ WARNING[/yellow]"
+    else:
+        verdict_str = "[red]✗ FAILED[/red]"
+    table.add_row("Status", verdict_str)
+
+    console.print(table)
+
+
+def _run_advisor_analysis(
+    result: object,
+    strategy_returns: object,
+    benchmark_returns: object,
+    validation_result: object | None = None,
+) -> None:
+    """Strategy Advisor 분석 실행.
+
+    Args:
+        result: BacktestResult 객체
+        strategy_returns: 전략 수익률 시리즈
+        benchmark_returns: 벤치마크 수익률 시리즈
+        validation_result: ValidationResult (선택적)
+    """
+    import pandas as pd
+
+    from src.backtest.validation.models import ValidationResult
+    from src.models.backtest import BacktestResult
+
+    if not isinstance(result, BacktestResult):
+        console.print("[red]Error: Invalid backtest result[/red]")
+        return
+
+    if not isinstance(strategy_returns, pd.Series) or not isinstance(benchmark_returns, pd.Series):
+        console.print("[red]Error: Invalid returns data[/red]")
+        return
+
+    # Advisor 실행
+    advisor_instance = StrategyAdvisor()
+    val_result = validation_result if isinstance(validation_result, ValidationResult) else None
+
+    report = advisor_instance.analyze(
+        result=result,
+        returns=strategy_returns,
+        benchmark_returns=benchmark_returns,
+        validation_result=val_result,
+    )
+
+    # 결과 출력
+    console.print("\n")
+    panel_content = (
+        "[bold]Strategy Advisor Report[/bold]\n"
+        + f"Strategy: {report.strategy_name}\n"
+        + f"Overall Score: {report.overall_score:.0f}/100\n"
+        + f"Readiness: {report.readiness_level.upper()}"
+    )
+    console.print(Panel.fit(panel_content, border_style="blue"))
+
+    # 손실 집중 분석
+    loss = report.loss_concentration
+    loss_table = Table(title="Loss Concentration")
+    loss_table.add_column("Metric", style="cyan")
+    loss_table.add_column("Value", justify="right")
+    loss_table.add_row("Worst Hours (UTC)", ", ".join(map(str, loss.worst_hours)))
+    loss_table.add_row("Max Consecutive Losses", str(loss.max_consecutive_losses))
+    large_loss_desc = f"{loss.large_loss_count} (>{loss.large_loss_threshold:.1f}%)"
+    loss_table.add_row("Large Loss Count", large_loss_desc)
+    console.print(loss_table)
+
+    # 레짐 프로파일
+    regime = report.regime_profile
+    regime_table = Table(title="Regime Profile")
+    regime_table.add_column("Regime", style="cyan")
+    regime_table.add_column("Sharpe", justify="right")
+    regime_table.add_row("Bull", f"{regime.bull_sharpe:.2f}")
+    regime_table.add_row("Bear", f"{regime.bear_sharpe:.2f}")
+    regime_table.add_row("Sideways", f"{regime.sideways_sharpe:.2f}")
+    regime_table.add_row("Weakest", f"[yellow]{regime.weakest_regime}[/yellow]")
+    console.print(regime_table)
+
+    # 시그널 품질
+    signal = report.signal_quality
+    signal_table = Table(title="Signal Quality")
+    signal_table.add_column("Metric", style="cyan")
+    signal_table.add_column("Value", justify="right")
+    signal_table.add_row("Hit Rate", f"{signal.hit_rate:.1f}%")
+    signal_table.add_row(
+        "Risk/Reward", f"{signal.risk_reward_ratio:.2f}" if signal.risk_reward_ratio else "N/A"
+    )
+    signal_table.add_row("Expectancy", f"{signal.expectancy:.2f}%")
+    console.print(signal_table)
+
+    # 과적합 스코어 (있는 경우)
+    if report.overfit_score is not None:
+        overfit = report.overfit_score
+        overfit_table = Table(title="Overfit Score")
+        overfit_table.add_column("Metric", style="cyan")
+        overfit_table.add_column("Value", justify="right")
+        overfit_table.add_row("IS Sharpe", f"{overfit.is_sharpe:.2f}")
+        overfit_table.add_row("OOS Sharpe", f"{overfit.oos_sharpe:.2f}")
+        overfit_table.add_row("Sharpe Decay", f"{overfit.sharpe_decay:.0%}")
+        overfit_table.add_row("Overfit Probability", f"{overfit.overfit_probability:.0%}")
+        risk_color = (
+            "red"
+            if overfit.risk_level == "critical"
+            else "yellow"
+            if overfit.risk_level == "high"
+            else "green"
+        )
+        overfit_table.add_row("Risk Level", f"[{risk_color}]{overfit.risk_level.upper()}[/]")
+        console.print(overfit_table)
+
+    # 개선 제안
+    if report.suggestions:
+        suggestions_table = Table(title="Improvement Suggestions")
+        suggestions_table.add_column("#", style="dim", width=3)
+        suggestions_table.add_column("Priority", style="cyan", width=8)
+        suggestions_table.add_column("Category", width=10)
+        suggestions_table.add_column("Suggestion")
+
+        for idx, suggestion in enumerate(report.suggestions, 1):
+            priority_color = {"high": "red", "medium": "yellow", "low": "green"}[
+                suggestion.priority
+            ]
+            suggestions_table.add_row(
+                str(idx),
+                f"[{priority_color}]{suggestion.priority.upper()}[/]",
+                suggestion.category,
+                f"{suggestion.title}\n[dim]{suggestion.description}[/dim]",
+            )
+
+        console.print(suggestions_table)
+
+
 # Typer App
 app = typer.Typer(
     name="backtest",
@@ -110,7 +280,7 @@ app = typer.Typer(
 
 
 @app.command()
-def run(
+def run(  # noqa: PLR0912
     symbol: Annotated[
         str,
         typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
@@ -146,6 +316,58 @@ def run(
             help="Use strategy's recommended portfolio settings",
         ),
     ] = True,
+    short_mode: Annotated[
+        str,
+        typer.Option(
+            "--short-mode",
+            "-m",
+            help="Short mode: disabled (long-only), hedge (drawdown protection), full (long/short)",
+        ),
+    ] = "hedge",
+    hedge_threshold: Annotated[
+        float,
+        typer.Option(
+            "--hedge-threshold",
+            help="Hedge activation threshold (e.g., -0.15 for -15%% drawdown)",
+        ),
+    ] = -0.15,
+    hedge_strength: Annotated[
+        float,
+        typer.Option(
+            "--hedge-strength",
+            help="Hedge short strength ratio (0.0-1.0)",
+        ),
+    ] = 0.5,
+    max_leverage: Annotated[
+        float,
+        typer.Option(
+            "--max-leverage",
+            "-l",
+            help="Maximum leverage cap (1.0-10.0)",
+        ),
+    ] = 2.0,
+    vol_target: Annotated[
+        float,
+        typer.Option(
+            "--vol-target",
+            "-v",
+            help="Volatility target for position sizing (0.1-1.0, higher = more leverage)",
+        ),
+    ] = 0.40,
+    validation: Annotated[
+        str,
+        typer.Option(
+            "--validation",
+            help="Validation level: none, quick (IS/OOS), milestone (Walk-Forward)",
+        ),
+    ] = "none",
+    advisor: Annotated[
+        bool,
+        typer.Option(
+            "--advisor/--no-advisor",
+            help="Run Strategy Advisor analysis after backtest",
+        ),
+    ] = False,
 ) -> None:
     """Run strategy backtest on historical data.
 
@@ -173,8 +395,26 @@ def run(
         console.print(f"Available strategies: {available}")
         raise typer.Exit(code=1) from e
 
-    # 전략 컨텍스트가 바인딩된 로거 생성
-    strategy_instance = strategy_class()
+    # short_mode 변환 (TSMOM 전략용)
+    short_mode_map = {
+        "disabled": ShortMode.DISABLED,
+        "hedge": ShortMode.HEDGE_ONLY,
+        "full": ShortMode.FULL,
+    }
+    parsed_short_mode = short_mode_map.get(short_mode.lower(), ShortMode.DISABLED)
+
+    # 전략 인스턴스 생성 (TSMOM은 short_mode, vol_target 적용)
+    if strategy_name == "tsmom":
+        tsmom_config = TSMOMConfig(
+            short_mode=parsed_short_mode,
+            hedge_threshold=hedge_threshold,
+            hedge_strength_ratio=hedge_strength,
+            vol_target=vol_target,
+        )
+        strategy_instance = TSMOMStrategy(tsmom_config)
+    else:
+        strategy_instance = strategy_class()
+
     ctx_logger = get_strategy_logger(strategy=strategy_instance.name, symbol=symbol)
 
     if verbose:
@@ -183,13 +423,18 @@ def run(
     # 포트폴리오 생성 (권장 설정 또는 기본 설정)
     if use_recommended:
         config_kwargs = strategy_class.recommended_config()
+        # CLI에서 지정한 max_leverage로 오버라이드
+        config_kwargs["max_leverage_cap"] = max_leverage
         portfolio = Portfolio.create(
             initial_capital=Decimal(str(capital)),
             config=PortfolioManagerConfig(**config_kwargs),
         )
         ctx_logger.debug(f"Using recommended portfolio for {strategy_instance.name}")
     else:
-        portfolio = Portfolio.create(initial_capital=Decimal(str(capital)))
+        portfolio = Portfolio.create(
+            initial_capital=Decimal(str(capital)),
+            config=PortfolioManagerConfig(max_leverage_cap=max_leverage),
+        )
         ctx_logger.debug("Using default portfolio settings")
 
     # 시작 정보 패널 (실제 설정값 표시)
@@ -266,36 +511,56 @@ def run(
             analyzer=PerformanceAnalyzer() if report else None,
         )
 
-        # 백테스트 실행
-        if report:
-            ctx_logger.debug("Running with returns for report generation")
-            result, strategy_returns, benchmark_returns = engine.run_with_returns(request)
+        # Validation 레벨 파싱
+        validation_level = validation.lower()
+        validation_result = None
 
-            # 결과 출력
-            print_performance_summary(result)
-            ctx_logger.info(
-                "Backtest completed",
-                total_return=result.metrics.total_return,
-                sharpe=result.metrics.sharpe_ratio,
+        # 백테스트 실행 (validation 적용 여부)
+        if validation_level != "none":
+            ctx_logger.info(f"Running with {validation_level} validation")
+            result, validation_result = engine.run_validated(request, level=validation_level)
+            strategy_returns = data.ohlcv["close"].pct_change().dropna()
+            benchmark_returns = strategy_returns.copy()
+        elif report or advisor:
+            ctx_logger.debug("Running with returns for report/advisor")
+            result, strategy_returns, benchmark_returns = engine.run_with_returns(request)
+        else:
+            result = engine.run(request)
+            strategy_returns = None
+            benchmark_returns = None
+
+        # 결과 출력
+        print_performance_summary(result)
+        ctx_logger.info(
+            "Backtest completed",
+            total_return=result.metrics.total_return,
+            sharpe=result.metrics.sharpe_ratio,
+        )
+
+        # Validation 결과 출력
+        if validation_result is not None:
+            _print_validation_result(validation_result, validation_level)
+
+        # Advisor 분석 실행
+        if advisor and strategy_returns is not None and benchmark_returns is not None:
+            logger.info("Running Strategy Advisor analysis...")
+            _run_advisor_analysis(
+                result=result,
+                strategy_returns=strategy_returns,
+                benchmark_returns=benchmark_returns,
+                validation_result=validation_result,
             )
 
-            # HTML 리포트 생성
-            logger.info("Step 5: Generating report...")
+        # HTML 리포트 생성
+        if report and strategy_returns is not None and benchmark_returns is not None:
+            logger.info("Generating QuantStats report...")
             report_path = generate_quantstats_report(
-                returns=strategy_returns,
-                benchmark_returns=benchmark_returns,
+                returns=strategy_returns,  # type: ignore[arg-type]
+                benchmark_returns=benchmark_returns,  # type: ignore[arg-type]
                 title=f"{strategy_instance.name} Backtest - {symbol}",
             )
             logger.success(f"Report saved: {report_path}")
             ctx_logger.success(f"Report generated: {report_path}")
-        else:
-            result = engine.run(request)
-            print_performance_summary(result)
-            ctx_logger.info(
-                "Backtest completed",
-                total_return=result.metrics.total_return,
-                sharpe=result.metrics.sharpe_ratio,
-            )
 
     except ImportError as e:
         ctx_logger.exception("VectorBT import failed")
@@ -755,6 +1020,18 @@ def diagnose(
         bool,
         typer.Option("--verbose", "-V", help="Enable verbose output"),
     ] = False,
+    short_mode: Annotated[
+        str,
+        typer.Option(
+            "--short-mode",
+            "-m",
+            help="Short mode: disabled (long-only), hedge (drawdown protection), full (long/short)",
+        ),
+    ] = "hedge",
+    hedge_threshold: Annotated[
+        float,
+        typer.Option("--hedge-threshold", help="Hedge activation threshold"),
+    ] = -0.15,
 ) -> None:
     """Run signal pipeline diagnosis for trading strategies (Pure TSMOM).
 
@@ -823,7 +1100,19 @@ def diagnose(
 
     # Step 2: 전략 설정 및 전처리
     logger.info("Step 2: Preprocessing data and generating signals...")
-    config = TSMOMConfig()
+
+    # short_mode 변환
+    short_mode_map = {
+        "disabled": ShortMode.DISABLED,
+        "hedge": ShortMode.HEDGE_ONLY,
+        "full": ShortMode.FULL,
+    }
+    parsed_short_mode = short_mode_map.get(short_mode.lower(), ShortMode.DISABLED)
+
+    config = TSMOMConfig(
+        short_mode=parsed_short_mode,
+        hedge_threshold=hedge_threshold,
+    )
     processed_df = preprocess(data.ohlcv, config)
 
     # Step 3: 시그널 생성
@@ -859,13 +1148,19 @@ def diagnose(
     # ========== 결과 출력 ==========
 
     # 전략 설정 패널
-    mode_str = "Long-Only" if config.long_only else "Long/Short"
+    effective_mode = config.effective_short_mode()
+    mode_map = {
+        ShortMode.DISABLED: "Long-Only",
+        ShortMode.HEDGE_ONLY: f"Hedge-Short (≤{config.hedge_threshold:.0%})",
+        ShortMode.FULL: "Long/Short",
+    }
+    mode_str = mode_map.get(effective_mode, "Unknown")
     config_panel = (
         f"[bold cyan]Strategy Configuration[/bold cyan]\n"
         f"  Lookback: {config.lookback} days\n"
         f"  Vol Target: {config.vol_target:.0%}\n"
         f"  Vol Window: {config.vol_window} days\n"
-        f"  Mode: {mode_str} (Pure TSMOM)"
+        f"  Mode: {mode_str}"
     )
     console.print(Panel(config_panel, title="Configuration", border_style="cyan"))
 

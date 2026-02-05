@@ -68,9 +68,7 @@ def calculate_overall_beta(
         전체 기간 Beta 값
     """
     # NaN 제거 후 정렬
-    aligned = pd.DataFrame(
-        {"strategy": strategy_returns, "benchmark": benchmark_returns}
-    ).dropna()
+    aligned = pd.DataFrame({"strategy": strategy_returns, "benchmark": benchmark_returns}).dropna()
 
     if len(aligned) < MIN_DATA_POINTS:
         return 0.0
@@ -213,9 +211,7 @@ def calculate_beta_attribution(
     )
 
     # 4. After Trend Filter (Realized): 최종 시그널
-    realized_beta = calculate_overall_beta(
-        cast("pd.Series", returns_df["actual_return"]), bench
-    )
+    realized_beta = calculate_overall_beta(cast("pd.Series", returns_df["actual_return"]), bench)
 
     # Beta 손실량 계산 (파이프라인 순서: Vol Scaling → Deadband → Trend Filter)
     lost_to_vol_scaling = potential_beta - beta_after_vol_scaling

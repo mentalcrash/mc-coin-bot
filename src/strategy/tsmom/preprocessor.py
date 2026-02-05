@@ -173,6 +173,31 @@ def calculate_vw_momentum(
     return vw_returns
 
 
+def calculate_drawdown(close: pd.Series) -> pd.Series:
+    """롤링 최고점 대비 드로다운 계산.
+
+    현재 가격이 과거 최고점 대비 얼마나 하락했는지를 계산합니다.
+    헤지 숏 모드에서 숏 활성화 조건으로 사용됩니다.
+
+    Args:
+        close: 종가 시리즈
+
+    Returns:
+        드로다운 시리즈 (항상 0 이하, 예: -0.15 = -15%)
+
+    Example:
+        >>> drawdown = calculate_drawdown(df["close"])
+        >>> hedge_active = drawdown < -0.15  # -15% 이상 하락 시
+    """
+    # 과거 최고점 (expanding max)
+    rolling_max = close.expanding().max()
+
+    # 드로다운 계산: (현재가 - 최고점) / 최고점
+    drawdown: pd.Series = (close - rolling_max) / rolling_max  # type: ignore[assignment]
+
+    return pd.Series(drawdown, index=close.index, name="drawdown")
+
+
 def calculate_volatility_scalar(
     realized_vol: pd.Series,
     vol_target: float,
@@ -289,6 +314,9 @@ def preprocess(
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
+
+    # 5. 드로다운 계산 (헤지 숏 모드용)
+    result["drawdown"] = calculate_drawdown(close_series)
 
     # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

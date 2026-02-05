@@ -22,7 +22,7 @@ Example:
     >>> processed_df, signals = strategy.run(ohlcv_df)
 """
 
-from src.strategy.tsmom.config import TSMOMConfig
+from src.strategy.tsmom.config import ShortMode, TSMOMConfig
 from src.strategy.tsmom.diagnostics import (
     collect_diagnostics_from_signals,
     log_diagnostic_summary,
@@ -37,6 +37,7 @@ from src.strategy.tsmom.signal import (
 from src.strategy.tsmom.strategy import TSMOMStrategy
 
 __all__ = [
+    "ShortMode",
     "SignalsWithDiagnostics",
     "TSMOMConfig",
     "TSMOMStrategy",

@@ -363,12 +363,14 @@ def calculate_underwater_periods(
     periods: list[dict[str, object]] = []
     for group_id in underwater_groups.unique():
         group: pd.Series = drawdown_series[underwater_groups == group_id]  # type: ignore[assignment]
-        periods.append({
-            "start": group.index[0],
-            "end": group.index[-1],
-            "duration": len(group),
-            "max_dd": group.min(),
-        })
+        periods.append(
+            {
+                "start": group.index[0],
+                "end": group.index[-1],
+                "duration": len(group),
+                "max_dd": group.min(),
+            }
+        )
 
     return pd.DataFrame(periods)
 

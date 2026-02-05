@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import register
-from src.strategy.tsmom.config import TSMOMConfig
+from src.strategy.tsmom.config import ShortMode, TSMOMConfig
 from src.strategy.tsmom.preprocessor import preprocess
 from src.strategy.tsmom.signal import generate_signals
 
@@ -180,10 +180,25 @@ class TSMOMStrategy(BaseStrategy):
             파라미터명-값 딕셔너리 (사용자 친화적 포맷)
         """
         cfg = self._config
-        mode_str = "Long-Only" if cfg.long_only else "Long/Short"
-        return {
+        effective_mode = cfg.effective_short_mode()
+
+        # 숏 모드 문자열 변환
+        mode_map = {
+            ShortMode.DISABLED: "Long-Only",
+            ShortMode.HEDGE_ONLY: f"Hedge-Short (≤{cfg.hedge_threshold:.0%})",
+            ShortMode.FULL: "Long/Short",
+        }
+        mode_str = mode_map.get(effective_mode, "Unknown")
+
+        result = {
             "lookback": f"{cfg.lookback}일",
             "vol_target": f"{cfg.vol_target:.0%}",
             "vol_window": f"{cfg.vol_window}일",
             "mode": mode_str,
         }
+
+        # 헤지 모드일 때 추가 정보
+        if effective_mode == ShortMode.HEDGE_ONLY:
+            result["hedge_strength"] = f"{cfg.hedge_strength_ratio:.0%}"
+
+        return result

@@ -22,7 +22,7 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.config import TSMOMConfig
+from src.strategy.tsmom.config import ShortMode, TSMOMConfig
 from src.strategy.types import Direction, StrategySignals
 
 logger = logging.getLogger(__name__)
@@ -86,8 +86,16 @@ def generate_signals(
     if config is None:
         config = TSMOMConfig()
 
+    # 실제 적용할 숏 모드 결정
+    effective_mode = config.effective_short_mode()
+
     # 입력 검증
     required_cols = {"vw_momentum", "vol_scalar"}
+
+    # HEDGE_ONLY 모드에서는 drawdown 컬럼 필요
+    if effective_mode == ShortMode.HEDGE_ONLY:
+        required_cols.add("drawdown")
+
     missing = required_cols - set(df.columns)
     if missing:
         msg = f"Missing required columns: {missing}. Run preprocess() first."
@@ -121,12 +129,42 @@ def generate_signals(
         name="strength",
     )
 
-    # 5. Long-Only 모드: Short 시그널을 Neutral로 변환
-    if config.long_only:
-        # Short(-1) → Neutral(0)
+    # 5. 숏 모드에 따른 시그널 처리
+    if effective_mode == ShortMode.DISABLED:
+        # Long-Only: 모든 숏 시그널을 중립으로 변환
         short_mask = direction == Direction.SHORT
         direction = direction.where(~short_mask, Direction.NEUTRAL)
         strength = strength.where(~short_mask, 0.0)
+
+    elif effective_mode == ShortMode.HEDGE_ONLY:
+        # 헤지 모드: 드로다운 임계값 초과 시에만 숏 허용
+        drawdown_series: pd.Series = df["drawdown"]  # type: ignore[assignment]
+        hedge_active = drawdown_series < config.hedge_threshold
+
+        # 헤지 비활성 시 숏 → 중립
+        short_mask = direction == Direction.SHORT
+        suppress_short = short_mask & ~hedge_active
+        direction = direction.where(~suppress_short, Direction.NEUTRAL)
+        strength = strength.where(~suppress_short, 0.0)
+
+        # 헤지 활성 시 숏 강도 조절
+        active_short = short_mask & hedge_active
+        strength = strength.where(
+            ~active_short,
+            strength * config.hedge_strength_ratio,
+        )
+
+        # 헤지 활성화 통계 로깅
+        hedge_days = int(hedge_active.sum())
+        if hedge_days > 0:
+            logger.info(
+                "🛡️ Hedge Mode | Active: %d days (%.1f%%), Threshold: %.1f%%",
+                hedge_days,
+                hedge_days / len(hedge_active) * 100,
+                config.hedge_threshold * 100,
+            )
+
+    # else: ShortMode.FULL - 모든 시그널 그대로 유지
 
     # 6. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)

@@ -244,18 +244,14 @@ class PerformanceAnalyzer:
                     entry_time=entry_dt,
                     exit_time=exit_dt,
                     symbol=symbol,
-                    direction="LONG"
-                    if row.get("Direction", "Long") == "Long"
-                    else "SHORT",
+                    direction="LONG" if row.get("Direction", "Long") == "Long" else "SHORT",
                     entry_price=Decimal(str(row["Avg Entry Price"])),
                     exit_price=Decimal(str(row["Avg Exit Price"]))
                     if pd.notna(row.get("Avg Exit Price"))
                     else None,
                     size=Decimal(str(row["Size"])),
                     pnl=Decimal(str(row["PnL"])) if pd.notna(row.get("PnL")) else None,
-                    pnl_pct=float(row["Return"]) * 100
-                    if pd.notna(row.get("Return"))
-                    else None,
+                    pnl_pct=float(row["Return"]) * 100 if pd.notna(row.get("Return")) else None,
                 )
                 records.append(record)
 

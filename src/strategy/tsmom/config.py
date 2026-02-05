@@ -8,9 +8,24 @@ Rules Applied:
     - #10 Python Standards: Modern typing
 """
 
+from enum import IntEnum
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ShortMode(IntEnum):
+    """숏 포지션 처리 모드.
+
+    Attributes:
+        DISABLED: Long-Only 모드 (숏 시그널 → 중립)
+        HEDGE_ONLY: 헤지 목적 숏만 (드로다운 임계값 초과 시)
+        FULL: 완전한 Long/Short 모드
+    """
+
+    DISABLED = 0
+    HEDGE_ONLY = 1
+    FULL = 2
 
 
 class TSMOMConfig(BaseModel):
@@ -94,20 +109,40 @@ class TSMOMConfig(BaseModel):
         le=24,
         description="모멘텀 스무딩 윈도우 (선택적, EMA 적용)",
     )
+
+    # 숏 모드 설정 (long_only 대체)
+    short_mode: ShortMode = Field(
+        default=ShortMode.HEDGE_ONLY,
+        description="숏 포지션 처리 모드 (DISABLED/HEDGE_ONLY/FULL)",
+    )
+    hedge_threshold: float = Field(
+        default=-0.15,
+        ge=-0.30,
+        le=-0.05,
+        description="헤지 숏 활성화 드로다운 임계값 (예: -0.15 = -15%)",
+    )
+    hedge_strength_ratio: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=1.0,
+        description="헤지 숏 강도 비율 (롱 대비, 예: 0.5 = 50%)",
+    )
+
+    # Deprecated: short_mode로 대체
     long_only: bool = Field(
         default=True,
-        description="Long-Only 모드 (Short 시그널을 Neutral로 처리)",
+        description="[Deprecated] short_mode 사용 권장. Long-Only 모드",
     )
 
     @model_validator(mode="after")
-    def validate_windows(self) -> Self:
-        """윈도우 크기 일관성 검증.
+    def validate_config(self) -> Self:
+        """설정 일관성 검증.
 
         Returns:
             검증된 self
 
         Raises:
-            ValueError: 윈도우 크기가 비합리적일 경우
+            ValueError: 설정이 비합리적일 경우
         """
         # 모멘텀 스무딩이 lookback보다 크면 안 됨
         if self.momentum_smoothing is not None and self.momentum_smoothing > self.lookback:
@@ -126,6 +161,22 @@ class TSMOMConfig(BaseModel):
             raise ValueError(msg)
 
         return self
+
+    def effective_short_mode(self) -> ShortMode:
+        """실제 적용될 숏 모드 반환 (long_only 호환성 처리).
+
+        Returns:
+            적용될 ShortMode
+        """
+        # short_mode가 명시적으로 설정되었으면 그것을 사용
+        if self.short_mode != ShortMode.DISABLED:
+            return self.short_mode
+
+        # long_only=False면 FULL 모드
+        if not self.long_only:
+            return ShortMode.FULL
+
+        return ShortMode.DISABLED
 
     @classmethod
     def for_timeframe(cls, timeframe: str, **kwargs: object) -> "TSMOMConfig":
