@@ -121,7 +121,14 @@ def generate_signals(
         name="strength",
     )
 
-    # 5. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 5. Long-Only 모드: Short 시그널을 Neutral로 변환
+    if config.long_only:
+        # Short(-1) → Neutral(0)
+        short_mask = direction == Direction.SHORT
+        direction = direction.where(~short_mask, Direction.NEUTRAL)
+        strength = strength.where(~short_mask, 0.0)
+
+    # 6. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -137,11 +144,9 @@ def generate_signals(
         name="entries",
     )
 
-    # 6. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 7. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
-    to_neutral = (direction == Direction.NEUTRAL) & (
-        prev_direction != Direction.NEUTRAL
-    )
+    to_neutral = (direction == Direction.NEUTRAL) & (prev_direction != Direction.NEUTRAL)
     reversal = direction * prev_direction < 0  # 부호가 바뀌면 반전
 
     exits = pd.Series(

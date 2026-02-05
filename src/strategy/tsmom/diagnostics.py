@@ -58,8 +58,8 @@ def log_diagnostic_summary(diagnostics_df: pd.DataFrame, symbol: str) -> None:
         neutral_count = int((weights == 0).sum())
 
         log.info(
-            "Diagnostic Summary | Total: {total} candles | " +
-            "Long: {long} | Short: {short} | Neutral: {neutral}",
+            "Diagnostic Summary | Total: {total} candles | "
+            + "Long: {long} | Short: {short} | Neutral: {neutral}",
             total=total,
             long=long_count,
             short=short_count,

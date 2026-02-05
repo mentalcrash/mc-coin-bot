@@ -94,6 +94,10 @@ class TSMOMConfig(BaseModel):
         le=24,
         description="모멘텀 스무딩 윈도우 (선택적, EMA 적용)",
     )
+    long_only: bool = Field(
+        default=True,
+        description="Long-Only 모드 (Short 시그널을 Neutral로 처리)",
+    )
 
     @model_validator(mode="after")
     def validate_windows(self) -> Self:
@@ -106,10 +110,7 @@ class TSMOMConfig(BaseModel):
             ValueError: 윈도우 크기가 비합리적일 경우
         """
         # 모멘텀 스무딩이 lookback보다 크면 안 됨
-        if (
-            self.momentum_smoothing is not None
-            and self.momentum_smoothing > self.lookback
-        ):
+        if self.momentum_smoothing is not None and self.momentum_smoothing > self.lookback:
             msg = (
                 f"momentum_smoothing ({self.momentum_smoothing}) must be "
                 f"<= lookback ({self.lookback})"

@@ -307,9 +307,7 @@ def preprocess(
         # 방향성 검증: 가격 vs 모멘텀
         price_change = (result["close"].iloc[-1] / result["close"].iloc[0] - 1) * 100
         avg_momentum = valid_data["vw_momentum"].mean()
-        aligned = (price_change > 0 and avg_momentum > 0) or (
-            price_change < 0 and avg_momentum < 0
-        )
+        aligned = (price_change > 0 and avg_momentum > 0) or (price_change < 0 and avg_momentum < 0)
         status = "✅ Aligned" if aligned else "⚠️ Diverged"
         logger.info(
             "🎯 Direction Check | Price Change: %+.2f%%, Avg Momentum: %+.4f (%s)",

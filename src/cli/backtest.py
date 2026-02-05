@@ -78,9 +78,7 @@ def _print_startup_panel(
     strategy_info = "\n".join(f"  {k}: {v}" for k, v in strategy_info_dict.items())
 
     # 포트폴리오 설정 요약
-    stop_loss_str = (
-        f"{pm_cfg.system_stop_loss:.0%}" if pm_cfg.system_stop_loss else "Disabled"
-    )
+    stop_loss_str = f"{pm_cfg.system_stop_loss:.0%}" if pm_cfg.system_stop_loss else "Disabled"
     portfolio_info = (
         f"  max_leverage: {pm_cfg.max_leverage_cap}x, "
         f"stop_loss: {stop_loss_str}, "
@@ -271,9 +269,7 @@ def run(
         # 백테스트 실행
         if report:
             ctx_logger.debug("Running with returns for report generation")
-            result, strategy_returns, benchmark_returns = engine.run_with_returns(
-                request
-            )
+            result, strategy_returns, benchmark_returns = engine.run_with_returns(request)
 
             # 결과 출력
             print_performance_summary(result)
@@ -340,7 +336,9 @@ def strategies() -> None:
             config_kwargs = strategy_class.recommended_config()
             pm_cfg = PortfolioManagerConfig(**config_kwargs)
             if pm_cfg.system_stop_loss:
-                portfolio_info = f"Lev: {pm_cfg.max_leverage_cap}x, SL: {pm_cfg.system_stop_loss:.0%}"
+                portfolio_info = (
+                    f"Lev: {pm_cfg.max_leverage_cap}x, SL: {pm_cfg.system_stop_loss:.0%}"
+                )
             else:
                 portfolio_info = f"Lev: {pm_cfg.max_leverage_cap}x, SL: Disabled"
         except Exception:
@@ -513,9 +511,7 @@ def _diagnose_breakout(
     # 로깅 설정
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
-    ctx_logger = get_strategy_logger(
-        strategy="AdaptiveBreakout-Diagnosis", symbol=symbol
-    )
+    ctx_logger = get_strategy_logger(strategy="AdaptiveBreakout-Diagnosis", symbol=symbol)
 
     config = AdaptiveBreakoutConfig()
 
@@ -609,12 +605,8 @@ def _diagnose_breakout(
     position_table.add_column("Days", justify="right")
     position_table.add_column("Percentage", justify="right")
 
-    position_table.add_row(
-        "Long", f"{long_days:,}", f"{long_days / total_days * 100:.1f}%"
-    )
-    position_table.add_row(
-        "Short", f"{short_days:,}", f"{short_days / total_days * 100:.1f}%"
-    )
+    position_table.add_row("Long", f"{long_days:,}", f"{long_days / total_days * 100:.1f}%")
+    position_table.add_row("Short", f"{short_days:,}", f"{short_days / total_days * 100:.1f}%")
     position_table.add_row(
         "Neutral", f"{neutral_days:,}", f"{neutral_days / total_days * 100:.1f}%"
     )
@@ -669,9 +661,7 @@ def _diagnose_breakout(
 
     benchmark_table.add_row("Buy & Hold Return", f"{total_benchmark:+.1f}%")
     benchmark_table.add_row("Strategy Return", f"{strategy_return:+.1f}%")
-    benchmark_table.add_row(
-        "Alpha (vs B&H)", f"{strategy_return - total_benchmark:+.1f}%"
-    )
+    benchmark_table.add_row("Alpha (vs B&H)", f"{strategy_return - total_benchmark:+.1f}%")
     benchmark_table.add_row("Market Exposure", f"{exposure * 100:.1f}%")
     console.print(benchmark_table)
 
@@ -728,18 +718,12 @@ def _diagnose_breakout(
     if issues:
         issues_content = "\n".join(f"  • {issue}" for issue in issues)
         console.print(
-            Panel(
-                f"[bold]Issues Detected[/bold]\n\n{issues_content}", border_style="red"
-            )
+            Panel(f"[bold]Issues Detected[/bold]\n\n{issues_content}", border_style="red")
         )
 
     if recommendations:
-        rec_content = "\n".join(
-            f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations)
-        )
-        console.print(
-            Panel(f"[bold]Assessment[/bold]\n\n{rec_content}", border_style="green")
-        )
+        rec_content = "\n".join(f"  {i + 1}. {rec}" for i, rec in enumerate(recommendations))
+        console.print(Panel(f"[bold]Assessment[/bold]\n\n{rec_content}", border_style="green"))
 
     ctx_logger.success(
         "Diagnosis completed",
@@ -830,8 +814,8 @@ def diagnose(
 
         data = data_service.get(data_request)
         logger.success(
-            f"Loaded {data.symbol}: {data.periods:,} daily candles " +
-            f"({data.start.date()} ~ {data.end.date()})"
+            f"Loaded {data.symbol}: {data.periods:,} daily candles "
+            + f"({data.start.date()} ~ {data.end.date()})"
         )
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
@@ -875,12 +859,13 @@ def diagnose(
     # ========== 결과 출력 ==========
 
     # 전략 설정 패널
+    mode_str = "Long-Only" if config.long_only else "Long/Short"
     config_panel = (
         f"[bold cyan]Strategy Configuration[/bold cyan]\n"
         f"  Lookback: {config.lookback} days\n"
         f"  Vol Target: {config.vol_target:.0%}\n"
         f"  Vol Window: {config.vol_window} days\n"
-        f"  Mode: Long/Short (Pure TSMOM)"
+        f"  Mode: {mode_str} (Pure TSMOM)"
     )
     console.print(Panel(config_panel, title="Configuration", border_style="cyan"))
 
@@ -890,12 +875,8 @@ def diagnose(
     position_table.add_column("Days", justify="right")
     position_table.add_column("Percentage", justify="right")
 
-    position_table.add_row(
-        "Long", f"{long_count:,}", f"{long_count / total_days * 100:.1f}%"
-    )
-    position_table.add_row(
-        "Short", f"{short_count:,}", f"{short_count / total_days * 100:.1f}%"
-    )
+    position_table.add_row("Long", f"{long_count:,}", f"{long_count / total_days * 100:.1f}%")
+    position_table.add_row("Short", f"{short_count:,}", f"{short_count / total_days * 100:.1f}%")
     position_table.add_row(
         "Neutral", f"{neutral_count:,}", f"{neutral_count / total_days * 100:.1f}%"
     )
@@ -924,8 +905,7 @@ def diagnose(
     long_pnl = (
         float(
             (
-                diagnostics_df.loc[long_mask, "final_target_weight"]
-                * benchmark_returns[long_mask]
+                diagnostics_df.loc[long_mask, "final_target_weight"] * benchmark_returns[long_mask]
             ).sum()
         )
         * 100
@@ -942,24 +922,18 @@ def diagnose(
 
     # Long이 수익인 날 / Short이 수익인 날
     long_profitable_days = int((long_returns > 0).sum()) if len(long_returns) > 0 else 0
-    short_profitable_days = (
-        int((short_returns < 0).sum()) if len(short_returns) > 0 else 0
-    )
+    short_profitable_days = int((short_returns < 0).sum()) if len(short_returns) > 0 else 0
 
     # 시그널 방향 정확도 (Hit Rate)
     final_weights: pd.Series = diagnostics_df["final_target_weight"]  # type: ignore[assignment]
     signal_direction = pd.Series(np.sign(final_weights), index=diagnostics_df.index)
 
-    next_day_return = (
-        benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
-    )
+    next_day_return = benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
     next_day_direction = pd.Series(np.sign(next_day_return), index=diagnostics_df.index)
 
     correct_signals = (signal_direction == next_day_direction) & (signal_direction != 0)
     total_signals = int((signal_direction != 0).sum())
-    hit_rate = (
-        float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
-    )
+    hit_rate = float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
 
     # Long/Short 성과 테이블
     direction_table = Table(title="Long/Short Performance Analysis")
@@ -989,9 +963,7 @@ def diagnose(
     direction_table.add_row(
         "Avg Daily Return",
         f"{float(long_returns.mean()) * 100:+.2f}%" if len(long_returns) > 0 else "N/A",
-        f"{float(short_returns.mean()) * 100:+.2f}%"
-        if len(short_returns) > 0
-        else "N/A",
+        f"{float(short_returns.mean()) * 100:+.2f}%" if len(short_returns) > 0 else "N/A",
     )
 
     console.print(direction_table)
@@ -1019,16 +991,14 @@ def diagnose(
         strat_assessment = "[yellow]Positive[/yellow]"
     else:
         strat_assessment = "[red]Negative[/red]"
-    quality_table.add_row(
-        "Strategy Return", f"{total_strategy_return:+.1f}%", strat_assessment
-    )
+    quality_table.add_row("Strategy Return", f"{total_strategy_return:+.1f}%", strat_assessment)
 
     console.print(quality_table)
 
     # 요약 패널
     summary = (
-        f"Strategy captured {total_strategy_return / total_benchmark_return * 100:.1f}% " +
-        f"of benchmark return ({total_strategy_return:+.1f}% vs {total_benchmark_return:+.1f}%)"
+        f"Strategy captured {total_strategy_return / total_benchmark_return * 100:.1f}% "
+        + f"of benchmark return ({total_strategy_return:+.1f}% vs {total_benchmark_return:+.1f}%)"
         if total_benchmark_return != 0
         else "Benchmark return is 0%"
     )
@@ -1048,10 +1018,7 @@ def info() -> None:
     """Display VW-TSMOM strategy information."""
     console.print(
         Panel.fit(
-            (
-                "[bold]VW-TSMOM Strategy Information[/bold]\n"
-                "Volume-Weighted Time Series Momentum"
-            ),
+            ("[bold]VW-TSMOM Strategy Information[/bold]\nVolume-Weighted Time Series Momentum"),
             border_style="blue",
         )
     )
@@ -1063,12 +1030,12 @@ def info() -> None:
 VW-TSMOM combines volume-weighted returns with volatility scaling:
 
 1. [cyan]Volume-Weighted Momentum[/cyan]
-   - Weight returns by trading volume
-   - High volume = stronger signal
+    - Weight returns by trading volume
+    - High volume = stronger signal
 
 2. [cyan]Volatility Scaling[/cyan]
-   - Target a specific annual volatility
-   - Reduce position size in high volatility
+    - Target a specific annual volatility
+    - Reduce position size in high volatility
 
 [bold]Architecture (Clean Architecture)[/bold]
 
@@ -1164,9 +1131,7 @@ VW-TSMOM combines volume-weighted returns with volatility scaling:
     presets_table.add_row(
         "Portfolio", "Portfolio.aggressive()", "Higher leverage cap, faster rebalancing"
     )
-    presets_table.add_row(
-        "Portfolio", "Portfolio.paper_trading()", "Zero costs, for research only"
-    )
+    presets_table.add_row("Portfolio", "Portfolio.paper_trading()", "Zero costs, for research only")
 
     console.print(presets_table)
 

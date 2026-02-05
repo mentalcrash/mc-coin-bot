@@ -11,17 +11,9 @@
       "source.fixAll": "explicit"
     }
   },
-  // Pylance 타입 체크 (strict mode - basedpyright와 동일 수준)
-  "python.analysis.typeCheckingMode": "strict",
-  "python.analysis.diagnosticSeverityOverrides": {
-    "reportMissingImports": "warning",
-    "reportUnusedVariable": "warning",
-    "reportConstantRedefinition": "error"
-  },
-  "python.linting.enabled": true,
 
   // 일반 에디터 설정
-  "editor.fontSize": 14,
+  "editor.fontSize": 12,
   "editor.tabSize": 4,
   "editor.insertSpaces": true,
   "editor.bracketPairColorization.enabled": true,
