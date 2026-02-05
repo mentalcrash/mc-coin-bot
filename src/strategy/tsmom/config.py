@@ -79,7 +79,7 @@ class TSMOMConfig(BaseModel):
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.40,
+        default=0.25,
         ge=0.05,
         le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
@@ -116,16 +116,16 @@ class TSMOMConfig(BaseModel):
         description="숏 포지션 처리 모드 (DISABLED/HEDGE_ONLY/FULL)",
     )
     hedge_threshold: float = Field(
-        default=-0.15,
+        default=-0.07,
         ge=-0.30,
         le=-0.05,
-        description="헤지 숏 활성화 드로다운 임계값 (예: -0.15 = -15%)",
+        description="헤지 숏 활성화 드로다운 임계값 (예: -0.07 = -7%)",
     )
     hedge_strength_ratio: float = Field(
-        default=0.5,
+        default=0.8,
         ge=0.1,
         le=1.0,
-        description="헤지 숏 강도 비율 (롱 대비, 예: 0.5 = 50%)",
+        description="헤지 숏 강도 비율 (롱 대비, 예: 0.8 = 80%)",
     )
 
     # Deprecated: short_mode로 대체

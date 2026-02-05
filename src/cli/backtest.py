@@ -328,16 +328,16 @@ def run(  # noqa: PLR0912
         float,
         typer.Option(
             "--hedge-threshold",
-            help="Hedge activation threshold (e.g., -0.15 for -15%% drawdown)",
+            help="Hedge activation threshold (e.g., -0.07 for -7%% drawdown)",
         ),
-    ] = -0.15,
+    ] = -0.07,
     hedge_strength: Annotated[
         float,
         typer.Option(
             "--hedge-strength",
             help="Hedge short strength ratio (0.0-1.0)",
         ),
-    ] = 0.5,
+    ] = 0.8,
     max_leverage: Annotated[
         float,
         typer.Option(
@@ -353,7 +353,7 @@ def run(  # noqa: PLR0912
             "-v",
             help="Volatility target for position sizing (0.1-1.0, higher = more leverage)",
         ),
-    ] = 0.40,
+    ] = 0.25,
     lookback: Annotated[
         int,
         typer.Option(
