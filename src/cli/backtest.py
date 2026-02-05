@@ -354,6 +354,35 @@ def run(  # noqa: PLR0912
             help="Volatility target for position sizing (0.1-1.0, higher = more leverage)",
         ),
     ] = 0.40,
+    lookback: Annotated[
+        int,
+        typer.Option(
+            "--lookback",
+            "-b",
+            help="Momentum lookback period in days (6-365)",
+        ),
+    ] = 30,
+    sideways_filter: Annotated[
+        bool,
+        typer.Option(
+            "--sideways-filter/--no-sideways-filter",
+            help="Enable ADX-based sideways market filter",
+        ),
+    ] = False,
+    adx_threshold: Annotated[
+        float,
+        typer.Option(
+            "--adx-threshold",
+            help="ADX threshold for sideways detection (below = sideways)",
+        ),
+    ] = 25.0,
+    sideways_scale: Annotated[
+        float,
+        typer.Option(
+            "--sideways-scale",
+            help="Position scale in sideways market (0=cash, 1=full)",
+        ),
+    ] = 0.3,
     validation: Annotated[
         str,
         typer.Option(
@@ -403,13 +432,18 @@ def run(  # noqa: PLR0912
     }
     parsed_short_mode = short_mode_map.get(short_mode.lower(), ShortMode.DISABLED)
 
-    # 전략 인스턴스 생성 (TSMOM은 short_mode, vol_target 적용)
+    # 전략 인스턴스 생성 (TSMOM은 short_mode, vol_target, lookback, sideways_filter 적용)
     if strategy_name == "tsmom":
         tsmom_config = TSMOMConfig(
             short_mode=parsed_short_mode,
             hedge_threshold=hedge_threshold,
             hedge_strength_ratio=hedge_strength,
             vol_target=vol_target,
+            lookback=lookback,
+            vol_window=lookback,  # lookback과 동일하게 설정
+            use_sideways_filter=sideways_filter,
+            adx_threshold=adx_threshold,
+            sideways_position_scale=sideways_scale,
         )
         strategy_instance = TSMOMStrategy(tsmom_config)
     else:

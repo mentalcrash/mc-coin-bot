@@ -173,6 +173,66 @@ def calculate_vw_momentum(
     return vw_returns
 
 
+def calculate_adx(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+) -> pd.Series:
+    """ADX (Average Directional Index) 계산.
+
+    ADX는 추세의 강도를 측정하는 지표입니다.
+    - ADX > 25: 강한 추세 (트렌드 추종 유리)
+    - ADX < 25: 약한 추세/횡보장 (트렌드 추종 불리)
+
+    Args:
+        high: 고가 시리즈
+        low: 저가 시리즈
+        close: 종가 시리즈
+        period: 계산 기간 (기본 14)
+
+    Returns:
+        ADX 시리즈 (0~100 범위)
+
+    Example:
+        >>> adx = calculate_adx(df["high"], df["low"], df["close"], period=14)
+        >>> sideways = adx < 25  # 횡보장 판단
+    """
+    # True Range 계산
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    # +DM, -DM 계산
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+
+    plus_dm = pd.Series(
+        np.where((up_move > down_move) & (up_move > 0), up_move, 0),
+        index=high.index,
+    )
+    minus_dm = pd.Series(
+        np.where((down_move > up_move) & (down_move > 0), down_move, 0),
+        index=high.index,
+    )
+
+    # Smoothed TR, +DM, -DM (Wilder's smoothing)
+    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr)
+    minus_di = 100 * (minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr)
+
+    # DX 계산
+    di_sum = plus_di + minus_di
+    di_diff = (plus_di - minus_di).abs()
+    dx = 100 * (di_diff / di_sum.replace(0, np.nan))
+
+    # ADX = DX의 smoothed average
+    adx = dx.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+    return pd.Series(adx, index=close.index, name="adx")
+
+
 def calculate_drawdown(close: pd.Series) -> pd.Series:
     """롤링 최고점 대비 드로다운 계산.
 
@@ -317,6 +377,17 @@ def preprocess(
 
     # 5. 드로다운 계산 (헤지 숏 모드용)
     result["drawdown"] = calculate_drawdown(close_series)
+
+    # 6. ADX 계산 (횡보장 필터용)
+    if config.use_sideways_filter:
+        high_series: pd.Series = result["high"]  # type: ignore[assignment]
+        low_series: pd.Series = result["low"]  # type: ignore[assignment]
+        result["adx"] = calculate_adx(
+            high_series,
+            low_series,
+            close_series,
+            period=config.adx_period,
+        )
 
     # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

@@ -201,4 +201,10 @@ class TSMOMStrategy(BaseStrategy):
         if effective_mode == ShortMode.HEDGE_ONLY:
             result["hedge_strength"] = f"{cfg.hedge_strength_ratio:.0%}"
 
+        # 횡보장 필터 정보
+        if cfg.use_sideways_filter:
+            result["sideways_filter"] = (
+                f"ADX<{cfg.adx_threshold:.0f}→{cfg.sideways_position_scale:.0%}"
+            )
+
         return result

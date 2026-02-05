@@ -166,7 +166,29 @@ def generate_signals(
 
     # else: ShortMode.FULL - 모든 시그널 그대로 유지
 
-    # 6. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
+    # 6. 횡보장 필터 (ADX 기반)
+    if config.use_sideways_filter and "adx" in df.columns:
+        adx_series: pd.Series = df["adx"].shift(1)  # type: ignore[assignment]  # Shift(1) 적용
+        sideways_mask = adx_series < config.adx_threshold
+
+        # 횡보장에서 포지션 스케일 축소
+        strength = strength.where(
+            ~sideways_mask,
+            strength * config.sideways_position_scale,
+        )
+
+        # 횡보장 통계 로깅
+        sideways_days = int(sideways_mask.sum())
+        if sideways_days > 0:
+            logger.info(
+                "📊 Sideways Filter | Active: %d days (%.1f%%), ADX < %.0f, Scale: %.0f%%",
+                sideways_days,
+                sideways_days / len(sideways_mask) * 100,
+                config.adx_threshold,
+                config.sideways_position_scale * 100,
+            )
+
+    # 7. 진입 시그널: 포지션이 0에서 non-zero로 변할 때
     prev_direction = direction.shift(1).fillna(0)
 
     # Long 진입: direction이 1이 되는 순간 (이전이 0 또는 -1)
@@ -182,7 +204,7 @@ def generate_signals(
         name="entries",
     )
 
-    # 7. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
+    # 8. 청산 시그널: 포지션이 non-zero에서 0으로 변할 때
     # 또는 방향이 반전될 때
     to_neutral = (direction == Direction.NEUTRAL) & (prev_direction != Direction.NEUTRAL)
     reversal = direction * prev_direction < 0  # 부호가 바뀌면 반전

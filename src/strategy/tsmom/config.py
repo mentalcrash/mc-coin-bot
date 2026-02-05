@@ -134,6 +134,30 @@ class TSMOMConfig(BaseModel):
         description="[Deprecated] short_mode 사용 권장. Long-Only 모드",
     )
 
+    # 횡보장 필터 (ADX 기반)
+    use_sideways_filter: bool = Field(
+        default=False,
+        description="횡보장 필터 활성화 (ADX 기반)",
+    )
+    adx_period: int = Field(
+        default=14,
+        ge=5,
+        le=50,
+        description="ADX 계산 기간",
+    )
+    adx_threshold: float = Field(
+        default=25.0,
+        ge=10.0,
+        le=50.0,
+        description="ADX 임계값 (이 이하면 횡보장으로 판단)",
+    )
+    sideways_position_scale: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="횡보장에서 포지션 스케일 (0=현금, 1=유지)",
+    )
+
     @model_validator(mode="after")
     def validate_config(self) -> Self:
         """설정 일관성 검증.
