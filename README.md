@@ -238,6 +238,7 @@ Phase 7: 모니터링              예정 (Streamlit + Grafana + Discord)
 | [strategy-evaluation/README.md](docs/strategy-evaluation/README.md) | 전략 평가 요약 + 확정 설정 |
 | [strategy-evaluation/implementation-roadmap.md](docs/strategy-evaluation/implementation-roadmap.md) | Phase 2~7 상세 로드맵 |
 | [architecture/backtest-engine.md](docs/architecture/backtest-engine.md) | 백테스트 엔진 아키텍처 |
+| [architecture/eda-system.md](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (Phase 4) |
 | [portfolio-manager.md](docs/portfolio-manager.md) | 포트폴리오 매니저 아키텍처 |
 | [backtesting-best-practices.md](docs/backtesting-best-practices.md) | 백테스팅 모범사례 가이드 |
 
