@@ -11,7 +11,7 @@ Rules Applied:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.strategy.base import BaseStrategy
 from src.strategy.breakout.config import AdaptiveBreakoutConfig
@@ -61,6 +61,12 @@ class AdaptiveBreakoutStrategy(BaseStrategy):
             config: 전략 설정. None이면 기본 설정 사용.
         """
         self._config = config or AdaptiveBreakoutConfig()
+
+    @classmethod
+    def from_params(cls, **params: Any) -> AdaptiveBreakoutStrategy:
+        """파라미터로 AdaptiveBreakoutStrategy 생성."""
+        config = AdaptiveBreakoutConfig(**params)
+        return cls(config)
 
     @property
     def name(self) -> str:
@@ -149,7 +155,9 @@ class AdaptiveBreakoutStrategy(BaseStrategy):
         if cfg.adaptive_threshold:
             info["adaptive_threshold"] = "활성화"
         # NOTE: Trailing Stop은 PortfolioManagerConfig에서 관리
-        info["mode"] = "Long-Only" if cfg.long_only else "Long/Short"
+        from src.strategy.breakout.config import ShortMode
+
+        info["mode"] = "Long-Only" if cfg.short_mode == ShortMode.DISABLED else "Long/Short"
         return info
 
     @classmethod

@@ -51,17 +51,17 @@ class LoggingConfig(BaseSettings):
     )
 
     # Log levels
-    console_level: Literal[
-        "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"
-    ] = Field(
-        default="INFO",
-        description="Minimum level for console output",
+    console_level: Literal["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"] = (
+        Field(
+            default="INFO",
+            description="Minimum level for console output",
+        )
     )
-    file_level: Literal[
-        "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"
-    ] = Field(
-        default="DEBUG",
-        description="Minimum level for file output",
+    file_level: Literal["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"] = (
+        Field(
+            default="DEBUG",
+            description="Minimum level for file output",
+        )
     )
 
     # File rotation settings

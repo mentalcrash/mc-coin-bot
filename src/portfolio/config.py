@@ -154,10 +154,7 @@ class PortfolioManagerConfig(BaseModel):
         """
         # system_stop_loss가 설정된 경우 합리적인 범위인지 확인
         # 손절 비율이 너무 타이트하면 경고
-        if (
-            self.system_stop_loss is not None
-            and self.system_stop_loss < MIN_REASONABLE_STOP_LOSS
-        ):
+        if self.system_stop_loss is not None and self.system_stop_loss < MIN_REASONABLE_STOP_LOSS:
             msg = (
                 f"system_stop_loss ({self.system_stop_loss:.1%}) is very tight. "
                 f"Consider >= {MIN_REASONABLE_STOP_LOSS:.1%} to avoid premature exits."

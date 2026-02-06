@@ -23,9 +23,7 @@ class TradingError(Exception):
         context: 추가 컨텍스트 정보 (디버깅용)
     """
 
-    def __init__(
-        self, message: str, *, context: dict[str, object] | None = None
-    ) -> None:
+    def __init__(self, message: str, *, context: dict[str, object] | None = None) -> None:
         """TradingError 초기화.
 
         Args:

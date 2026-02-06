@@ -219,8 +219,12 @@ def calculate_adx(
 
     # Smoothed TR, +DM, -DM (Wilder's smoothing)
     atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    plus_di = 100 * (plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr)
-    minus_di = 100 * (minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr)
+    plus_di: pd.Series = 100 * (
+        plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
+    )  # type: ignore[assignment] - pandas stub limitation: __mul__ returns int
+    minus_di: pd.Series = 100 * (
+        minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
+    )  # type: ignore[assignment] - pandas stub limitation: __mul__ returns int
 
     # DX 계산
     di_sum = plus_di + minus_di

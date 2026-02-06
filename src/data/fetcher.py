@@ -235,6 +235,60 @@ class DataFetcher:
 
         return all_candles, batch_count
 
+    async def _fetch_range_with_client(
+        self,
+        client: BinanceClient,
+        symbol: str,
+        start_ts: int,
+        end_ts: int,
+        timeframe: str,
+        timeframe_ms: int,
+        batch_size: int,
+        pbar: tqdm,  # type: ignore[reportUnknownParameterType]
+    ) -> list[OHLCVCandle]:
+        """Client를 사용해서 범위 데이터 수집 (내부 헬퍼).
+
+        Args:
+            client: BinanceClient 인스턴스
+            symbol: 거래 심볼
+            start_ts: 시작 타임스탬프
+            end_ts: 종료 타임스탬프
+            timeframe: 타임프레임
+            timeframe_ms: 타임프레임 밀리초
+            batch_size: 배치 사이즈
+            pbar: 진행률 바
+
+        Returns:
+            캔들 리스트
+        """
+        if not client.is_symbol_valid(symbol):
+            msg = f"Invalid symbol: {symbol}"
+            raise ValueError(msg)
+
+        all_candles: list[OHLCVCandle] = []
+        current_ts = start_ts
+
+        while current_ts < end_ts:
+            batch = await self._fetch_batch_with_retry(
+                client,
+                symbol,
+                timeframe,
+                current_ts,
+                batch_size,
+            )
+
+            if not batch.is_empty:
+                all_candles.extend(batch.candles)
+                last_ts = int(batch.candles[-1].timestamp.timestamp() * 1000)
+                current_ts = last_ts + timeframe_ms
+            else:
+                current_ts += batch_size * timeframe_ms
+
+            pbar.update(1)
+            await asyncio.sleep(0.1)
+
+        return all_candles
+
     async def fetch_year(
         self,
         symbol: str,
@@ -367,9 +421,6 @@ class DataFetcher:
             },
         )
 
-        all_candles: list[OHLCVCandle] = []
-        current_ts = start_ts
-
         pbar = tqdm(
             total=total_batches,
             desc=f"Fetching {symbol}",
@@ -377,31 +428,32 @@ class DataFetcher:
             disable=not show_progress,
         )
 
-        async with BinanceClient(self.settings) as client:
-            if not client.is_symbol_valid(symbol):
-                msg = f"Invalid symbol: {symbol}"
-                raise ValueError(msg)
-
-            while current_ts < end_ts:
-                batch = await self._fetch_batch_with_retry(
-                    client,
+        try:
+            if self._client:
+                all_candles = await self._fetch_range_with_client(
+                    self._client,
                     symbol,
+                    start_ts,
+                    end_ts,
                     timeframe,
-                    current_ts,
+                    timeframe_ms,
                     batch_size,
+                    pbar,
                 )
-
-                if not batch.is_empty:
-                    all_candles.extend(batch.candles)
-                    last_ts = int(batch.candles[-1].timestamp.timestamp() * 1000)
-                    current_ts = last_ts + timeframe_ms
-                else:
-                    current_ts += batch_size * timeframe_ms
-
-                pbar.update(1)
-                await asyncio.sleep(0.1)
-
-        pbar.close()
+            else:
+                async with BinanceClient(self.settings) as client:
+                    all_candles = await self._fetch_range_with_client(
+                        client,
+                        symbol,
+                        start_ts,
+                        end_ts,
+                        timeframe,
+                        timeframe_ms,
+                        batch_size,
+                        pbar,
+                    )
+        finally:
+            pbar.close()
 
         return OHLCVBatch(
             symbol=symbol,

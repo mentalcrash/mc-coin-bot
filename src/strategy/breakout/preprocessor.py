@@ -99,10 +99,9 @@ def calculate_volatility(
     log_returns: pd.Series = np.log(close_series / close_series.shift(1))
 
     # 롤링 표준편차 (연환산)
-    volatility: pd.Series = (
-        log_returns.rolling(window=lookback, min_periods=lookback).std()
-        * np.sqrt(annualization_factor)
-    )
+    volatility: pd.Series = log_returns.rolling(
+        window=lookback, min_periods=lookback
+    ).std() * np.sqrt(annualization_factor)
 
     return volatility
 
@@ -202,9 +201,7 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
     result = df.copy()
 
     # 1. Donchian Channel 계산
-    upper_band, lower_band, middle_band = calculate_donchian_channel(
-        df, config.channel_period
-    )
+    upper_band, lower_band, middle_band = calculate_donchian_channel(df, config.channel_period)
     result["upper_band"] = upper_band
     result["lower_band"] = lower_band
     result["middle_band"] = middle_band
@@ -251,9 +248,7 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
 
     # 5. 밴드까지 거리 계산 (진단용)
     close_series: pd.Series = df["close"]  # type: ignore[assignment]
-    dist_upper, dist_lower = calculate_distance_to_band(
-        close_series, upper_band, lower_band
-    )
+    dist_upper, dist_lower = calculate_distance_to_band(close_series, upper_band, lower_band)
     result["distance_to_upper"] = dist_upper
     result["distance_to_lower"] = dist_lower
 

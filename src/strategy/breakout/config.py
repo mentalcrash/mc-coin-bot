@@ -10,9 +10,22 @@ Rules Applied:
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ShortMode(IntEnum):
+    """숏 포지션 처리 모드.
+
+    Attributes:
+        DISABLED: Long-Only 모드 (숏 시그널 → 중립)
+        FULL: 완전한 Long/Short 모드
+    """
+
+    DISABLED = 0
+    FULL = 2
 
 
 class AdaptiveBreakoutConfig(BaseModel):
@@ -39,7 +52,7 @@ class AdaptiveBreakoutConfig(BaseModel):
         min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
         annualization_factor: 연환산 계수 (일봉: 365, 시간봉: 8760)
         adaptive_threshold: 변동성 기반 동적 임계값 사용 여부
-        long_only: Long-Only 모드 (Short 시그널 비활성화)
+        short_mode: 숏 포지션 처리 모드 (DISABLED/FULL)
 
     Example:
         >>> config = AdaptiveBreakoutConfig(
@@ -115,9 +128,9 @@ class AdaptiveBreakoutConfig(BaseModel):
         default=True,
         description="변동성 기반 동적 임계값 사용 여부",
     )
-    long_only: bool = Field(
-        default=False,
-        description="Long-Only 모드 (Short 시그널을 비활성화)",
+    short_mode: ShortMode = Field(
+        default=ShortMode.FULL,
+        description="숏 포지션 처리 모드 (DISABLED=Long-Only, FULL=Long/Short)",
     )
     # NOTE: Trailing Stop은 PortfolioManagerConfig에서 관리합니다.
     # 포지션 관리(stop-loss, trailing stop)는 Portfolio 레이어의 책임입니다.
@@ -158,10 +171,7 @@ class AdaptiveBreakoutConfig(BaseModel):
 
         # k_value가 너무 낮으면 false breakout 다수 발생
         if self.k_value < 1.0 and not self.adaptive_threshold:
-            msg = (
-                "k_value < 1.0 without adaptive_threshold may cause "
-                "excessive false breakouts"
-            )
+            msg = "k_value < 1.0 without adaptive_threshold may cause excessive false breakouts"
             raise ValueError(msg)
 
         return self

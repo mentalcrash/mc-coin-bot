@@ -82,9 +82,7 @@ class MarketDataService:
         """
         logger.debug("=" * 60)
         logger.debug("MarketDataService.get() 시작")
-        logger.debug(
-            f"  Request: symbol={request.symbol}, timeframe={request.timeframe}"
-        )
+        logger.debug(f"  Request: symbol={request.symbol}, timeframe={request.timeframe}")
         logger.debug(f"  Period: {request.start.date()} ~ {request.end.date()}")
 
         # 1. 연도 범위 계산
@@ -242,9 +240,7 @@ class MarketDataService:
             if col in resampled.columns:
                 resampled[col] = pd.to_numeric(resampled[col], errors="coerce")
 
-        logger.debug(
-            f"Resampled {len(df):,} → {len(resampled):,} candles (1m → {timeframe})"
-        )
+        logger.debug(f"Resampled {len(df):,} → {len(resampled):,} candles (1m → {timeframe})")
 
         return resampled
 

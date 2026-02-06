@@ -222,6 +222,21 @@ class BaseStrategy(ABC):
         """
         return {}
 
+    @classmethod
+    def from_params(cls, **params: Any) -> BaseStrategy:
+        """파라미터 딕셔너리로 전략 인스턴스를 생성합니다.
+
+        run_parameter_sweep 등에서 범용적으로 사용됩니다.
+        서브클래스에서 Config 모델을 거쳐야 하는 경우 오버라이드합니다.
+
+        Args:
+            **params: 전략 생성 파라미터
+
+        Returns:
+            전략 인스턴스
+        """
+        return cls(**params)  # type: ignore[call-arg]
+
     def get_startup_info(self) -> dict[str, str]:
         """CLI 시작 패널에 표시할 전략 정보를 반환합니다.
 

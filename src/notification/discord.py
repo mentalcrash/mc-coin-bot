@@ -252,18 +252,12 @@ class DiscordNotifier:
         ]
 
         if best_trade:
-            best_str = (
-                f"{best_trade.get('symbol', 'N/A')}: +${best_trade.get('pnl', 0):,.2f}"
-            )
+            best_str = f"{best_trade.get('symbol', 'N/A')}: +${best_trade.get('pnl', 0):,.2f}"
             fields.append({"name": "Best Trade 🏆", "value": best_str, "inline": True})
 
         if worst_trade:
-            worst_str = (
-                f"{worst_trade.get('symbol', 'N/A')}: ${worst_trade.get('pnl', 0):,.2f}"
-            )
-            fields.append(
-                {"name": "Worst Trade 💀", "value": worst_str, "inline": True}
-            )
+            worst_str = f"{worst_trade.get('symbol', 'N/A')}: ${worst_trade.get('pnl', 0):,.2f}"
+            fields.append({"name": "Worst Trade 💀", "value": worst_str, "inline": True})
 
         embed = self._create_embed(
             title=f"{emoji} Daily Report: {date}",

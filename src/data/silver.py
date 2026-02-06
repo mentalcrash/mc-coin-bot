@@ -144,9 +144,7 @@ class SilverProcessor:
             expected_count=expected_count,
             actual_count=actual_count,
             gap_count=gap_count,
-            gap_percentage=(gap_count / expected_count * 100)
-            if expected_count > 0
-            else 0,
+            gap_percentage=(gap_count / expected_count * 100) if expected_count > 0 else 0,
             first_timestamp=first_timestamp,
             last_timestamp=last_timestamp,
         )
@@ -233,9 +231,7 @@ class SilverProcessor:
         expected_count = len(self._get_year_index(year))
         actual_count = len(df)
         if actual_count != expected_count:
-            errors.append(
-                f"Row count mismatch: expected {expected_count}, got {actual_count}"
-            )
+            errors.append(f"Row count mismatch: expected {expected_count}, got {actual_count}")
 
         if errors:
             raise DataIntegrityError(

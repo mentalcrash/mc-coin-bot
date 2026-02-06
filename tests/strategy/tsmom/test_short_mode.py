@@ -47,28 +47,10 @@ class TestShortModeConfig:
         config = TSMOMConfig(short_mode=ShortMode.FULL)
         assert config.effective_short_mode() == ShortMode.FULL
 
-    def test_long_only_backward_compatibility(self) -> None:
-        """long_only 필드 하위 호환성 테스트.
-
-        Note: 기본값이 HEDGE_ONLY로 변경되어, long_only만 설정해도
-        short_mode가 HEDGE_ONLY이므로 effective는 HEDGE_ONLY가 됩니다.
-        DISABLED를 원하면 short_mode=ShortMode.DISABLED를 명시적으로 설정해야 합니다.
-        """
-        # long_only=True + short_mode=DISABLED → DISABLED
-        config = TSMOMConfig(long_only=True, short_mode=ShortMode.DISABLED)
+    def test_short_mode_explicit_disabled(self) -> None:
+        """명시적 DISABLED 설정 테스트."""
+        config = TSMOMConfig(short_mode=ShortMode.DISABLED)
         assert config.effective_short_mode() == ShortMode.DISABLED
-
-        # long_only=False + short_mode=DISABLED → FULL (하위 호환성)
-        config = TSMOMConfig(long_only=False, short_mode=ShortMode.DISABLED)
-        assert config.effective_short_mode() == ShortMode.FULL
-
-    def test_short_mode_takes_precedence(self) -> None:
-        """short_mode가 long_only보다 우선하는지 테스트."""
-        config = TSMOMConfig(
-            short_mode=ShortMode.HEDGE_ONLY,
-            long_only=True,  # 이 값은 무시됨
-        )
-        assert config.effective_short_mode() == ShortMode.HEDGE_ONLY
 
     def test_hedge_threshold_validation(self) -> None:
         """헤지 임계값 검증 테스트."""
@@ -125,11 +107,13 @@ class TestGenerateSignalsShortMode:
         dates = pd.date_range("2024-01-01", periods=n, freq="D")
 
         # 상승 → 하락 → 상승 패턴
-        close = np.concatenate([
-            np.linspace(100, 130, 40),  # 상승
-            np.linspace(130, 100, 30),  # 하락 (-23%)
-            np.linspace(100, 115, 30),  # 회복
-        ])
+        close = np.concatenate(
+            [
+                np.linspace(100, 130, 40),  # 상승
+                np.linspace(130, 100, 30),  # 하락 (-23%)
+                np.linspace(100, 115, 30),  # 회복
+            ]
+        )
 
         return pd.DataFrame(
             {
@@ -223,7 +207,7 @@ class TestTSMOMStrategyShortMode:
         strategy = TSMOMStrategy()
         info = strategy.get_startup_info()
         assert "Hedge-Short" in info["mode"]
-        assert info["hedge_strength"] == "50%"
+        assert info["hedge_strength"] == "80%"
 
     def test_strategy_startup_info_disabled(self) -> None:
         """DISABLED 모드 시작 정보."""
@@ -242,7 +226,7 @@ class TestTSMOMStrategyShortMode:
         info = strategy.get_startup_info()
         assert "Hedge-Short" in info["mode"]
         assert "-15%" in info["mode"]
-        assert info["hedge_strength"] == "50%"
+        assert info["hedge_strength"] == "80%"
 
     def test_strategy_startup_info_full(self) -> None:
         """FULL 모드 시작 정보."""

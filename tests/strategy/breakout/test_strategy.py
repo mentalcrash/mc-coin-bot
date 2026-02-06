@@ -1,7 +1,5 @@
 """Tests for AdaptiveBreakoutStrategy."""
 
-from decimal import Decimal
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -111,18 +109,13 @@ class TestAdaptiveBreakoutStrategy:
         assert len(processed_df) == len(sample_ohlcv_df)
         assert len(signals.entries) == len(sample_ohlcv_df)
 
-    def test_recommended_portfolio(self):
-        """recommended_portfolio() 테스트."""
-        # NOTE: Portfolio 임포트 시 순환 참조 가능성 있으므로 지연 임포트
-        try:
-            portfolio = AdaptiveBreakoutStrategy.recommended_portfolio(initial_capital=50000)
+    def test_recommended_config(self):
+        """recommended_config() 테스트."""
+        config = AdaptiveBreakoutStrategy.recommended_config()
 
-            assert portfolio.initial_capital == Decimal(50000)
-            assert portfolio.config.max_leverage_cap == 2.5
-            assert portfolio.config.system_stop_loss == 0.08
-            assert portfolio.config.rebalance_threshold == 0.03
-        except ImportError as e:
-            pytest.skip(f"Skipping due to circular import: {e}")
+        assert config["max_leverage_cap"] == 2.5
+        assert config["system_stop_loss"] == 0.08
+        assert config["rebalance_threshold"] == 0.03
 
     def test_get_startup_info(self):
         """get_startup_info() 테스트."""
@@ -151,7 +144,9 @@ class TestAdaptiveBreakoutStrategy:
 
     def test_long_only_mode(self, sample_ohlcv_df: pd.DataFrame):
         """Long-Only 모드 테스트."""
-        config = AdaptiveBreakoutConfig(long_only=True)
+        from src.strategy.breakout.config import ShortMode
+
+        config = AdaptiveBreakoutConfig(short_mode=ShortMode.DISABLED)
         strategy = AdaptiveBreakoutStrategy(config)
 
         _processed_df, signals = strategy.run(sample_ohlcv_df)

@@ -7,14 +7,16 @@ Rules Applied:
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from src.models.backtest import SignalDiagnosticRecord
 from src.strategy.tsmom.diagnostics import (
-    DiagnosticCollector,
-    collect_diagnostics_from_pipeline,
+    collect_diagnostics_from_signals,
+    log_diagnostic_summary,
 )
 
 
@@ -111,184 +113,136 @@ class TestSignalDiagnosticRecord:
         assert record.trend_regime == expected
 
 
-class TestDiagnosticCollector:
-    """DiagnosticCollector 클래스 테스트."""
+class TestCollectDiagnosticsFromSignals:
+    """collect_diagnostics_from_signals 함수 테스트."""
 
-    def test_init(self) -> None:
-        """초기화 테스트."""
-        collector = DiagnosticCollector("BTC/USDT")
-        assert collector.symbol == "BTC/USDT"
-        assert len(collector) == 0
+    @pytest.fixture
+    def _processed_df(self) -> pd.DataFrame:
+        """테스트용 전처리된 DataFrame."""
+        n = 50
+        idx = pd.date_range("2024-01-01", periods=n, freq="1D", tz=UTC)
+        rng = np.random.default_rng(42)
+        close = 50000.0 + np.cumsum(rng.normal(0, 500, n))
 
-    def test_collect_single_record(self) -> None:
-        """단일 레코드 수집 테스트."""
-        collector = DiagnosticCollector("BTC/USDT")
-
-        record = collector.collect(
-            timestamp=datetime.now(UTC),
-            close_price=50000.0,
-            realized_vol_annualized=0.65,
-            benchmark_return=0.02,
-            raw_momentum=0.15,
-            vol_scalar=0.62,
-            scaled_momentum=0.093,
-            trend_regime=1,
-            signal_before_trend_filter=0.093,
-            signal_after_trend_filter=0.093,
-            deadband_applied=False,
-            signal_after_deadband=0.093,
-            raw_target_weight=0.093,
-            leverage_capped_weight=0.093,
-            final_target_weight=0.093,
-            rebalance_triggered=True,
+        return pd.DataFrame(
+            {
+                "close": close,
+                "realized_vol": rng.uniform(0.3, 0.8, n),
+                "vw_momentum": rng.uniform(-0.5, 0.5, n),
+                "vol_scalar": rng.uniform(0.3, 1.5, n),
+            },
+            index=idx,
         )
 
-        assert len(collector) == 1
-        assert isinstance(record, SignalDiagnosticRecord)
-        assert record.symbol == "BTC/USDT"
+    def test_returns_dataframe_with_expected_columns(self, _processed_df: pd.DataFrame) -> None:
+        """반환 DataFrame의 컬럼 확인."""
+        weights = pd.Series(0.1, index=_processed_df.index)
 
-    def test_to_dataframe(self) -> None:
-        """DataFrame 변환 테스트."""
-        collector = DiagnosticCollector("BTC/USDT")
-
-        # 3개 레코드 수집
-        for i in range(3):
-            collector.collect(
-                timestamp=datetime(2024, 1, i + 1, tzinfo=UTC),
-                close_price=50000.0 + i * 100,
-                realized_vol_annualized=0.65,
-                benchmark_return=0.02,
-                raw_momentum=0.15,
-                vol_scalar=0.62,
-                scaled_momentum=0.093,
-                trend_regime=1,
-                signal_before_trend_filter=0.093,
-                signal_after_trend_filter=0.093,
-                deadband_applied=False,
-                signal_after_deadband=0.093,
-                raw_target_weight=0.093,
-                leverage_capped_weight=0.093,
-                final_target_weight=0.093,
-                rebalance_triggered=True,
-            )
-
-        df = collector.to_dataframe()
-
-        assert len(df) == 3
-        assert "symbol" in df.columns
-        assert "close_price" in df.columns
-        assert df.index.name == "timestamp"
-
-    def test_suppression_reason_determination(self) -> None:
-        """억제 원인 결정 로직 테스트."""
-        collector = DiagnosticCollector("BTC/USDT")
-
-        # Trend filter로 억제된 경우
-        record = collector.collect(
-            timestamp=datetime.now(UTC),
-            close_price=50000.0,
-            realized_vol_annualized=0.65,
-            benchmark_return=0.02,
-            raw_momentum=0.15,
-            vol_scalar=0.62,
-            scaled_momentum=0.093,
-            trend_regime=1,
-            signal_before_trend_filter=0.5,  # 시그널 있음
-            signal_after_trend_filter=0.0,  # 필터로 0이 됨
-            deadband_applied=False,
-            signal_after_deadband=0.0,
-            raw_target_weight=0.0,
-            leverage_capped_weight=0.0,
-            final_target_weight=0.0,
-            rebalance_triggered=True,
-        )
-
-        assert record.signal_suppression_reason == "trend_filter"
-
-    def test_clear(self) -> None:
-        """레코드 초기화 테스트."""
-        collector = DiagnosticCollector("BTC/USDT")
-
-        collector.collect(
-            timestamp=datetime.now(UTC),
-            close_price=50000.0,
-            realized_vol_annualized=0.65,
-            benchmark_return=0.02,
-            raw_momentum=0.15,
-            vol_scalar=0.62,
-            scaled_momentum=0.093,
-            trend_regime=1,
-            signal_before_trend_filter=0.093,
-            signal_after_trend_filter=0.093,
-            deadband_applied=False,
-            signal_after_deadband=0.093,
-            raw_target_weight=0.093,
-            leverage_capped_weight=0.093,
-            final_target_weight=0.093,
-            rebalance_triggered=True,
-        )
-
-        assert len(collector) == 1
-        collector.clear()
-        assert len(collector) == 0
-
-
-class TestCollectDiagnosticsFromPipeline:
-    """collect_diagnostics_from_pipeline 함수 테스트."""
-
-    def test_with_sample_data(self, sample_processed_df: pd.DataFrame) -> None:
-        """샘플 데이터로 진단 수집 테스트."""
-        n = len(sample_processed_df)
-
-        # 가상 시그널 데이터 생성
-        signal_before_trend = pd.Series(0.1, index=sample_processed_df.index)
-        signal_after_trend = pd.Series(0.1, index=sample_processed_df.index)
-        signal_after_deadband = pd.Series(0.1, index=sample_processed_df.index)
-        deadband_mask = pd.Series(False, index=sample_processed_df.index)
-        final_weights = pd.Series(0.1, index=sample_processed_df.index)
-
-        diagnostics_df = collect_diagnostics_from_pipeline(
-            processed_df=sample_processed_df,
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
             symbol="BTC/USDT",
-            signal_before_trend=signal_before_trend,
-            signal_after_trend=signal_after_trend,
-            signal_after_deadband=signal_after_deadband,
-            deadband_mask=deadband_mask,
-            final_weights=final_weights,
+            final_weights=weights,
         )
 
-        assert len(diagnostics_df) == n
-        assert "symbol" in diagnostics_df.columns
-        assert "signal_suppression_reason" in diagnostics_df.columns
+        expected_cols = {
+            "symbol",
+            "close_price",
+            "realized_vol_annualized",
+            "benchmark_return",
+            "raw_momentum",
+            "vol_scalar",
+            "scaled_momentum",
+            "final_target_weight",
+        }
+        assert expected_cols == set(result.columns)
 
-    def test_suppression_reasons_vectorized(
-        self, sample_processed_df: pd.DataFrame
-    ) -> None:
-        """벡터화된 억제 원인 결정 테스트."""
-        n = len(sample_processed_df)
+    def test_index_preserved(self, _processed_df: pd.DataFrame) -> None:
+        """입력 DataFrame의 인덱스가 유지되는지 확인."""
+        weights = pd.Series(0.1, index=_processed_df.index)
 
-        # 첫 번째 절반은 trend_filter로 억제
-        signal_before_trend = pd.Series(0.5, index=sample_processed_df.index)
-        signal_after_trend = pd.Series(
-            [0.0] * (n // 2) + [0.5] * (n - n // 2),
-            index=sample_processed_df.index,
-        )
-        signal_after_deadband = signal_after_trend.copy()
-        deadband_mask = pd.Series(False, index=sample_processed_df.index)
-        final_weights = signal_after_trend.copy()
-
-        diagnostics_df = collect_diagnostics_from_pipeline(
-            processed_df=sample_processed_df,
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
             symbol="BTC/USDT",
-            signal_before_trend=signal_before_trend,
-            signal_after_trend=signal_after_trend,
-            signal_after_deadband=signal_after_deadband,
-            deadband_mask=deadband_mask,
-            final_weights=final_weights,
+            final_weights=weights,
         )
 
-        # 첫 절반은 trend_filter로 억제
-        trend_filter_count = (
-            diagnostics_df["signal_suppression_reason"] == "trend_filter"
-        ).sum()
-        assert trend_filter_count >= n // 2 - 1  # 약간의 오차 허용
+        pd.testing.assert_index_equal(result.index, _processed_df.index)
+
+    def test_length_matches_input(self, _processed_df: pd.DataFrame) -> None:
+        """반환 DataFrame 길이가 입력과 동일."""
+        weights = pd.Series(0.5, index=_processed_df.index)
+
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
+            symbol="BTC/USDT",
+            final_weights=weights,
+        )
+
+        assert len(result) == len(_processed_df)
+
+    def test_symbol_column_filled(self, _processed_df: pd.DataFrame) -> None:
+        """symbol 컬럼이 올바르게 채워지는지 확인."""
+        weights = pd.Series(0.1, index=_processed_df.index)
+
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
+            symbol="ETH/USDT",
+            final_weights=weights,
+        )
+
+        assert (result["symbol"] == "ETH/USDT").all()
+
+    def test_benchmark_return_is_pct_change(self, _processed_df: pd.DataFrame) -> None:
+        """benchmark_return이 close의 pct_change인지 확인."""
+        weights = pd.Series(0.1, index=_processed_df.index)
+
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
+            symbol="BTC/USDT",
+            final_weights=weights,
+        )
+
+        expected = _processed_df["close"].pct_change().fillna(0)
+        pd.testing.assert_series_equal(result["benchmark_return"], expected, check_names=False)
+
+    def test_final_weights_mapped_correctly(self, _processed_df: pd.DataFrame) -> None:
+        """final_weights가 final_target_weight와 scaled_momentum에 반영되는지 확인."""
+        rng = np.random.default_rng(99)
+        weights = pd.Series(rng.uniform(-1, 1, len(_processed_df)), index=_processed_df.index)
+
+        result = collect_diagnostics_from_signals(
+            processed_df=_processed_df,
+            symbol="BTC/USDT",
+            final_weights=weights,
+        )
+
+        pd.testing.assert_series_equal(result["final_target_weight"], weights, check_names=False)
+        pd.testing.assert_series_equal(result["scaled_momentum"], weights, check_names=False)
+
+
+class TestLogDiagnosticSummary:
+    """log_diagnostic_summary 함수 테스트."""
+
+    def test_empty_dataframe_logs_warning(self) -> None:
+        """빈 DataFrame은 warning 로그를 출력."""
+        empty_df = pd.DataFrame()
+
+        with patch("src.strategy.tsmom.diagnostics.get_diagnostic_logger") as mock_logger:
+            log_diagnostic_summary(empty_df, "BTC/USDT")
+            mock_logger.return_value.warning.assert_called_once()
+
+    def test_summary_with_mixed_weights(self) -> None:
+        """Long/Short/Neutral 혼합 weights에 대한 요약 로깅."""
+        df = pd.DataFrame({"final_target_weight": [0.5, -0.3, 0.0, 0.8, -0.1]})
+
+        with patch("src.strategy.tsmom.diagnostics.get_diagnostic_logger") as mock_logger:
+            log_diagnostic_summary(df, "BTC/USDT")
+            mock_logger.return_value.info.assert_called_once()
+
+    def test_summary_without_weight_column(self) -> None:
+        """final_target_weight 컬럼이 없으면 info 로그 미출력."""
+        df = pd.DataFrame({"close_price": [50000, 51000]})
+
+        with patch("src.strategy.tsmom.diagnostics.get_diagnostic_logger") as mock_logger:
+            log_diagnostic_summary(df, "BTC/USDT")
+            mock_logger.return_value.info.assert_not_called()

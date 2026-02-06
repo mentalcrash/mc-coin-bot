@@ -47,7 +47,7 @@ def strategy() -> TSMOMStrategy:
 @pytest.fixture
 def portfolio() -> Portfolio:
     """Create portfolio for testing."""
-    return Portfolio.create(initial_capital=Decimal("10000"))
+    return Portfolio.create(initial_capital=Decimal(10000))
 
 
 class TestValidationLevel:

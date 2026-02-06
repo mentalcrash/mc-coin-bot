@@ -11,7 +11,7 @@ Rules Applied:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import register
@@ -63,6 +63,12 @@ class TSMOMStrategy(BaseStrategy):
         """
         self._config = config or TSMOMConfig()
         self._htf_df: pd.DataFrame | None = None
+
+    @classmethod
+    def from_params(cls, **params: Any) -> TSMOMStrategy:
+        """파라미터로 TSMOMStrategy 생성."""
+        config = TSMOMConfig(**params)
+        return cls(config)
 
     def set_htf_data(self, htf_df: pd.DataFrame) -> None:
         """상위 타임프레임 데이터 설정 (MTF 필터용).

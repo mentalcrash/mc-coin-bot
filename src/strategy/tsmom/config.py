@@ -128,12 +128,6 @@ class TSMOMConfig(BaseModel):
         description="헤지 숏 강도 비율 (롱 대비, 예: 0.8 = 80%)",
     )
 
-    # Deprecated: short_mode로 대체
-    long_only: bool = Field(
-        default=True,
-        description="[Deprecated] short_mode 사용 권장. Long-Only 모드",
-    )
-
     # 횡보장 필터 (ADX 기반)
     use_sideways_filter: bool = Field(
         default=False,
@@ -193,20 +187,12 @@ class TSMOMConfig(BaseModel):
         return self
 
     def effective_short_mode(self) -> ShortMode:
-        """실제 적용될 숏 모드 반환 (long_only 호환성 처리).
+        """실제 적용될 숏 모드 반환.
 
         Returns:
             적용될 ShortMode
         """
-        # short_mode가 명시적으로 설정되었으면 그것을 사용
-        if self.short_mode != ShortMode.DISABLED:
-            return self.short_mode
-
-        # long_only=False면 FULL 모드
-        if not self.long_only:
-            return ShortMode.FULL
-
-        return ShortMode.DISABLED
+        return self.short_mode
 
     @classmethod
     def for_timeframe(cls, timeframe: str, **kwargs: object) -> "TSMOMConfig":

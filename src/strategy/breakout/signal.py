@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from src.strategy.breakout.config import ShortMode
 from src.strategy.types import Direction, StrategySignals
 
 if TYPE_CHECKING:
@@ -122,8 +123,7 @@ def apply_cooldown(
     # rolling sum에서 현재 값을 빼면 "과거 N개" 합계가 됨
     # min_periods=1로 초기 NaN 방지
     past_signals: pd.Series = (
-        signal_int.rolling(window=cooldown_periods + 1, min_periods=1).sum()
-        - signal_int
+        signal_int.rolling(window=cooldown_periods + 1, min_periods=1).sum() - signal_int
     )
 
     # 3. 과거에 시그널이 있었으면(past_signals > 0) 현재 시그널 억제
@@ -191,12 +191,10 @@ def generate_signals(
         threshold = df["threshold"]  # type: ignore[assignment]
 
     # 1. 돌파 시그널 감지
-    long_breakout, short_breakout = detect_breakout(
-        close_series, upper_band, lower_band, threshold
-    )
+    long_breakout, short_breakout = detect_breakout(close_series, upper_band, lower_band, threshold)
 
     # 2. Long-Only 모드 처리
-    if config.long_only:
+    if config.short_mode == ShortMode.DISABLED:
         short_breakout = pd.Series(False, index=df.index)
 
     # 3. 방향 결정
@@ -264,12 +262,8 @@ def generate_signals_with_diagnostics(
 
     # 돌파 유형 결정
     breakout_type = pd.Series("none", index=df.index)
-    breakout_type = breakout_type.where(
-        ~(signals.direction == Direction.LONG.value), "upper"
-    )
-    breakout_type = breakout_type.where(
-        ~(signals.direction == Direction.SHORT.value), "lower"
-    )
+    breakout_type = breakout_type.where(~(signals.direction == Direction.LONG.value), "upper")
+    breakout_type = breakout_type.where(~(signals.direction == Direction.SHORT.value), "lower")
 
     # 밴드까지 거리
     distance_to_upper: pd.Series = (upper_band - close_series) / close_series * 100

@@ -13,10 +13,11 @@ Example:
     >>> strategy = AdaptiveBreakoutStrategy.conservative()
 """
 
-from src.strategy.breakout.config import AdaptiveBreakoutConfig
+from src.strategy.breakout.config import AdaptiveBreakoutConfig, ShortMode
 from src.strategy.breakout.strategy import AdaptiveBreakoutStrategy
 
 __all__ = [
     "AdaptiveBreakoutConfig",
     "AdaptiveBreakoutStrategy",
+    "ShortMode",
 ]

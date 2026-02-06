@@ -16,16 +16,14 @@ Rules Applied:
 
 from __future__ import annotations
 
-import logging
 from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 
 from src.strategy.tsmom.config import ShortMode, TSMOMConfig
 from src.strategy.types import Direction, StrategySignals
-
-logger = logging.getLogger(__name__)
 
 
 class SignalsWithDiagnostics(NamedTuple):

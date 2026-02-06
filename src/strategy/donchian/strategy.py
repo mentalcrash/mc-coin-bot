@@ -11,7 +11,7 @@ Rules Applied:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.strategy.base import BaseStrategy
 from src.strategy.donchian.config import DonchianConfig, ShortMode
@@ -59,6 +59,12 @@ class DonchianStrategy(BaseStrategy):
             config: Donchian 설정. None이면 기본 설정 사용.
         """
         self._config = config or DonchianConfig()
+
+    @classmethod
+    def from_params(cls, **params: Any) -> DonchianStrategy:
+        """파라미터로 DonchianStrategy 생성."""
+        config = DonchianConfig(**params)
+        return cls(config)
 
     @property
     def name(self) -> str:

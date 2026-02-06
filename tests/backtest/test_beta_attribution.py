@@ -105,13 +105,11 @@ class TestCalculateHypotheticalReturns:
             index=sample_diagnostics_df.index,
         )
 
-        returns_df = calculate_hypothetical_returns(
-            sample_diagnostics_df, benchmark_returns
-        )
+        returns_df = calculate_hypothetical_returns(sample_diagnostics_df, benchmark_returns)
 
         expected_columns = [
             "potential_return",
-            "return_after_trend",
+            "return_after_vol_scaling",
             "return_after_deadband",
             "actual_return",
             "benchmark_return",
@@ -185,9 +183,7 @@ class TestCalculateBetaAttribution:
 
         if result.potential_beta != 0:
             expected_ratio = result.realized_beta / result.potential_beta
-            assert result.beta_retention_ratio == pytest.approx(
-                expected_ratio, abs=0.001
-            )
+            assert result.beta_retention_ratio == pytest.approx(expected_ratio, abs=0.001)
         else:
             assert result.beta_retention_ratio == 0.0
 
@@ -227,12 +223,12 @@ class TestCalculateRollingBetaAttribution:
 
         expected_columns = [
             "potential_beta",
-            "beta_after_trend_filter",
+            "beta_after_vol_scaling",
             "beta_after_deadband",
             "realized_beta",
-            "lost_to_trend_filter",
-            "lost_to_deadband",
             "lost_to_vol_scaling",
+            "lost_to_deadband",
+            "lost_to_trend_filter",
         ]
         for col in expected_columns:
             assert col in rolling_df.columns
@@ -250,9 +246,7 @@ class TestCalculateRollingBetaAttribution:
         )
 
         # 공통 인덱스 길이
-        common_idx = sample_diagnostics_df.index.intersection(
-            sample_benchmark_returns.index
-        )
+        common_idx = sample_diagnostics_df.index.intersection(sample_benchmark_returns.index)
         assert len(rolling_df) <= len(common_idx)
 
 

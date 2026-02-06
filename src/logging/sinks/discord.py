@@ -268,9 +268,7 @@ class DiscordWebhookSink:
             await asyncio.sleep(self._rate_limit_interval - elapsed)
         self._last_send_time = time.time()
 
-    async def _send(
-        self, session: aiohttp.ClientSession, payload: dict[str, Any]
-    ) -> None:
+    async def _send(self, session: aiohttp.ClientSession, payload: dict[str, Any]) -> None:
         """Send payload to Discord webhook.
 
         Args:

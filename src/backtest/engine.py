@@ -32,9 +32,6 @@ from src.models.backtest import BacktestConfig, BacktestResult
 from src.portfolio.portfolio import Portfolio
 from src.strategy.base import BaseStrategy
 
-# 전략 생성 (파라미터 주입) - run_parameter_sweep용
-from src.strategy.tsmom import TSMOMConfig, TSMOMStrategy
-
 # =============================================================================
 # Numba 최적화 함수들 (모듈 레벨에 정의 - JIT 컴파일 캐싱)
 # =============================================================================
@@ -110,7 +107,7 @@ def apply_stop_loss_to_weights(
 
 
 @njit(cache=True)  # type: ignore[misc]
-def apply_trailing_stop_to_weights(  # noqa: PLR0912
+def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine; branching cannot be simplified
     weights: npt.NDArray[np.float64],
     close: npt.NDArray[np.float64],
     high: npt.NDArray[np.float64],
@@ -270,121 +267,17 @@ class BacktestEngine:
         >>> print(result.metrics.sharpe_ratio)
     """
 
-    def run(self, request: BacktestRequest) -> BacktestResult:
-        """백테스트 실행.
-
-        Args:
-            request: 백테스트 요청 (데이터, 전략, 포트폴리오, 분석기)
-
-        Returns:
-            BacktestResult with metrics, trades, etc.
-
-        Raises:
-            ImportError: VectorBT가 설치되지 않은 경우
-            ValueError: 데이터 검증 실패 시
-        """
-        logger.debug("=" * 60)
-        logger.debug("BacktestEngine.run() 시작")
-        logger.debug(f"  Request: {request}")
-
-        try:
-            import vectorbt as vbt  # type: ignore[import-not-found]
-
-            logger.debug(f"  VectorBT version: {vbt.__version__}")
-        except ImportError as e:
-            msg = "VectorBT is required for backtesting. Install with: pip install vectorbt"
-            raise ImportError(msg) from e
-
-        # 요청에서 컴포넌트 추출
-        data = request.data
-        strategy = request.strategy
-        portfolio = request.portfolio
-        analyzer = request.analyzer or PerformanceAnalyzer()
-
-        logger.debug("[1/5] 컴포넌트 추출 완료")
-        logger.debug(f"  - Data: {data.symbol} {data.timeframe} ({data.periods} periods)")
-        logger.debug(f"  - Strategy: {strategy.name}")
-        logger.debug(
-            f"  - Portfolio: capital=${portfolio.initial_capital:,.0f}, leverage_cap={portfolio.config.max_leverage_cap}x"
-        )
-
-        # 전략 실행 (전처리 + 시그널 생성)
-        logger.debug("[2/5] 전략 실행 (전처리 + 시그널 생성)...")
-
-        processed_df, signals = strategy.run(data.ohlcv)
-
-        logger.debug(
-            f"  - 전처리된 데이터: {len(processed_df)} rows, columns: {list(processed_df.columns)}"
-        )
-        logger.debug(
-            f"  - 시그널: entries={signals.entries.sum()}, direction range=[{signals.direction.min()}, {signals.direction.max()}]"
-        )
-
-        # VectorBT Portfolio 생성
-        logger.debug(f"[3/5] VectorBT Portfolio 생성 (mode={portfolio.config.execution_mode})...")
-        vbt_portfolio = self._create_vbt_portfolio(
-            vbt=vbt,
-            df=processed_df,
-            signals=signals,
-            portfolio=portfolio,
-            freq=data.freq,
-        )
-        logger.debug(f"  - VBT Portfolio 생성 완료: {type(vbt_portfolio).__name__}")
-
-        # 성과 분석 (PerformanceAnalyzer에 위임)
-        logger.debug("[4/5] 성과 분석 (PerformanceAnalyzer에 위임)...")
-        metrics = analyzer.analyze(vbt_portfolio)
-        benchmark = analyzer.compare_benchmark(vbt_portfolio, data.ohlcv, data.symbol)
-        trades = analyzer.extract_trades(vbt_portfolio, data.symbol)
-        logger.debug(
-            f"  - Metrics: Sharpe={metrics.sharpe_ratio:.2f}, Return={metrics.total_return:.2f}%"
-        )
-        logger.debug(f"  - Benchmark Alpha: {benchmark.alpha:.2f}%")
-        logger.debug(f"  - Trades: {len(trades)} closed trades")
-
-        # 설정 기록
-        logger.debug("[5/5] 결과 조립...")
-        config = BacktestConfig(
-            strategy_name=strategy.name,
-            symbol=data.symbol,
-            timeframe=data.timeframe,
-            start_date=data.start,
-            end_date=data.end,
-            initial_capital=portfolio.initial_capital,
-            maker_fee=portfolio.config.cost_model.maker_fee,
-            taker_fee=portfolio.config.cost_model.taker_fee,
-            slippage=portfolio.config.cost_model.slippage,
-            strategy_params=strategy.params,
-        )
-
-        logger.debug("BacktestEngine.run() 완료")
-        logger.debug("=" * 60)
-
-        return BacktestResult(
-            config=config,
-            metrics=metrics,
-            benchmark=benchmark,
-            trades=trades,
-        )
-
-    def run_with_returns(
-        self,
-        request: BacktestRequest,
-    ) -> tuple[BacktestResult, pd.Series, pd.Series]:  # type: ignore[type-arg]
-        """백테스트 실행 + 수익률 시리즈 반환.
-
-        run()과 동일하지만 QuantStats 리포트 생성을 위한
-        수익률 시리즈도 함께 반환합니다.
+    def _execute(self, request: BacktestRequest) -> tuple[BacktestResult, Any]:
+        """Core backtest logic.
 
         Args:
             request: 백테스트 요청
 
         Returns:
-            (BacktestResult, strategy_returns, benchmark_returns) 튜플
+            (BacktestResult, vbt_portfolio) 튜플
 
-        Example:
-            >>> result, strat_ret, bench_ret = engine.run_with_returns(request)
-            >>> generate_quantstats_report(strat_ret, bench_ret)
+        Raises:
+            ImportError: VectorBT가 설치되지 않은 경우
         """
         try:
             import vectorbt as vbt  # type: ignore[import-not-found]
@@ -392,11 +285,18 @@ class BacktestEngine:
             msg = "VectorBT is required for backtesting. Install with: pip install vectorbt"
             raise ImportError(msg) from e
 
-        # 요청에서 컴포넌트 추출
         data = request.data
         strategy = request.strategy
         portfolio = request.portfolio
         analyzer = request.analyzer or PerformanceAnalyzer()
+
+        logger.debug(
+            "BacktestEngine._execute() | {symbol} {tf} ({n} periods) | strategy={name}",
+            symbol=data.symbol,
+            tf=data.timeframe,
+            n=data.periods,
+            name=strategy.name,
+        )
 
         # 전략 실행 (전처리 + 시그널 생성)
         processed_df, signals = strategy.run(data.ohlcv)
@@ -410,12 +310,11 @@ class BacktestEngine:
             freq=data.freq,
         )
 
-        # 성과 분석
+        # 성과 분석 (PerformanceAnalyzer에 위임)
         metrics = analyzer.analyze(vbt_portfolio)
         benchmark = analyzer.compare_benchmark(vbt_portfolio, data.ohlcv, data.symbol)
         trades = analyzer.extract_trades(vbt_portfolio, data.symbol)
 
-        # 설정 기록
         config = BacktestConfig(
             strategy_name=strategy.name,
             symbol=data.symbol,
@@ -436,9 +335,48 @@ class BacktestEngine:
             trades=trades,
         )
 
-        # 수익률 시리즈 생성 (QuantStats용)
+        return result, vbt_portfolio
+
+    def run(self, request: BacktestRequest) -> BacktestResult:
+        """백테스트 실행.
+
+        Args:
+            request: 백테스트 요청 (데이터, 전략, 포트폴리오, 분석기)
+
+        Returns:
+            BacktestResult with metrics, trades, etc.
+
+        Raises:
+            ImportError: VectorBT가 설치되지 않은 경우
+            ValueError: 데이터 검증 실패 시
+        """
+        result, _ = self._execute(request)
+        return result
+
+    def run_with_returns(
+        self,
+        request: BacktestRequest,
+    ) -> tuple[BacktestResult, pd.Series, pd.Series]:  # type: ignore[type-arg]
+        """백테스트 실행 + 수익률 시리즈 반환.
+
+        run()과 동일하지만 QuantStats 리포트 생성을 위한
+        수익률 시리즈도 함께 반환합니다.
+
+        Args:
+            request: 백테스트 요청
+
+        Returns:
+            (BacktestResult, strategy_returns, benchmark_returns) 튜플
+
+        Example:
+            >>> result, strat_ret, bench_ret = engine.run_with_returns(request)
+            >>> generate_quantstats_report(strat_ret, bench_ret)
+        """
+        result, vbt_portfolio = self._execute(request)
+
+        analyzer = request.analyzer or PerformanceAnalyzer()
         strategy_returns, benchmark_returns = analyzer.get_returns_series(
-            vbt_portfolio, data.ohlcv, data.symbol
+            vbt_portfolio, request.data.ohlcv, request.data.symbol
         )
 
         return result, strategy_returns, benchmark_returns
@@ -763,11 +701,7 @@ def run_parameter_sweep(
         params = dict(zip(param_names, combination, strict=True))
 
         try:
-            if strategy_class == TSMOMStrategy:
-                config = TSMOMConfig(**params)
-                strategy = TSMOMStrategy(config)
-            else:
-                strategy = strategy_class(**params)  # type: ignore[call-arg]
+            strategy = strategy_class.from_params(**params)
 
             request = BacktestRequest(
                 data=data,

@@ -131,10 +131,12 @@ def bronze(
         console_level="DEBUG" if verbose else "INFO",
     )
 
-    console.print(Panel.fit(
-        f"[bold]Bronze Data Ingestion[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold]Bronze Data Ingestion[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}",
+            border_style="blue",
+        )
+    )
 
     if verbose:
         _display_settings()
@@ -176,10 +178,12 @@ def silver(
     )
 
     validation_status = "Disabled" if skip_validation else "Enabled"
-    console.print(Panel.fit(
-        f"[bold]Silver Data Processing[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}\nValidation: {validation_status}",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold]Silver Data Processing[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}\nValidation: {validation_status}",
+            border_style="yellow",
+        )
+    )
 
     processor = SilverProcessor(settings)
 
@@ -248,10 +252,12 @@ def pipeline(
         console_level="DEBUG" if verbose else "INFO",
     )
 
-    console.print(Panel.fit(
-        f"[bold]Full Ingestion Pipeline[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}\nSteps: Bronze → Silver",
-        border_style="magenta",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold]Full Ingestion Pipeline[/bold]\nSymbol: {symbol}\nYears: {', '.join(map(str, year))}\nSteps: Bronze → Silver",
+            border_style="magenta",
+        )
+    )
 
     # Step 1: Bronze
     console.print("\n[bold blue]Step 1/2: Bronze (Data Fetching)[/bold blue]")
@@ -273,10 +279,12 @@ def pipeline(
             console.print(f"[bold red]Pipeline failed at Silver step:[/bold red] {e}")
             raise typer.Exit(code=1) from e
 
-    console.print(Panel(
-        "[bold green]✓ Full pipeline completed successfully![/bold green]",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            "[bold green]✓ Full pipeline completed successfully![/bold green]",
+            border_style="green",
+        )
+    )
 
 
 @app.command()
@@ -305,7 +313,9 @@ def validate(
         info_table.add_row("Rows", f"{len(df):,}")
         info_table.add_row("Columns", ", ".join(df.columns.tolist()))
         info_table.add_row("Index Type", str(type(df.index).__name__))
-        info_table.add_row("Memory Usage", f"{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        info_table.add_row(
+            "Memory Usage", f"{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB"
+        )
         info_table.add_row("File Size", f"{path.stat().st_size / 1024 / 1024:.2f} MB")
 
         console.print(info_table)
@@ -342,7 +352,9 @@ def validate(
             validation_table.add_row(
                 "Index Continuity",
                 "✓ Pass" if irregular == 0 else "⚠ Warning",
-                f"{irregular:,} irregular intervals" if irregular > 0 else "Continuous 1-min intervals",
+                f"{irregular:,} irregular intervals"
+                if irregular > 0
+                else "Continuous 1-min intervals",
             )
 
         console.print(validation_table)
@@ -363,10 +375,12 @@ def info() -> None:
     """Display current configuration and status."""
     settings = get_settings()
 
-    console.print(Panel.fit(
-        "[bold]MC Coin Bot - Data Ingestion Pipeline[/bold]\nMedallion Architecture: Bronze → Silver",
-        border_style="blue",
-    ))
+    console.print(
+        Panel.fit(
+            "[bold]MC Coin Bot - Data Ingestion Pipeline[/bold]\nMedallion Architecture: Bronze → Silver",
+            border_style="blue",
+        )
+    )
 
     _display_settings()
 
@@ -459,28 +473,38 @@ async def _run_pipeline_for_symbol(ctx: PipelineContext) -> None:
         # 기존 파일 확인 (skip_existing)
         if ctx.skip_existing and bronze_storage.exists(ctx.symbol, year):
             ctx.result.skipped.append(task_key)
-            ctx.progress.update(ctx.task_id, advance=1, description=f"[yellow]Skipped[/yellow] {ctx.symbol} {year}")
+            ctx.progress.update(
+                ctx.task_id, advance=1, description=f"[yellow]Skipped[/yellow] {ctx.symbol} {year}"
+            )
             continue
 
         try:
             # Bronze: 데이터 수집
-            ctx.progress.update(ctx.task_id, description=f"[blue]Fetching[/blue] {ctx.symbol} {year}")
+            ctx.progress.update(
+                ctx.task_id, description=f"[blue]Fetching[/blue] {ctx.symbol} {year}"
+            )
             batch = await fetcher.fetch_year(ctx.symbol, year, show_progress=False)
             bronze_storage.save(batch, year)
 
             # Silver: 갭 필링
-            ctx.progress.update(ctx.task_id, description=f"[yellow]Processing[/yellow] {ctx.symbol} {year}")
+            ctx.progress.update(
+                ctx.task_id, description=f"[yellow]Processing[/yellow] {ctx.symbol} {year}"
+            )
             processor.process(ctx.symbol, year, validate=True)
 
             ctx.result.success.append(task_key)
-            ctx.progress.update(ctx.task_id, advance=1, description=f"[green]Done[/green] {ctx.symbol} {year}")
+            ctx.progress.update(
+                ctx.task_id, advance=1, description=f"[green]Done[/green] {ctx.symbol} {year}"
+            )
 
             # Rate Limit 안전장치: 연도별 작업 완료 후 0.5초 대기
             await asyncio.sleep(0.5)
 
         except Exception as e:
             ctx.result.failed.append((task_key, str(e)))
-            ctx.progress.update(ctx.task_id, advance=1, description=f"[red]Failed[/red] {ctx.symbol} {year}: {e}")
+            ctx.progress.update(
+                ctx.task_id, advance=1, description=f"[red]Failed[/red] {ctx.symbol} {year}: {e}"
+            )
             # 에러 후에도 대기 (Rate Limit 회복 시간)
             await asyncio.sleep(2.0)
 
@@ -590,7 +614,9 @@ def bulk_download(
     ] = "USDT",
     skip_existing: Annotated[
         bool,
-        typer.Option("--skip-existing/--no-skip-existing", help="Skip if Bronze file already exists"),
+        typer.Option(
+            "--skip-existing/--no-skip-existing", help="Skip if Bronze file already exists"
+        ),
     ] = True,
     dry_run: Annotated[
         bool,
@@ -628,10 +654,12 @@ def bulk_download(
     settings.ensure_directories()
 
     # 헤더 표시
-    console.print(Panel.fit(
-        f"[bold]Bulk Download[/bold]\nTop {top} symbols by {quote} volume (24h)\nYears: {', '.join(map(str, year))}\nSkip existing: {skip_existing}",
-        border_style="magenta",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold]Bulk Download[/bold]\nTop {top} symbols by {quote} volume (24h)\nYears: {', '.join(map(str, year))}\nSkip existing: {skip_existing}",
+            border_style="magenta",
+        )
+    )
 
     # Step 1: 상위 심볼 조회
     console.print("\n[bold cyan]Step 1: Fetching top symbols by quote volume...[/bold cyan]")
@@ -662,14 +690,18 @@ def bulk_download(
     # Dry-run 모드
     if dry_run:
         total_tasks = len(symbols) * len(year)
-        console.print(Panel(
-            f"[yellow]Dry-run mode[/yellow]\n\nTotal tasks: {total_tasks} ({len(symbols)} symbols x {len(year)} years)\n\nRun without --dry-run to start downloading.",
-            border_style="yellow",
-        ))
+        console.print(
+            Panel(
+                f"[yellow]Dry-run mode[/yellow]\n\nTotal tasks: {total_tasks} ({len(symbols)} symbols x {len(year)} years)\n\nRun without --dry-run to start downloading.",
+                border_style="yellow",
+            )
+        )
         return
 
     # Step 2: 벌크 다운로드 실행
-    console.print(f"\n[bold cyan]Step 2: Downloading {len(symbols)} symbols x {len(year)} years...[/bold cyan]")
+    console.print(
+        f"\n[bold cyan]Step 2: Downloading {len(symbols)} symbols x {len(year)} years...[/bold cyan]"
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -681,12 +713,14 @@ def bulk_download(
         console=console,
         refresh_per_second=1,
     ) as progress:
-        result = asyncio.run(_bulk_download(
-            symbols=symbols,
-            years=year,
-            skip_existing=skip_existing,
-            progress=progress,
-        ))
+        result = asyncio.run(
+            _bulk_download(
+                symbols=symbols,
+                years=year,
+                skip_existing=skip_existing,
+                progress=progress,
+            )
+        )
 
     # Step 3: 결과 리포트
     console.print("\n[bold cyan]Step 3: Results[/bold cyan]")
@@ -694,15 +728,19 @@ def bulk_download(
 
     # 최종 상태
     if result.failed_count == 0:
-        console.print(Panel(
-            "[bold green]✓ Bulk download completed successfully![/bold green]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                "[bold green]✓ Bulk download completed successfully![/bold green]",
+                border_style="green",
+            )
+        )
     else:
-        console.print(Panel(
-            f"[bold yellow]⚠ Bulk download completed with {result.failed_count} failures[/bold yellow]",
-            border_style="yellow",
-        ))
+        console.print(
+            Panel(
+                f"[bold yellow]⚠ Bulk download completed with {result.failed_count} failures[/bold yellow]",
+                border_style="yellow",
+            )
+        )
 
 
 # Main entry point

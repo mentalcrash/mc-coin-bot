@@ -535,7 +535,11 @@ def run(  # noqa: PLR0912
         )
 
         # MTF 필터용 상위 TF 데이터 로드
-        if mtf_enabled and strategy_name == "tsmom" and isinstance(strategy_instance, TSMOMStrategy):
+        if (
+            mtf_enabled
+            and strategy_name == "tsmom"
+            and isinstance(strategy_instance, TSMOMStrategy)
+        ):
             htf_request = MarketDataRequest(
                 symbol=symbol,
                 timeframe=mtf_timeframe,

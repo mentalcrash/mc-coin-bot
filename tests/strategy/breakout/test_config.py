@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.strategy.breakout.config import AdaptiveBreakoutConfig
+from src.strategy.breakout.config import AdaptiveBreakoutConfig, ShortMode
 
 
 class TestAdaptiveBreakoutConfig:
@@ -15,9 +15,9 @@ class TestAdaptiveBreakoutConfig:
 
         assert config.channel_period == 20
         assert config.atr_period == 14
-        assert config.k_value == 1.0  # 암호화폐에 최적화된 기본값
+        assert config.k_value == 0.5  # 암호화폐에 최적화된 기본값
         assert config.vol_target == 0.40
-        assert config.long_only is False
+        assert config.short_mode == ShortMode.FULL
         assert config.adaptive_threshold is True
 
     def test_frozen_model(self):
@@ -84,7 +84,6 @@ class TestAdaptiveBreakoutConfig:
         assert config.channel_period == 30
         assert config.k_value == 2.0
         assert config.atr_period == 20
-        assert config.use_trailing_stop is True
 
     def test_factory_aggressive(self):
         """aggressive() 팩토리 메서드 테스트."""

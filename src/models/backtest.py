@@ -105,9 +105,7 @@ class PerformanceMetrics(BaseModel):
     # 낙폭 지표
     max_drawdown: float = Field(..., description="최대 낙폭 (%)")
     avg_drawdown: float | None = Field(default=None, description="평균 낙폭 (%)")
-    max_drawdown_duration: int | None = Field(
-        default=None, description="최장 낙폭 기간 (일)"
-    )
+    max_drawdown_duration: int | None = Field(default=None, description="최장 낙폭 기간 (일)")
 
     # 거래 통계
     win_rate: float = Field(..., ge=0, le=100, description="승률 (%)")
@@ -119,9 +117,7 @@ class PerformanceMetrics(BaseModel):
     losing_trades: int = Field(..., ge=0, description="패배 거래 횟수")
 
     # 기간/빈도 지표
-    avg_trade_duration: float | None = Field(
-        default=None, description="평균 거래 기간 (시간)"
-    )
+    avg_trade_duration: float | None = Field(default=None, description="평균 거래 기간 (시간)")
     trades_per_year: float | None = Field(default=None, description="연간 거래 횟수")
 
     # 변동성 및 분포
@@ -250,9 +246,7 @@ class SignalDiagnosticRecord(BaseModel):
 
     # === Market State ===
     close_price: Decimal = Field(..., gt=0, description="종가")
-    realized_vol_annualized: float = Field(
-        ..., ge=0, description="실현 변동성 (연율화)"
-    )
+    realized_vol_annualized: float = Field(..., ge=0, description="실현 변동성 (연율화)")
     benchmark_return: float = Field(..., description="시장(BTC) 수익률")
 
     # === Signal Generation ===
@@ -262,12 +256,8 @@ class SignalDiagnosticRecord(BaseModel):
 
     # === Filter Decisions (Critical for Beta diagnosis) ===
     trend_regime: Literal[1, -1, 0] = Field(..., description="추세 국면")
-    signal_before_trend_filter: float = Field(
-        ..., description="Trend filter 적용 전 시그널"
-    )
-    signal_after_trend_filter: float = Field(
-        ..., description="Trend filter 적용 후 시그널"
-    )
+    signal_before_trend_filter: float = Field(..., description="Trend filter 적용 전 시그널")
+    signal_after_trend_filter: float = Field(..., description="Trend filter 적용 후 시그널")
     deadband_applied: bool = Field(..., description="Deadband 적용 여부")
     signal_after_deadband: float = Field(..., description="Deadband 적용 후 시그널")
 
@@ -340,13 +330,9 @@ class BetaAttributionResult(BaseModel):
     realized_beta: float = Field(..., description="실제 실현된 Beta")
 
     # === Beta Losses (Attribution) ===
-    lost_to_trend_filter: float = Field(
-        ..., description="Trend filter로 인한 Beta 손실"
-    )
+    lost_to_trend_filter: float = Field(..., description="Trend filter로 인한 Beta 손실")
     lost_to_deadband: float = Field(..., description="Deadband로 인한 Beta 손실")
-    lost_to_vol_scaling: float = Field(
-        ..., description="Vol scaling으로 인한 Beta 손실"
-    )
+    lost_to_vol_scaling: float = Field(..., description="Vol scaling으로 인한 Beta 손실")
 
     # === Metadata ===
     analysis_window: int = Field(default=60, ge=1, description="Rolling window 크기")
@@ -454,16 +440,12 @@ class BacktestResult(BaseModel):
 
     config: BacktestConfig = Field(..., description="백테스트 설정")
     metrics: PerformanceMetrics = Field(..., description="성과 지표")
-    benchmark: BenchmarkComparison | None = Field(
-        default=None, description="벤치마크 비교"
-    )
+    benchmark: BenchmarkComparison | None = Field(default=None, description="벤치마크 비교")
     trades: tuple[TradeRecord, ...] = Field(
         default_factory=tuple,
         description="거래 기록",
     )
-    equity_curve_path: str | None = Field(
-        default=None, description="Equity Curve 파일 경로"
-    )
+    equity_curve_path: str | None = Field(default=None, description="Equity Curve 파일 경로")
     report_path: str | None = Field(default=None, description="QuantStats 리포트 경로")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

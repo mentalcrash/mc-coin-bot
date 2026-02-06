@@ -197,8 +197,7 @@ class IngestionSettings(BaseSettings):
             API 키와 시크릿이 모두 설정되어 있으면 True
         """
         return bool(
-            self.binance_api_key.get_secret_value()
-            and self.binance_secret.get_secret_value()
+            self.binance_api_key.get_secret_value() and self.binance_secret.get_secret_value()
         )
 
 

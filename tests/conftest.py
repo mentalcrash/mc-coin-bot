@@ -65,9 +65,6 @@ def sample_processed_df(sample_ohlcv_df: pd.DataFrame) -> pd.DataFrame:
         lookback=20,
         vol_window=20,
         vol_target=0.40,
-        use_trend_filter=True,
-        trend_ma_period=30,
-        deadband_threshold=0.2,
     )
 
     return preprocess(sample_ohlcv_df, config)
@@ -92,12 +89,13 @@ def sample_diagnostics_df(sample_processed_df: pd.DataFrame) -> pd.DataFrame:
         lookback=20,
         vol_window=20,
         vol_target=0.40,
-        use_trend_filter=True,
-        trend_ma_period=30,
-        deadband_threshold=0.2,
     )
 
-    result = generate_signals_with_diagnostics(
-        sample_processed_df, config, symbol="BTC/USDT"
-    )
-    return result.diagnostics_df
+    result = generate_signals_with_diagnostics(sample_processed_df, config, symbol="BTC/USDT")
+    df = result.diagnostics_df
+
+    # beta_attribution 테스트에서 필요한 컬럼 보충 (Pure TSMOM에서는 deadband 미사용)
+    if "signal_after_deadband" not in df.columns:
+        df["signal_after_deadband"] = df["scaled_momentum"]
+
+    return df
