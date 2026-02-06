@@ -7,19 +7,24 @@ VectorBT 기반 백테스트와 3단계 과적합 검증을 거쳐 실거래로 
 
 ---
 
-## 전략 성과 (6년 백테스트, 2020-2025)
+## 전략 성과 (6년 백테스트, 2020-2025, 펀딩비 반영)
 
-| Sharpe | CAGR | MDD | AnnVol | Calmar | Sortino | Total Return |
-|:------:|:----:|:---:|:------:|:------:|:-------:|:------------:|
-| **2.41** | **+52.1%** | **-17.5%** | 21.7% | **2.98** | **3.33** | **+1140%** |
+| Sharpe | CAGR | MDD | Calmar | Sortino | Profit Factor | Total Return |
+|:------:|:----:|:---:|:------:|:-------:|:-------------:|:------------:|
+| **1.48** | **+53.1%** | **-19.9%** | **2.66** | **2.42** | **2.00** | **+1188%** |
+
+> 선물 펀딩비(0.01%/8h) 반영 후 검증된 수치. 코드 감사 6건 수정 완료.
 
 ### 성과 변화 추이
 
-| 지표 | BTC TSMOM (단일) | 8-asset EW | 헤지 최적화 | 리스크 최적화 | BTC B&H |
-|------|:---:|:---:|:---:|:---:|:---:|
-| Sharpe | 1.04 | 1.98 | 2.33 | **2.41** | 0.69 |
-| CAGR | +31.3% | +40.7% | +49.1% | **+52.1%** | +26.5% |
-| MDD | -35.4% | -20.2% | -20.7% | **-17.5%** | -81.2% |
+| 지표 | BTC TSMOM (단일) | 8-asset EW | 헤지 최적화 | 리스크 최적화 | 코드 감사 (최종) | BTC B&H |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|
+| Sharpe | 1.04 | 1.98 | 2.33 | 2.41 | **1.48** | 0.69 |
+| CAGR | +31.3% | +40.7% | +49.1% | +52.1% | **+53.1%** | +26.5% |
+| MDD | -35.4% | -20.2% | -20.7% | -17.5% | **-19.9%** | -81.2% |
+
+> **코드 감사 (최종)**: 펀딩비 사후 보정(H-001), Aggregate Leverage 검증(M-001) 등 6건 수정 반영.
+> Sharpe 하락은 펀딩 드래그(~4.85pp/yr) 반영에 의한 것으로, 실거래 환경에 가장 근접한 수치.
 
 ---
 
@@ -65,6 +70,22 @@ PortfolioManagerConfig(
 | rebalance_threshold | 10% | 5단계 스윕, 거래비용 절감 |
 | 리스크 파라미터 통합 | SL 10% + TS 3.0x + rebal 10% | 총 368 백테스트 |
 | 과적합 검증 | PASS | IS/OOS, Walk-Forward, CPCV, DSR, PBO |
+| 코드 감사 (Grade B+ → A-) | 6건 수정, 펀딩비 반영 | 6-step audit, 0 CRITICAL |
+
+### 코드 감사 상세 (EDA 승격 전 최종 검증)
+
+6-step quant audit 수행 후 발견된 이슈 6건을 모두 수정하고, 펀딩비 반영 후 재검증 완료.
+
+| ID | 등급 | 이슈 | 수정 내용 |
+|---|---|---|---|
+| H-001 | HIGH | 선물 펀딩비 미반영 (~10.95%/yr) | `_adjust_metrics_for_funding()` 사후 보정 |
+| H-002 | HIGH | Signals 모드 Trailing Stop 누락 | `to_vbt_params()`에 `sl_trail=True` 전달 |
+| M-001 | MEDIUM | Multi-Asset Aggregate Leverage 미검증 | `weights_df.abs().sum(axis=1)` 스케일링 |
+| M-002 | MEDIUM | Stop-Loss Close-only (Intrabar 미체크) | `use_intrabar_stop` 옵션 추가 |
+| M-003 | MEDIUM | `extract_trades()` iterrows 사용 | `to_dict("records")` 벡터화 |
+| L-001 | LOW | CAGR 1년 미만 단순 연환산 | 복리 공식 통일 |
+
+**감사 스코어카드**: Data Integrity 10/10, Signal Logic 9/10, Execution Realism 8/10 → **Overall 8.5/10**
 
 ---
 

@@ -125,6 +125,10 @@ class PortfolioManagerConfig(BaseModel):
         le=10.0,
         description="Trailing Stop ATR 배수 (예: 2.0 = 2 ATR)",
     )
+    use_intrabar_stop: bool = Field(
+        default=False,
+        description="Intrabar 가격(High/Low)으로 손절 체크 (False: Close 기준)",
+    )
 
     # ==========================================================================
     # Capital Management (자금 관리)
@@ -309,6 +313,9 @@ class PortfolioManagerConfig(BaseModel):
         # stop_loss는 sl_stop 파라미터로 전달 (None이면 제외)
         if self.system_stop_loss is not None:
             vbt_params["sl_stop"] = self.system_stop_loss
+            # H-002: Trailing Stop 활성화 시 sl_trail=True 전달
+            if self.use_trailing_stop:
+                vbt_params["sl_trail"] = True
 
         return vbt_params
 

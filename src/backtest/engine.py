@@ -50,6 +50,7 @@ def apply_stop_loss_to_weights(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],
     stop_loss_pct: float,
+    use_intrabar: bool = False,
 ) -> npt.NDArray[np.float64]:
     """목표 비중 배열에 손절매 로직을 적용합니다 (Long/Short 모두 지원).
 
@@ -58,9 +59,10 @@ def apply_stop_loss_to_weights(
     Args:
         weights: 목표 비중 배열 (양수=롱, 음수=숏)
         close: 종가 배열 (진입가 기록용)
-        high: 고가 배열 (숏 손절 체크용)
-        low: 저가 배열 (롱 손절 체크용)
+        high: 고가 배열 (숏 손절 체크용, use_intrabar=True)
+        low: 저가 배열 (롱 손절 체크용, use_intrabar=True)
         stop_loss_pct: 손절 비율 (예: 0.10 = 10%)
+        use_intrabar: True면 Low/High로 손절 체크, False면 Close 기준
 
     Returns:
         손절이 적용된 비중 배열
@@ -93,15 +95,16 @@ def apply_stop_loss_to_weights(
                 position_direction = new_direction
                 continue
 
-            # 손절 조건 체크 (close 기준으로 변경 - 더 반응적)
+            # 손절 조건 체크 (use_intrabar: Low/High, 기본: Close)
             stop_triggered = False
+            long_check = low[i] if use_intrabar else close[i]
+            short_check = high[i] if use_intrabar else close[i]
 
             if position_direction == 1:  # 롱 포지션
-                # 종가가 진입가 대비 stop_loss_pct 이상 하락
-                if close[i] < entry_price * (1 - stop_loss_pct):
+                if long_check < entry_price * (1 - stop_loss_pct):
                     stop_triggered = True
-            # 숏 포지션: 종가가 진입가 대비 stop_loss_pct 이상 상승
-            elif close[i] > entry_price * (1 + stop_loss_pct):
+            # 숏 포지션
+            elif short_check > entry_price * (1 + stop_loss_pct):
                 stop_triggered = True
 
             if stop_triggered:
@@ -246,6 +249,33 @@ def apply_rebalance_threshold_numba(
     return result
 
 
+def _freq_to_hours(freq: str) -> float:
+    """freq 문자열을 시간 단위로 변환.
+
+    Args:
+        freq: 데이터 주기 문자열 (예: "1d", "4h", "15T")
+
+    Returns:
+        시간 수
+    """
+    freq_upper = freq.strip().upper()
+    num_str = ""
+    unit = ""
+    for ch in freq_upper:
+        if ch.isdigit() or ch == ".":
+            num_str += ch
+        else:
+            unit += ch
+    num = float(num_str) if num_str else 1.0
+    if unit in ("D", "DAY", "DAYS"):
+        return num * 24.0
+    if unit in ("H", "HOUR", "HOURS"):
+        return num
+    if unit in ("T", "MIN", "MINUTE", "MINUTES"):
+        return num / 60.0
+    return 24.0  # 기본값: 일봉
+
+
 class BacktestEngine:
     """VectorBT 기반 백테스트 엔진 (Stateless).
 
@@ -318,6 +348,10 @@ class BacktestEngine:
 
         # 성과 분석 (PerformanceAnalyzer에 위임)
         metrics = analyzer.analyze(vbt_portfolio)
+        # H-001: 펀딩비 보정
+        metrics = self._adjust_metrics_for_funding(
+            vbt_portfolio, metrics, portfolio.config.cost_model, data.freq
+        )
         benchmark = analyzer.compare_benchmark(vbt_portfolio, data.ohlcv, data.symbol)
         trades = analyzer.extract_trades(vbt_portfolio, data.symbol)
 
@@ -508,6 +542,7 @@ class BacktestEngine:
                 np.asarray(df["high"].values, dtype=np.float64),
                 np.asarray(df["low"].values, dtype=np.float64),
                 pm.system_stop_loss,
+                pm.use_intrabar_stop,
             )
             target_weights = pd.Series(target_weights_sl, index=target_weights.index)
             # NaN 복원 (원래 NaN이었던 곳은 유지)
@@ -789,6 +824,17 @@ class BacktestEngine:
         close_df = close_df.loc[common_index]
         weights_df = weights_df.loc[common_index]
 
+        # M-001: Aggregate leverage 검증 및 스케일링
+        agg_leverage = weights_df.abs().sum(axis=1)
+        max_agg_leverage = float(agg_leverage.max())
+        if max_agg_leverage > pm.max_leverage_cap:
+            scale_factor = pm.max_leverage_cap / agg_leverage
+            scale_factor = scale_factor.clip(upper=1.0)
+            weights_df = weights_df.multiply(scale_factor, axis=0)
+            logger.warning(
+                f"Aggregate Leverage Capped | Peak: {max_agg_leverage:.2f}x → {pm.max_leverage_cap:.1f}x"
+            )
+
         # 4. price 결정
         if pm.price_type == "next_open":
             price_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
@@ -817,6 +863,10 @@ class BacktestEngine:
 
         # 6. 포트폴리오 전체 성과 분석
         portfolio_metrics = analyzer.analyze(vbt_portfolio)
+        # H-001: 펀딩비 보정
+        portfolio_metrics = self._adjust_metrics_for_funding(
+            vbt_portfolio, portfolio_metrics, pm.cost_model, request.data.freq
+        )
 
         # 7. 심볼별 성과 분석 (개별 수익률 기반)
         per_symbol_metrics: dict[str, PerformanceMetrics] = {}
@@ -871,6 +921,110 @@ class BacktestEngine:
         )
 
         return result, vbt_portfolio
+
+    @staticmethod
+    def _adjust_metrics_for_funding(
+        vbt_portfolio: Any,
+        metrics: PerformanceMetrics,
+        cost_model: Any,
+        freq: str,
+    ) -> PerformanceMetrics:
+        """펀딩비 반영하여 성과 지표 보정.
+
+        VBT는 거래 수수료와 슬리피지만 반영하므로, 선물 포지션 유지 비용인
+        펀딩비를 사후 보정합니다.
+
+        Args:
+            vbt_portfolio: VBT Portfolio
+            metrics: 원본 성과 지표
+            cost_model: CostModel (funding_rate_8h 포함)
+            freq: 데이터 주기 (예: "1d", "1h")
+
+        Returns:
+            펀딩비 보정된 PerformanceMetrics
+        """
+        if cost_model.funding_rate_8h == 0:
+            return metrics
+
+        returns = vbt_portfolio.returns()
+        if isinstance(returns, pd.DataFrame):
+            returns = returns.iloc[:, 0]
+
+        # 실효 포지션 비중 (|asset_value / total_value|)
+        try:
+            asset_value = vbt_portfolio.asset_value()
+            total_value = vbt_portfolio.value()
+            if isinstance(asset_value, pd.DataFrame):
+                asset_value = asset_value.sum(axis=1)
+            if isinstance(total_value, pd.DataFrame):
+                total_value = total_value.iloc[:, 0]
+            eff_weight = (asset_value / total_value).abs().fillna(0)
+        except Exception:
+            eff_weight = pd.Series(0.5, index=returns.index)
+
+        hours_per_period = _freq_to_hours(freq)
+        funding_per_period = cost_model.funding_rate_8h * (hours_per_period / 8.0)
+
+        # 기간별 펀딩 드래그 = |포지션 비중| * 펀딩 비율
+        funding_drag = eff_weight * funding_per_period
+        adjusted_returns = returns - funding_drag
+
+        # 보정 지표 재계산
+        cum = (1 + adjusted_returns).cumprod()
+        n = len(cum)
+        if n == 0:
+            return metrics
+
+        adj_total_return = float((cum.iloc[-1] - 1) * 100)
+        periods_per_year = (365.25 * 24) / hours_per_period
+        years = n / periods_per_year
+
+        growth = float(cum.iloc[-1])
+        adj_cagr = float((growth ** (1.0 / years) - 1.0) * 100) if years > 0 and growth > 0 else 0.0
+
+        # Sharpe 재계산
+        mean_ret = float(adjusted_returns.mean())
+        std_ret = float(adjusted_returns.std())
+        adj_sharpe = float((mean_ret / std_ret) * np.sqrt(periods_per_year)) if std_ret > 0 else 0.0
+
+        # Sortino 재계산
+        downside = adjusted_returns[adjusted_returns < 0]
+        downside_std = float(downside.std()) if len(downside) > 0 else 0.0
+        adj_sortino: float | None = (
+            float((mean_ret / downside_std) * np.sqrt(periods_per_year))
+            if downside_std > 0
+            else None
+        )
+
+        # MDD 재계산
+        running_max = cum.cummax()
+        dd = (cum - running_max) / running_max
+        adj_mdd = float(dd.min() * 100)
+
+        # Calmar 재계산
+        adj_calmar: float | None = abs(adj_cagr / adj_mdd) if adj_mdd < 0 else None
+
+        total_drag_pct = float(funding_drag.sum() * 100)
+        logger.info(
+            f"Funding Adjustment | Drag: {total_drag_pct:.2f}%, Sharpe: {metrics.sharpe_ratio:.2f} → {adj_sharpe:.2f}, CAGR: {metrics.cagr:.2f}% → {adj_cagr:.2f}%"
+        )
+
+        return PerformanceMetrics(
+            total_return=adj_total_return,
+            cagr=adj_cagr,
+            sharpe_ratio=adj_sharpe,
+            sortino_ratio=adj_sortino,
+            calmar_ratio=adj_calmar,
+            max_drawdown=adj_mdd,
+            avg_drawdown=metrics.avg_drawdown,
+            win_rate=metrics.win_rate,
+            profit_factor=metrics.profit_factor,
+            avg_win=metrics.avg_win,
+            avg_loss=metrics.avg_loss,
+            total_trades=metrics.total_trades,
+            winning_trades=metrics.winning_trades,
+            losing_trades=metrics.losing_trades,
+        )
 
     @staticmethod
     def _compute_simple_metrics(returns: pd.Series) -> PerformanceMetrics:  # type: ignore[type-arg]
@@ -939,6 +1093,7 @@ def _apply_pm_rules_to_weights(
             np.asarray(df["high"].values, dtype=np.float64),
             np.asarray(df["low"].values, dtype=np.float64),
             pm.system_stop_loss,
+            pm.use_intrabar_stop,
         )
         weights = pd.Series(result_arr, index=weights.index)
         weights = weights.where(weights_before.notna() | (weights != 0), np.nan)

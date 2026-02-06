@@ -218,7 +218,7 @@ class PerformanceAnalyzer:
                 return ()
 
             records: list[TradeRecord] = []
-            for _, row in trades_df.iterrows():
+            for row in trades_df.to_dict("records"):
                 # Entry time 처리
                 entry_ts = pd.Timestamp(row["Entry Timestamp"])
                 if pd.isna(entry_ts):  # type: ignore[arg-type]
@@ -423,9 +423,6 @@ class PerformanceAnalyzer:
             if days <= 0:
                 return total_return
             years = days / 365.25
-            if years < 1.0:
-                # 1년 미만이면 단순 연환산
-                return total_return / years
             growth = 1.0 + total_return / 100.0
             if growth <= 0:
                 return -100.0
