@@ -39,7 +39,7 @@ from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
 # TSMOM strategy imports for diagnose/optimize commands
-from src.strategy.tsmom import ShortMode, TSMOMConfig, TSMOMStrategy
+from src.strategy.tsmom import MTFFilterConfig, MTFFilterMode, ShortMode, TSMOMConfig, TSMOMStrategy
 from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
 # Global Console Instance (Rich UI for user-facing output)
@@ -353,7 +353,7 @@ def run(  # noqa: PLR0912
             "-v",
             help="Volatility target for position sizing (0.1-1.0, higher = more leverage)",
         ),
-    ] = 0.25,
+    ] = 0.30,
     lookback: Annotated[
         int,
         typer.Option(
@@ -397,6 +397,28 @@ def run(  # noqa: PLR0912
             help="Run Strategy Advisor analysis after backtest",
         ),
     ] = False,
+    # MTF 필터 옵션
+    mtf_enabled: Annotated[
+        bool,
+        typer.Option(
+            "--mtf/--no-mtf",
+            help="Enable Multi-Timeframe filter (higher TF trend alignment)",
+        ),
+    ] = False,
+    mtf_timeframe: Annotated[
+        str,
+        typer.Option(
+            "--mtf-tf",
+            help="Higher timeframe for MTF filter (e.g., 1W for weekly)",
+        ),
+    ] = "1W",
+    mtf_mode: Annotated[
+        str,
+        typer.Option(
+            "--mtf-mode",
+            help="MTF filter mode: consensus, veto, weighted",
+        ),
+    ] = "consensus",
 ) -> None:
     """Run strategy backtest on historical data.
 
@@ -434,6 +456,15 @@ def run(  # noqa: PLR0912
 
     # 전략 인스턴스 생성 (TSMOM은 short_mode, vol_target, lookback, sideways_filter 적용)
     if strategy_name == "tsmom":
+        # MTF 필터 설정 (옵션이 활성화된 경우)
+        mtf_config = None
+        if mtf_enabled:
+            mtf_config = MTFFilterConfig(
+                enabled=True,
+                higher_timeframe=mtf_timeframe,
+                mode=MTFFilterMode(mtf_mode),
+            )
+
         tsmom_config = TSMOMConfig(
             short_mode=parsed_short_mode,
             hedge_threshold=hedge_threshold,
@@ -444,6 +475,7 @@ def run(  # noqa: PLR0912
             use_sideways_filter=sideways_filter,
             adx_threshold=adx_threshold,
             sideways_position_scale=sideways_scale,
+            mtf_filter=mtf_config,
         )
         strategy_instance = TSMOMStrategy(tsmom_config)
     else:
@@ -501,6 +533,20 @@ def run(  # noqa: PLR0912
         logger.success(
             f"Loaded {data.symbol}: {data.periods:,} daily candles ({data.start.date()} ~ {data.end.date()})"
         )
+
+        # MTF 필터용 상위 TF 데이터 로드
+        if mtf_enabled and strategy_name == "tsmom" and isinstance(strategy_instance, TSMOMStrategy):
+            htf_request = MarketDataRequest(
+                symbol=symbol,
+                timeframe=mtf_timeframe,
+                start=start_date,
+                end=end_date,
+            )
+            htf_data = data_service.get(htf_request)
+            logger.success(f"Loaded HTF data: {htf_data.periods:,} {mtf_timeframe} candles")
+            # TSMOMStrategy에 상위 TF 데이터 설정
+            strategy_instance.set_htf_data(htf_data.ohlcv)
+
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
         raise typer.Exit(code=1) from e

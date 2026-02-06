@@ -22,10 +22,15 @@ Example:
     >>> processed_df, signals = strategy.run(ohlcv_df)
 """
 
-from src.strategy.tsmom.config import ShortMode, TSMOMConfig
+from src.strategy.tsmom.config import MTFFilterConfig, MTFFilterMode, ShortMode, TSMOMConfig
 from src.strategy.tsmom.diagnostics import (
     collect_diagnostics_from_signals,
     log_diagnostic_summary,
+)
+from src.strategy.tsmom.mtf_filter import (
+    align_htf_to_ltf,
+    apply_mtf_filter,
+    compute_htf_trend,
 )
 from src.strategy.tsmom.preprocessor import preprocess
 from src.strategy.tsmom.signal import (
@@ -37,11 +42,16 @@ from src.strategy.tsmom.signal import (
 from src.strategy.tsmom.strategy import TSMOMStrategy
 
 __all__ = [
+    "MTFFilterConfig",
+    "MTFFilterMode",
     "ShortMode",
     "SignalsWithDiagnostics",
     "TSMOMConfig",
     "TSMOMStrategy",
+    "align_htf_to_ltf",
+    "apply_mtf_filter",
     "collect_diagnostics_from_signals",
+    "compute_htf_trend",
     "generate_signals",
     "generate_signals_with_diagnostics",
     "get_current_signal",

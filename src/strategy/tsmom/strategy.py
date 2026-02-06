@@ -62,6 +62,17 @@ class TSMOMStrategy(BaseStrategy):
             config: TSMOM 설정. None이면 기본 설정 사용.
         """
         self._config = config or TSMOMConfig()
+        self._htf_df: pd.DataFrame | None = None
+
+    def set_htf_data(self, htf_df: pd.DataFrame) -> None:
+        """상위 타임프레임 데이터 설정 (MTF 필터용).
+
+        BacktestEngine이 run()을 호출하기 전에 CLI에서 설정합니다.
+
+        Args:
+            htf_df: 상위 타임프레임 OHLCV DataFrame
+        """
+        self._htf_df = htf_df
 
     @property
     def name(self) -> str:
@@ -114,6 +125,52 @@ class TSMOMStrategy(BaseStrategy):
             StrategySignals NamedTuple
         """
         return generate_signals(df, self._config)
+
+    def run(
+        self,
+        df: pd.DataFrame,
+        htf_df: pd.DataFrame | None = None,
+    ) -> tuple[pd.DataFrame, StrategySignals]:
+        """전략 실행 (전처리 + 시그널 생성 + MTF 필터링).
+
+        Args:
+            df: 원본 OHLCV DataFrame (하위 타임프레임)
+            htf_df: 상위 타임프레임 OHLCV DataFrame (선택적)
+                    None이면 set_htf_data()로 설정된 데이터 사용
+
+        Returns:
+            (전처리된 DataFrame, 시그널) 튜플
+        """
+        self.validate_input(df)
+        processed_df = self.preprocess(df)
+        signals = self.generate_signals(processed_df)
+
+        # htf_df 결정: 파라미터 우선, 없으면 set_htf_data()로 설정된 값
+        effective_htf_df = htf_df if htf_df is not None else self._htf_df
+
+        # MTF 필터 적용 (설정되어 있고 htf_df가 제공된 경우)
+        mtf_config = self._config.mtf_filter
+        if mtf_config is not None and mtf_config.enabled and effective_htf_df is not None:
+            from src.strategy.tsmom.mtf_filter import (
+                align_htf_to_ltf,
+                apply_mtf_filter,
+                compute_htf_trend,
+            )
+
+            # 상위 TF 추세 계산
+            htf_trend = compute_htf_trend(
+                effective_htf_df,
+                lookback=mtf_config.lookback_htf,
+                use_log_returns=self._config.use_log_returns,
+            )
+
+            # 하위 TF 인덱스에 정렬
+            htf_aligned = align_htf_to_ltf(htf_trend, df.index)
+
+            # 필터 적용
+            signals = apply_mtf_filter(signals, htf_aligned, mtf_config)
+
+        return processed_df, signals
 
     @classmethod
     def conservative(cls) -> TSMOMStrategy:
@@ -206,5 +263,9 @@ class TSMOMStrategy(BaseStrategy):
             result["sideways_filter"] = (
                 f"ADX<{cfg.adx_threshold:.0f}→{cfg.sideways_position_scale:.0%}"
             )
+
+        # MTF 필터 정보
+        if cfg.mtf_filter is not None and cfg.mtf_filter.enabled:
+            result["mtf_filter"] = f"{cfg.mtf_filter.higher_timeframe} {cfg.mtf_filter.mode.value}"
 
         return result

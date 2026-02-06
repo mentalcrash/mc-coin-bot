@@ -8,7 +8,7 @@ Rules Applied:
     - #10 Python Standards: Modern typing
 """
 
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -79,7 +79,7 @@ class TSMOMConfig(BaseModel):
         description="변동성 계산 윈도우 (캔들 수)",
     )
     vol_target: float = Field(
-        default=0.25,
+        default=0.30,
         ge=0.05,
         le=1.0,
         description="연간 목표 변동성 (0.0~1.0)",
@@ -156,6 +156,12 @@ class TSMOMConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="횡보장에서 포지션 스케일 (0=현금, 1=유지)",
+    )
+
+    # 다중 타임프레임 필터 (Phase 2)
+    mtf_filter: "MTFFilterConfig | None" = Field(
+        default=None,
+        description="다중 타임프레임 필터 설정 (None=비활성)",
     )
 
     @model_validator(mode="after")
@@ -290,3 +296,82 @@ class TSMOMConfig(BaseModel):
             필요한 캔들 수
         """
         return max(self.lookback, self.vol_window) + 1
+
+
+class MTFFilterMode(StrEnum):
+    """다중 타임프레임 필터 모드.
+
+    Attributes:
+        CONSENSUS: 상위 TF와 동일 방향일 때만 진입 허용 (가장 보수적)
+        VETO: 상위 TF가 반대 방향일 때만 필터링 (중립은 통과)
+        WEIGHTED: 상위 TF 방향에 따라 강도 조절 (가장 유연)
+    """
+
+    CONSENSUS = "consensus"
+    VETO = "veto"
+    WEIGHTED = "weighted"
+
+
+class MTFFilterConfig(BaseModel):
+    """다중 타임프레임 필터 설정.
+
+    상위 타임프레임의 추세 방향을 참조하여
+    하위 타임프레임 시그널을 필터링합니다.
+
+    Example:
+        >>> config = MTFFilterConfig(
+        ...     enabled=True,
+        ...     higher_timeframe="1W",
+        ...     mode=MTFFilterMode.CONSENSUS,
+        ... )
+
+    Attributes:
+        enabled: MTF 필터 활성화 여부
+        higher_timeframe: 상위 타임프레임 (예: "1W" for Weekly)
+        mode: 필터 모드 (CONSENSUS/VETO/WEIGHTED)
+        lookback_htf: 상위 TF 모멘텀 계산 lookback (캔들 수)
+        weight_aligned: 동일 방향 시 가중치 (WEIGHTED 모드)
+        weight_neutral: 상위 TF 중립 시 가중치 (WEIGHTED 모드)
+        weight_against: 반대 방향 시 가중치 (WEIGHTED 모드, 0=필터링)
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = Field(
+        default=False,
+        description="MTF 필터 활성화 여부",
+    )
+    higher_timeframe: str = Field(
+        default="1W",
+        description="상위 타임프레임 (1D→1W, 4h→1D)",
+    )
+    mode: MTFFilterMode = Field(
+        default=MTFFilterMode.CONSENSUS,
+        description="필터 모드 (CONSENSUS/VETO/WEIGHTED)",
+    )
+    lookback_htf: int = Field(
+        default=4,
+        ge=2,
+        le=12,
+        description="상위 TF 모멘텀 lookback (주간 기준 약 1개월)",
+    )
+
+    # WEIGHTED 모드용 가중치
+    weight_aligned: float = Field(
+        default=1.2,
+        ge=0.5,
+        le=2.0,
+        description="동일 방향 시 강도 배수",
+    )
+    weight_neutral: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.5,
+        description="상위 TF 중립 시 강도 유지",
+    )
+    weight_against: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=0.5,
+        description="반대 방향 시 강도 (0=필터링)",
+    )
