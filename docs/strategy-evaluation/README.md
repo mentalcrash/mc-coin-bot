@@ -11,6 +11,7 @@
 | [bb-rsi.md](bb-rsi.md) | BB+RSI 평균회귀 전략 | ⚠️ 보류 |
 | [cross-strategy.md](cross-strategy.md) | TSMOM + BB+RSI 교차 분석 | 분석 완료 |
 | [multi-asset.md](multi-asset.md) | 멀티에셋 TSMOM (8-asset EW) | ✅ 채택 |
+| [hedge-optimization.md](hedge-optimization.md) | 헤지 파라미터 최적화 (threshold × strength) | ✅ 완료 |
 | [meta-lessons.md](meta-lessons.md) | 메타 교훈 + 폐기 전략 템플릿 | 지속 업데이트 |
 | [data-inventory.md](data-inventory.md) | 멀티에셋 Silver 데이터 현황 | 지속 업데이트 |
 
@@ -28,34 +29,34 @@ timeframe = "1D"  # 일봉 (4h~12h 대비 Sharpe +1~12%)
 TSMOMConfig(
     lookback=30,              # 30일 모멘텀 (30 × 1D = 30일)
     vol_window=30,            # 30일 변동성
-    vol_target=0.35,          # 균형 설정 (Sharpe 2.06, CAGR +48.8%)
+    vol_target=0.35,          # 균형 설정
     annualization_factor=365, # 일봉 연환산
     short_mode=ShortMode.HEDGE_ONLY,
-    hedge_threshold=-0.07,
-    hedge_strength_ratio=0.8,
+    hedge_threshold=-0.07,    # -7% 드로다운 시 헤지 활성화
+    hedge_strength_ratio=0.3, # 롱의 30%로 방어적 숏 (Sharpe 2.33, CAGR +49.1%)
 )
 PortfolioManagerConfig(max_leverage_cap=2.0)
 ```
 
 ## 핵심 수치 요약
 
-| 지표 | BTC TSMOM | T1 EW (4) | T1+T2 EW (8) | **EW(8) vt=0.35** | BTC B&H |
-|------|:---:|:---:|:---:|:---:|:---:|
-| Sharpe (6년) | 1.26 | 1.89 | 1.98 | **2.06** | - |
-| Sharpe (8년) | 1.04 | - | - | - | 0.69 |
-| CAGR (6년) | +38.5% | +43.8% | +40.7% | **+48.8%** | - |
-| CAGR (8년) | +31.3% | - | - | - | +26.5% |
-| MDD | -35.4% | -21.8% | -20.2% | **-23.5%** | -81.2% |
-| AnnVol | 30.5% | 23.1% | 20.5% | **23.7%** | 65.7% |
-| Calmar | 1.09 | 2.01 | 2.02 | **2.08** | 0.33 |
-| Sortino | - | - | - | **3.03** | - |
-| 2022 Sharpe | -0.78 | **+0.42** | -0.43 | - | - |
+| 지표 | BTC TSMOM | T1 EW (4) | T1+T2 EW (8) | EW(8) vt=0.35 | **EW(8) 헤지 최적화** | BTC B&H |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|
+| Sharpe (6년) | 1.26 | 1.89 | 1.98 | 2.06 | **2.33** | - |
+| Sharpe (8년) | 1.04 | - | - | - | - | 0.69 |
+| CAGR (6년) | +38.5% | +43.8% | +40.7% | +48.8% | **+49.1%** | - |
+| CAGR (8년) | +31.3% | - | - | - | - | +26.5% |
+| MDD | -35.4% | -21.8% | -20.2% | -23.5% | **-20.7%** | -81.2% |
+| AnnVol | 30.5% | 23.1% | 20.5% | 23.7% | **21.1%** | 65.7% |
+| Calmar | 1.09 | 2.01 | 2.02 | 2.08 | **2.37** | 0.33 |
+| Sortino | - | - | - | 3.03 | **3.21** | - |
+| 2022 Sharpe | -0.78 | **+0.42** | -0.43 | - | - | - |
 
 ## 기대 성과 (6년 백테스트, 2020-2025)
 
 | Sharpe | CAGR | MDD | AnnVol | Calmar | Sortino | 총수익 |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **2.06** | **+48.7%** | **-23.5%** | 23.7% | **2.08** | **3.03** | **+984%** |
+| **2.33** | **+49.1%** | **-20.7%** | 21.1% | **2.37** | **3.21** | **+997%** |
 
 ## 검증 완료 항목
 
@@ -66,6 +67,8 @@ PortfolioManagerConfig(max_leverage_cap=2.0)
 | max_leverage_cap | 2.0x | 5단계 스윕 (1.0~3.0x), 효과 없음 확인 |
 | 타임프레임 | 1D | 4개 TF × 6 lookback, 192 백테스트 |
 | lookback | 30 (1D) | 30일 수평선이 4개 TF 모두 최적 |
+| hedge_threshold | -0.07 | 8단계 스윕 (-0.05~-0.30), threshold 둔감 확인 |
+| hedge_strength_ratio | 0.3 | 10단계 스윕 (0.1~1.0), 656 백테스트, Sharpe +13% |
 
 ## 향후 방향
 
@@ -73,7 +76,7 @@ PortfolioManagerConfig(max_leverage_cap=2.0)
 - ✅ ~~포트폴리오 구성 최종 결정~~ — **8-asset 확정**
 - ✅ ~~vol_target × leverage_cap 스윕~~ — **완료** (최적: vol_target=0.35, Sharpe 2.06)
 - ✅ ~~타임프레임 분석~~ — **완료** (1D 확정, 4h~12h 모두 열등)
-- 숏 햇지 최적화 임계값과 강도 결정
+- ✅ ~~숏 헤지 최적화~~ — **완료** (strength=0.3, Sharpe 2.33, 656 백테스트)
 - ⚠️ 50/50 고정 합성 — Sharpe 소폭 개선이나 CAGR 절반, 우선순위 낮음
 - ❌ Regime Adaptive 동적 전환 — 과적합 리스크 높음, 보류
 
@@ -95,3 +98,4 @@ PortfolioManagerConfig(max_leverage_cap=2.0)
 | 2026-02-06 | 8-asset 구성 확정, vol_target×leverage_cap 스윕 (40조합), 최적 vol_target=0.35 발견 |
 | 2026-02-06 | 타임프레임 분석 (4h/8h/12h/1D × 6 lookback, 192 백테스트), 1D/30d 최적 확정 |
 | 2026-02-06 | 문서 분할 — 단일 파일에서 7개 파일 구조로 재편 |
+| 2026-02-06 | 헤지 파라미터 최적화 (80조합 × 8에셋 = 656 백테스트), strength 0.3 확정, Sharpe 2.06→2.33 |
