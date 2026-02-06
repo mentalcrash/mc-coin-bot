@@ -173,6 +173,38 @@ def calculate_vw_momentum(
     return vw_returns
 
 
+def calculate_atr(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+) -> pd.Series:
+    """ATR (Average True Range) 계산.
+
+    Wilder's smoothing(EWM)을 사용한 True Range의 지수이동평균입니다.
+    Trailing Stop 등 변동성 기반 리스크 관리에 사용됩니다.
+
+    Args:
+        high: 고가 시리즈
+        low: 저가 시리즈
+        close: 종가 시리즈
+        period: 계산 기간 (기본 14)
+
+    Returns:
+        ATR 시리즈
+
+    Example:
+        >>> atr = calculate_atr(df["high"], df["low"], df["close"], period=14)
+    """
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    return pd.Series(atr, index=close.index, name="atr")
+
+
 def calculate_adx(
     high: pd.Series,
     low: pd.Series,
@@ -382,10 +414,13 @@ def preprocess(
     # 5. 드로다운 계산 (헤지 숏 모드용)
     result["drawdown"] = calculate_drawdown(close_series)
 
-    # 6. ADX 계산 (횡보장 필터용)
+    # 6. ATR 계산 (Trailing Stop용 — 항상 계산)
+    high_series: pd.Series = result["high"]  # type: ignore[assignment]
+    low_series: pd.Series = result["low"]  # type: ignore[assignment]
+    result["atr"] = calculate_atr(high_series, low_series, close_series)
+
+    # 7. ADX 계산 (횡보장 필터용)
     if config.use_sideways_filter:
-        high_series: pd.Series = result["high"]  # type: ignore[assignment]
-        low_series: pd.Series = result["low"]  # type: ignore[assignment]
         result["adx"] = calculate_adx(
             high_series,
             low_series,

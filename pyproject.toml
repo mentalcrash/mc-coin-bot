@@ -153,6 +153,8 @@ unfixable = []
 "research/**/*" = ["T201", "PD"]
 # 전략 __init__.py는 side effect import로 전략 자동 등록
 "src/strategy/__init__.py" = ["F401"]
+# 스크립트는 로거 설정 후 import, 매직넘버, print 허용
+"scripts/**/*" = ["E402", "PLR2004", "RUF001", "RUF002", "RUF003", "TRY300", "T201"]
 
 # [플러그인별 상세 설정]
 [tool.ruff.lint.isort]
