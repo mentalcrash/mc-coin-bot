@@ -253,7 +253,7 @@ def main() -> None:
     print("Multi-Asset TSMOM: hedge_threshold x hedge_strength_ratio Parameter Sweep")
     print(f"Assets: {len(ASSETS)} | Period: {START.year}-{END.year}")
     print(f"Grid: {len(HEDGE_THRESHOLDS)} thresholds x {len(HEDGE_STRENGTH_RATIOS)} ratios = {total_combos} combos")
-    print(f"Baselines: DISABLED (Long-Only) + FULL (Long/Short)")
+    print("Baselines: DISABLED (Long-Only) + FULL (Long/Short)")
     print(f"Total backtests: {total_backtests}")
     print(f"Fixed: vol_target=0.35, lookback=30, leverage_cap={MAX_LEVERAGE_CAP}x")
     print("=" * 80)
@@ -313,7 +313,7 @@ def main() -> None:
         )
 
     # 4. Results
-    print(f"\n[4/4] Results Summary")
+    print("\n[4/4] Results Summary")
     print("=" * 80)
 
     df = pd.DataFrame(results)
@@ -403,7 +403,7 @@ def main() -> None:
         )
 
     best = df.iloc[0]
-    print(f"\n### Best Combination (by Sharpe)")
+    print("\n### Best Combination (by Sharpe)")
     print(
         f"  threshold={best['hedge_threshold']:.2f}, strength_ratio={best['hedge_strength_ratio']:.1f}"
     )

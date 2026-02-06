@@ -12,7 +12,6 @@ from __future__ import annotations
 import sys
 import warnings
 from datetime import UTC, datetime
-from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -76,7 +75,7 @@ def compute_portfolio_metrics(daily_returns: pd.Series) -> dict[str, float]:  # 
     """EW 포트폴리오 일간 수익률에서 성과 지표를 계산."""
     returns = daily_returns.dropna()
     if len(returns) < 30:
-        return {k: np.nan for k in ["sharpe", "cagr", "total_return", "mdd", "ann_vol", "calmar", "sortino"]}
+        return dict.fromkeys(["sharpe", "cagr", "total_return", "mdd", "ann_vol", "calmar", "sortino"], np.nan)
 
     cum_returns = (1 + returns).cumprod()
     total_return = float(cum_returns.iloc[-1] - 1)
@@ -253,7 +252,7 @@ def main() -> None:
     # =========================================================================
     # 3. Analysis
     # =========================================================================
-    print(f"\n[3/4] Results Analysis")
+    print("\n[3/4] Results Analysis")
     print("=" * 90)
 
     df = pd.DataFrame(results)
@@ -396,12 +395,12 @@ def main() -> None:
     if not baseline.empty:
         b = baseline.iloc[0]
         print(f"  Sharpe={b['sharpe']:.2f}, CAGR={b['cagr']:.1f}%, MDD={b['mdd']:.1f}%")
-        print(f"  Expected: Sharpe≈2.06, CAGR≈48.8%, MDD≈-23.5% (from vol_target sweep)")
+        print("  Expected: Sharpe≈2.06, CAGR≈48.8%, MDD≈-23.5% (from vol_target sweep)")
 
     # =========================================================================
     # 4. Save results
     # =========================================================================
-    print(f"\n[4/4] Saving results...")
+    print("\n[4/4] Saving results...")
     csv_path = "data/multi_timeframe_sweep.csv"
     df.to_csv(csv_path, index=False)
     print(f"  Portfolio results: {csv_path}")

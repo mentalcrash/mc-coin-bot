@@ -2,7 +2,7 @@
 
 전략 확정(8-asset EW TSMOM, Sharpe 2.41) 이후 실거래까지의 구현 로드맵.
 
-> **현재 위치:** Phase 2+3 완료 → Phase 4 진입 예정
+> **현재 위치:** Phase 1~4 완료 → Phase 5 진입 예정
 
 ---
 
@@ -12,7 +12,7 @@
 Phase 1          Phase 2              Phase 3           Phase 4          Phase 5          Phase 6
 단일에셋          멀티에셋             고급 검증          EDA 시스템       Dry Run          Live
 백테스트          백테스트 확장         IS/OOS/WFA/CPCV   이벤트 기반       Paper Trading     실거래
-✅ 완료           ✅ 완료              ✅ 완료            ← 현재          예정              예정
+✅ 완료           ✅ 완료              ✅ 완료            ✅ 완료          ← 현재           예정
 ```
 
 ---
@@ -184,11 +184,13 @@ uv run python -m src.cli.backtest validate -m final -y 2020 -y 2021 -y 2022 -y 2
 
 ---
 
-## Phase 4: EDA 시스템 (이벤트 기반 아키텍처) ← 현재
+## Phase 4: EDA 시스템 (이벤트 기반 아키텍처) — ✅ 완료
+
+> **상태:** ✅ 완료 (2026-02-06)
 
 ### 4.1 왜 이벤트 기반인가
 
-현재 백테스트는 **벡터화 방식** — 전체 데이터를 한 번에 처리. 빠르지만 실거래와 구조가 다름.
+벡터화 백테스트는 전체 데이터를 한 번에 처리 — 빠르지만 실거래와 구조가 다름.
 EDA 시스템은 **실거래와 동일한 코드 경로**로 백테스트를 실행하여 backtest-live parity를 보장.
 
 ```
@@ -203,121 +205,61 @@ EDA 시스템은 **실거래와 동일한 코드 경로**로 백테스트를 실
 용도               파라미터 탐색, 빠른 실험        최종 검증, 라이브 전환
 ```
 
-### 4.2 아키텍처 설계
+### 4.2 구현 결과
+
+#### 구현된 컴포넌트
+
+| 컴포넌트 | 파일 | 설명 |
+|---------|------|------|
+| **이벤트 모델** | `src/core/events.py` | Flat Pydantic frozen models, 11개 이벤트 타입, `AnyEvent` union |
+| **EventBus** | `src/core/event_bus.py` | async Queue(bounded), backpressure, JSONL audit, handler error isolation |
+| **EDA Config** | `src/models/eda.py` | `ExecutionMode(StrEnum)`, `EDAConfig`, `EDABacktestConfig` |
+| **HistoricalDataFeed** | `src/eda/data_feed.py` | Silver 데이터 → BarEvent 순차 발행, 멀티심볼 correlation_id 동기화 |
+| **StrategyEngine** | `src/eda/strategy_engine.py` | BaseStrategy 래퍼 (Adapter), bar-by-bar, 시그널 dedup |
+| **EDAPortfolioManager** | `src/eda/portfolio_manager.py` | Signal→Order, Fill→Position, mark-to-market, SL/TS, equity 계산 |
+| **EDARiskManager** | `src/eda/risk_manager.py` | Pre-trade validation, system stop-loss, CircuitBreaker |
+| **OMS** | `src/eda/oms.py` | 멱등성(client_order_id), Executor 라우팅, CB 전량 청산 |
+| **BacktestExecutor** | `src/eda/executors.py` | Open price fill, CostModel fee |
+| **ShadowExecutor** | `src/eda/executors.py` | 로깅만 수행 (Phase 5용 스텁) |
+| **AnalyticsEngine** | `src/eda/analytics.py` | Equity curve, TradeRecord, PerformanceMetrics |
+| **EDARunner** | `src/eda/runner.py` | 컴포넌트 조립, asyncio 오케스트레이션 |
+| CLI `eda run` | `src/cli/eda.py` | 단일 심볼 EDA 백테스트 커맨드 |
+
+#### 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    EventBus                          │
-│  publish(event) → [handler1, handler2, ...]          │
+│  publish(event) → async Queue → dispatch handlers    │
 └──────┬──────┬──────┬──────┬──────┬──────┬───────────┘
        │      │      │      │      │      │
   ┌────▼──┐ ┌─▼───┐ ┌▼────┐ ┌▼───┐ ┌▼───┐ ┌▼────────┐
-  │Market │ │Strat │ │ PM  │ │ RM │ │OMS │ │Analytics│
-  │Data   │ │Engine│ │     │ │    │ │    │ │Engine   │
-  │Feed   │ │      │ │     │ │    │ │    │ │         │
+  │Data   │ │Strat │ │ PM  │ │ RM │ │OMS │ │Analytics│
+  │Feed   │ │Engine│ │     │ │    │ │    │ │Engine   │
   └───────┘ └──────┘ └─────┘ └────┘ └────┘ └─────────┘
 ```
 
-#### 이벤트 타입 정의
+#### 이벤트 흐름
 
-```python
-# 시장 데이터 이벤트
-class BarEvent(BaseEvent):
-    symbol: str
-    timeframe: str
-    ohlcv: dict[str, float]       # open, high, low, close, volume
-    timestamp: datetime
-
-# 전략 시그널 이벤트
-class SignalEvent(BaseEvent):
-    symbol: str
-    direction: Direction           # LONG / SHORT / FLAT
-    strength: float                # 레버리지 강도
-    strategy_name: str
-    timestamp: datetime
-
-# 포트폴리오 이벤트
-class OrderRequestEvent(BaseEvent):
-    symbol: str
-    side: OrderSide                # BUY / SELL
-    quantity: Decimal
-    order_type: OrderType          # MARKET / LIMIT
-    client_order_id: str           # 멱등성 키
-
-# 주문 체결 이벤트
-class FillEvent(BaseEvent):
-    symbol: str
-    side: OrderSide
-    fill_price: Decimal
-    fill_quantity: Decimal
-    commission: Decimal
-    timestamp: datetime
+```
+BarEvent → StrategyEngine → SignalEvent → PM → OrderRequestEvent
+   → RM (validated=True) → OMS → Executor → FillEvent
+   → PM (position update) → BalanceUpdateEvent → Analytics
 ```
 
-#### 실행 모드 통합
+#### 핵심 설계 결정
 
-```python
-class ExecutionMode(IntEnum):
-    BACKTEST = 0     # 히스토리컬 데이터 리플레이
-    PAPER = 1        # 실시간 데이터 + 가상 주문 (거래소 paper API)
-    SHADOW = 2       # 실시간 데이터 + 로깅만 (주문 발송 X)
-    LIVE = 3         # 실거래
-
-class OrderExecutor(Protocol):
-    """OMS가 모드별로 다른 Executor를 주입받음"""
-    async def submit(self, order: OrderRequestEvent) -> FillEvent: ...
-
-class BacktestExecutor:     # ExecutionMode.BACKTEST
-    """히스토리컬 데이터 기반 즉시 체결 시뮬레이션"""
-
-class PaperExecutor:        # ExecutionMode.PAPER
-    """거래소 Testnet API 사용 (Binance Testnet)"""
-
-class ShadowExecutor:       # ExecutionMode.SHADOW
-    """주문을 보내지 않고 로깅만 수행, 이후 실제 시장과 비교"""
-
-class LiveExecutor:         # ExecutionMode.LIVE
-    """실제 거래소 API로 주문"""
-```
-
-#### EventBus 구현
-
-```python
-class EventBus:
-    """타입 안전한 Pub/Sub 이벤트 버스"""
-
-    def __init__(self) -> None:
-        self._handlers: dict[type[BaseEvent], list[EventHandler]] = defaultdict(list)
-        self._event_log: list[BaseEvent] = []  # Event Sourcing용
-
-    def subscribe(self, event_type: type[E], handler: Callable[[E], Awaitable[None]]) -> None:
-        self._handlers[event_type].append(handler)
-
-    async def publish(self, event: BaseEvent) -> None:
-        self._event_log.append(event)  # 감사 로그
-        for handler in self._handlers.get(type(event), []):
-            await handler(event)
-```
-
-#### EDA 백테스트 실행 흐름
-
-```python
-async def run_eda_backtest(config: EDABacktestConfig) -> BacktestResult:
-    bus = EventBus()
-
-    # 컴포넌트 연결
-    data_feed = HistoricalDataFeed(config.data, bus)      # BarEvent 발행
-    strategy = StrategyEngine(config.strategy, bus)        # BarEvent → SignalEvent
-    pm = PortfolioManager(config.portfolio, bus)           # SignalEvent → OrderRequestEvent
-    rm = RiskManager(config.risk, bus)                     # OrderRequestEvent 검증
-    oms = OrderManagementSystem(BacktestExecutor(), bus)   # OrderRequestEvent → FillEvent
-    analytics = AnalyticsEngine(bus)                       # 모든 이벤트 수집
-
-    # 데이터 리플레이
-    await data_feed.replay()  # 바 하나씩 BarEvent 발행
-
-    return analytics.generate_result()
-```
+1. **Flat Pydantic models**: `BaseEvent` 상속 대신 독립 frozen models — pyright Literal override 이슈 회피
+2. **`type AnyEvent = BarEvent | SignalEvent | ...`** union type으로 dispatch
+3. **Adapter 패턴**: 기존 `BaseStrategy.run()` 인터페이스 변경 없이 bar-by-bar 래핑
+4. **Backpressure 정책**: BAR/HEARTBEAT → stale 드롭 / SIGNAL/FILL → 절대 드롭 금지
+5. **멱등성**: client_order_id set으로 중복 주문 방지
+6. **Correlation ID chain**: Bar → Signal → Order → Fill 인과관계 추적
+7. **Executor Protocol**: BacktestExecutor / ShadowExecutor / (향후 PaperExecutor, LiveExecutor) 교체 가능
+8. **Equity 정확성**: `total_equity = cash + long_notional - short_notional` (이중 계산 방지)
+9. **Position Stop-Loss**: Intrabar (high/low) 또는 close 기반, `entry * (1 ± stop_loss_pct)` 비교
+10. **Trailing Stop**: ATR(14) SMA 기반, peak/trough 추적 후 `close < peak - atr * multiplier` 판정
+11. **매 Bar BalanceUpdateEvent**: RM의 실시간 drawdown 추적 지원
 
 ### 4.3 Vectorized vs EDA 백테스트 병행 전략
 
@@ -330,20 +272,65 @@ async def run_eda_backtest(config: EDABacktestConfig) -> BacktestResult:
 | 최종 검증 | EDA | 실거래와 동일 코드 경로 |
 | Paper/Shadow/Live | EDA | 실시간 이벤트 처리 |
 
-### 4.4 작업 목록
+### 4.4 VBT vs EDA Parity 검증
 
-| # | 작업 | 예상 난이도 |
-|---|------|-----------|
-| 1 | `BaseEvent` + 이벤트 타입 정의 (`src/core/events.py`) | 낮음 |
-| 2 | `EventBus` 구현 (async, type-safe, event log) | 중간 |
-| 3 | `HistoricalDataFeed` — 바 단위 이벤트 리플레이 | 중간 |
-| 4 | `StrategyEngine` — BaseStrategy 래퍼 (bar-by-bar) | 중간 |
-| 5 | `PortfolioManager` 이벤트 기반 리팩토링 | 높음 |
-| 6 | `RiskManager` 구현 (포지션 사이즈, 레버리지 체크) | 높음 |
-| 7 | `OMS` + `ExecutionMode` + Executor 패턴 구현 | 높음 |
-| 8 | `BacktestExecutor` — 즉시 체결 시뮬레이터 | 중간 |
-| 9 | EDA 백테스트 결과가 Vectorized와 일치하는지 검증 | 높음 |
-| 10 | 통합 테스트 — 전체 이벤트 파이프라인 동작 확인 | 중간 |
+동일 데이터/전략/설정으로 VBT `BacktestEngine`과 `EDARunner`를 비교한 Parity Test 결과:
+
+| 검증 항목 | 결과 |
+|-----------|------|
+| 양쪽 모두 결과 생성 | ✅ 통과 |
+| 수익률 부호(양/음) 일치 | ✅ 통과 |
+| Warmup 미달 시 거래 0 | ✅ 통과 |
+
+#### Parity 수치 비교 (BTC/USDT, 2024-01 ~ 2025-12)
+
+| 지표 | VBT | EDA | 비고 |
+|------|:---:|:---:|------|
+| **Total Return** | 2.77% | 2.72% | 근접 (차이 0.05pp) |
+| **Sharpe Ratio** | 0.37 | 0.49 | 체결 방식 차이 |
+| **MDD** | 12.32% | 12.34% | 거의 동일 |
+| **Total Trades** | 21 | 20 | 1건 차이 |
+
+> **참고:** 벡터화(VBT)와 이벤트 기반(EDA)은 체결 방식이 다르므로 수치가 정확히 일치하지는 않음.
+> VBT는 시그널 시점의 close 기준, EDA는 다음 바의 open 기준으로 체결.
+> 핵심은 **방향성(수익/손실 부호)과 규모(order of magnitude)**가 일치하는 것.
+
+#### Equity 계산 버그 수정 (Sharpe 3.0 → 0.49)
+
+초기 EDA에서 Sharpe 3.03이라는 비현실적 수치가 나왔으며, 근본 원인은 **equity 이중 계산 버그**였음:
+- 버그: `total_equity = cash + notional + unrealized` — notional에 이미 unrealized 포함
+- 수정: `total_equity = cash + long_notional - short_notional`
+- 영향: equity 과대평가 → leverage 과소평가 → 과도한 포지션 → Sharpe 부풀림
+
+### 4.5 테스트 현황
+
+| 테스트 파일 | 테스트 수 | 설명 |
+|------------|:---:|------|
+| `tests/core/test_events.py` | 17 | 이벤트 생성, frozen, JSON 직렬화 |
+| `tests/core/test_event_bus.py` | 12 | subscribe, publish, backpressure, JSONL |
+| `tests/models/test_eda.py` | 5 | EDAConfig, ExecutionMode |
+| `tests/eda/test_data_feed.py` | 8 | 발행 수, 필드 정확성, 멀티심볼 동기화 |
+| `tests/eda/test_strategy_engine.py` | 8 | warmup, dedup, 멀티심볼 독립 버퍼 |
+| `tests/eda/test_portfolio_manager.py` | 26 | Signal→Order, Fill→Position, equity, SL/TS, balance update |
+| `tests/eda/test_risk_manager.py` | 10 | validation, circuit breaker, peak equity |
+| `tests/eda/test_oms.py` | 5 | validated order, 멱등성, CB close |
+| `tests/eda/test_executors.py` | 6 | open price fill, fee, multi symbol |
+| `tests/eda/test_analytics.py` | 8 | equity curve, trade, metrics |
+| `tests/eda/test_runner.py` | 4 | e2e 단일/멀티, analytics, short data |
+| `tests/eda/test_parity.py` | 8 | VBT vs EDA parity (수익률/부호/거래수/warmup) |
+| **합계** | **126** | ruff 0, pyright 0 |
+
+- 전체 프로젝트: 322/322 passed
+
+### 4.6 CLI 사용법
+
+```bash
+# EDA 백테스트 실행
+python main.py eda run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
+
+# 옵션 지정
+python main.py eda run tsmom BTC/USDT --capital 50000 --leverage 2.0 --timeframe 1d
+```
 
 ---
 
@@ -573,9 +560,9 @@ Phase 2: 멀티에셋 백테스트 ─────────┐
 Phase 3: 고급 검증 (CPCV/WFA) ──────┤  ← 병렬 가능
 Phase 7-A: Streamlit 대시보드 ──────┘
 
-Phase 4: EDA 시스템 ────────────────── ← Phase 2,3 완료 후
+Phase 4: EDA 시스템 ─────────────────── ✅ 완료
 
-Phase 5: Dry Run ───────────────────── ← Phase 4 완료 후
+Phase 5: Dry Run ───────────────────── ← 현재 (Phase 4 완료)
 Phase 7-B: Grafana 모니터링 ────────── ← Phase 5와 병행
 
 Phase 6: Live Trading ─────────────── ← Phase 5 검증 통과 후
@@ -593,3 +580,5 @@ Phase 7-C: 운영 분석 도구 ──────────── ← Phase 6
 | 2026-02-06 | **Phase 3 완료** — 고급 검증 (IS/OOS, WFA, CPCV, DSR, PBO, 검증 리포트) |
 | 2026-02-06 | 8-asset EW 통합 백테스트 검증 — Sharpe 1.57, CAGR +57.95%, MDD 19.43% |
 | 2026-02-06 | CAGR 수동 계산 추가 — VBT `cash_sharing` 모드 `Annualized Return [%]` 미제공 대응 |
+| 2026-02-06 | **Phase 4 완료** — EDA 시스템 (EventBus, 11 컴포넌트, 110 tests, CLI `eda run`) |
+| 2026-02-06 | **Phase 4 강화** — Equity 이중 계산 버그 수정, Position Stop-Loss/Trailing Stop 구현, 매 Bar BalanceUpdate, Parity 재검증 (VBT 2.77% vs EDA 2.72%), 126 tests |

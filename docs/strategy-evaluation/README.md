@@ -100,8 +100,8 @@ PortfolioManagerConfig(
 
 1. ~~**Phase 2: 멀티에셋 백테스트**~~ — ✅ 완료 (VectorBT `cash_sharing`, Sharpe 1.57, MDD 19.4%)
 2. ~~**Phase 3: 고급 검증**~~ — ✅ 완료 (IS/OOS, Walk-Forward, CPCV, DSR, PBO)
-3. **Phase 4: EDA 시스템** — EventBus + 이벤트 기반 백테스트 ← **현재**
-4. **Phase 5: Dry Run** — Shadow Mode → Paper Trading → Canary
+3. ~~**Phase 4: EDA 시스템**~~ — ✅ 완료 (EventBus, 11 컴포넌트, 126 tests, SL/TS/equity fix, CLI)
+4. **Phase 5: Dry Run** — Shadow Mode → Paper Trading → Canary ← **다음**
 5. **Phase 6: Live Trading** — 점진적 자본 투입 (5% → 100%)
 6. **Phase 7: 모니터링** — Streamlit + Grafana + Discord
 
@@ -125,3 +125,5 @@ PortfolioManagerConfig(
 | 2026-02-06 | **Phase 2 완료** — 멀티에셋 통합 백테스트 구현 (run_multi, VBT cash_sharing) |
 | 2026-02-06 | **Phase 3 완료** — 고급 검증 시스템 구현 (IS/OOS, WFA, CPCV, DSR, PBO) |
 | 2026-02-06 | 8-asset 통합 결과: Sharpe 1.57, CAGR +57.95%, MDD 19.43% (분산 효과 확인) |
+| 2026-02-06 | **Phase 4 완료** — EDA 시스템 (EventBus, 11 컴포넌트, CLI `eda run`) |
+| 2026-02-06 | **Phase 4 강화** — Equity 이중 계산 수정, Position SL/Trailing Stop, Parity 검증 (VBT 2.77% vs EDA 2.72%), 126 tests |

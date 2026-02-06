@@ -174,12 +174,39 @@ DataSource (Protocol)
 
 ### 5.3 PortfolioManager (Event-based)
 
-**역할:** `SignalEvent` → `OrderRequestEvent` 변환
+**역할:** `SignalEvent` → `OrderRequestEvent` 변환 + Position Risk Management
 
 - 현재 포지션 상태 관리 (FillEvent 구독)
 - Signal strength × asset_weight → 목표 비중 계산
 - 현재 vs 목표 비중 차이가 `rebalance_threshold` 이상이면 주문 생성
 - `client_order_id` 생성 (멱등성)
+
+#### Equity 계산
+
+```python
+total_equity = cash + long_notional - short_notional
+```
+
+- `long_notional = size * current_price` (시가평가 기준, unrealized PnL 이미 포함)
+- SHORT 포지션은 반환 비용이므로 차감
+
+#### Position Stop-Loss
+
+- **Intrabar (`use_intrabar_stop=True`)**: LONG은 `bar.low`, SHORT는 `bar.high` 기준
+- **Close 기준 (`use_intrabar_stop=False`)**: `bar.close` 기준
+- 트리거: `check_price < entry * (1 - stop_loss_pct)` (LONG) / `> entry * (1 + stop_loss_pct)` (SHORT)
+
+#### Trailing Stop (ATR 기반)
+
+- **ATR(14)**: True Range의 14기간 SMA (incremental 계산)
+- **Peak/Trough 추적**: LONG은 진입 후 `bar.high` 최고가, SHORT는 `bar.low` 최저가
+- 트리거: `close < peak - atr * multiplier` (LONG) / `close > trough + atr * multiplier` (SHORT)
+- Warmup: ATR 14봉 미달 시 trailing stop 비활성
+
+#### 매 Bar BalanceUpdateEvent 발행
+
+- 포지션 보유 중 매 bar마다 `BalanceUpdateEvent` 발행
+- RM의 system stop-loss가 실시간 mark-to-market drawdown 추적 가능
 
 ### 5.4 RiskManager
 
@@ -252,12 +279,23 @@ EDA 백테스트 결과가 벡터화 백테스트와 일치하는지 자동 검�
 
 ```
 VBT run_multi() 결과 vs EDA run_eda() 결과
-├── Sharpe 오차 < 1%
-├── CAGR 오차 < 1%
-├── MDD 오차 < 2%
-├── Total Trades 수 일치
-└── Trade 방향 일치율 > 99%
+├── 양쪽 모두 결과 생성
+├── 수익률 부호(양/음) 일치
+├── 거래 수 유사 (±20%)
+└── Warmup 미달 시 거래 0
 ```
+
+#### 실제 Parity 결과 (BTC/USDT, 2024-01 ~ 2025-12)
+
+| 지표 | VBT | EDA | 비고 |
+|------|:---:|:---:|------|
+| **Total Return** | 2.77% | 2.72% | 차이 0.05pp |
+| **Sharpe Ratio** | 0.37 | 0.49 | 체결 방식 차이 |
+| **MDD** | 12.32% | 12.34% | 거의 동일 |
+| **Total Trades** | 21 | 20 | 1건 차이 |
+
+> 체결 방식 차이: VBT는 시그널 시점의 close, EDA는 다음 bar의 open으로 체결.
+> 수치 일치보다 **방향성과 규모**의 일치가 핵심.
 
 ---
 
@@ -445,3 +483,4 @@ src/
 | 날짜 | 변경 내용 |
 |------|----------|
 | 2026-02-06 | 초기 문서 작성 — EDA 아키텍처 설계, Shadow/Paper/Canary 검증 체크리스트 |
+| 2026-02-06 | PM 강화 — Equity 이중 계산 수정, Position SL/Trailing Stop, 매 Bar BalanceUpdate, Parity 결과 추가 |

@@ -259,7 +259,7 @@ def main() -> None:
         print(f"Sharpe={metrics['sharpe']:.2f}, CAGR={metrics['cagr']:.1f}%, MDD={metrics['mdd']:.1f}%")
 
     # 3. Results
-    print(f"\n[3/3] Results Summary")
+    print("\n[3/3] Results Summary")
     print("=" * 80)
 
     df = pd.DataFrame(results)
@@ -358,7 +358,7 @@ def main() -> None:
         print(f"  Sharpe={b['sharpe']:.2f}, CAGR={b['cagr']:.1f}%, MDD={b['mdd']:.1f}%, AnnVol={b['ann_vol']:.1f}%, Calmar={b['calmar']:.2f}")
 
     best = df.iloc[0]
-    print(f"\n### Best Combination (by Sharpe)")
+    print("\n### Best Combination (by Sharpe)")
     print(f"  vol_target={best['vol_target']:.2f}, leverage_cap={best['leverage_cap']:.1f}x")
     print(f"  Sharpe={best['sharpe']:.2f}, CAGR={best['cagr']:.1f}%, MDD={best['mdd']:.1f}%, AnnVol={best['ann_vol']:.1f}%, Calmar={best['calmar']:.2f}")
 

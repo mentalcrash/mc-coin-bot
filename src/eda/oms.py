@@ -1,0 +1,168 @@
+"""EDA Order Management System.
+
+validated 주문을 Executor로 라우팅하고, 멱등성을 보장합니다.
+CircuitBreaker 이벤트 수신 시 전량 청산을 실행합니다.
+
+흐름: RM → OrderRequest(validated=True) → OMS → Executor → FillEvent
+
+Rules Applied:
+    - Idempotency: client_order_id 기반 중복 방지
+    - Circuit Breaker: 전량 청산 실행
+    - Executor Routing: 백테스트/라이브 실행기 라우팅
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from loguru import logger
+
+from src.core.events import (
+    AnyEvent,
+    CircuitBreakerEvent,
+    EventType,
+    FillEvent,
+    OrderAckEvent,
+    OrderRequestEvent,
+)
+
+if TYPE_CHECKING:
+    from src.core.event_bus import EventBus
+    from src.eda.portfolio_manager import EDAPortfolioManager
+
+
+@runtime_checkable
+class Executor(Protocol):
+    """주문 실행기 인터페이스.
+
+    BacktestExecutor, ShadowExecutor, LiveExecutor 등이 구현합니다.
+    """
+
+    async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
+        """주문 실행.
+
+        Args:
+            order: 검증된 주문 요청
+
+        Returns:
+            체결 결과 (None이면 체결 실패)
+        """
+        ...
+
+
+class OMS:
+    """Order Management System.
+
+    Subscribes to: OrderRequestEvent(validated=True), CircuitBreakerEvent
+    Publishes: OrderAckEvent, FillEvent
+
+    Args:
+        executor: 주문 실행기
+        portfolio_manager: PM 참조 (청산용)
+    """
+
+    def __init__(
+        self,
+        executor: Executor,
+        portfolio_manager: EDAPortfolioManager | None = None,
+    ) -> None:
+        self._executor = executor
+        self._pm = portfolio_manager
+        self._bus: EventBus | None = None
+        self._processed_orders: set[str] = set()
+        self._total_fills = 0
+        self._total_rejected = 0
+
+    async def register(self, bus: EventBus) -> None:
+        """EventBus에 핸들러 등록."""
+        self._bus = bus
+        bus.subscribe(EventType.ORDER_REQUEST, self._on_order_request)
+        bus.subscribe(EventType.CIRCUIT_BREAKER, self._on_circuit_breaker)
+
+    @property
+    def total_fills(self) -> int:
+        """총 체결 건수."""
+        return self._total_fills
+
+    @property
+    def total_rejected(self) -> int:
+        """총 거부 건수."""
+        return self._total_rejected
+
+    async def _on_order_request(self, event: AnyEvent) -> None:
+        """validated 주문 처리."""
+        assert isinstance(event, OrderRequestEvent)
+        order = event
+        bus = self._bus
+        assert bus is not None
+
+        # validated 주문만 처리
+        if not order.validated:
+            return
+
+        # 멱등성 체크
+        if order.client_order_id in self._processed_orders:
+            logger.warning("Duplicate order ignored: {}", order.client_order_id)
+            self._total_rejected += 1
+            return
+
+        self._processed_orders.add(order.client_order_id)
+
+        # OrderAck 발행
+        ack = OrderAckEvent(
+            client_order_id=order.client_order_id,
+            symbol=order.symbol,
+            correlation_id=order.correlation_id,
+            source="OMS",
+        )
+        await bus.publish(ack)
+
+        # Executor 실행
+        fill = await self._executor.execute(order)
+        if fill is not None:
+            self._total_fills += 1
+            await bus.publish(fill)
+        else:
+            self._total_rejected += 1
+            logger.warning("Executor returned None for: {}", order.client_order_id)
+
+    async def _on_circuit_breaker(self, event: AnyEvent) -> None:
+        """CircuitBreaker → 전량 청산."""
+        assert isinstance(event, CircuitBreakerEvent)
+
+        if not event.close_all_positions:
+            return
+
+        if self._pm is None:
+            logger.warning("Circuit breaker: no PM reference for close-all")
+            return
+
+        bus = self._bus
+        assert bus is not None
+
+        # 모든 오픈 포지션에 대해 청산 주문 생성
+        from src.models.types import Direction
+
+        for symbol, pos in self._pm.positions.items():
+            if not pos.is_open:
+                continue
+
+            side = "SELL" if pos.direction == Direction.LONG else "BUY"
+            close_order = OrderRequestEvent(
+                client_order_id=f"cb-close-{symbol}",
+                symbol=symbol,
+                side=side,  # type: ignore[arg-type]
+                target_weight=0.0,
+                notional_usd=pos.notional,
+                validated=True,
+                correlation_id=event.correlation_id,
+                source="OMS-CircuitBreaker",
+            )
+
+            # 직접 실행 (RM 우회)
+            fill = await self._executor.execute(close_order)
+            if fill is not None:
+                self._total_fills += 1
+                await bus.publish(fill)
+
+        logger.critical("Circuit breaker: all positions closed")
