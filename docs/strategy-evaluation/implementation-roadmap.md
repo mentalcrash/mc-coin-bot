@@ -1,8 +1,8 @@
 # Implementation Roadmap
 
-전략 확정(8-asset EW TSMOM, Sharpe 2.33) 이후 실거래까지의 구현 로드맵.
+전략 확정(8-asset EW TSMOM, Sharpe 2.41) 이후 실거래까지의 구현 로드맵.
 
-> **현재 위치:** Phase 1 완료 (단일에셋 백테스트) → Phase 2 진입 예정
+> **현재 위치:** Phase 2+3 완료 → Phase 4 진입 예정
 
 ---
 
@@ -12,7 +12,7 @@
 Phase 1          Phase 2              Phase 3           Phase 4          Phase 5          Phase 6
 단일에셋          멀티에셋             고급 검증          EDA 시스템       Dry Run          Live
 백테스트          백테스트 확장         IS/OOS/WFA/CPCV   이벤트 기반       Paper Trading     실거래
-✅ 완료           ← 현재              예정               예정             예정              예정
+✅ 완료           ✅ 완료              ✅ 완료            ← 현재          예정              예정
 ```
 
 ---
@@ -26,237 +26,165 @@ Phase 1          Phase 2              Phase 3           Phase 4          Phase 5
 
 ---
 
-## Phase 2: 멀티에셋 백테스트 확장
+## Phase 2: 멀티에셋 백테스트 확장 (완료)
 
-### 2.1 목표
+> **상태:** ✅ 완료 (2026-02-06)
 
-단일 심볼 → 8-asset Equal-Weight 포트폴리오를 **하나의 VectorBT Portfolio**로 통합 백테스트.
+### 2.1 구현 결과
 
-### 2.2 현재 아키텍처의 제약
+단일 심볼 → 8-asset Equal-Weight 포트폴리오를 VectorBT `cash_sharing=True`로 통합 백테스트.
 
-| 컴포넌트 | 현재 (단일) | 필요 (멀티) |
-|---------|-----------|-----------|
-| `MarketDataSet` | `symbol: str`, `ohlcv: DataFrame` | 심볼별 OHLCV dict |
-| `BacktestEngine._execute()` | `close=Series` 단일 심볼 | `close=DataFrame` 멀티 심볼 |
-| `BaseStrategy.run()` | 단일 DataFrame → 단일 Signals | 심볼별 독립 실행 후 합성 |
-| `StrategySignals` | `pd.Series` 4개 | `pd.DataFrame` 4개 (columns=symbols) |
-| `Portfolio` | 단일 자본 | 심볼별 자본 배분 (EW: 1/N) |
-| `PerformanceAnalyzer` | 단일 포트폴리오 분석 | 포트폴리오 + 심볼별 분해 분석 |
+#### 구현된 컴포넌트
 
-### 2.3 설계 방향
+| 컴포넌트 | 파일 | 설명 |
+|---------|------|------|
+| `MultiSymbolData` | `src/data/market_data.py` | 멀티심볼 데이터 컨테이너 (dataclass) |
+| `MarketDataService.get_multi()` | `src/data/service.py` | Silver 데이터 일괄 로드 |
+| `MultiAssetBacktestRequest` | `src/backtest/request.py` | 멀티에셋 백테스트 요청 DTO |
+| `BacktestEngine.run_multi()` | `src/backtest/engine.py` | 멀티에셋 백테스트 실행 |
+| `BacktestEngine.run_multi_with_returns()` | `src/backtest/engine.py` | + 수익률 시리즈 반환 |
+| `BacktestEngine.run_multi_validated()` | `src/backtest/engine.py` | + 검증 결합 실행 |
+| `MultiAssetConfig` | `src/models/backtest.py` | 결과 설정 모델 |
+| `MultiAssetBacktestResult` | `src/models/backtest.py` | 결과 모델 (포트폴리오 + 심볼별) |
+| `_apply_pm_rules_to_weights()` | `src/backtest/engine.py` | PM 규칙 모듈 레벨 함수 추출 |
+| CLI `run-multi` | `src/cli/backtest.py` | 멀티에셋 백테스트 커맨드 |
 
-**원칙: 기존 단일에셋 인터페이스를 깨지 않으면서 멀티에셋 래퍼 추가**
+#### 핵심 설계 결정
 
-#### A. 데이터 레이어
+1. **전략 심볼별 독립 실행**: `strategy.run(df)` 인터페이스 변경 없음
+2. **VectorBT `cash_sharing=True` + `group_by=True`**: 진정한 포트폴리오 시뮬레이션
+3. **`from_orders` + `targetpercent`**: strength × asset_weight로 자본 배분
+4. **PM 규칙 재사용**: 기존 Numba stop-loss/trailing-stop/rebalance를 심볼별 적용
+5. **CAGR 수동 계산**: VBT `cash_sharing` 모드에서 `Annualized Return [%]` 미제공 → `_compute_cagr()` 추가
 
-```python
-# 새로 추가 — 멀티 심볼 데이터 컨테이너
-@dataclass
-class MultiSymbolData:
-    symbols: list[str]
-    timeframe: str
-    start: datetime
-    end: datetime
-    ohlcv: dict[str, pd.DataFrame]  # symbol → OHLCV DataFrame
+### 2.2 8-Asset EW 통합 백테스트 결과 (2020-2025)
 
-    @property
-    def close_matrix(self) -> pd.DataFrame:
-        """심볼별 close를 DataFrame으로 합성 (VectorBT 입력용)"""
-        return pd.DataFrame({s: df["close"] for s, df in self.ohlcv.items()})
+| 지표 | Multi-Asset Portfolio | 개별 평균 | 개선 |
+|------|:---:|:---:|:---:|
+| **CAGR** | +57.95% | +36.05% | +61% |
+| **Sharpe** | 1.57 | 1.08 | +45% |
+| **MDD** | 19.43% | 39.8% | **-51% 감소** |
+| **Sortino** | 2.98 | - | - |
+| **Calmar** | 2.98 | - | - |
+| **Profit Factor** | 2.00 | - | - |
+| **Total Trades** | 1,123 | - | - |
 
-    def get_single(self, symbol: str) -> MarketDataSet:
-        """기존 단일에셋 인터페이스 호환"""
-        ...
-```
+> **참고:** 개별 스윕(EW 평균 방식, Sharpe 2.41)과 통합 백테스트(VBT cash_sharing, Sharpe 1.57)의 Sharpe 차이는 정상.
+> 스윕은 각 에셋 독립 시뮬레이션 후 수익률 평균이고, 통합은 실제 자본 공유 시뮬레이션이므로
+> 거래비용/슬리피지/자본 제약이 반영됨. 방향성(분산 효과, MDD 감소)은 일치.
 
-#### B. 전략 실행 — 심볼별 독립 실행 패턴 (권장)
+#### 심볼별 기여도
 
-```python
-# BacktestEngine에 추가
-def run_multi(self, request: MultiAssetBacktestRequest) -> MultiAssetBacktestResult:
-    signals_dict: dict[str, StrategySignals] = {}
-    processed_dict: dict[str, pd.DataFrame] = {}
+| Symbol | Individual CAGR | Individual Sharpe | Contribution |
+|--------|:---:|:---:|:---:|
+| BTC/USDT | +51.8% | 0.84 | +46.0% |
+| ETH/USDT | +68.2% | 0.82 | +65.3% |
+| BNB/USDT | +99.3% | 1.15 | +79.1% |
+| SOL/USDT | +87.6% | 0.77 | +95.1% |
+| DOGE/USDT | +98.2% | 0.48 | +134.8% |
+| LINK/USDT | +37.8% | 0.35 | +67.7% |
+| ADA/USDT | +47.9% | 0.47 | +67.9% |
+| AVAX/USDT | +21.5% | 0.19 | +61.4% |
 
-    for symbol in request.data.symbols:
-        single_df = request.data.ohlcv[symbol]
-        processed, signals = request.strategy.run(single_df)
-        signals_dict[symbol] = signals
-        processed_dict[symbol] = processed
+### 2.3 테스트 현황
 
-    # DataFrame으로 합성 (VectorBT 멀티에셋 입력)
-    entries_df = pd.DataFrame({s: sig.entries for s, sig in signals_dict.items()})
-    exits_df = pd.DataFrame({s: sig.exits for s, sig in signals_dict.items()})
-
-    vbt_portfolio = vbt.Portfolio.from_signals(
-        close=request.data.close_matrix,
-        entries=entries_df,
-        exits=exits_df,
-        cash_sharing=True,        # 심볼 간 현금 공유
-        init_cash=total_capital,
-        group_by=True,            # 전체를 하나의 그룹으로
-        ...
-    )
-```
-
-**이 패턴의 장점:**
-- `BaseStrategy` 인터페이스 변경 없음 (단일 df → 단일 signals)
-- 각 심볼 독립 실행 → 병렬화 가능
-- 기존 단일에셋 백테스트와 100% 호환
-
-#### C. 포트폴리오 배분
-
-```python
-class AllocationStrategy(str, Enum):
-    EQUAL_WEIGHT = "equal_weight"     # 1/N (확정)
-    # 향후 확장 가능: RISK_PARITY, INVERSE_VOL, ...
-
-class MultiAssetPortfolioConfig(BaseModel):
-    symbols: list[str]
-    allocation: AllocationStrategy = AllocationStrategy.EQUAL_WEIGHT
-    total_capital: Decimal
-    max_leverage_cap: float = 2.0
-    strategy_config: TSMOMConfig  # 또는 BaseStrategyConfig
-```
-
-#### D. 분석 확장
-
-```python
-class MultiAssetResult(BaseModel):
-    portfolio_metrics: PerformanceMetrics   # 포트폴리오 전체
-    per_symbol_metrics: dict[str, PerformanceMetrics]  # 심볼별
-    correlation_matrix: pd.DataFrame        # 수익률 상관관계
-    contribution: dict[str, float]          # 심볼별 수익 기여도
-```
-
-### 2.4 작업 목록
-
-| # | 작업 | 예상 난이도 |
-|---|------|-----------|
-| 1 | `MultiSymbolData` 데이터 컨테이너 구현 | 낮음 |
-| 2 | `DataService.fetch_multi()` 구현 (Silver 레이어 일괄 로딩) | 낮음 |
-| 3 | `MultiAssetBacktestRequest` DTO 구현 | 낮음 |
-| 4 | `BacktestEngine.run_multi()` 구현 | 중간 |
-| 5 | VectorBT `cash_sharing` + `group_by` 멀티에셋 통합 | 중간 |
-| 6 | `MultiAssetResult` + 심볼별 분해 분석 | 중간 |
-| 7 | CLI 확장 — `backtest run-multi tsmom --symbols BTC,ETH,...` | 낮음 |
-| 8 | 기존 단일에셋 테스트가 깨지지 않는지 검증 | 낮음 |
+- `tests/backtest/test_multi_asset.py`: 12 tests (MultiSymbolData, Request, Config, Result)
+- 전체: 191/191 passed, ruff 0 errors, pyright 0 errors
 
 ---
 
-## Phase 3: 고급 검증 (과적합 방지)
+## Phase 3: 고급 검증 — 과적합 방지 (완료)
 
-### 3.1 왜 필요한가
+> **상태:** ✅ 완료 (2026-02-06)
 
-현재 백테스트는 **전체 기간 단일 테스트** — 과적합(overfitting) 여부를 판단할 수 없음.
-전략이 미래에도 작동할 확률을 높이려면 통계적으로 엄밀한 검증이 필수.
+### 3.1 구현된 검증 체계
 
-### 3.2 검증 방법론 (3단계)
+3단계 Tiered Validation 시스템 구현. 단일에셋/멀티에셋 모두 지원.
 
-#### Stage 1: In-Sample / Out-of-Sample Split
+#### 구현된 컴포넌트
 
-가장 기본적인 검증. 전체 데이터를 시간순으로 분할.
+| 컴포넌트 | 파일 | 설명 |
+|---------|------|------|
+| `split_multi_is_oos()` | `src/backtest/validation/splitters.py` | 멀티에셋 IS/OOS 분할 |
+| `split_multi_walk_forward()` | `src/backtest/validation/splitters.py` | 멀티에셋 Walk-Forward 분할 |
+| `split_multi_cpcv()` | `src/backtest/validation/splitters.py` | 멀티에셋 CPCV 분할 (purge+embargo) |
+| `deflated_sharpe_ratio()` | `src/backtest/validation/deflated_sharpe.py` | Bailey & Lopez de Prado DSR |
+| `probabilistic_sharpe_ratio()` | `src/backtest/validation/deflated_sharpe.py` | PSR 계산 |
+| `expected_max_sharpe()` | `src/backtest/validation/deflated_sharpe.py` | 다중 테스트 기대 최대 Sharpe |
+| `calculate_pbo()` | `src/backtest/validation/pbo.py` | PBO (순위 기반) |
+| `calculate_pbo_logit()` | `src/backtest/validation/pbo.py` | PBO (로짓 기반) |
+| `TieredValidator.validate_multi()` | `src/backtest/validation/validator.py` | 멀티에셋 3단계 검증 |
+| `generate_validation_report()` | `src/backtest/validation/report.py` | 검증 결과 텍스트 리포트 |
+| CLI `validate` | `src/cli/backtest.py` | 검증 커맨드 |
+
+### 3.2 검증 3단계
+
+#### QUICK: IS/OOS Split
 
 ```
 |← ───── In-Sample (70%) ─────→|← ── OOS (30%) ──→|
 |  2020-01          2024-04    |  2024-04   2025-12 |
-|  파라미터 최적화              |  성과 확인         |
 ```
 
-**구현:**
-```python
-class ISOOSConfig(BaseModel):
-    train_ratio: float = 0.7     # IS 비율
-    min_oos_days: int = 365      # 최소 OOS 기간
+- `split_multi_is_oos()`: 모든 심볼에 동일 시간 경계 적용
+- 판정: OOS Sharpe > 0.5, 성과 열화 < 30%
 
-class ISOOSResult(BaseModel):
-    is_sharpe: float             # In-Sample Sharpe
-    oos_sharpe: float            # Out-of-Sample Sharpe
-    degradation: float           # (IS - OOS) / IS — 0.3 이하 권장
-    oos_positive: bool           # OOS에서도 수익인가?
-```
-
-#### Stage 2: Walk-Forward Analysis (WFA)
-
-데이터를 슬라이딩 윈도우로 반복 검증 — IS에서 최적화, OOS에서 테스트, 윈도우를 전진.
+#### MILESTONE: Walk-Forward Analysis
 
 ```
-Window 1: |───IS───|─OOS─|
-Window 2:     |───IS───|─OOS─|
-Window 3:         |───IS───|─OOS─|
-...
-→ 모든 OOS 구간을 이어 붙여 "합성 OOS 수익률" 생성
+Fold 1: |───Train───|─Test─|
+Fold 2:     |───Train───|─Test─|
+Fold 3:         |───Train───|─Test─|
 ```
 
-**구현:**
-```python
-class WalkForwardConfig(BaseModel):
-    is_window_days: int = 720    # IS 윈도우 (2년)
-    oos_window_days: int = 180   # OOS 윈도우 (6개월)
-    step_days: int = 90          # 전진 폭 (3개월)
-    min_windows: int = 4         # 최소 윈도우 수
+- `split_multi_walk_forward()`: expanding/rolling window 지원
+- 판정: OOS Sharpe > 1.0, Consistency > 70%, Sharpe Decay < 30%
 
-class WalkForwardResult(BaseModel):
-    windows: list[WFWindowResult]       # 각 윈도우 결과
-    combined_oos_sharpe: float          # 합성 OOS Sharpe
-    efficiency_ratio: float             # OOS Sharpe / IS Sharpe 평균
-    consistency: float                  # OOS 수익 윈도우 비율 (>60% 권장)
-```
-
-#### Stage 3: Combinatorial Purged Cross-Validation (CPCV)
-
-2019년 Marcos López de Prado가 제안. Walk-Forward의 한계(단일 경로 의존성)를 극복.
+#### FINAL: CPCV + DSR + PBO + Monte Carlo
 
 ```
-데이터를 N개 블록으로 분할 → C(N,k) 조합으로 train/test 생성
-각 분할에서:
-  1. Purging: train/test 경계의 겹치는 샘플 제거
-  2. Embargo: purge 후 추가 gap 적용 (자기상관 차단)
-→ 수백~수천 개의 독립적 백테스트 경로 생성
-→ Sharpe 분포로 과적합 확률(PBO) 추정
+N개 블록 → C(N,k) 조합으로 독립적 경로 생성
+각 경로에서 purge + embargo 적용 후 평가
 ```
 
-**구현:**
-```python
-class CPCVConfig(BaseModel):
-    n_splits: int = 6            # 데이터 블록 수
-    n_test_splits: int = 2       # 테스트에 사용할 블록 수
-    embargo_pct: float = 0.01    # 엠바고 비율 (전체 데이터의 1%)
-    purge_window: int = 5        # Purge 윈도우 (거래일)
+- `split_multi_cpcv()`: 조합론적 교차 검증
+- `deflated_sharpe_ratio()`: 다중 테스트 보정 (n_trials 기반)
+- `calculate_pbo()`: 과적합 확률 추정
+- 판정: PBO < 0.30, DSR > 0.5
 
-class CPCVResult(BaseModel):
-    pbo: float                   # Probability of Backtest Overfitting (< 0.5 권장)
-    sharpe_distribution: list[float]  # 경로별 Sharpe 분포
-    mean_oos_sharpe: float
-    median_oos_sharpe: float
-    deflated_sharpe: float       # Deflated Sharpe Ratio (다중 테스트 보정)
+### 3.3 검증 판정 기준 (상수)
+
+| 기준 | 상수 | 통과 | 주의 | 실패 |
+|------|------|------|------|------|
+| IS/OOS 성과 열화 | `MULTI_QUICK_MAX_DEGRADATION` | < 30% | 30~50% | > 50% |
+| WFA OOS Sharpe | `MULTI_WFA_MIN_OOS_SHARPE` | > 1.0 | 0.5~1.0 | < 0.5 |
+| WFA Consistency | `MULTI_WFA_MIN_CONSISTENCY` | > 70% | 50~70% | < 50% |
+| CPCV PBO | `MULTI_CPCV_MAX_PBO` | < 0.30 | 0.30~0.50 | > 0.50 |
+| Deflated Sharpe | `MULTI_DEFLATED_SHARPE_MIN` | > 0.5 | - | < 0.5 |
+
+### 3.4 테스트 현황
+
+- `tests/backtest/validation/test_deflated_sharpe.py`: 14 tests (DSR/PSR/E[max(SR)])
+- `tests/backtest/validation/test_pbo.py`: 9 tests (PBO rank/logit)
+- `tests/backtest/validation/test_multi_splitters.py`: 10 tests (IS/OOS, WF, CPCV 분할)
+- 전체: 191/191 passed, ruff 0 errors, pyright 0 errors
+
+### 3.5 CLI 사용법
+
+```bash
+# QUICK 검증 (IS/OOS)
+uv run python -m src.cli.backtest validate -m quick
+
+# MILESTONE 검증 (Walk-Forward)
+uv run python -m src.cli.backtest validate -m milestone --symbols BTC/USDT,ETH/USDT
+
+# FINAL 검증 (CPCV + DSR + PBO)
+uv run python -m src.cli.backtest validate -m final -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
 ```
-
-### 3.3 검증 판정 기준
-
-| 기준 | 통과 | 주의 | 실패 |
-|------|------|------|------|
-| IS/OOS 성과 열화 | < 30% | 30~50% | > 50% |
-| WFA OOS Sharpe | > 1.0 | 0.5~1.0 | < 0.5 |
-| WFA Consistency | > 70% | 50~70% | < 50% |
-| CPCV PBO | < 0.30 | 0.30~0.50 | > 0.50 |
-| Deflated Sharpe | > 1.0 | 0.5~1.0 | < 0.5 |
-
-### 3.4 작업 목록
-
-| # | 작업 | 예상 난이도 |
-|---|------|-----------|
-| 1 | `src/backtest/validation/` 모듈 확장 | 중간 |
-| 2 | IS/OOS Split 검증기 구현 | 낮음 |
-| 3 | Walk-Forward Analyzer 구현 | 중간 |
-| 4 | CPCV 검증기 구현 (purge + embargo) | 높음 |
-| 5 | PBO (Probability of Backtest Overfitting) 계산 | 높음 |
-| 6 | Deflated Sharpe Ratio 구현 | 중간 |
-| 7 | CLI 확장 — `backtest validate tsmom --method wfa` | 낮음 |
-| 8 | 검증 리포트 생성 (결과 요약 + 시각화) | 중간 |
 
 ---
 
-## Phase 4: EDA 시스템 (이벤트 기반 아키텍처)
+## Phase 4: EDA 시스템 (이벤트 기반 아키텍처) ← 현재
 
 ### 4.1 왜 이벤트 기반인가
 
@@ -661,3 +589,7 @@ Phase 7-C: 운영 분석 도구 ──────────── ← Phase 6
 | 날짜 | 변경 내용 |
 |------|----------|
 | 2026-02-06 | 초기 로드맵 작성 — Phase 2~7 설계 |
+| 2026-02-06 | **Phase 2 완료** — 멀티에셋 백테스트 (`run_multi`, `run_multi_with_returns`, `run_multi_validated`) |
+| 2026-02-06 | **Phase 3 완료** — 고급 검증 (IS/OOS, WFA, CPCV, DSR, PBO, 검증 리포트) |
+| 2026-02-06 | 8-asset EW 통합 백테스트 검증 — Sharpe 1.57, CAGR +57.95%, MDD 19.43% |
+| 2026-02-06 | CAGR 수동 계산 추가 — VBT `cash_sharing` 모드 `Annualized Return [%]` 미제공 대응 |

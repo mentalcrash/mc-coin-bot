@@ -115,8 +115,10 @@ class PerformanceAnalyzer:
             f"  추가 지표: Sortino={sortino}, Calmar={calmar}, ProfitFactor={profit_factor}"
         )
 
-        # CAGR: VBT Annualized Return 사용 (없으면 Total Return 사용)
-        cagr = self._safe_get(stats, "Annualized Return [%]") or total_return
+        # CAGR: VBT Annualized Return 사용 (없으면 기간 기반 수동 계산)
+        cagr = self._safe_get(stats, "Annualized Return [%]")
+        if cagr is None or cagr == 0.0:
+            cagr = self._compute_cagr(vbt_portfolio, total_return)
         logger.debug(f"  CAGR: {cagr:.2f}%")
 
         logger.debug("PerformanceAnalyzer.analyze() 완료")
@@ -395,6 +397,43 @@ class PerformanceAnalyzer:
             benchmark_returns=benchmark_returns,
             window=window,
         )
+
+    @staticmethod
+    def _compute_cagr(vbt_portfolio: Any, total_return: float) -> float:
+        """CAGR 수동 계산 (VBT stats에 Annualized Return이 없을 때).
+
+        CAGR = ((1 + total_return/100)^(1/years) - 1) * 100
+
+        Args:
+            vbt_portfolio: VectorBT Portfolio 객체
+            total_return: 총 수익률 (%)
+
+        Returns:
+            연환산 수익률 (%)
+        """
+        try:
+            wrapper = vbt_portfolio.wrapper
+            index = wrapper.index
+            min_periods = 2
+            if len(index) < min_periods:
+                return total_return
+            start_date = index[0]
+            end_date = index[-1]
+            days = (end_date - start_date).days
+            if days <= 0:
+                return total_return
+            years = days / 365.25
+            if years < 1.0:
+                # 1년 미만이면 단순 연환산
+                return total_return / years
+            growth = 1.0 + total_return / 100.0
+            if growth <= 0:
+                return -100.0
+            cagr = (growth ** (1.0 / years) - 1.0) * 100.0
+            return round(cagr, 4)
+        except Exception:
+            logger.warning("CAGR 수동 계산 실패, Total Return 사용")
+            return total_return
 
     @staticmethod
     def _safe_get(

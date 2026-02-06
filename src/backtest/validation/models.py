@@ -273,3 +273,20 @@ FINAL_MIN_OOS_SHARPE = 0.7
 FINAL_MAX_SHARPE_DECAY = 0.3
 FINAL_MIN_CONSISTENCY = 0.8
 FINAL_MAX_P_VALUE = 0.05  # 통계적 유의성
+
+# =============================================================================
+# Multi-Asset Validation 기준 (로드맵 3.3)
+# =============================================================================
+
+# Multi-Asset Quick (IS/OOS)
+MULTI_QUICK_MIN_OOS_SHARPE = 0.5
+MULTI_QUICK_MAX_DEGRADATION = 0.30  # IS/OOS 성과 열화 < 30%
+
+# Multi-Asset Milestone (Walk-Forward)
+MULTI_WFA_MIN_OOS_SHARPE = 1.0  # WFA OOS Sharpe > 1.0
+MULTI_WFA_MIN_CONSISTENCY = 0.70  # WFA Consistency > 70%
+MULTI_WFA_MAX_SHARPE_DECAY = 0.30
+
+# Multi-Asset Final (CPCV + DSR + PBO)
+MULTI_CPCV_MAX_PBO = 0.30  # CPCV PBO < 0.30
+MULTI_DEFLATED_SHARPE_MIN = 0.5  # DSR > 0.5 (확률, 0~1 범위)

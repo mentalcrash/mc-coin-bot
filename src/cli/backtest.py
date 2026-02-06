@@ -1515,6 +1515,299 @@ VW-TSMOM combines volume-weighted returns with volatility scaling:
     console.print(presets_table)
 
 
+@app.command(name="run-multi")
+def run_multi(
+    strategy_name: Annotated[
+        str,
+        typer.Option("--strategy", "-s", help="Strategy name"),
+    ] = "tsmom",
+    symbols: Annotated[
+        str,
+        typer.Option(
+            "--symbols",
+            help="Comma-separated symbols (e.g., BTC/USDT,ETH/USDT)",
+        ),
+    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s) to backtest"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    capital: Annotated[
+        float,
+        typer.Option("--capital", "-c", help="Initial capital (USD)"),
+    ] = 100_000.0,
+    report: Annotated[
+        bool,
+        typer.Option("--report/--no-report", help="Generate QuantStats report"),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-V", help="Enable verbose output"),
+    ] = False,
+    validation: Annotated[
+        str,
+        typer.Option("--validation", help="Validation: none, quick, milestone, final"),
+    ] = "none",
+) -> None:
+    """Run multi-asset portfolio backtest.
+
+    8-asset Equal Weight portfolio with VectorBT cash_sharing.
+
+    Example:
+        uv run python -m src.cli.backtest run-multi -s tsmom -y 2024 -y 2025
+        uv run python -m src.cli.backtest run-multi --symbols BTC/USDT,ETH/USDT -c 50000
+    """
+    from src.backtest.request import MultiAssetBacktestRequest
+
+    console_level = "DEBUG" if verbose else "WARNING"
+    setup_logger(console_level=console_level)
+
+    symbol_list = [s.strip() for s in symbols.split(",")]
+    n_assets = len(symbol_list)
+
+    try:
+        strategy_class = get_strategy(strategy_name)
+    except KeyError as e:
+        console.print(f"[red]Error:[/red] Strategy '{strategy_name}' not found.")
+        raise typer.Exit(code=1) from e
+
+    strategy_instance = strategy_class()
+
+    # 포트폴리오 (recommended config)
+    config_kwargs = strategy_class.recommended_config()
+    portfolio = Portfolio.create(
+        initial_capital=Decimal(str(capital)),
+        config=PortfolioManagerConfig(**config_kwargs),
+    )
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]{strategy_instance.name} Multi-Asset Backtest[/bold]\n"
+                f"Assets: {n_assets} ({', '.join(symbol_list[:4])}...)\n"
+                f"Years: {', '.join(map(str, year))}\n"
+                f"Capital: ${capital:,.0f}\n"
+                f"Weighting: Equal Weight (1/{n_assets})"
+            ),
+            border_style="blue",
+        )
+    )
+
+    # 데이터 로드
+    logger.info("Loading multi-asset data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        multi_data = data_service.get_multi(
+            symbols=symbol_list,
+            timeframe="1D",
+            start=start_date,
+            end=end_date,
+        )
+        logger.success(f"Loaded {n_assets} assets, {multi_data.periods:,} periods each")
+    except DataNotFoundError as e:
+        logger.error(f"Data load failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    # 백테스트 실행
+    logger.info("Running multi-asset backtest...")
+    try:
+        engine = BacktestEngine()
+        request = MultiAssetBacktestRequest(
+            data=multi_data,
+            strategy=strategy_instance,
+            portfolio=portfolio,
+            analyzer=PerformanceAnalyzer() if report else None,
+        )
+
+        validation_level = validation.lower()
+        validation_result = None
+
+        if validation_level != "none":
+            result, validation_result = engine.run_multi_validated(request, level=validation_level)
+        elif report:
+            result, strategy_returns, benchmark_returns = engine.run_multi_with_returns(request)
+        else:
+            result = engine.run_multi(request)
+
+        # 결과 출력
+        metrics = result.portfolio_metrics
+        metrics_table = Table(title="Portfolio Performance")
+        metrics_table.add_column("Metric", style="cyan")
+        metrics_table.add_column("Value", justify="right")
+
+        metrics_table.add_row("Total Return", f"{metrics.total_return:+.1f}%")
+        metrics_table.add_row("CAGR", f"{metrics.cagr:+.1f}%")
+        metrics_table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
+        metrics_table.add_row("Sortino Ratio", f"{metrics.sortino_ratio:.2f}")
+        metrics_table.add_row("Max Drawdown", f"{metrics.max_drawdown:.1f}%")
+        metrics_table.add_row("Calmar Ratio", f"{metrics.calmar_ratio:.2f}")
+        metrics_table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
+        metrics_table.add_row("Profit Factor", f"{metrics.profit_factor:.2f}")
+        console.print(metrics_table)
+
+        # 심볼별 기여도
+        if result.contribution:
+            contrib_table = Table(title="Symbol Contribution")
+            contrib_table.add_column("Symbol", style="cyan")
+            contrib_table.add_column("Contribution", justify="right")
+
+            for sym, contrib in sorted(
+                result.contribution.items(), key=lambda x: x[1], reverse=True
+            ):
+                color = "green" if contrib > 0 else "red"
+                contrib_table.add_row(sym, f"[{color}]{contrib:+.2f}%[/]")
+            console.print(contrib_table)
+
+        # Validation 결과
+        if validation_result is not None:
+            _print_validation_result(validation_result, validation_level)
+
+        # HTML 리포트
+        if report and not validation_result:
+            logger.info("Generating QuantStats report...")
+            report_path = generate_quantstats_report(
+                returns=strategy_returns,  # type: ignore[possibly-undefined]
+                benchmark_returns=benchmark_returns,  # type: ignore[possibly-undefined]
+                title=f"{strategy_instance.name} Multi-Asset - {n_assets} assets",
+            )
+            logger.success(f"Report saved: {report_path}")
+
+    except ImportError as e:
+        logger.warning(f"VectorBT import failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
+def validate(
+    strategy_name: Annotated[
+        str,
+        typer.Option("--strategy", "-s", help="Strategy name"),
+    ] = "tsmom",
+    symbols: Annotated[
+        str,
+        typer.Option(
+            "--symbols",
+            help="Comma-separated symbols",
+        ),
+    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT",
+    method: Annotated[
+        str,
+        typer.Option("--method", "-m", help="Validation: quick, milestone, final"),
+    ] = "quick",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s)"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    capital: Annotated[
+        float,
+        typer.Option("--capital", "-c", help="Initial capital (USD)"),
+    ] = 100_000.0,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-V", help="Enable verbose output"),
+    ] = False,
+) -> None:
+    """Run multi-asset portfolio overfitting validation.
+
+    Validates strategy using IS/OOS, Walk-Forward, or CPCV+DSR+PBO.
+
+    Example:
+        uv run python -m src.cli.backtest validate -m quick
+        uv run python -m src.cli.backtest validate -m milestone --symbols BTC/USDT,ETH/USDT
+        uv run python -m src.cli.backtest validate -m final -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+    """
+    from src.backtest.validation import TieredValidator, ValidationLevel, generate_validation_report
+
+    console_level = "DEBUG" if verbose else "WARNING"
+    setup_logger(console_level=console_level)
+
+    symbol_list = [s.strip() for s in symbols.split(",")]
+
+    try:
+        strategy_class = get_strategy(strategy_name)
+    except KeyError as e:
+        console.print(f"[red]Error:[/red] Strategy '{strategy_name}' not found.")
+        raise typer.Exit(code=1) from e
+
+    strategy_instance = strategy_class()
+
+    config_kwargs = strategy_class.recommended_config()
+    portfolio = Portfolio.create(
+        initial_capital=Decimal(str(capital)),
+        config=PortfolioManagerConfig(**config_kwargs),
+    )
+
+    # 검증 레벨 파싱
+    level_map = {
+        "quick": ValidationLevel.QUICK,
+        "milestone": ValidationLevel.MILESTONE,
+        "final": ValidationLevel.FINAL,
+    }
+    level = level_map.get(method.lower())
+    if level is None:
+        console.print(f"[red]Error:[/red] Unknown validation method '{method}'.")
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]Multi-Asset Validation: {method.upper()}[/bold]\n"
+                f"Strategy: {strategy_instance.name}\n"
+                f"Assets: {len(symbol_list)}\n"
+                f"Years: {', '.join(map(str, year))}"
+            ),
+            border_style="magenta",
+        )
+    )
+
+    # 데이터 로드
+    logger.info("Loading data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        multi_data = data_service.get_multi(
+            symbols=symbol_list,
+            timeframe="1D",
+            start=start_date,
+            end=end_date,
+        )
+        logger.success(f"Loaded {len(symbol_list)} assets")
+    except DataNotFoundError as e:
+        logger.error(f"Data load failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    # 검증 실행
+    logger.info(f"Running {method} validation...")
+    try:
+        validator = TieredValidator()
+        result = validator.validate_multi(
+            level=level,
+            data=multi_data,
+            strategy=strategy_instance,
+            portfolio=portfolio,
+        )
+
+        # 결과 출력
+        _print_validation_result(result, method)
+
+        # 텍스트 리포트
+        report_text = generate_validation_report(result)
+        console.print(f"\n[dim]{report_text}[/dim]")
+
+    except ImportError as e:
+        logger.warning(f"Import failed: {e}")
+        raise typer.Exit(code=1) from e
+
+
 # Main entry point
 if __name__ == "__main__":
     app()

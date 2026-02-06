@@ -23,7 +23,7 @@ from loguru import logger
 
 from src.config.settings import IngestionSettings, get_settings
 from src.core.exceptions import DataNotFoundError
-from src.data.market_data import MarketDataRequest, MarketDataSet
+from src.data.market_data import MarketDataRequest, MarketDataSet, MultiSymbolData
 from src.data.silver import SilverProcessor
 
 
@@ -243,6 +243,66 @@ class MarketDataService:
         logger.debug(f"Resampled {len(df):,} → {len(resampled):,} candles (1m → {timeframe})")
 
         return resampled
+
+    def get_multi(
+        self,
+        symbols: list[str],
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> MultiSymbolData:
+        """여러 심볼의 Silver 데이터를 일괄 로드.
+
+        각 심볼에 대해 get()을 호출하고 MultiSymbolData로 래핑합니다.
+
+        Args:
+            symbols: 심볼 목록 (예: ["BTC/USDT", "ETH/USDT"])
+            timeframe: 타임프레임 (예: "1D")
+            start: 시작 시각
+            end: 종료 시각
+
+        Returns:
+            MultiSymbolData 객체
+
+        Raises:
+            DataNotFoundError: 어떤 심볼의 데이터도 찾을 수 없을 경우
+        """
+        logger.info(f"Loading multi-symbol data: {len(symbols)} symbols, {timeframe}")
+
+        ohlcv: dict[str, pd.DataFrame] = {}
+        for symbol in symbols:
+            request = MarketDataRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+            )
+            data = self.get(request)
+            ohlcv[symbol] = data.ohlcv
+
+        # 실제 데이터의 공통 시작/종료 시각 결정
+        all_starts = [df.index[0].to_pydatetime() for df in ohlcv.values()]  # type: ignore[union-attr]
+        all_ends = [df.index[-1].to_pydatetime() for df in ohlcv.values()]  # type: ignore[union-attr]
+        actual_start = max(all_starts)
+        actual_end = min(all_ends)
+
+        # UTC 보장
+        if actual_start.tzinfo is None:
+            actual_start = actual_start.replace(tzinfo=UTC)
+        if actual_end.tzinfo is None:
+            actual_end = actual_end.replace(tzinfo=UTC)
+
+        logger.info(
+            f"Multi-symbol data loaded: {len(symbols)} symbols, {actual_start.date()} ~ {actual_end.date()}"
+        )
+
+        return MultiSymbolData(
+            symbols=symbols,
+            timeframe=timeframe,
+            start=actual_start,
+            end=actual_end,
+            ohlcv=ohlcv,
+        )
 
     def available_years(self, symbol: str) -> list[int]:
         """사용 가능한 연도 목록 조회.

@@ -13,8 +13,10 @@ Rules Applied:
     - #12 Data Engineering: UTC, DatetimeIndex
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -100,20 +102,7 @@ class MarketDataSet:
         Returns:
             VectorBT 호환 주기 문자열 (예: "1h", "1D")
         """
-        # 타임프레임을 VectorBT 포맷으로 변환
-        timeframe_map = {
-            "1m": "1min",
-            "5m": "5min",
-            "15m": "15min",
-            "30m": "30min",
-            "1h": "1h",
-            "4h": "4h",
-            "1D": "1D",
-            "1d": "1D",
-            "1W": "1W",
-            "1w": "1W",
-        }
-        return timeframe_map.get(self.timeframe, self.timeframe)
+        return _TIMEFRAME_MAP.get(self.timeframe, self.timeframe)
 
     @property
     def duration_days(self) -> int:
@@ -125,6 +114,174 @@ class MarketDataSet:
         return (
             f"MarketDataSet("
             f"symbol={self.symbol!r}, "
+            f"timeframe={self.timeframe!r}, "
+            f"periods={self.periods}, "
+            f"start={self.start.date()}, "
+            f"end={self.end.date()})"
+        )
+
+
+# =============================================================================
+# VectorBT 타임프레임 변환 맵 (공유)
+# =============================================================================
+
+_TIMEFRAME_MAP: dict[str, str] = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1h": "1h",
+    "4h": "4h",
+    "1D": "1D",
+    "1d": "1D",
+    "1W": "1W",
+    "1w": "1W",
+}
+
+
+@dataclass
+class MultiSymbolData:
+    """멀티 심볼 시장 데이터 컨테이너.
+
+    여러 심볼의 OHLCV 데이터를 함께 래핑합니다.
+    VectorBT `cash_sharing` 멀티에셋 백테스트의 입력으로 사용됩니다.
+
+    Attributes:
+        symbols: 심볼 목록 (예: ["BTC/USDT", "ETH/USDT", ...])
+        timeframe: 타임프레임 (모든 심볼 동일)
+        start: 데이터 시작 시각
+        end: 데이터 종료 시각
+        ohlcv: 심볼별 OHLCV DataFrame 딕셔너리
+
+    Example:
+        >>> data = MultiSymbolData(
+        ...     symbols=["BTC/USDT", "ETH/USDT"],
+        ...     timeframe="1D",
+        ...     start=datetime(2020, 1, 1, tzinfo=UTC),
+        ...     end=datetime(2025, 12, 31, tzinfo=UTC),
+        ...     ohlcv={"BTC/USDT": btc_df, "ETH/USDT": eth_df},
+        ... )
+        >>> close_matrix = data.close_matrix  # DataFrame with symbol columns
+    """
+
+    symbols: list[str]
+    timeframe: str
+    start: datetime
+    end: datetime
+    ohlcv: dict[str, pd.DataFrame]
+
+    def __post_init__(self) -> None:
+        """검증."""
+        if not self.symbols:
+            msg = "symbols must not be empty"
+            raise ValueError(msg)
+        if set(self.symbols) != set(self.ohlcv.keys()):
+            msg = f"symbols {self.symbols} do not match ohlcv keys {list(self.ohlcv.keys())}"
+            raise ValueError(msg)
+
+    @property
+    def n_assets(self) -> int:
+        """자산 수."""
+        return len(self.symbols)
+
+    @property
+    def close_matrix(self) -> pd.DataFrame:
+        """심볼별 close를 DataFrame으로 합성 (VectorBT 멀티에셋 입력용).
+
+        Returns:
+            DataFrame with DatetimeIndex, columns=symbols
+        """
+        return pd.DataFrame({s: self.ohlcv[s]["close"] for s in self.symbols})
+
+    @property
+    def freq(self) -> str:
+        """VectorBT용 주기 문자열."""
+        return _TIMEFRAME_MAP.get(self.timeframe, self.timeframe)
+
+    @property
+    def periods(self) -> int:
+        """첫 번째 심볼 기준 데이터 행 수."""
+        first = self.ohlcv[self.symbols[0]]
+        return len(first)
+
+    def get_single(self, symbol: str) -> MarketDataSet:
+        """단일 심볼 MarketDataSet 추출 (기존 인터페이스 호환).
+
+        Args:
+            symbol: 추출할 심볼
+
+        Returns:
+            해당 심볼의 MarketDataSet
+
+        Raises:
+            KeyError: 존재하지 않는 심볼
+        """
+        if symbol not in self.ohlcv:
+            msg = f"Symbol {symbol!r} not found. Available: {self.symbols}"
+            raise KeyError(msg)
+        return MarketDataSet(
+            symbol=symbol,
+            timeframe=self.timeframe,
+            start=self.start,
+            end=self.end,
+            ohlcv=self.ohlcv[symbol],
+        )
+
+    def slice_time(self, start: datetime, end: datetime) -> MultiSymbolData:
+        """시간 범위로 슬라이싱 (검증용 데이터 분할).
+
+        Args:
+            start: 시작 시각
+            end: 종료 시각
+
+        Returns:
+            슬라이싱된 새 MultiSymbolData
+        """
+        sliced_ohlcv: dict[str, pd.DataFrame] = {}
+        for symbol in self.symbols:
+            df = self.ohlcv[symbol]
+            mask = (df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end))
+            sliced_ohlcv[symbol] = df.loc[mask].copy()
+        return MultiSymbolData(
+            symbols=list(self.symbols),
+            timeframe=self.timeframe,
+            start=start,
+            end=end,
+            ohlcv=sliced_ohlcv,
+        )
+
+    def slice_iloc(self, start_idx: int, end_idx: int) -> MultiSymbolData:
+        """정수 인덱스로 슬라이싱 (검증 splitter용).
+
+        Args:
+            start_idx: 시작 인덱스 (inclusive)
+            end_idx: 종료 인덱스 (exclusive)
+
+        Returns:
+            슬라이싱된 새 MultiSymbolData
+        """
+        sliced_ohlcv: dict[str, pd.DataFrame] = {}
+        for symbol in self.symbols:
+            sliced_ohlcv[symbol] = self.ohlcv[symbol].iloc[start_idx:end_idx].copy()
+
+        ref_df = sliced_ohlcv[self.symbols[0]]
+        ref_index = ref_df.index
+        new_start = ref_index[0].to_pydatetime().replace(tzinfo=UTC)  # type: ignore[union-attr]
+        new_end = ref_index[-1].to_pydatetime().replace(tzinfo=UTC)  # type: ignore[union-attr]
+
+        return MultiSymbolData(
+            symbols=list(self.symbols),
+            timeframe=self.timeframe,
+            start=new_start,
+            end=new_end,
+            ohlcv=sliced_ohlcv,
+        )
+
+    def __repr__(self) -> str:
+        """문자열 표현."""
+        return (
+            f"MultiSymbolData("
+            f"symbols={self.symbols}, "
             f"timeframe={self.timeframe!r}, "
             f"periods={self.periods}, "
             f"start={self.start.date()}, "

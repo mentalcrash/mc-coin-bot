@@ -26,9 +26,15 @@ from loguru import logger
 from numba import njit
 
 from src.backtest.analyzer import PerformanceAnalyzer
-from src.backtest.request import BacktestRequest
+from src.backtest.request import BacktestRequest, MultiAssetBacktestRequest
 from src.data.market_data import MarketDataSet
-from src.models.backtest import BacktestConfig, BacktestResult
+from src.models.backtest import (
+    BacktestConfig,
+    BacktestResult,
+    MultiAssetBacktestResult,
+    MultiAssetConfig,
+    PerformanceMetrics,
+)
 from src.portfolio.portfolio import Portfolio
 from src.strategy.base import BaseStrategy
 
@@ -653,6 +659,310 @@ class BacktestEngine:
             threshold,
         )
         return pd.Series(result_arr, index=target_weights.index)
+
+    # =========================================================================
+    # Multi-Asset Backtest Methods
+    # =========================================================================
+
+    def run_multi(self, request: MultiAssetBacktestRequest) -> MultiAssetBacktestResult:
+        """멀티에셋 포트폴리오 백테스트 실행.
+
+        Args:
+            request: 멀티에셋 백테스트 요청
+
+        Returns:
+            MultiAssetBacktestResult
+        """
+        result, _ = self._execute_multi(request)
+        return result
+
+    def run_multi_with_returns(
+        self,
+        request: MultiAssetBacktestRequest,
+    ) -> tuple[MultiAssetBacktestResult, pd.Series, pd.Series]:  # type: ignore[type-arg]
+        """멀티에셋 백테스트 + 수익률 시리즈 반환.
+
+        Args:
+            request: 멀티에셋 백테스트 요청
+
+        Returns:
+            (MultiAssetBacktestResult, portfolio_returns, benchmark_returns) 튜플
+        """
+        result, vbt_portfolio = self._execute_multi(request)
+
+        # 포트폴리오 수익률 (grouped → 단일 시리즈)
+        portfolio_returns = vbt_portfolio.returns()
+        if isinstance(portfolio_returns, pd.DataFrame):
+            portfolio_returns = portfolio_returns.iloc[:, 0]
+
+        # 벤치마크: 첫 번째 심볼의 Buy & Hold
+        first_symbol = request.data.symbols[0]
+        close = request.data.ohlcv[first_symbol]["close"]
+        benchmark_returns: pd.Series = close.pct_change().fillna(0)  # type: ignore[assignment]
+
+        return result, portfolio_returns, benchmark_returns
+
+    def run_multi_validated(
+        self,
+        request: MultiAssetBacktestRequest,
+        level: str = "quick",
+    ) -> tuple["MultiAssetBacktestResult", "ValidationResult"]:
+        """멀티에셋 백테스트 + Tiered Validation 실행.
+
+        Args:
+            request: 멀티에셋 백테스트 요청
+            level: 검증 레벨 ("quick", "milestone", "final")
+
+        Returns:
+            (MultiAssetBacktestResult, ValidationResult) 튜플
+        """
+        from src.backtest.validation import TieredValidator, ValidationLevel
+
+        result = self.run_multi(request)
+
+        validation_level = ValidationLevel(level)
+        validator = TieredValidator(engine=self)
+        validation = validator.validate_multi(
+            level=validation_level,
+            data=request.data,
+            strategy=request.strategy,
+            portfolio=request.portfolio,
+            weights=request.weights,
+        )
+
+        return result, validation
+
+    def _execute_multi(
+        self,
+        request: MultiAssetBacktestRequest,
+    ) -> tuple[MultiAssetBacktestResult, Any]:
+        """멀티에셋 백테스트 핵심 로직.
+
+        1. 심볼별 전략 독립 실행
+        2. 자산 배분 비중 적용 + PM 규칙 적용
+        3. VectorBT cash_sharing 포트폴리오 생성
+        4. 포트폴리오/심볼별 분석
+
+        Args:
+            request: 멀티에셋 백테스트 요청
+
+        Returns:
+            (MultiAssetBacktestResult, vbt_portfolio) 튜플
+        """
+        try:
+            import vectorbt as vbt  # type: ignore[import-not-found]
+        except ImportError as e:
+            msg = "VectorBT is required for backtesting. Install with: pip install vectorbt"
+            raise ImportError(msg) from e
+
+        symbols = request.data.symbols
+        asset_weights = request.asset_weights
+        portfolio = request.portfolio
+        pm = portfolio.config
+        analyzer = request.analyzer or PerformanceAnalyzer()
+
+        logger.info(
+            f"Multi-asset backtest | {len(symbols)} symbols | strategy={request.strategy.name}"
+        )
+
+        # 1. 심볼별 전략 실행 (독립적)
+        processed_dict: dict[str, pd.DataFrame] = {}
+        target_weights_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
+
+        for symbol in symbols:
+            df = request.data.ohlcv[symbol]
+            processed, signals = request.strategy.run(df)
+            processed_dict[symbol] = processed
+
+            # 2. target_weights = strength x asset_weight + PM 규칙
+            raw_strength: pd.Series = signals.strength.copy()  # type: ignore[type-arg]
+            scaled = raw_strength * asset_weights[symbol]
+            scaled = _apply_pm_rules_to_weights(scaled, processed, pm)
+            target_weights_dict[symbol] = scaled
+
+        # 3. DataFrame으로 합성 (VectorBT 멀티에셋 입력)
+        close_df = request.data.close_matrix
+        weights_df = pd.DataFrame(target_weights_dict)
+
+        # 인덱스 정렬 (심볼별 인덱스가 다를 수 있음)
+        common_index = close_df.index.intersection(weights_df.index)
+        close_df = close_df.loc[common_index]
+        weights_df = weights_df.loc[common_index]
+
+        # 4. price 결정
+        if pm.price_type == "next_open":
+            price_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
+            for symbol in symbols:
+                # common_index로 필터 후 shift → 인덱스 불일치 방지
+                open_series = processed_dict[symbol]["open"].reindex(common_index)
+                price_dict[symbol] = open_series.shift(-1)  # type: ignore[assignment]
+            price_df: pd.DataFrame = pd.DataFrame(price_dict)
+        else:
+            price_df = close_df
+
+        # 5. VectorBT Portfolio 생성 (cash_sharing)
+        vbt_portfolio = vbt.Portfolio.from_orders(
+            close=close_df,
+            size=weights_df,
+            size_type="targetpercent",
+            direction="both",
+            price=price_df,
+            fees=pm.cost_model.effective_fee,
+            slippage=pm.cost_model.slippage,
+            init_cash=portfolio.initial_capital_float,
+            cash_sharing=True,
+            group_by=True,
+            freq=request.data.freq,
+        )
+
+        # 6. 포트폴리오 전체 성과 분석
+        portfolio_metrics = analyzer.analyze(vbt_portfolio)
+
+        # 7. 심볼별 성과 분석 (개별 수익률 기반)
+        per_symbol_metrics: dict[str, PerformanceMetrics] = {}
+        returns_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
+        for symbol in symbols:
+            close_series = close_df[symbol]
+            symbol_returns: pd.Series = close_series.pct_change().fillna(0)  # type: ignore[type-arg,assignment]
+            # 심볼별 가중 수익률 (target_weight x market_return은 근사치)
+            returns_dict[symbol] = symbol_returns
+            # 간단한 B&H 성과 지표 계산
+            per_symbol_metrics[symbol] = self._compute_simple_metrics(symbol_returns)
+
+        # 8. 상관행렬
+        returns_df = pd.DataFrame(returns_dict)
+        corr_matrix = returns_df.corr()
+        correlation_dict: dict[str, dict[str, float]] = {
+            s1: {s2: float(corr_matrix.loc[s1, s2]) for s2 in symbols} for s1 in symbols
+        }
+
+        # 9. 가중 수익 기여도 (asset_weight x cumulative_return)
+        contribution: dict[str, float] = {}
+        for symbol in symbols:
+            weight = asset_weights[symbol]
+            symbol_cum_ret = float(returns_df[symbol].sum())
+            contribution[symbol] = round(weight * symbol_cum_ret * 100, 4)
+
+        # 10. 결과 조합
+        config = MultiAssetConfig(
+            strategy_name=request.strategy.name,
+            symbols=tuple(symbols),
+            timeframe=request.data.timeframe,
+            start_date=request.data.start,
+            end_date=request.data.end,
+            initial_capital=portfolio.initial_capital,
+            asset_weights=asset_weights,
+            maker_fee=pm.cost_model.maker_fee,
+            taker_fee=pm.cost_model.taker_fee,
+            slippage=pm.cost_model.slippage,
+            strategy_params=request.strategy.params,
+        )
+
+        result = MultiAssetBacktestResult(
+            config=config,
+            portfolio_metrics=portfolio_metrics,
+            per_symbol_metrics=per_symbol_metrics,
+            correlation_matrix=correlation_dict,
+            contribution=contribution,
+        )
+
+        logger.info(
+            f"Multi-asset backtest complete | Sharpe={portfolio_metrics.sharpe_ratio:.2f}, CAGR={portfolio_metrics.cagr:.2f}%, MDD={portfolio_metrics.max_drawdown:.2f}%"
+        )
+
+        return result, vbt_portfolio
+
+    @staticmethod
+    def _compute_simple_metrics(returns: pd.Series) -> PerformanceMetrics:  # type: ignore[type-arg]
+        """일별 수익률에서 간단한 성과 지표 계산 (심볼별 분석용).
+
+        Args:
+            returns: 일별 수익률 시리즈
+
+        Returns:
+            PerformanceMetrics
+        """
+        cum = (1 + returns).cumprod()
+        total_return = float((cum.iloc[-1] - 1) * 100) if len(cum) > 0 else 0.0
+        days = len(returns)
+        years = days / 365.0 if days > 0 else 1.0
+        cagr = float((cum.iloc[-1] ** (1 / years) - 1) * 100) if years > 0 and len(cum) > 0 else 0.0
+
+        # MDD
+        running_max = cum.cummax()
+        drawdowns = (cum - running_max) / running_max
+        max_drawdown = float(drawdowns.min() * 100)
+
+        # Sharpe
+        ann_vol = float(returns.std() * np.sqrt(365) * 100) if len(returns) > 1 else 0.0
+        sharpe = cagr / ann_vol if ann_vol > 0 else 0.0
+
+        return PerformanceMetrics(
+            total_return=total_return,
+            cagr=cagr,
+            sharpe_ratio=sharpe,
+            max_drawdown=max_drawdown,
+            win_rate=0.0,
+            total_trades=0,
+            winning_trades=0,
+            losing_trades=0,
+        )
+
+
+def _apply_pm_rules_to_weights(
+    weights: pd.Series,  # type: ignore[type-arg]
+    df: pd.DataFrame,
+    pm: Any,
+) -> pd.Series:  # type: ignore[type-arg]
+    """단일 심볼의 비중에 PM 규칙 적용.
+
+    BacktestEngine._create_portfolio_from_orders()의 Step 2~4 로직을
+    재사용 가능한 함수로 추출한 것입니다.
+
+    Args:
+        weights: 목표 비중 시리즈 (strength x asset_weight)
+        df: 전처리된 OHLCV DataFrame (close, high, low, atr 포함)
+        pm: PortfolioManagerConfig
+
+    Returns:
+        PM 규칙이 적용된 비중 시리즈
+    """
+    # 1. max_leverage_cap 적용
+    weights = weights.clip(lower=-pm.max_leverage_cap, upper=pm.max_leverage_cap)
+
+    # 2. 시스템 손절매 (System Stop Loss)
+    if pm.system_stop_loss is not None and pm.system_stop_loss > 0:
+        weights_before = weights.copy()
+        result_arr = apply_stop_loss_to_weights(
+            np.asarray(weights.fillna(0).values, dtype=np.float64),
+            np.asarray(df["close"].values, dtype=np.float64),
+            np.asarray(df["high"].values, dtype=np.float64),
+            np.asarray(df["low"].values, dtype=np.float64),
+            pm.system_stop_loss,
+        )
+        weights = pd.Series(result_arr, index=weights.index)
+        weights = weights.where(weights_before.notna() | (weights != 0), np.nan)
+
+    # 3. Trailing Stop
+    if pm.use_trailing_stop and "atr" in df.columns:
+        weights_before = weights.copy()
+        result_arr = apply_trailing_stop_to_weights(
+            np.asarray(weights.fillna(0).values, dtype=np.float64),
+            np.asarray(df["close"].values, dtype=np.float64),
+            np.asarray(df["high"].values, dtype=np.float64),
+            np.asarray(df["low"].values, dtype=np.float64),
+            np.asarray(df["atr"].fillna(0).values, dtype=np.float64),
+            pm.trailing_stop_atr_multiplier,
+        )
+        weights = pd.Series(result_arr, index=weights.index)
+        weights = weights.where(weights_before.notna() | (weights != 0), np.nan)
+
+    # 4. Rebalance threshold
+    result_arr = apply_rebalance_threshold_numba(
+        np.asarray(weights.fillna(0).values, dtype=np.float64),
+        pm.rebalance_threshold,
+    )
+    return pd.Series(result_arr, index=weights.index)
 
 
 def run_parameter_sweep(

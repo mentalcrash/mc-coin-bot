@@ -7,12 +7,19 @@ Rules Applied:
     - #10 Python Standards: Modern typing
 """
 
-from collections.abc import Iterator
+from __future__ import annotations
+
 from datetime import UTC
 from itertools import combinations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from pandas import DataFrame
 
 from src.backtest.validation.models import SplitInfo
-from src.data.market_data import MarketDataSet
+from src.data.market_data import MarketDataSet, MultiSymbolData
 
 
 def split_is_oos(
@@ -321,3 +328,213 @@ def get_split_info_is_oos(
         train_periods=split_idx,
         test_periods=n - split_idx,
     )
+
+
+# =============================================================================
+# Multi-Asset Splitters
+# =============================================================================
+
+
+def split_multi_is_oos(
+    data: MultiSymbolData,
+    ratio: float = 0.7,
+) -> tuple[MultiSymbolData, MultiSymbolData]:
+    """멀티에셋 IS/OOS 분할 (동일 시간 경계).
+
+    모든 심볼을 동일한 split 인덱스에서 분할합니다.
+    첫 번째 심볼의 인덱스를 기준으로 split 지점을 결정합니다.
+
+    Args:
+        data: 원본 MultiSymbolData
+        ratio: Train 비율 (0.0 ~ 1.0)
+
+    Returns:
+        (train_data, test_data) 튜플
+    """
+    if not 0.0 < ratio < 1.0:
+        msg = f"ratio must be between 0.0 and 1.0, got {ratio}"
+        raise ValueError(msg)
+
+    # 첫 번째 심볼 기준으로 split 인덱스 계산
+    ref_df = data.ohlcv[data.symbols[0]]
+    n = len(ref_df)
+    split_idx = int(n * ratio)
+
+    if split_idx < 1 or split_idx >= n - 1:
+        msg = f"Not enough data to split: {n} rows with ratio {ratio}"
+        raise ValueError(msg)
+
+    train_data = data.slice_iloc(0, split_idx)
+    test_data = data.slice_iloc(split_idx, n)
+
+    return train_data, test_data
+
+
+def split_multi_walk_forward(
+    data: MultiSymbolData,
+    n_folds: int = 5,
+    min_train_ratio: float = 0.5,
+    expanding: bool = True,
+) -> list[tuple[MultiSymbolData, MultiSymbolData, SplitInfo]]:
+    """멀티에셋 Walk-Forward 분할.
+
+    모든 심볼에 동일한 시간 경계를 적용합니다.
+
+    Args:
+        data: 원본 MultiSymbolData
+        n_folds: Fold 수
+        min_train_ratio: 최소 Train 비율
+        expanding: True면 누적 Train
+
+    Returns:
+        List of (train_data, test_data, split_info) 튜플
+    """
+    min_folds = 2
+    if n_folds < min_folds:
+        msg = f"n_folds must be >= {min_folds}, got {n_folds}"
+        raise ValueError(msg)
+
+    ref_df = data.ohlcv[data.symbols[0]]
+    n = len(ref_df)
+
+    test_size = n // (n_folds + 1)
+    min_train_size = int(n * min_train_ratio)
+
+    min_test_size = 10
+    if test_size < min_test_size:
+        msg = f"Test size too small: {test_size}. Need more data or fewer folds."
+        raise ValueError(msg)
+
+    results: list[tuple[MultiSymbolData, MultiSymbolData, SplitInfo]] = []
+    ref_index = ref_df.index
+
+    for fold_id in range(n_folds):
+        train_start_idx = 0
+
+        if expanding:
+            train_end_idx = min_train_size + (fold_id * test_size)
+        else:
+            train_start_idx = fold_id * test_size
+            train_end_idx = train_start_idx + min_train_size
+
+        test_start_idx = train_end_idx
+        test_end_idx = test_start_idx + test_size
+
+        if test_end_idx > n:
+            break
+
+        train_data = data.slice_iloc(train_start_idx, train_end_idx)
+        test_data = data.slice_iloc(test_start_idx, test_end_idx)
+
+        split_info = SplitInfo(
+            fold_id=fold_id,
+            train_start=ref_index[train_start_idx].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            train_end=ref_index[train_end_idx - 1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            test_start=ref_index[test_start_idx].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            test_end=ref_index[test_end_idx - 1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            train_periods=train_end_idx - train_start_idx,
+            test_periods=test_size,
+        )
+
+        results.append((train_data, test_data, split_info))
+
+    return results
+
+
+def split_multi_cpcv(
+    data: MultiSymbolData,
+    n_splits: int = 5,
+    n_test_splits: int = 2,
+    purge_periods: int = 5,
+    embargo_periods: int = 5,
+) -> Iterator[tuple[MultiSymbolData, MultiSymbolData, SplitInfo]]:
+    """멀티에셋 CPCV 분할.
+
+    모든 심볼에 동일한 CPCV 그룹/조합을 적용합니다.
+
+    Args:
+        data: 원본 MultiSymbolData
+        n_splits: 총 그룹 수
+        n_test_splits: Test로 사용할 그룹 수
+        purge_periods: Purge 기간
+        embargo_periods: Embargo 기간
+
+    Yields:
+        (train_data, test_data, split_info) 튜플
+    """
+    if n_test_splits >= n_splits:
+        msg = f"n_test_splits ({n_test_splits}) must be < n_splits ({n_splits})"
+        raise ValueError(msg)
+
+    ref_df = data.ohlcv[data.symbols[0]]
+    n = len(ref_df)
+    ref_index = ref_df.index
+
+    group_size = n // n_splits
+    group_indices = [(i * group_size, min((i + 1) * group_size, n)) for i in range(n_splits)]
+
+    test_group_combinations = list(combinations(range(n_splits), n_test_splits))
+
+    for fold_id, test_groups in enumerate(test_group_combinations):
+        train_groups = [i for i in range(n_splits) if i not in test_groups]
+
+        # Test 인덱스 수집
+        test_indices: list[int] = []
+        for group_id in sorted(test_groups):
+            start_idx, end_idx = group_indices[group_id]
+            test_indices.extend(range(start_idx, end_idx))
+
+        # Train 인덱스 수집 (Purge & Embargo)
+        train_indices: list[int] = []
+        for group_id in train_groups:
+            start_idx, end_idx = group_indices[group_id]
+
+            if group_id + 1 in test_groups:
+                end_idx = max(start_idx, end_idx - purge_periods)
+            if group_id - 1 in test_groups:
+                start_idx = min(end_idx, start_idx + embargo_periods)
+
+            if start_idx < end_idx:
+                train_indices.extend(range(start_idx, end_idx))
+
+        if not train_indices or not test_indices:
+            continue
+
+        # 멀티에셋 데이터 슬라이싱 (인덱스 기반)
+        train_ohlcv: dict[str, DataFrame] = {}
+        test_ohlcv: dict[str, DataFrame] = {}
+        for symbol in data.symbols:
+            df = data.ohlcv[symbol]
+            train_ohlcv[symbol] = df.iloc[train_indices].copy()
+            test_ohlcv[symbol] = df.iloc[test_indices].copy()
+
+        train_ref_idx = ref_index[train_indices]
+        test_ref_idx = ref_index[test_indices]
+
+        train_data = MultiSymbolData(
+            symbols=list(data.symbols),
+            timeframe=data.timeframe,
+            start=train_ref_idx[0].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            end=train_ref_idx[-1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            ohlcv=train_ohlcv,
+        )
+
+        test_data = MultiSymbolData(
+            symbols=list(data.symbols),
+            timeframe=data.timeframe,
+            start=test_ref_idx[0].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            end=test_ref_idx[-1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+            ohlcv=test_ohlcv,
+        )
+
+        split_info = SplitInfo(
+            fold_id=fold_id,
+            train_start=train_data.start,
+            train_end=train_data.end,
+            test_start=test_data.start,
+            test_end=test_data.end,
+            train_periods=len(train_indices),
+            test_periods=len(test_indices),
+        )
+
+        yield train_data, test_data, split_info

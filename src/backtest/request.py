@@ -16,7 +16,7 @@ Rules Applied:
 from dataclasses import dataclass
 
 from src.backtest.analyzer import PerformanceAnalyzer
-from src.data.market_data import MarketDataSet
+from src.data.market_data import MarketDataSet, MultiSymbolData
 from src.portfolio.portfolio import Portfolio
 from src.strategy.base import BaseStrategy
 
@@ -54,6 +54,54 @@ class BacktestRequest:
         return (
             f"BacktestRequest("
             f"symbol={self.data.symbol!r}, "
+            f"timeframe={self.data.timeframe!r}, "
+            f"strategy={self.strategy.name!r}, "
+            f"capital=${self.portfolio.initial_capital:,.0f})"
+        )
+
+
+@dataclass(frozen=True)
+class MultiAssetBacktestRequest:
+    """멀티에셋 백테스트 실행 요청.
+
+    여러 심볼을 하나의 포트폴리오로 백테스트하기 위한 요청 객체입니다.
+    모든 심볼에 동일한 전략을 독립적으로 적용합니다.
+
+    Attributes:
+        data: 멀티 심볼 데이터
+        strategy: 전략 인스턴스 (모든 심볼에 동일 적용)
+        portfolio: 포트폴리오 (초기 자본 + PM 설정)
+        weights: 심볼별 배분 비중 (None이면 Equal Weight 1/N)
+        analyzer: 성과 분석기 (선택)
+
+    Example:
+        >>> request = MultiAssetBacktestRequest(
+        ...     data=multi_data,
+        ...     strategy=TSMOMStrategy(),
+        ...     portfolio=Portfolio.create(initial_capital=100000),
+        ... )
+        >>> result = BacktestEngine().run_multi(request)
+    """
+
+    data: MultiSymbolData
+    strategy: BaseStrategy
+    portfolio: Portfolio
+    weights: dict[str, float] | None = None
+    analyzer: PerformanceAnalyzer | None = None
+
+    @property
+    def asset_weights(self) -> dict[str, float]:
+        """실제 자산 배분 비중 (EW fallback 포함)."""
+        if self.weights is not None:
+            return self.weights
+        weight = 1.0 / self.data.n_assets
+        return dict.fromkeys(self.data.symbols, weight)
+
+    def __repr__(self) -> str:
+        """문자열 표현."""
+        return (
+            f"MultiAssetBacktestRequest("
+            f"symbols={self.data.symbols}, "
             f"timeframe={self.data.timeframe!r}, "
             f"strategy={self.strategy.name!r}, "
             f"capital=${self.portfolio.initial_capital:,.0f})"

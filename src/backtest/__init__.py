@@ -56,13 +56,14 @@ from src.backtest.reporter import (
     generate_report_from_backtest_result,
     print_performance_summary,
 )
-from src.backtest.request import BacktestRequest
+from src.backtest.request import BacktestRequest, MultiAssetBacktestRequest
 from src.portfolio import Portfolio, PortfolioManagerConfig
 
 __all__ = [
     "BacktestEngine",
     "BacktestRequest",
     "CostModel",
+    "MultiAssetBacktestRequest",
     "PerformanceAnalyzer",
     "Portfolio",
     "PortfolioManagerConfig",

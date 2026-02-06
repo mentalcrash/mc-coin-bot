@@ -503,3 +503,97 @@ class BacktestResult(BaseModel):
             "total_trades": self.metrics.total_trades,
             "passed_criteria": self.passed_minimum_criteria(),
         }
+
+
+# =============================================================================
+# Multi-Asset Backtest Models
+# =============================================================================
+
+
+class MultiAssetConfig(BaseModel):
+    """멀티에셋 백테스트 설정 기록.
+
+    멀티에셋 포트폴리오 백테스트 시 사용된 설정을 기록합니다.
+
+    Attributes:
+        strategy_name: 전략 이름
+        symbols: 심볼 목록
+        timeframe: 타임프레임
+        start_date: 시작일
+        end_date: 종료일
+        initial_capital: 초기 자본
+        asset_weights: 심볼별 배분 비중
+        strategy_params: 전략 파라미터
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    strategy_name: str
+    symbols: tuple[str, ...] = Field(..., min_length=2, description="심볼 목록")
+    timeframe: str
+    start_date: datetime
+    end_date: datetime
+    initial_capital: Decimal = Field(default=Decimal(100_000))
+    asset_weights: dict[str, float] = Field(..., description="심볼별 배분 비중")
+    maker_fee: float = Field(default=0.0002, ge=0)
+    taker_fee: float = Field(default=0.0004, ge=0)
+    slippage: float = Field(default=0.0005, ge=0)
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def ensure_utc(cls, v: datetime) -> datetime:
+        """datetime에 UTC timezone 적용."""
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
+class MultiAssetBacktestResult(BaseModel):
+    """멀티에셋 백테스트 결과.
+
+    포트폴리오 전체 성과와 심볼별 분해 분석을 포함합니다.
+
+    Attributes:
+        config: 백테스트 설정
+        portfolio_metrics: 포트폴리오 전체 성과 지표
+        per_symbol_metrics: 심볼별 성과 지표
+        correlation_matrix: 심볼 간 수익률 상관행렬 (JSON 직렬화 가능)
+        contribution: 심볼별 수익 기여도 (%)
+        created_at: 결과 생성 시각
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    config: MultiAssetConfig = Field(..., description="백테스트 설정")
+    portfolio_metrics: PerformanceMetrics = Field(..., description="포트폴리오 전체 성과")
+    per_symbol_metrics: dict[str, PerformanceMetrics] = Field(..., description="심볼별 성과")
+    correlation_matrix: dict[str, dict[str, float]] = Field(
+        default_factory=dict, description="상관행렬"
+    )
+    contribution: dict[str, float] = Field(
+        default_factory=dict, description="심볼별 수익 기여도 (%)"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="결과 생성 시각",
+    )
+
+    @property
+    def duration_days(self) -> int:
+        """백테스트 기간 (일)."""
+        return (self.config.end_date - self.config.start_date).days
+
+    def summary(self) -> dict[str, Any]:
+        """요약 정보 반환."""
+        return {
+            "strategy": self.config.strategy_name,
+            "symbols": list(self.config.symbols),
+            "n_assets": len(self.config.symbols),
+            "period": f"{self.config.start_date.date()} ~ {self.config.end_date.date()}",
+            "total_return": f"{self.portfolio_metrics.total_return:.2f}%",
+            "cagr": f"{self.portfolio_metrics.cagr:.2f}%",
+            "sharpe_ratio": f"{self.portfolio_metrics.sharpe_ratio:.2f}",
+            "max_drawdown": f"{self.portfolio_metrics.max_drawdown:.2f}%",
+            "win_rate": f"{self.portfolio_metrics.win_rate:.1f}%",
+        }

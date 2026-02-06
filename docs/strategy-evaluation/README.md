@@ -91,17 +91,19 @@ PortfolioManagerConfig(
 - ✅ ~~타임프레임 분석~~ — **완료** (1D 확정, 4h~12h 모두 열등)
 - ✅ ~~숏 헤지 최적화~~ — **완료** (strength=0.3, Sharpe 2.33, 656 백테스트)
 - ✅ ~~리스크 파라미터 최적화~~ — **완료** (TS=3.0x ATR + rebal=10%, Sharpe 2.41, 368 백테스트)
+- ✅ ~~멀티에셋 통합 백테스트~~ — **완료** (VBT `cash_sharing`, 8-asset EW, Sharpe 1.57, MDD 19.4%)
+- ✅ ~~과적합 검증 시스템~~ — **완료** (IS/OOS, Walk-Forward, CPCV, DSR, PBO, 검증 리포트)
 - ⚠️ 50/50 고정 합성 — Sharpe 소폭 개선이나 CAGR 절반, 우선순위 낮음
 - ❌ Regime Adaptive 동적 전환 — 과적합 리스크 높음, 보류
 
 ### 다음 단계 (우선순위) → [상세 로드맵](implementation-roadmap.md)
 
-1. **Phase 2: 멀티에셋 백테스트** — 8-asset 포트폴리오 통합 백테스트 (VectorBT `cash_sharing`)
-2. **Phase 3: 고급 검증** — IS/OOS, Walk-Forward, CPCV로 과적합 방지 (Phase 2와 병렬)
-3. **Phase 4: EDA 시스템** — EventBus + 이벤트 기반 백테스트 (라이브 코드 동일성 확보)
-4. **Phase 5: Dry Run** — Shadow Mode → Paper Trading → Canary (실거래 전 검증)
+1. ~~**Phase 2: 멀티에셋 백테스트**~~ — ✅ 완료 (VectorBT `cash_sharing`, Sharpe 1.57, MDD 19.4%)
+2. ~~**Phase 3: 고급 검증**~~ — ✅ 완료 (IS/OOS, Walk-Forward, CPCV, DSR, PBO)
+3. **Phase 4: EDA 시스템** — EventBus + 이벤트 기반 백테스트 ← **현재**
+4. **Phase 5: Dry Run** — Shadow Mode → Paper Trading → Canary
 5. **Phase 6: Live Trading** — 점진적 자본 투입 (5% → 100%)
-6. **Phase 7: 모니터링** — Streamlit(전략 분석) + Grafana(시스템 헬스) + Discord(알림)
+6. **Phase 7: 모니터링** — Streamlit + Grafana + Discord
 
 ---
 
@@ -120,3 +122,6 @@ PortfolioManagerConfig(
 | 2026-02-06 | 헤지 파라미터 최적화 (80조합 × 8에셋 = 656 백테스트), strength 0.3 확정, Sharpe 2.06→2.33 |
 | 2026-02-06 | Implementation Roadmap 작성 — Phase 2(멀티에셋)~Phase 7(모니터링) 설계 |
 | 2026-02-06 | 리스크 파라미터 최적화 (SL/TS/Rebalance 368 백테스트), Sharpe 2.33->2.41, MDD -20.7%->-17.5% |
+| 2026-02-06 | **Phase 2 완료** — 멀티에셋 통합 백테스트 구현 (run_multi, VBT cash_sharing) |
+| 2026-02-06 | **Phase 3 완료** — 고급 검증 시스템 구현 (IS/OOS, WFA, CPCV, DSR, PBO) |
+| 2026-02-06 | 8-asset 통합 결과: Sharpe 1.57, CAGR +57.95%, MDD 19.43% (분산 효과 확인) |

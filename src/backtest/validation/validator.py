@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import statistics
 import time
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -21,21 +22,33 @@ from src.backtest.validation.models import (
     MILESTONE_MAX_SHARPE_DECAY,
     MILESTONE_MIN_CONSISTENCY,
     MILESTONE_MIN_OOS_SHARPE,
+    MULTI_CPCV_MAX_PBO,
+    MULTI_DEFLATED_SHARPE_MIN,
+    MULTI_QUICK_MAX_DEGRADATION,
+    MULTI_QUICK_MIN_OOS_SHARPE,
+    MULTI_WFA_MAX_SHARPE_DECAY,
+    MULTI_WFA_MIN_CONSISTENCY,
+    MULTI_WFA_MIN_OOS_SHARPE,
     QUICK_MAX_SHARPE_DECAY,
     QUICK_MIN_OOS_SHARPE,
     FoldResult,
     MonteCarloResult,
+    SplitInfo,
     ValidationResult,
 )
 from src.backtest.validation.splitters import (
     split_cpcv,
     split_is_oos,
+    split_multi_cpcv,
+    split_multi_is_oos,
+    split_multi_walk_forward,
     split_walk_forward,
 )
 
 if TYPE_CHECKING:
     from src.backtest.engine import BacktestEngine
-    from src.data.market_data import MarketDataSet
+    from src.backtest.request import MultiAssetBacktestRequest
+    from src.data.market_data import MarketDataSet, MultiSymbolData
     from src.portfolio.portfolio import Portfolio
     from src.strategy.base import BaseStrategy
 
@@ -573,4 +586,354 @@ class TieredValidator:
             sharpe_ci_lower=ci_lower,
             sharpe_ci_upper=ci_upper,
             p_value=p_value,
+        )
+
+    # =========================================================================
+    # Multi-Asset Validation
+    # =========================================================================
+
+    def validate_multi(
+        self,
+        level: ValidationLevel,
+        data: MultiSymbolData,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+        weights: dict[str, float] | None = None,
+        *,
+        split_ratio: float = 0.7,
+        n_folds: int = 5,
+        expanding: bool = True,
+        n_splits: int = 5,
+        n_test_splits: int = 2,
+        n_monte_carlo: int = 1000,
+    ) -> ValidationResult:
+        """멀티에셋 포트폴리오 검증.
+
+        Args:
+            level: 검증 레벨 (quick/milestone/final)
+            data: 멀티에셋 데이터
+            strategy: 전략 인스턴스
+            portfolio: 포트폴리오 설정
+            weights: 자산 배분 비중 (None이면 EW)
+            split_ratio: [QUICK] Train 비율
+            n_folds: [MILESTONE] Fold 수
+            expanding: [MILESTONE] 누적 Train 여부
+            n_splits: [FINAL] CPCV 그룹 수
+            n_test_splits: [FINAL] Test 그룹 수
+            n_monte_carlo: [FINAL] Monte Carlo 횟수
+
+        Returns:
+            ValidationResult
+        """
+        logger.info(
+            f"Multi-asset validation started: level={level.value}, assets={len(data.symbols)}"
+        )
+
+        match level:
+            case ValidationLevel.QUICK:
+                return self._run_quick_multi(
+                    data, strategy, portfolio, weights, split_ratio=split_ratio
+                )
+            case ValidationLevel.MILESTONE:
+                return self._run_milestone_multi(
+                    data,
+                    strategy,
+                    portfolio,
+                    weights,
+                    n_folds=n_folds,
+                    expanding=expanding,
+                )
+            case ValidationLevel.FINAL:
+                return self._run_final_multi(
+                    data,
+                    strategy,
+                    portfolio,
+                    weights,
+                    n_splits=n_splits,
+                    n_test_splits=n_test_splits,
+                    n_monte_carlo=n_monte_carlo,
+                )
+
+    def _run_quick_multi(
+        self,
+        data: MultiSymbolData,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+        weights: dict[str, float] | None,
+        split_ratio: float = 0.7,
+    ) -> ValidationResult:
+        """Multi-Asset Quick Validation: IS/OOS Split."""
+        start_time = time.perf_counter()
+        logger.debug(f"Multi-asset quick validation: split_ratio={split_ratio}")
+
+        train_data, test_data = split_multi_is_oos(data, ratio=split_ratio)
+
+        train_request = self._make_multi_request(train_data, strategy, portfolio, weights)
+        test_request = self._make_multi_request(test_data, strategy, portfolio, weights)
+
+        train_result = self._engine.run_multi(train_request)
+        test_result = self._engine.run_multi(test_request)
+
+        train_sharpe = train_result.portfolio_metrics.sharpe_ratio
+        test_sharpe = test_result.portfolio_metrics.sharpe_ratio
+
+        ref_df = data.ohlcv[data.symbols[0]]
+        split_idx = int(len(ref_df) * split_ratio)
+        ref_index = ref_df.index
+
+        fold_result = FoldResult(
+            fold_id=0,
+            split=SplitInfo(
+                fold_id=0,
+                train_start=ref_index[0].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+                train_end=ref_index[split_idx - 1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+                test_start=ref_index[split_idx].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+                test_end=ref_index[-1].to_pydatetime().replace(tzinfo=UTC),  # type: ignore[union-attr]
+                train_periods=split_idx,
+                test_periods=len(ref_df) - split_idx,
+            ),
+            train_sharpe=train_sharpe,
+            test_sharpe=test_sharpe,
+            train_return=train_result.portfolio_metrics.total_return,
+            test_return=test_result.portfolio_metrics.total_return,
+            train_max_drawdown=train_result.portfolio_metrics.max_drawdown,
+            test_max_drawdown=test_result.portfolio_metrics.max_drawdown,
+        )
+
+        failure_reasons: list[str] = []
+
+        if test_sharpe < MULTI_QUICK_MIN_OOS_SHARPE:
+            failure_reasons.append(f"OOS Sharpe ({test_sharpe:.2f}) < {MULTI_QUICK_MIN_OOS_SHARPE}")
+
+        sharpe_decay = fold_result.sharpe_decay
+        if sharpe_decay > MULTI_QUICK_MAX_DEGRADATION:
+            failure_reasons.append(
+                f"Sharpe Decay ({sharpe_decay:.1%}) > {MULTI_QUICK_MAX_DEGRADATION:.0%}"
+            )
+
+        passed = len(failure_reasons) == 0
+        computation_time = time.perf_counter() - start_time
+
+        logger.info(
+            f"Multi-asset quick validation: passed={passed}, IS={train_sharpe:.2f}, OOS={test_sharpe:.2f}"
+        )
+
+        return ValidationResult(
+            level=ValidationLevel.QUICK,
+            fold_results=(fold_result,),
+            monte_carlo=None,
+            avg_train_sharpe=train_sharpe,
+            avg_test_sharpe=test_sharpe,
+            sharpe_stability=0.0,
+            passed=passed,
+            failure_reasons=tuple(failure_reasons),
+            total_folds=1,
+            computation_time_seconds=computation_time,
+        )
+
+    def _run_milestone_multi(
+        self,
+        data: MultiSymbolData,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+        weights: dict[str, float] | None,
+        n_folds: int = 5,
+        expanding: bool = True,
+    ) -> ValidationResult:
+        """Multi-Asset Milestone Validation: Walk-Forward."""
+        start_time = time.perf_counter()
+        logger.debug(f"Multi-asset milestone: n_folds={n_folds}, expanding={expanding}")
+
+        splits = split_multi_walk_forward(data, n_folds=n_folds, expanding=expanding)
+
+        fold_results: list[FoldResult] = []
+        train_sharpes: list[float] = []
+        test_sharpes: list[float] = []
+
+        for train_data, test_data, split_info in splits:
+            train_request = self._make_multi_request(train_data, strategy, portfolio, weights)
+            test_request = self._make_multi_request(test_data, strategy, portfolio, weights)
+
+            train_result = self._engine.run_multi(train_request)
+            test_result = self._engine.run_multi(test_request)
+
+            fold_result = FoldResult(
+                fold_id=split_info.fold_id,
+                split=split_info,
+                train_sharpe=train_result.portfolio_metrics.sharpe_ratio,
+                test_sharpe=test_result.portfolio_metrics.sharpe_ratio,
+                train_return=train_result.portfolio_metrics.total_return,
+                test_return=test_result.portfolio_metrics.total_return,
+                train_max_drawdown=train_result.portfolio_metrics.max_drawdown,
+                test_max_drawdown=test_result.portfolio_metrics.max_drawdown,
+            )
+
+            fold_results.append(fold_result)
+            train_sharpes.append(train_result.portfolio_metrics.sharpe_ratio)
+            test_sharpes.append(test_result.portfolio_metrics.sharpe_ratio)
+
+        avg_train_sharpe = statistics.mean(train_sharpes) if train_sharpes else 0.0
+        avg_test_sharpe = statistics.mean(test_sharpes) if test_sharpes else 0.0
+        sharpe_stability = statistics.stdev(test_sharpes) if len(test_sharpes) > 1 else 0.0
+
+        consistent_count = sum(1 for f in fold_results if f.is_consistent)
+        consistency_ratio = consistent_count / len(fold_results) if fold_results else 0.0
+
+        failure_reasons: list[str] = []
+
+        if avg_test_sharpe < MULTI_WFA_MIN_OOS_SHARPE:
+            failure_reasons.append(
+                f"Avg OOS Sharpe ({avg_test_sharpe:.2f}) < {MULTI_WFA_MIN_OOS_SHARPE}"
+            )
+
+        avg_decay = (
+            (avg_train_sharpe - avg_test_sharpe) / abs(avg_train_sharpe)
+            if avg_train_sharpe != 0
+            else 0.0
+        )
+        if avg_decay > MULTI_WFA_MAX_SHARPE_DECAY:
+            failure_reasons.append(
+                f"Avg Sharpe Decay ({avg_decay:.1%}) > {MULTI_WFA_MAX_SHARPE_DECAY:.0%}"
+            )
+
+        if consistency_ratio < MULTI_WFA_MIN_CONSISTENCY:
+            failure_reasons.append(
+                f"Consistency ({consistency_ratio:.1%}) < {MULTI_WFA_MIN_CONSISTENCY:.0%}"
+            )
+
+        passed = len(failure_reasons) == 0
+        computation_time = time.perf_counter() - start_time
+
+        logger.info(
+            f"Multi-asset milestone: passed={passed}, avg_IS={avg_train_sharpe:.2f}, avg_OOS={avg_test_sharpe:.2f}"
+        )
+
+        return ValidationResult(
+            level=ValidationLevel.MILESTONE,
+            fold_results=tuple(fold_results),
+            monte_carlo=None,
+            avg_train_sharpe=avg_train_sharpe,
+            avg_test_sharpe=avg_test_sharpe,
+            sharpe_stability=sharpe_stability,
+            passed=passed,
+            failure_reasons=tuple(failure_reasons),
+            total_folds=len(fold_results),
+            computation_time_seconds=computation_time,
+        )
+
+    def _run_final_multi(
+        self,
+        data: MultiSymbolData,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+        weights: dict[str, float] | None,
+        n_splits: int = 5,
+        n_test_splits: int = 2,
+        n_monte_carlo: int = 1000,
+    ) -> ValidationResult:
+        """Multi-Asset Final Validation: CPCV + DSR + PBO."""
+        start_time = time.perf_counter()
+        logger.debug(f"Multi-asset final: n_splits={n_splits}, n_test_splits={n_test_splits}")
+
+        fold_results: list[FoldResult] = []
+        train_sharpes: list[float] = []
+        test_sharpes: list[float] = []
+
+        for train_data, test_data, split_info in split_multi_cpcv(
+            data,
+            n_splits=n_splits,
+            n_test_splits=n_test_splits,
+        ):
+            train_request = self._make_multi_request(train_data, strategy, portfolio, weights)
+            test_request = self._make_multi_request(test_data, strategy, portfolio, weights)
+
+            train_result = self._engine.run_multi(train_request)
+            test_result = self._engine.run_multi(test_request)
+
+            fold_result = FoldResult(
+                fold_id=split_info.fold_id,
+                split=split_info,
+                train_sharpe=train_result.portfolio_metrics.sharpe_ratio,
+                test_sharpe=test_result.portfolio_metrics.sharpe_ratio,
+                train_return=train_result.portfolio_metrics.total_return,
+                test_return=test_result.portfolio_metrics.total_return,
+                train_max_drawdown=train_result.portfolio_metrics.max_drawdown,
+                test_max_drawdown=test_result.portfolio_metrics.max_drawdown,
+            )
+
+            fold_results.append(fold_result)
+            train_sharpes.append(train_result.portfolio_metrics.sharpe_ratio)
+            test_sharpes.append(test_result.portfolio_metrics.sharpe_ratio)
+
+        avg_train_sharpe = statistics.mean(train_sharpes) if train_sharpes else 0.0
+        avg_test_sharpe = statistics.mean(test_sharpes) if test_sharpes else 0.0
+        sharpe_stability = statistics.stdev(test_sharpes) if len(test_sharpes) > 1 else 0.0
+
+        # PBO 계산
+        from src.backtest.validation.pbo import calculate_pbo
+
+        pbo = calculate_pbo(train_sharpes, test_sharpes) if len(train_sharpes) >= 2 else 0.5  # noqa: PLR2004
+
+        # DSR 계산
+        from src.backtest.validation.deflated_sharpe import deflated_sharpe_ratio
+
+        n_obs = data.ohlcv[data.symbols[0]].shape[0]
+        dsr = deflated_sharpe_ratio(
+            observed_sharpe=avg_test_sharpe,
+            n_trials=len(fold_results),
+            n_observations=n_obs,
+        )
+
+        # Monte Carlo
+        monte_carlo = self._run_monte_carlo(test_sharpes, n_simulations=n_monte_carlo)
+
+        # Pass/Fail 판정
+        failure_reasons: list[str] = []
+
+        if avg_test_sharpe < MULTI_WFA_MIN_OOS_SHARPE:
+            failure_reasons.append(
+                f"Avg OOS Sharpe ({avg_test_sharpe:.2f}) < {MULTI_WFA_MIN_OOS_SHARPE}"
+            )
+
+        if pbo > MULTI_CPCV_MAX_PBO:
+            failure_reasons.append(f"PBO ({pbo:.2f}) > {MULTI_CPCV_MAX_PBO}")
+
+        if dsr < MULTI_DEFLATED_SHARPE_MIN:
+            failure_reasons.append(f"DSR ({dsr:.2f}) < {MULTI_DEFLATED_SHARPE_MIN}")
+
+        passed = len(failure_reasons) == 0
+        computation_time = time.perf_counter() - start_time
+
+        logger.info(
+            f"Multi-asset final: passed={passed}, avg_OOS={avg_test_sharpe:.2f}, PBO={pbo:.2f}, DSR={dsr:.2f}"
+        )
+
+        return ValidationResult(
+            level=ValidationLevel.FINAL,
+            fold_results=tuple(fold_results),
+            monte_carlo=monte_carlo,
+            avg_train_sharpe=avg_train_sharpe,
+            avg_test_sharpe=avg_test_sharpe,
+            sharpe_stability=sharpe_stability,
+            passed=passed,
+            failure_reasons=tuple(failure_reasons),
+            total_folds=len(fold_results),
+            computation_time_seconds=computation_time,
+        )
+
+    def _make_multi_request(
+        self,
+        data: MultiSymbolData,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+        weights: dict[str, float] | None,
+    ) -> MultiAssetBacktestRequest:
+        """멀티에셋 백테스트 요청 생성 헬퍼."""
+        from src.backtest.request import MultiAssetBacktestRequest
+
+        return MultiAssetBacktestRequest(
+            data=data,
+            strategy=strategy,
+            portfolio=portfolio,
+            weights=weights,
         )

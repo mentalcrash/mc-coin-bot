@@ -261,6 +261,125 @@ report_path = generate_quantstats_report(
 print(f"Report saved: {report_path}")
 ```
 
+### 2.6 MultiSymbolData (Infrastructure Layer)
+
+멀티에셋 데이터 컨테이너입니다.
+
+```python
+from src.data import MarketDataService
+from src.data.market_data import MultiSymbolData
+
+# 멀티심볼 데이터 로드
+service = MarketDataService()
+multi_data = service.get_multi(
+    symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT",
+             "DOGE/USDT", "LINK/USDT", "ADA/USDT", "AVAX/USDT"],
+    timeframe="1D",
+    start=datetime(2020, 1, 1, tzinfo=UTC),
+    end=datetime(2025, 12, 31, tzinfo=UTC),
+)
+
+print(multi_data.n_assets)      # 8
+print(multi_data.periods)       # 2192
+print(multi_data.close_matrix)  # DataFrame (2192 × 8)
+
+# 단일 심볼 추출 (호환성)
+btc = multi_data.get_single("BTC/USDT")  # MarketDataSet
+
+# 시간/인덱스 슬라이싱 (검증용)
+sliced = multi_data.slice_time(start, end)
+sliced = multi_data.slice_iloc(10, 50)
+```
+
+**파일 위치:**
+- `src/data/market_data.py`: MultiSymbolData dataclass
+- `src/data/service.py`: MarketDataService.get_multi()
+
+### 2.7 MultiAssetBacktestRequest (Application Layer)
+
+멀티에셋 백테스트 요청 DTO입니다.
+
+```python
+from src.backtest.request import MultiAssetBacktestRequest
+
+request = MultiAssetBacktestRequest(
+    data=multi_data,              # MultiSymbolData
+    strategy=TSMOMStrategy(),     # 모든 심볼에 동일 전략 적용
+    portfolio=portfolio,          # Portfolio
+    weights={"BTC/USDT": 0.3, "ETH/USDT": 0.7},  # None이면 EW (1/N)
+    analyzer=analyzer,            # PerformanceAnalyzer (optional)
+)
+
+# Equal Weight 자동 계산
+print(request.asset_weights)  # {"BTC/USDT": 0.5, "ETH/USDT": 0.5}
+```
+
+**파일 위치:**
+- `src/backtest/request.py`: MultiAssetBacktestRequest
+
+### 2.8 BacktestEngine 멀티에셋 API (Application Layer)
+
+```python
+engine = BacktestEngine()
+
+# 기본 실행
+result = engine.run_multi(request)
+# → MultiAssetBacktestResult
+
+# 수익률 시리즈 포함 (QuantStats 리포트용)
+result, returns, benchmark = engine.run_multi_with_returns(request)
+# → (MultiAssetBacktestResult, pd.Series, pd.Series)
+
+# 검증 결합 실행
+result, validation = engine.run_multi_validated(request, level="quick")
+# → (MultiAssetBacktestResult, ValidationResult)
+```
+
+**내부 처리 흐름:**
+1. 심볼별 독립 전략 실행 (`strategy.run(df)`)
+2. 자산 배분 비중 적용 (`strength × asset_weight`)
+3. PM 규칙 적용 (stop-loss, trailing-stop, rebalance)
+4. VectorBT `from_orders(cash_sharing=True, group_by=True)` 실행
+5. 포트폴리오 + 심볼별 성과 분석
+
+**파일 위치:**
+- `src/backtest/engine.py`: run_multi(), run_multi_with_returns(), run_multi_validated()
+
+### 2.9 Validation System (Domain Layer)
+
+3단계 과적합 검증 시스템입니다.
+
+```python
+from src.backtest.validation import TieredValidator, ValidationLevel
+
+validator = TieredValidator()
+
+# 멀티에셋 검증
+result = validator.validate_multi(
+    level=ValidationLevel.QUICK,      # QUICK | MILESTONE | FINAL
+    data=multi_data,
+    strategy=TSMOMStrategy(),
+    portfolio=portfolio,
+)
+
+print(result.passed)           # True/False
+print(result.fold_results)     # Fold별 IS/OOS 결과
+print(result.failure_reasons)  # 실패 이유
+
+# 검증 리포트 생성
+from src.backtest.validation import generate_validation_report
+report = generate_validation_report(result)
+print(report)
+```
+
+**파일 위치:**
+- `src/backtest/validation/validator.py`: TieredValidator
+- `src/backtest/validation/splitters.py`: 데이터 분할 (IS/OOS, WF, CPCV)
+- `src/backtest/validation/deflated_sharpe.py`: Deflated Sharpe Ratio
+- `src/backtest/validation/pbo.py`: Probability of Backtest Overfitting
+- `src/backtest/validation/report.py`: 검증 리포트 생성
+- `src/backtest/validation/models.py`: ValidationResult, FoldResult, 판정 기준 상수
+
 ---
 
 ## 4. 확장 가이드
@@ -324,19 +443,30 @@ class MyStrategy(BaseStrategy):
 src/
 ├── backtest/
 │   ├── __init__.py          # 모듈 exports
-│   ├── analyzer.py          # PerformanceAnalyzer
+│   ├── analyzer.py          # PerformanceAnalyzer (+_compute_cagr)
 │   ├── cost_model.py        # CostModel
-│   ├── engine.py            # BacktestEngine, run_parameter_sweep
+│   ├── engine.py            # BacktestEngine (run, run_multi, run_multi_validated)
 │   ├── metrics.py           # 순수 함수 기반 지표 계산
 │   ├── reporter.py          # QuantStats 리포트 생성
-│   └── request.py           # BacktestRequest DTO
+│   ├── request.py           # BacktestRequest, MultiAssetBacktestRequest
+│   └── validation/
+│       ├── __init__.py      # 검증 모듈 exports
+│       ├── deflated_sharpe.py  # Deflated Sharpe Ratio, PSR
+│       ├── models.py        # ValidationResult, FoldResult, 판정 상수
+│       ├── monte_carlo.py   # Monte Carlo 시뮬레이션
+│       ├── pbo.py           # Probability of Backtest Overfitting
+│       ├── report.py        # 검증 리포트 생성
+│       ├── splitters.py     # 데이터 분할 (IS/OOS, WF, CPCV, multi-*)
+│       └── validator.py     # TieredValidator (validate, validate_multi)
 ├── data/
 │   ├── __init__.py          # 모듈 exports
 │   ├── bronze.py            # BronzeStorage
 │   ├── fetcher.py           # DataFetcher
-│   ├── market_data.py       # MarketDataRequest, MarketDataSet
-│   ├── service.py           # MarketDataService
+│   ├── market_data.py       # MarketDataRequest, MarketDataSet, MultiSymbolData
+│   ├── service.py           # MarketDataService (get, get_multi)
 │   └── silver.py            # SilverProcessor
+├── models/
+│   └── backtest.py          # BacktestResult, MultiAssetBacktestResult, PerformanceMetrics
 ├── portfolio/
 │   ├── __init__.py          # 모듈 exports
 │   ├── config.py            # PortfolioManagerConfig
@@ -374,6 +504,7 @@ src/
 ## 7. CLI 사용법
 
 ```bash
+# === 단일에셋 백테스트 ===
 # 기본 백테스트
 uv run python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
 
@@ -388,4 +519,24 @@ uv run python -m src.cli.backtest optimize BTC/USDT -y 2024 -y 2025
 
 # 정보 출력
 uv run python -m src.cli.backtest info
+
+# === 멀티에셋 백테스트 ===
+# 8-asset EW 포트폴리오
+uv run python -m src.cli.backtest run-multi -s tsmom -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+
+# 커스텀 심볼 + 자본
+uv run python -m src.cli.backtest run-multi --symbols BTC/USDT,ETH/USDT -c 50000
+
+# 멀티에셋 + 검증
+uv run python -m src.cli.backtest run-multi --validation quick
+
+# === 과적합 검증 ===
+# QUICK (IS/OOS)
+uv run python -m src.cli.backtest validate -m quick
+
+# MILESTONE (Walk-Forward)
+uv run python -m src.cli.backtest validate -m milestone
+
+# FINAL (CPCV + DSR + PBO)
+uv run python -m src.cli.backtest validate -m final
 ```
