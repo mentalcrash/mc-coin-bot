@@ -28,6 +28,7 @@ from src.core.events import (
 from src.models.types import Direction
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from uuid import UUID
 
     from src.core.event_bus import EventBus
@@ -94,6 +95,7 @@ class EDAPortfolioManager:
         config: PortfolioManagerConfig,
         initial_capital: float,
         asset_weights: dict[str, float] | None = None,
+        target_timeframe: str | None = None,
     ) -> None:
         self._config = config
         self._initial_capital = initial_capital
@@ -102,6 +104,11 @@ class EDAPortfolioManager:
         self._asset_weights = asset_weights or {}
         self._order_counter = 0
         self._bus: EventBus | None = None
+        # Per-bar rebalancing state
+        self._last_target_weights: dict[str, float] = {}
+        self._stopped_this_bar: set[str] = set()
+        self._current_bar_ts: datetime | None = None
+        self._target_timeframe = target_timeframe
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
@@ -160,11 +167,9 @@ class EDAPortfolioManager:
     # Event Handlers
     # =========================================================================
     async def _on_signal(self, event: AnyEvent) -> None:
-        """SignalEvent → OrderRequestEvent 변환."""
+        """SignalEvent → target weight 저장 + 리밸런스 평가."""
         assert isinstance(event, SignalEvent)
         signal = event
-        bus = self._bus
-        assert bus is not None
 
         symbol = signal.symbol
 
@@ -180,16 +185,41 @@ class EDAPortfolioManager:
             clamped = self._config.clamp_leverage(abs(raw_target))
             target_weight = direction_sign * clamped
 
-        # 3. 리밸런스 임계값 확인
+        # 3. target weight 저장 (per-bar rebalancing에서도 사용)
+        self._last_target_weights[symbol] = target_weight
+
+        # 4. 리밸런스 평가
+        await self._evaluate_rebalance(
+            symbol, signal.correlation_id, source_strategy=signal.strategy_name
+        )
+
+    async def _evaluate_rebalance(
+        self,
+        symbol: str,
+        correlation_id: UUID | None,
+        source_strategy: str = "rebalance",
+    ) -> None:
+        """저장된 target weight와 현재 weight 비교 → 리밸런스 주문 생성."""
+        bus = self._bus
+        assert bus is not None
+
+        # stop-loss 후 같은 bar에서 재진입 방지
+        if symbol in self._stopped_this_bar:
+            return
+
+        target_weight = self._last_target_weights.get(symbol)
+        if target_weight is None:
+            return
+
         pos = self._positions.get(symbol)
         current_weight = pos.current_weight if pos else 0.0
 
         if not self._config.should_rebalance(current_weight, target_weight):
             return
 
-        # 4. 주문 생성
+        # 주문 생성
         self._order_counter += 1
-        client_order_id = f"{signal.strategy_name}-{symbol}-{self._order_counter}"
+        client_order_id = f"{source_strategy}-{symbol}-{self._order_counter}"
 
         equity = self.total_equity
         delta_weight = target_weight - current_weight
@@ -202,7 +232,7 @@ class EDAPortfolioManager:
             side=side,  # type: ignore[arg-type]
             target_weight=target_weight,
             notional_usd=notional,
-            correlation_id=signal.correlation_id,
+            correlation_id=correlation_id,
             source="PortfolioManager",
         )
         await bus.publish(order)
@@ -348,11 +378,27 @@ class EDAPortfolioManager:
     # Bar Handler
     # =========================================================================
     async def _on_bar(self, event: AnyEvent) -> None:
-        """BarEvent → mark-to-market, stop-loss, trailing stop, balance update."""
+        """BarEvent → mark-to-market, stop-loss, trailing stop, per-bar rebalancing."""
         assert isinstance(event, BarEvent)
         bar = event
+
+        # 0. TF bar일 때만 stopped set 리셋 (1m bar에서는 리셋 안 함)
+        is_tf_bar = self._target_timeframe is None or bar.timeframe == self._target_timeframe
+        if is_tf_bar and self._current_bar_ts != bar.bar_timestamp:
+            self._current_bar_ts = bar.bar_timestamp
+            self._stopped_this_bar.clear()
+
+        # 1m bar (intrabar): SL/TS 체크만 수행, rebalancing 생략
+        if not is_tf_bar:
+            await self._on_intrabar(bar)
+            return
+
+        # === TF bar 로직 (기존과 동일) ===
         pos = self._positions.get(bar.symbol)
         if pos is None or not pos.is_open:
+            # 포지션 없어도 per-bar rebalancing 체크 (새 진입 가능)
+            if bar.symbol in self._last_target_weights:
+                await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
             return
 
         # 1. ATR 업데이트 (last_price 변경 전에 prev_close 사용)
@@ -367,6 +413,7 @@ class EDAPortfolioManager:
 
         # 3. Position stop-loss 체크
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
+            self._stopped_this_bar.add(bar.symbol)
             await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
             await self._publish_balance_update(bar.correlation_id)
             return
@@ -375,6 +422,7 @@ class EDAPortfolioManager:
         if self._config.use_trailing_stop:
             self._update_peak_trough(pos, bar)
             if atr is not None and self._check_trailing_stop(pos, bar, atr):
+                self._stopped_this_bar.add(bar.symbol)
                 await self._emit_close_order(pos, bar.correlation_id, "trailing-stop")
                 await self._publish_balance_update(bar.correlation_id)
                 return
@@ -387,6 +435,36 @@ class EDAPortfolioManager:
 
         # 6. BalanceUpdateEvent 발행 (RM 실시간 drawdown 추적)
         await self._publish_balance_update(bar.correlation_id)
+
+        # 7. Per-bar rebalancing (market drift 보상)
+        if bar.symbol in self._last_target_weights:
+            await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
+
+    # =========================================================================
+    # Intrabar Handler (1m bar → SL/TS only)
+    # =========================================================================
+    async def _on_intrabar(self, bar: BarEvent) -> None:
+        """1m bar에서 intrabar SL/TS만 체크 (rebalancing 생략)."""
+        pos = self._positions.get(bar.symbol)
+        if pos is None or not pos.is_open:
+            return
+        atr = self._update_atr(pos, bar)
+        pos.last_price = bar.close
+        if pos.direction == Direction.LONG:
+            pos.unrealized_pnl = (bar.close - pos.avg_entry_price) * pos.size
+        elif pos.direction == Direction.SHORT:
+            pos.unrealized_pnl = (pos.avg_entry_price - bar.close) * pos.size
+        # Stop-loss
+        if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
+            self._stopped_this_bar.add(bar.symbol)
+            await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
+            return
+        # Trailing stop
+        if self._config.use_trailing_stop:
+            self._update_peak_trough(pos, bar)
+            if atr is not None and self._check_trailing_stop(pos, bar, atr):
+                self._stopped_this_bar.add(bar.symbol)
+                await self._emit_close_order(pos, bar.correlation_id, "trailing-stop")
 
     # =========================================================================
     # Stop-Loss / Trailing Stop Helpers

@@ -920,3 +920,504 @@ class TestPositionFieldInit:
         pos = pm.positions["BTC/USDT"]
         assert pos.peak_price_since_entry == 0.0
         assert pos.trough_price_since_entry == 0.0
+
+
+# =========================================================================
+# F. Vol-Target Rebalancing 검증
+# =========================================================================
+class TestVolTargetRebalancing:
+    """Per-bar vol-target 리밸런싱 테스트."""
+
+    async def test_rebalance_on_signal_change(self) -> None:
+        """SignalEvent strength 변화 → PM이 리밸런스 주문 생성."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 첫 시그널: strength=1.0 (target_weight=1.0)
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+        assert len(orders) == 1
+
+        # Fill 처리
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.2, fee=0.0))
+        await bus.flush()
+
+        # 두 번째 시그널: strength=0.5 (target_weight=0.5)
+        # current_weight ≈ 1.0, target=0.5, diff=0.5 > 0.05 threshold
+        await bus.publish(_make_signal(strength=0.5))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 최소 2개 주문 (진입 + 리밸런스)
+        assert len(orders) >= 2
+
+    async def test_rebalance_on_market_drift(self) -> None:
+        """같은 signal이지만 가격 변동으로 current_weight drift → _on_bar에서 리밸런스."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 시그널: LONG strength=1.0 → target_weight=1.0
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+        initial_order_count = len(orders)
+        assert initial_order_count == 1
+
+        # Fill: 0.2 BTC @ 50000 → notional=10000, equity=10000, weight=1.0
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.2, fee=0.0))
+        await bus.flush()
+
+        # 가격 큰 폭 하락 → weight drift
+        # close=40000 → notional=8000, cash=0, equity=8000
+        # weight = 8000/8000 = 1.0 (아직 OK)
+        # close=30000 → notional=6000, cash=0, equity=6000
+        # weight = 6000/6000 = 1.0 (leveraged position)
+        # 실제로 weight가 1.0 유지되므로 큰 변화 필요
+        # 가격 상승 시: close=70000 → notional=14000, cash=0, equity=14000
+        # weight = 14000/14000 = 1.0 (여전히 1.0)
+
+        # weight drift는 multi-asset에서 더 뚜렷함
+        # 단일 에셋은 target=1.0이면 항상 weight=1.0이 유지
+        # target을 0.5로 설정해서 drift 테스트
+        pm._last_target_weights["BTC/USDT"] = 0.5
+
+        # 가격 변동 bar → _on_bar에서 rebalance 체크
+        await bus.publish(_make_bar(close=50000.0, high=51000.0, low=49000.0))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # per-bar rebalancing이 주문을 생성해야 함
+        # current_weight≈1.0, target=0.5, diff=0.5 > 0.05
+        assert len(orders) > initial_order_count
+
+    async def test_no_rebalance_below_threshold(self) -> None:
+        """weight diff < rebalance_threshold → 주문 미생성."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.10,  # 10% threshold
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 시그널: LONG strength=1.0
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+
+        # Fill
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.2, fee=0.0))
+        await bus.flush()
+        order_count_after_entry = len(orders)
+
+        # 동일 시그널 반복 → target_weight 동일 → diff ≈ 0 < 0.10
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 추가 주문 없음
+        assert len(orders) == order_count_after_entry
+
+    async def test_stop_loss_prevents_reentry(self) -> None:
+        """stop-loss 발동 → 같은 bar에서 시그널 수신해도 재진입 안 함."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=0.10,  # 10% stop-loss
+            use_intrabar_stop=True,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 시그널 + 진입
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        orders_before_sl = len(orders)
+
+        # stop-loss 발동 bar (low=44000 < 45000)
+        sl_bar = _make_bar(close=44500.0, high=50000.0, low=44000.0)
+        await bus.publish(sl_bar)
+        await bus.flush()
+
+        # stop-loss 주문이 발생
+        sl_orders = [o for o in orders[orders_before_sl:] if o.target_weight == 0.0]
+        assert len(sl_orders) >= 1
+
+        order_count_after_sl = len(orders)
+
+        # 같은 bar에서 새 시그널 → 재진입 차단
+        # _stopped_this_bar에 BTC/USDT가 있으므로 _evaluate_rebalance가 return
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # stop-loss 후 추가 주문 없음
+        assert len(orders) == order_count_after_sl
+
+    async def test_multiple_bars_multiple_rebalances(self) -> None:
+        """10+ bars 시뮬레이션 → 여러 리밸런스 주문 생성 확인."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 진입 시그널 + fill
+        await bus.publish(_make_signal(strength=1.5))
+        await bus.flush()
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.3, fee=0.0))
+        await bus.flush()
+
+        # 10 bars에서 strength를 교대로 변화 → 리밸런스 발생
+        for i in range(10):
+            strength = 1.0 if i % 2 == 0 else 1.5
+            await bus.publish(_make_signal(strength=strength))
+            await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 최초 진입 + 여러 리밸런스 → 2개 이상 주문
+        assert len(orders) >= 2
+
+
+# =========================================================================
+# G. Intrabar SL/TS 테스트 (target_timeframe 모드)
+# =========================================================================
+def _make_bar_tf(
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1D",
+    open_: float = 50000.0,
+    high: float = 51000.0,
+    low: float = 49000.0,
+    close: float = 50500.0,
+    volume: float = 100.0,
+    ts: datetime | None = None,
+) -> BarEvent:
+    """타임프레임 지정 가능한 BarEvent 생성."""
+    return BarEvent(
+        symbol=symbol,
+        timeframe=timeframe,
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        bar_timestamp=ts or datetime.now(UTC),
+        correlation_id=uuid4(),
+        source="test",
+    )
+
+
+class TestIntrabarStopLoss:
+    """1m bar에서의 intrabar SL/TS 동작 검증."""
+
+    async def test_1m_bar_triggers_stop_loss(self) -> None:
+        """target_timeframe='1D' → 1m bar에서 SL 발동 → 청산 주문."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=0.10,
+            use_intrabar_stop=True,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(
+            config=config, initial_capital=10000.0, target_timeframe="1D"
+        )
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        # BUY 0.1 @ 50000
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        # 1m bar: low=44000 < 50000 * 0.9 = 45000 → SL 발동
+        await bus.publish(
+            _make_bar_tf(
+                timeframe="1m",
+                close=44500.0,
+                high=50000.0,
+                low=44000.0,
+            )
+        )
+        await bus.flush()
+        await bus.stop()
+        await task
+
+        close_orders = [o for o in orders if o.target_weight == 0.0]
+        assert len(close_orders) >= 1
+        assert close_orders[0].side == "SELL"
+
+    async def test_1m_bar_no_rebalancing(self) -> None:
+        """1m bar에서는 rebalancing/BalanceUpdate 생략."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(
+            config=config, initial_capital=10000.0, target_timeframe="1D"
+        )
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+        bal_events: list[BalanceUpdateEvent] = []
+
+        async def order_handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        async def bal_handler(event: AnyEvent) -> None:
+            if isinstance(event, BalanceUpdateEvent):
+                bal_events.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, order_handler)
+        bus.subscribe(EventType.BALANCE_UPDATE, bal_handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        # BUY + target weight 설정
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.2, fee=0.0))
+        await bus.flush()
+
+        orders_before = len(orders)
+        bal_before = len(bal_events)
+
+        # 1m bar 여러 개 → rebalancing/BalanceUpdate 발생 안 함
+        for i in range(5):
+            await bus.publish(
+                _make_bar_tf(
+                    timeframe="1m",
+                    close=50000.0 + i * 100,
+                    high=50200.0 + i * 100,
+                    low=49800.0 + i * 100,
+                )
+            )
+            await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 1m bar에서는 rebalance 주문 없음
+        assert len(orders) == orders_before
+        # 1m bar에서는 BalanceUpdate 없음
+        assert len(bal_events) == bal_before
+
+    async def test_tf_bar_full_logic(self) -> None:
+        """target_timeframe='1D' → 1D bar에서 기존 전체 로직 동작."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(
+            config=config, initial_capital=10000.0, target_timeframe="1D"
+        )
+        bus = EventBus(queue_size=200)
+        bal_events: list[BalanceUpdateEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, BalanceUpdateEvent):
+                bal_events.append(event)
+
+        bus.subscribe(EventType.BALANCE_UPDATE, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+        bal_before = len(bal_events)
+
+        # 1D bar → 전체 로직 (BalanceUpdate 발행)
+        await bus.publish(
+            _make_bar_tf(
+                timeframe="1D",
+                close=51000.0,
+                high=52000.0,
+                low=50000.0,
+            )
+        )
+        await bus.flush()
+        await bus.stop()
+        await task
+
+        assert len(bal_events) > bal_before
+
+    async def test_no_target_tf_backwards_compat(self) -> None:
+        """target_timeframe=None → 기존 동작과 동일."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        bal_events: list[BalanceUpdateEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, BalanceUpdateEvent):
+                bal_events.append(event)
+
+        bus.subscribe(EventType.BALANCE_UPDATE, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+        bal_before = len(bal_events)
+
+        # 어떤 TF든 전체 로직 실행
+        await bus.publish(_make_bar(close=51000.0, high=52000.0, low=50000.0))
+        await bus.flush()
+        await bus.stop()
+        await task
+
+        assert len(bal_events) > bal_before
+
+    async def test_1m_trailing_stop_triggered(self) -> None:
+        """1m bar에서 trailing stop 발동."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            use_trailing_stop=True,
+            trailing_stop_atr_multiplier=2.0,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(
+            config=config, initial_capital=10000.0, target_timeframe="1D"
+        )
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        # 1m bar로 ATR warmup (16봉, 부드러운 상승)
+        for i in range(16):
+            base_price = 50000.0 + i * 625
+            await bus.publish(
+                _make_bar_tf(
+                    timeframe="1m",
+                    close=base_price + 500,
+                    high=base_price + 1000,
+                    low=base_price,
+                )
+            )
+            await bus.flush()
+
+        pos = pm.positions["BTC/USDT"]
+        peak = pos.peak_price_since_entry
+        # ATR ≈ 1000, mult=2.0 → trailing distance ≈ 2000
+
+        # 1m bar: close < peak - 2000 → trailing stop 발동
+        await bus.publish(
+            _make_bar_tf(
+                timeframe="1m",
+                close=peak - 2500,
+                high=peak - 500,
+                low=peak - 3000,
+            )
+        )
+        await bus.flush()
+        await bus.stop()
+        await task
+
+        close_orders = [o for o in orders if o.target_weight == 0.0]
+        assert len(close_orders) >= 1

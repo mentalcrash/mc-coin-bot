@@ -6,6 +6,7 @@ BaseStrategy 코드를 변경하지 않고 EDA에서 동일한 전략 로직을 
 Rules Applied:
     - Adapter Pattern: 기존 인터페이스를 새로운 컨텍스트에 적용
     - Stateless Strategy: 전략은 시그널만 생성, 상태는 PM이 관리
+    - No Signal Dedup: 매 bar마다 SignalEvent 발행 (PM의 should_rebalance가 필터링)
 """
 
 from __future__ import annotations
@@ -24,8 +25,6 @@ if TYPE_CHECKING:
     from src.strategy.base import BaseStrategy
 
 
-# 시그널 변화 감지 임계값 (floating point 노이즈 필터링)
-_SIGNAL_CHANGE_THRESHOLD = 1e-8
 # 연속 실패 임계값 (이 횟수 이상 연속 실패 시 RiskAlertEvent 발행)
 _CONSECUTIVE_FAILURE_LIMIT = 3
 
@@ -35,7 +34,7 @@ class StrategyEngine:
 
     1. BarEvent 수신 → 내부 버퍼에 OHLCV 누적
     2. warmup 이상 데이터 → strategy.run() 호출
-    3. 시그널 변화 시만 SignalEvent 발행 (dedup)
+    3. 매 bar마다 SignalEvent 발행 (PM의 should_rebalance가 불필요한 주문 필터링)
 
     Args:
         strategy: 벡터화 전략 인스턴스
@@ -46,14 +45,15 @@ class StrategyEngine:
         self,
         strategy: BaseStrategy,
         warmup_periods: int | None = None,
+        target_timeframe: str | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
         self._buffers: dict[str, list[dict[str, float]]] = {}
         self._timestamps: dict[str, list[datetime]] = {}
-        self._last_signals: dict[str, tuple[int, float]] = {}  # symbol -> (direction, strength)
         self._consecutive_failures: dict[str, int] = {}
         self._bus: EventBus | None = None
+        self._target_timeframe = target_timeframe
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -70,10 +70,15 @@ class StrategyEngine:
         1. OHLCV 버퍼에 누적
         2. warmup 미달 시 스킵
         3. strategy.run() 호출
-        4. 시그널 변화 시 SignalEvent 발행
+        4. 매 bar SignalEvent 발행
         """
         assert isinstance(event, BarEvent)
         bar = event
+
+        # TF 필터: target_timeframe 설정 시 해당 TF만 처리
+        if self._target_timeframe is not None and bar.timeframe != self._target_timeframe:
+            return
+
         symbol = bar.symbol
         bus = self._bus
         assert bus is not None
@@ -135,21 +140,9 @@ class StrategyEngine:
         # 성공 시 연속 실패 카운터 리셋
         self._consecutive_failures[symbol] = 0
 
-        # 4. 최신 시그널 추출
+        # 4. 최신 시그널 추출 + SignalEvent 발행 (매 bar)
         latest_direction = int(signals.direction.iloc[-1])
         latest_strength = float(signals.strength.iloc[-1])
-
-        # 5. 시그널 변화 감지 (dedup)
-        prev = self._last_signals.get(symbol, (0, 0.0))
-        direction_changed = latest_direction != prev[0]
-        strength_changed = abs(latest_strength - prev[1]) > _SIGNAL_CHANGE_THRESHOLD
-
-        if not direction_changed and not strength_changed:
-            return
-
-        self._last_signals[symbol] = (latest_direction, latest_strength)
-
-        # 6. SignalEvent 발행
         signal_event = SignalEvent(
             symbol=symbol,
             strategy_name=self._strategy.name,

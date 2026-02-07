@@ -130,11 +130,11 @@ class TestStrategyEngineWarmup:
         assert all(s.strategy_name == "test_simple" for s in signals)
 
 
-class TestStrategyEngineSignalDedup:
-    """시그널 dedup 테스트."""
+class TestStrategyEngineNoDedup:
+    """Signal dedup 제거 후 매 bar 발행 테스트."""
 
-    async def test_same_signal_not_duplicated(self) -> None:
-        """동일 시그널 반복 시 중복 발행 안 함."""
+    async def test_signal_emitted_every_bar(self) -> None:
+        """동일 시그널이라도 매 bar마다 SignalEvent 발행."""
         strategy = SimpleTestStrategy()
         engine = StrategyEngine(strategy, warmup_periods=3)
         bus = EventBus(queue_size=100)
@@ -158,13 +158,9 @@ class TestStrategyEngineSignalDedup:
         await bus.stop()
         await task
 
-        # 처음 시그널 발행 후 동일 시그널은 dedup
-        # warmup=3 이후 첫 시그널 1개 (이후 동일하므로 dedup)
-        # strength가 (50100-50000)/50000 ≈ 0.002로 일정 → 1번만 발행
-        assert len(signals) >= 1
-        # 초기 한 번은 발행 (0에서 변화)
-        first_signal = signals[0]
-        assert first_signal.direction == Direction.LONG
+        # warmup=3: buf_len < 3 이면 스킵 → buf_len 1,2 스킵 → 8개 발행
+        assert len(signals) == 8
+        assert all(s.direction == Direction.LONG for s in signals)
 
 
 class TestStrategyEngineMultiSymbol:
@@ -294,6 +290,82 @@ class TestStrategyEngineFailureCounter:
         assert len(alerts) >= 1
         assert alerts[0].alert_level == "WARNING"
         assert "consecutive" in alerts[0].message.lower()
+
+
+class TestStrategyEngineTimeframeFilter:
+    """target_timeframe 필터 테스트."""
+
+    async def test_filter_ignores_non_target_bars(self) -> None:
+        """target_timeframe='1D' → 1m bar 무시, 1D bar만 처리."""
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=3, target_timeframe="1D")
+        bus = EventBus(queue_size=100)
+        signals: list[SignalEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            assert isinstance(event, SignalEvent)
+            signals.append(event)
+
+        bus.subscribe(EventType.SIGNAL, handler)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        # 10개 1m bar → 모두 무시
+        for i in range(10):
+            bar = BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1m",
+                open=50000.0,
+                high=50100.0,
+                low=49900.0,
+                close=50050.0,
+                volume=1000.0,
+                bar_timestamp=base + timedelta(minutes=i),
+                correlation_id=uuid4(),
+                source="test",
+            )
+            await bus.publish(bar)
+
+        # 5개 1D bar → warmup=3이므로 3개부터 시그널 발행
+        for i in range(5):
+            bar = _make_bar("BTC/USDT", 50000.0, 50200.0, base + timedelta(days=i))
+            await bus.publish(bar)
+
+        await bus.stop()
+        await task
+
+        assert len(signals) == 3  # bar 3,4,5 (0-indexed: warmup=3이므로 idx 3,4 → 2개? 5-3=2)
+        # warmup=3: buf_len 1,2 스킵 → buf_len 3,4,5에서 시그널 → 3개
+        assert all(s.symbol == "BTC/USDT" for s in signals)
+
+    async def test_no_filter_when_none(self) -> None:
+        """target_timeframe=None → 모든 bar 통과 (기존 동작)."""
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=3, target_timeframe=None)
+        bus = EventBus(queue_size=100)
+        signals: list[SignalEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            assert isinstance(event, SignalEvent)
+            signals.append(event)
+
+        bus.subscribe(EventType.SIGNAL, handler)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        for i in range(5):
+            bar = _make_bar("BTC/USDT", 50000.0, 50200.0, base + timedelta(days=i))
+            await bus.publish(bar)
+
+        await bus.stop()
+        await task
+
+        # 5개 bar, warmup=3 → 3개 시그널
+        assert len(signals) == 3
 
 
 class TestStrategyEngineWarmupDetection:

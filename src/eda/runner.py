@@ -18,7 +18,7 @@ from loguru import logger
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.eda.analytics import AnalyticsEngine
-from src.eda.data_feed import HistoricalDataFeed
+from src.eda.data_feed import AggregatingDataFeed, HistoricalDataFeed
 from src.eda.executors import BacktestExecutor
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
@@ -54,6 +54,7 @@ class EDARunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
+        target_timeframe: str | None = None,
     ) -> None:
         self._strategy = strategy
         self._data = data
@@ -61,6 +62,7 @@ class EDARunner:
         self._initial_capital = initial_capital
         self._asset_weights = asset_weights
         self._queue_size = queue_size
+        self._target_timeframe = target_timeframe
 
         # Components (run() 시 초기화)
         self._bus: EventBus | None = None
@@ -77,12 +79,22 @@ class EDARunner:
         bus = EventBus(queue_size=self._queue_size)
         self._bus = bus
 
-        feed = HistoricalDataFeed(self._data)
-        strategy_engine = StrategyEngine(self._strategy)
+        # 데이터 피드 선택: target_timeframe 설정 시 1m aggregation 모드
+        if self._target_timeframe is not None:
+            feed: HistoricalDataFeed | AggregatingDataFeed = AggregatingDataFeed(
+                self._data, target_timeframe=self._target_timeframe
+            )
+        else:
+            feed = HistoricalDataFeed(self._data)
+
+        strategy_engine = StrategyEngine(
+            self._strategy, target_timeframe=self._target_timeframe
+        )
         pm = EDAPortfolioManager(
             config=self._config,
             initial_capital=self._initial_capital,
             asset_weights=self._asset_weights,
+            target_timeframe=self._target_timeframe,
         )
         rm = EDARiskManager(config=self._config, portfolio_manager=pm)
         executor = BacktestExecutor(cost_model=self._config.cost_model)
@@ -115,7 +127,7 @@ class EDARunner:
         await bus_task
 
         # 4. 결과 생성
-        timeframe = self._data.timeframe
+        timeframe = self._target_timeframe or self._data.timeframe
         metrics = analytics.compute_metrics(
             timeframe=timeframe,
             cost_model=self._config.cost_model,
