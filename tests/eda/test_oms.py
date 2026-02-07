@@ -51,16 +51,18 @@ class TestOMSBasics:
         # 가격 데이터 설정
         from src.core.events import BarEvent
 
-        executor.on_bar(BarEvent(
-            symbol="BTC/USDT",
-            timeframe="1D",
-            open=50000.0,
-            high=51000.0,
-            low=49000.0,
-            close=50500.0,
-            volume=1000.0,
-            bar_timestamp=datetime.now(UTC),
-        ))
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+        )
 
         oms = OMS(executor=executor)
         bus = EventBus(queue_size=100)
@@ -126,16 +128,18 @@ class TestOMSBasics:
         executor = BacktestExecutor(cost_model=CostModel.zero())
         from src.core.events import BarEvent
 
-        executor.on_bar(BarEvent(
-            symbol="BTC/USDT",
-            timeframe="1D",
-            open=50000.0,
-            high=51000.0,
-            low=49000.0,
-            close=50500.0,
-            volume=1000.0,
-            bar_timestamp=datetime.now(UTC),
-        ))
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+        )
 
         oms = OMS(executor=executor)
         bus = EventBus(queue_size=100)
@@ -200,16 +204,18 @@ class TestCircuitBreakerClose:
 
         from src.core.events import BarEvent
 
-        executor.on_bar(BarEvent(
-            symbol="BTC/USDT",
-            timeframe="1D",
-            open=50000.0,
-            high=51000.0,
-            low=49000.0,
-            close=50500.0,
-            volume=1000.0,
-            bar_timestamp=datetime.now(UTC),
-        ))
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+        )
 
         oms = OMS(executor=executor, portfolio_manager=pm)
         bus = EventBus(queue_size=100)

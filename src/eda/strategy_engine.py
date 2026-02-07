@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from loguru import logger
 
-from src.core.events import AnyEvent, BarEvent, EventType, SignalEvent
+from src.core.events import AnyEvent, BarEvent, EventType, RiskAlertEvent, SignalEvent
 from src.models.types import Direction
 
 if TYPE_CHECKING:
@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 # 시그널 변화 감지 임계값 (floating point 노이즈 필터링)
 _SIGNAL_CHANGE_THRESHOLD = 1e-8
+# 연속 실패 임계값 (이 횟수 이상 연속 실패 시 RiskAlertEvent 발행)
+_CONSECUTIVE_FAILURE_LIMIT = 3
 
 
 class StrategyEngine:
@@ -50,6 +52,7 @@ class StrategyEngine:
         self._buffers: dict[str, list[dict[str, float]]] = {}
         self._timestamps: dict[str, list[datetime]] = {}
         self._last_signals: dict[str, tuple[int, float]] = {}  # symbol -> (direction, strength)
+        self._consecutive_failures: dict[str, int] = {}
         self._bus: EventBus | None = None
 
     async def register(self, bus: EventBus) -> None:
@@ -80,13 +83,15 @@ class StrategyEngine:
             self._buffers[symbol] = []
             self._timestamps[symbol] = []
 
-        self._buffers[symbol].append({
-            "open": bar.open,
-            "high": bar.high,
-            "low": bar.low,
-            "close": bar.close,
-            "volume": bar.volume,
-        })
+        self._buffers[symbol].append(
+            {
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+            }
+        )
         self._timestamps[symbol].append(bar.bar_timestamp)
 
         # 2. warmup 체크
@@ -102,13 +107,33 @@ class StrategyEngine:
 
         try:
             _, signals = self._strategy.run(df)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            count = self._consecutive_failures.get(symbol, 0) + 1
+            self._consecutive_failures[symbol] = count
             logger.warning(
-                "Strategy.run() failed for {}, buffer_size={}",
+                "Strategy.run() failed for {}, buffer_size={}, consecutive={}",
                 symbol,
                 buf_len,
+                count,
             )
+            if count >= _CONSECUTIVE_FAILURE_LIMIT:
+                logger.error(
+                    "Strategy.run() failed {} consecutive times for {}: {}",
+                    count,
+                    symbol,
+                    exc,
+                )
+                alert = RiskAlertEvent(
+                    alert_level="WARNING",
+                    message=f"Strategy.run() failed {count} consecutive times for {symbol}: {exc}",
+                    correlation_id=bar.correlation_id,
+                    source="StrategyEngine",
+                )
+                await bus.publish(alert)
             return
+
+        # 성공 시 연속 실패 카운터 리셋
+        self._consecutive_failures[symbol] = 0
 
         # 4. 최신 시그널 추출
         latest_direction = int(signals.direction.iloc[-1])

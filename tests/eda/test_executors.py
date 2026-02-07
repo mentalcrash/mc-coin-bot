@@ -3,7 +3,7 @@
 BacktestExecutor의 next-open 체결, 수수료 계산을 검증합니다.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from src.core.events import BarEvent, OrderRequestEvent
@@ -15,6 +15,7 @@ def _make_bar(
     symbol: str = "BTC/USDT",
     open_price: float = 50000.0,
     close_price: float = 50500.0,
+    ts: datetime | None = None,
 ) -> BarEvent:
     return BarEvent(
         symbol=symbol,
@@ -24,7 +25,7 @@ def _make_bar(
         low=min(open_price, close_price) * 0.99,
         close=close_price,
         volume=1000.0,
-        bar_timestamp=datetime.now(UTC),
+        bar_timestamp=ts or datetime.now(UTC),
     )
 
 
@@ -112,3 +113,29 @@ class TestBacktestExecutor:
         fill = await executor.execute(_make_order(side="SELL"))
         assert fill is not None
         assert fill.side == "SELL"
+
+    async def test_fill_timestamp_uses_bar_time(self) -> None:
+        """H-001: fill_timestamp가 bar_timestamp를 사용."""
+        bar_ts = datetime(2024, 6, 15, 0, 0, tzinfo=UTC)
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        executor.on_bar(_make_bar(ts=bar_ts))
+
+        fill = await executor.execute(_make_order())
+        assert fill is not None
+        assert fill.fill_timestamp == bar_ts
+
+    async def test_fill_timestamp_updates_per_bar(self) -> None:
+        """H-001: 각 bar마다 fill_timestamp 업데이트."""
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        ts1 = datetime(2024, 1, 1, tzinfo=UTC)
+        ts2 = ts1 + timedelta(days=1)
+
+        executor.on_bar(_make_bar(ts=ts1))
+        fill1 = await executor.execute(_make_order())
+        assert fill1 is not None
+        assert fill1.fill_timestamp == ts1
+
+        executor.on_bar(_make_bar(ts=ts2))
+        fill2 = await executor.execute(_make_order())
+        assert fill2 is not None
+        assert fill2.fill_timestamp == ts2

@@ -137,7 +137,7 @@ class TestVBTvsEDAParity:
 
         # 양쪽 모두 거래가 발생해야 함
         assert vbt_result.metrics.total_trades > 0
-        assert eda_metrics.total_trades >= 0  # EDA는 거래가 적을 수 있음
+        assert eda_metrics.total_trades > 0  # H-003: EDA도 거래 발생 필수
 
     async def test_return_sign_consistency(self) -> None:
         """수익률 부호(양/음)가 일치."""
@@ -254,9 +254,7 @@ class TestDeepParityComparison:
         vbt_metrics = BacktestEngine().run(request).metrics
 
         # EDA
-        runner = EDARunner(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
-        )
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
         eda_metrics = await runner.run()
 
         # 양쪽 모두 양수 수익 (상승 트렌드 데이터)
@@ -285,9 +283,7 @@ class TestDeepParityComparison:
         request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
         vbt_metrics = BacktestEngine().run(request).metrics
 
-        runner = EDARunner(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
-        )
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
         eda_metrics = await runner.run()
 
         # 상승 트렌드 → 양쪽 모두 양수 Sharpe
@@ -312,9 +308,7 @@ class TestDeepParityComparison:
         request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
         vbt_metrics = BacktestEngine().run(request).metrics
 
-        runner = EDARunner(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
-        )
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
         eda_metrics = await runner.run()
 
         # MDD는 양수 (이 코드베이스에서 MDD = |peak-to-trough| %)
@@ -342,9 +336,7 @@ class TestDeepParityComparison:
         request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
         vbt_metrics = BacktestEngine().run(request).metrics
 
-        runner = EDARunner(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
-        )
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
         eda_metrics = await runner.run()
 
         # 메트릭 요약 출력 (pytest -s 로 확인 가능)
@@ -437,9 +429,7 @@ class TestDeepParityComparison:
         request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
         vbt_metrics = BacktestEngine().run(request).metrics
 
-        runner = EDARunner(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
-        )
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
         eda_metrics = await runner.run()
 
         # long-only 전략 + 하락 트렌드 → 수익이 제한적이거나 손실
@@ -449,3 +439,55 @@ class TestDeepParityComparison:
                 f"Direction mismatch in downtrend: "
                 f"VBT={vbt_metrics.total_return:.2f}%, EDA={eda_metrics.total_return:.2f}%"
             )
+
+    async def test_return_relative_tolerance(self) -> None:
+        """H-003: 수익률 상대 오차가 30% 이내."""
+        data = _make_market_data(365)
+        strategy = SimpleMomentumStrategy()
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            cost_model=CostModel.zero(),
+        )
+
+        portfolio = Portfolio.create(initial_capital=10000, config=config)
+        request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
+        vbt_metrics = BacktestEngine().run(request).metrics
+
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
+        eda_metrics = await runner.run()
+
+        vbt_ret = vbt_metrics.total_return
+        eda_ret = eda_metrics.total_return
+        denom = max(abs(vbt_ret), 1.0)
+        rel_err = abs(vbt_ret - eda_ret) / denom
+        assert rel_err < 0.30, (
+            f"Return relative error too large: VBT={vbt_ret:.2f}%, "
+            f"EDA={eda_ret:.2f}%, rel_err={rel_err:.2%}"
+        )
+
+    async def test_trade_count_similar(self) -> None:
+        """H-003: 거래 횟수가 유사 (±50% 허용)."""
+        data = _make_market_data(365)
+        strategy = SimpleMomentumStrategy()
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            cost_model=CostModel.zero(),
+        )
+
+        portfolio = Portfolio.create(initial_capital=10000, config=config)
+        request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
+        vbt_metrics = BacktestEngine().run(request).metrics
+
+        runner = EDARunner(strategy=strategy, data=data, config=config, initial_capital=10000.0)
+        eda_metrics = await runner.run()
+
+        vbt_trades = vbt_metrics.total_trades
+        eda_trades = eda_metrics.total_trades
+        assert vbt_trades > 0 and eda_trades > 0, "Both must have trades"
+
+        ratio = eda_trades / vbt_trades
+        assert 0.5 < ratio < 2.0, (
+            f"Trade count ratio out of range: VBT={vbt_trades}, EDA={eda_trades}, ratio={ratio:.2f}"
+        )

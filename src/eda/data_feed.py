@@ -10,6 +10,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -92,14 +93,23 @@ class HistoricalDataFeed:
         df = self._data.ohlcv
 
         for ts, row in df.iterrows():
+            o, h, lo, c, v = (
+                float(row["open"]),
+                float(row["high"]),
+                float(row["low"]),
+                float(row["close"]),
+                float(row["volume"]),
+            )
+            if not self._validate_bar(o, h, lo, c, v, symbol, ts):
+                continue
             bar = BarEvent(
                 symbol=symbol,
                 timeframe=timeframe,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=float(row["volume"]),
+                open=o,
+                high=h,
+                low=lo,
+                close=c,
+                volume=v,
                 bar_timestamp=ts.to_pydatetime(),  # type: ignore[union-attr]
                 correlation_id=uuid4(),
                 source="HistoricalDataFeed",
@@ -138,14 +148,23 @@ class HistoricalDataFeed:
                 if ts not in df.index:
                     continue
                 row = df.loc[ts]
+                o, h, lo, c, v = (
+                    float(row["open"]),
+                    float(row["high"]),
+                    float(row["low"]),
+                    float(row["close"]),
+                    float(row["volume"]),
+                )
+                if not self._validate_bar(o, h, lo, c, v, symbol, ts):
+                    continue
                 bar = BarEvent(
                     symbol=symbol,
                     timeframe=timeframe,
-                    open=float(row["open"]),
-                    high=float(row["high"]),
-                    low=float(row["low"]),
-                    close=float(row["close"]),
-                    volume=float(row["volume"]),
+                    open=o,
+                    high=h,
+                    low=lo,
+                    close=c,
+                    volume=v,
                     bar_timestamp=ts.to_pydatetime(),  # type: ignore[union-attr]
                     correlation_id=cid,
                     source="HistoricalDataFeed",
@@ -160,10 +179,7 @@ class HistoricalDataFeed:
 
     async def _maybe_heartbeat(self, bus: EventBus) -> None:
         """주기적으로 HeartbeatEvent 발행."""
-        if (
-            self._heartbeat_interval > 0
-            and self._bars_emitted % self._heartbeat_interval == 0
-        ):
+        if self._heartbeat_interval > 0 and self._bars_emitted % self._heartbeat_interval == 0:
             hb = HeartbeatEvent(
                 event_type=EventType.HEARTBEAT,
                 component="HistoricalDataFeed",
@@ -171,3 +187,21 @@ class HistoricalDataFeed:
                 source="HistoricalDataFeed",
             )
             await bus.publish(hb)
+
+    @staticmethod
+    def _validate_bar(
+        o: float, h: float, lo: float, c: float, v: float, symbol: str, ts: object
+    ) -> bool:
+        """OHLCV bar 데이터 품질 검증 (M-004).
+
+        Returns:
+            True if valid, False if bar should be skipped.
+        """
+        for name, val in [("open", o), ("high", h), ("low", lo), ("close", c), ("volume", v)]:
+            if math.isnan(val) or math.isinf(val):
+                logger.warning("Invalid {} ({}) for {} at {}, skipping bar", name, val, symbol, ts)
+                return False
+        if h < lo:
+            logger.warning("high ({}) < low ({}) for {} at {}, skipping bar", h, lo, symbol, ts)
+            return False
+        return True

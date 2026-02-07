@@ -39,7 +39,6 @@ class EDAConfig(BaseModel):
         event_log_path: JSONL 이벤트 로그 파일 경로 (None=비활성)
         enable_heartbeat: 헬스체크 이벤트 활성화
         heartbeat_interval_bars: 헬스체크 주기 (bar 단위)
-        backtest_fill_delay_bars: 백테스트 체결 지연 (1=다음 시가)
     """
 
     model_config = ConfigDict(frozen=True)
@@ -49,4 +48,3 @@ class EDAConfig(BaseModel):
     event_log_path: str | None = None
     enable_heartbeat: bool = True
     heartbeat_interval_bars: int = Field(default=100, ge=1)
-    backtest_fill_delay_bars: int = Field(default=1, ge=0)

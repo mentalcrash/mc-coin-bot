@@ -41,11 +41,14 @@ class BacktestExecutor:
         self._last_open: dict[str, float] = {}
         # 심볼별 마지막 bar close 가격 (fallback)
         self._last_close: dict[str, float] = {}
+        # 심볼별 마지막 bar timestamp (H-001: 체결 시각 정확성)
+        self._last_bar_timestamp: dict[str, datetime] = {}
 
     def on_bar(self, bar: BarEvent) -> None:
         """Bar 데이터 업데이트 (Runner가 호출)."""
         self._last_open[bar.symbol] = bar.open
         self._last_close[bar.symbol] = bar.close
+        self._last_bar_timestamp[bar.symbol] = bar.bar_timestamp
 
     async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
         """주문 체결.
@@ -76,6 +79,9 @@ class BacktestExecutor:
         # 수수료 계산
         fee = order.notional_usd * self._cost_model.total_fee_rate
 
+        # 백테스트: bar_timestamp 사용, 없으면 현재 시각 (라이브 호환)
+        fill_ts = self._last_bar_timestamp.get(symbol, datetime.now(UTC))
+
         return FillEvent(
             client_order_id=order.client_order_id,
             symbol=symbol,
@@ -83,7 +89,7 @@ class BacktestExecutor:
             fill_price=fill_price,
             fill_qty=fill_qty,
             fee=fee,
-            fill_timestamp=datetime.now(UTC),
+            fill_timestamp=fill_ts,
             correlation_id=order.correlation_id,
             source="BacktestExecutor",
         )

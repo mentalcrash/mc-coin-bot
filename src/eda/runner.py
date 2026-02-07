@@ -115,7 +115,11 @@ class EDARunner:
         await bus_task
 
         # 4. 결과 생성
-        metrics = analytics.compute_metrics()
+        timeframe = self._data.timeframe
+        metrics = analytics.compute_metrics(
+            timeframe=timeframe,
+            cost_model=self._config.cost_model,
+        )
         logger.info(
             "EDA Runner finished: {} bars, {} fills, {} trades",
             feed.bars_emitted,

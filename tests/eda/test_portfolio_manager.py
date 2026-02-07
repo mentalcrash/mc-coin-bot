@@ -316,8 +316,10 @@ class TestEquityCalculation:
     async def test_equity_no_double_count_long(self) -> None:
         """LONG 포지션: equity = cash + notional (unrealized 이중 계산 없음)."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -343,8 +345,10 @@ class TestEquityCalculation:
     async def test_equity_no_double_count_short(self) -> None:
         """SHORT 포지션: equity = cash - notional."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -368,8 +372,10 @@ class TestEquityCalculation:
     async def test_equity_after_price_change(self) -> None:
         """가격 변동 후 equity 정확 추적."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -400,7 +406,8 @@ class TestPositionStopLoss:
     async def test_stop_loss_long_triggered(self) -> None:
         """LONG: low < entry * (1-sl) → 청산 주문 발행."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=0.10,  # 10% stop-loss
             use_intrabar_stop=True,
             cost_model=CostModel.zero(),
@@ -422,9 +429,13 @@ class TestPositionStopLoss:
         await bus.flush()
 
         # low = 44000 < 50000 * 0.9 = 45000 → stop-loss 발동
-        await bus.publish(_make_bar(
-            close=44500.0, high=50000.0, low=44000.0,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=44500.0,
+                high=50000.0,
+                low=44000.0,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -437,7 +448,8 @@ class TestPositionStopLoss:
     async def test_stop_loss_long_not_triggered(self) -> None:
         """LONG: low > entry * (1-sl) → 유지."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=0.10,
             use_intrabar_stop=True,
             cost_model=CostModel.zero(),
@@ -458,9 +470,13 @@ class TestPositionStopLoss:
         await bus.flush()
 
         # low = 46000 > 45000 → stop-loss 미발동
-        await bus.publish(_make_bar(
-            close=47000.0, high=50000.0, low=46000.0,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=47000.0,
+                high=50000.0,
+                low=46000.0,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -471,7 +487,8 @@ class TestPositionStopLoss:
     async def test_stop_loss_short_triggered(self) -> None:
         """SHORT: high > entry * (1+sl) → 청산."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=0.10,
             use_intrabar_stop=True,
             cost_model=CostModel.zero(),
@@ -493,9 +510,13 @@ class TestPositionStopLoss:
         await bus.flush()
 
         # high = 56000 > 50000 * 1.1 = 55000 → stop-loss 발동
-        await bus.publish(_make_bar(
-            close=55500.0, high=56000.0, low=50000.0,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=55500.0,
+                high=56000.0,
+                low=50000.0,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -507,7 +528,8 @@ class TestPositionStopLoss:
     async def test_stop_loss_close_based(self) -> None:
         """use_intrabar_stop=False → Close 기준 손절."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=0.10,
             use_intrabar_stop=False,  # Close 기준
             cost_model=CostModel.zero(),
@@ -528,9 +550,13 @@ class TestPositionStopLoss:
         await bus.flush()
 
         # low=44000(intrabar 기준이면 발동) 이지만 close=46000 > 45000 → 미발동
-        await bus.publish(_make_bar(
-            close=46000.0, high=50000.0, low=44000.0,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=46000.0,
+                high=50000.0,
+                low=44000.0,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -541,7 +567,8 @@ class TestPositionStopLoss:
     async def test_stop_loss_disabled(self) -> None:
         """system_stop_loss=None → 손절 체크 안 함."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=None,
             cost_model=CostModel.zero(),
         )
@@ -561,9 +588,13 @@ class TestPositionStopLoss:
         await bus.flush()
 
         # 가격 대폭 하락해도 stop-loss 미작동
-        await bus.publish(_make_bar(
-            close=30000.0, high=50000.0, low=30000.0,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=30000.0,
+                high=50000.0,
+                low=30000.0,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -615,9 +646,13 @@ class TestTrailingStop:
         # 각 봉 range=1000, 인접 봉 close 차이 ~625 → TR ≈ 1000 유지
         for i in range(16):
             base = 50000.0 + i * 625
-            await bus.publish(_make_bar(
-                close=base + 500, high=base + 1000, low=base,
-            ))
+            await bus.publish(
+                _make_bar(
+                    close=base + 500,
+                    high=base + 1000,
+                    low=base,
+                )
+            )
             await bus.flush()
 
         pos = pm.positions["BTC/USDT"]
@@ -626,9 +661,13 @@ class TestTrailingStop:
 
         # ATR ≈ 1000, mult=2.0 → trailing distance ≈ 2000
         # close = peak - 2500 < peak - 2000 → trailing stop 발동
-        await bus.publish(_make_bar(
-            close=peak - 2500, high=peak - 500, low=peak - 3000,
-        ))
+        await bus.publish(
+            _make_bar(
+                close=peak - 2500,
+                high=peak - 500,
+                low=peak - 3000,
+            )
+        )
         await bus.flush()
         await bus.stop()
         await task
@@ -655,9 +694,13 @@ class TestTrailingStop:
 
         # 10봉만 (14 미달) → ATR None → trailing stop 미작동
         for _ in range(10):
-            await bus.publish(_make_bar(
-                close=40000.0, high=50000.0, low=40000.0,
-            ))
+            await bus.publish(
+                _make_bar(
+                    close=40000.0,
+                    high=50000.0,
+                    low=40000.0,
+                )
+            )
             await bus.flush()
 
         await bus.stop()
@@ -670,7 +713,8 @@ class TestTrailingStop:
     async def test_trailing_stop_disabled(self) -> None:
         """use_trailing_stop=False → 체크 안 함."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
             system_stop_loss=None,
             use_trailing_stop=False,
             cost_model=CostModel.zero(),
@@ -692,9 +736,13 @@ class TestTrailingStop:
 
         # 충분한 봉 + 큰 하락 → trailing stop 비활성이면 청산 없음
         for i in range(20):
-            await bus.publish(_make_bar(
-                close=50000.0 - i * 500, high=50000.0, low=50000.0 - i * 1000,
-            ))
+            await bus.publish(
+                _make_bar(
+                    close=50000.0 - i * 500,
+                    high=50000.0,
+                    low=50000.0 - i * 1000,
+                )
+            )
             await bus.flush()
 
         await bus.stop()
@@ -737,8 +785,10 @@ class TestBalanceUpdateOnBar:
     async def test_balance_update_emitted_on_bar(self) -> None:
         """포지션이 있으면 매 bar마다 BalanceUpdateEvent 발행."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -771,8 +821,10 @@ class TestBalanceUpdateOnBar:
     async def test_balance_update_not_emitted_no_position(self) -> None:
         """포지션 없으면 bar에서 BalanceUpdateEvent 미발행."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -804,8 +856,10 @@ class TestPositionFieldInit:
     async def test_long_entry_initializes_peak(self) -> None:
         """LONG 진입 시 peak = entry price."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -824,8 +878,10 @@ class TestPositionFieldInit:
     async def test_short_entry_initializes_trough(self) -> None:
         """SHORT 진입 시 trough = entry price."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)
@@ -844,8 +900,10 @@ class TestPositionFieldInit:
     async def test_close_resets_peak_trough(self) -> None:
         """포지션 청산 시 peak/trough 리셋."""
         config = PortfolioManagerConfig(
-            max_leverage_cap=2.0, rebalance_threshold=0.01,
-            system_stop_loss=None, cost_model=CostModel.zero(),
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         bus = EventBus(queue_size=100)

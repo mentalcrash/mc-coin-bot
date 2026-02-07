@@ -121,11 +121,13 @@ class EDAPortfolioManager:
         SHORT: cash에 진입금액이 더해졌고, 청산 시 현재 notional을 반환해야 함.
         """
         long_notional = sum(
-            p.notional for p in self._positions.values()
+            p.notional
+            for p in self._positions.values()
             if p.is_open and p.direction == Direction.LONG
         )
         short_notional = sum(
-            p.notional for p in self._positions.values()
+            p.notional
+            for p in self._positions.values()
             if p.is_open and p.direction == Direction.SHORT
         )
         return self._cash + long_notional - short_notional
@@ -365,9 +367,9 @@ class EDAPortfolioManager:
 
         # 3. Position stop-loss 체크
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
-                await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
-                await self._publish_balance_update(bar.correlation_id)
-                return
+            await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
+            await self._publish_balance_update(bar.correlation_id)
+            return
 
         # 4. Trailing stop 체크
         if self._config.use_trailing_stop:

@@ -10,7 +10,7 @@ from uuid import uuid4
 import pandas as pd
 
 from src.core.event_bus import EventBus
-from src.core.events import AnyEvent, BarEvent, EventType, SignalEvent
+from src.core.events import AnyEvent, BarEvent, EventType, RiskAlertEvent, SignalEvent
 from src.eda.strategy_engine import StrategyEngine
 from src.models.types import Direction
 from src.strategy.base import BaseStrategy
@@ -241,6 +241,59 @@ class TestStrategyEngineCorrelationId:
             # 시그널의 correlation_id가 해당 bar의 것과 일치
             signal = signals[0]
             assert signal.correlation_id is not None
+
+
+class TestStrategyEngineFailureCounter:
+    """H-004: 연속 실패 시 RiskAlertEvent 발행 테스트."""
+
+    async def test_strategy_failure_emits_risk_alert(self) -> None:
+        """연속 3회 실패 시 RiskAlertEvent 발행."""
+
+        class FailingStrategy(BaseStrategy):
+            """항상 실패하는 전략."""
+
+            @property
+            def name(self) -> str:
+                return "failing"
+
+            @property
+            def required_columns(self) -> list[str]:
+                return ["close"]
+
+            def preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
+                return df.copy()
+
+            def generate_signals(self, df: pd.DataFrame) -> StrategySignals:
+                msg = "intentional failure"
+                raise ValueError(msg)
+
+        strategy = FailingStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=2)
+        bus = EventBus(queue_size=100)
+        alerts: list[RiskAlertEvent] = []
+
+        async def alert_handler(event: AnyEvent) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe(EventType.RISK_ALERT, alert_handler)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        # 5개 bar 발행 (warmup=2 이후 3번 연속 실패 → alert)
+        for i in range(5):
+            bar = _make_bar("BTC/USDT", 50000.0, 50100.0, base + timedelta(days=i))
+            await bus.publish(bar)
+
+        await bus.stop()
+        await task
+
+        # 연속 3회 이상 실패 → 최소 1개 RiskAlertEvent
+        assert len(alerts) >= 1
+        assert alerts[0].alert_level == "WARNING"
+        assert "consecutive" in alerts[0].message.lower()
 
 
 class TestStrategyEngineWarmupDetection:

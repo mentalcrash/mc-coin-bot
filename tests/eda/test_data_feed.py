@@ -274,3 +274,85 @@ class TestHistoricalDataFeedEdgeCases:
         await task
 
         assert len(heartbeats) == 2  # bar 5, bar 10
+
+
+class TestDataFeedValidation:
+    """M-004: 데이터 품질 검증 테스트."""
+
+    async def test_nan_bar_skipped(self) -> None:
+        """NaN 값이 포함된 bar는 스킵."""
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        timestamps = pd.date_range(start=start, periods=5, freq="1D", tz=UTC)
+        close = np.array([50000.0, 50100.0, float("nan"), 50300.0, 50400.0])
+        df = pd.DataFrame(
+            {
+                "open": close * 0.999,
+                "high": close * 1.01,
+                "low": close * 0.99,
+                "close": close,
+                "volume": [1000.0] * 5,
+            },
+            index=timestamps,
+        )
+        data = MarketDataSet(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
+            end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
+            ohlcv=df,
+        )
+        feed = HistoricalDataFeed(data)
+        bus = EventBus(queue_size=100)
+        received: list[AnyEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(EventType.BAR, handler)
+
+        task = asyncio.create_task(bus.start())
+        await feed.start(bus)
+        await bus.stop()
+        await task
+
+        # NaN bar 1개 스킵 → 4개만 발행
+        assert len(received) == 4
+        assert feed.bars_emitted == 4
+
+    async def test_high_less_than_low_skipped(self) -> None:
+        """high < low인 bar는 스킵."""
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        timestamps = pd.date_range(start=start, periods=3, freq="1D", tz=UTC)
+        df = pd.DataFrame(
+            {
+                "open": [50000.0, 50100.0, 50200.0],
+                "high": [51000.0, 49000.0, 51200.0],  # 2번째: high < low
+                "low": [49000.0, 50000.0, 49200.0],
+                "close": [50500.0, 50050.0, 50700.0],
+                "volume": [1000.0] * 3,
+            },
+            index=timestamps,
+        )
+        data = MarketDataSet(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
+            end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
+            ohlcv=df,
+        )
+        feed = HistoricalDataFeed(data)
+        bus = EventBus(queue_size=100)
+        received: list[AnyEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(EventType.BAR, handler)
+
+        task = asyncio.create_task(bus.start())
+        await feed.start(bus)
+        await bus.stop()
+        await task
+
+        assert len(received) == 2  # high < low 1개 스킵
+        assert feed.bars_emitted == 2

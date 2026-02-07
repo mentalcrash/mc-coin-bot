@@ -153,7 +153,9 @@ class EDARiskManager:
         """
         # 1. Aggregate leverage check
         current_leverage = self._pm.aggregate_leverage
-        if current_leverage >= self._config.max_leverage_cap and not self._is_reducing_position(order):
+        if current_leverage >= self._config.max_leverage_cap and not self._is_reducing_position(
+            order
+        ):
             return (
                 f"Aggregate leverage {current_leverage:.2f} "
                 f">= cap {self._config.max_leverage_cap:.2f}"
@@ -161,18 +163,15 @@ class EDARiskManager:
 
         # 2. Max open positions check
         open_count = self._pm.open_position_count
-        is_new_position = order.symbol not in self._pm.positions or not self._pm.positions[order.symbol].is_open
+        is_new_position = (
+            order.symbol not in self._pm.positions or not self._pm.positions[order.symbol].is_open
+        )
         if is_new_position and open_count >= self._max_open_positions:
-            return (
-                f"Max open positions reached ({open_count}/{self._max_open_positions})"
-            )
+            return f"Max open positions reached ({open_count}/{self._max_open_positions})"
 
         # 3. Single order size check
         if order.notional_usd > self._max_order_size_usd:
-            return (
-                f"Order size ${order.notional_usd:,.0f} "
-                f"> max ${self._max_order_size_usd:,.0f}"
-            )
+            return f"Order size ${order.notional_usd:,.0f} > max ${self._max_order_size_usd:,.0f}"
 
         return None
 
@@ -182,9 +181,8 @@ class EDARiskManager:
         if pos is None or not pos.is_open:
             return False
         # LONG 포지션의 SELL, SHORT 포지션의 BUY → 축소
-        return (
-            (pos.direction == Direction.LONG and order.side == "SELL")
-            or (pos.direction == Direction.SHORT and order.side == "BUY")
+        return (pos.direction == Direction.LONG and order.side == "SELL") or (
+            pos.direction == Direction.SHORT and order.side == "BUY"
         )
 
     def _compute_drawdown(self, current_equity: float) -> float:

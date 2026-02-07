@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from src.core.event_bus import EventBus
+    from src.portfolio.cost_model import CostModel
 
 
 @dataclass
@@ -73,6 +74,8 @@ class AnalyticsEngine:
         self._open_trades: dict[str, OpenTrade] = {}
         self._bar_timestamps: list[datetime] = []
         self._total_fills = 0
+        # M-003: bar 단위 equity 정규화 — 같은 bar 내 마지막 업데이트만 유지
+        self._last_equity_ts: datetime | None = None
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
@@ -101,11 +104,19 @@ class AnalyticsEngine:
         return len(self._bar_timestamps)
 
     async def _on_balance_update(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent → equity curve 기록."""
+        """BalanceUpdateEvent → equity curve 기록.
+
+        M-003: 같은 bar timestamp 내 여러 업데이트가 오면 마지막 값으로 덮어쓰기.
+        (한 bar에 Signal→Fill→BalanceUpdate가 여러 번 발생할 수 있음)
+        """
         assert isinstance(event, BalanceUpdateEvent)
-        self._equity_curve.append(
-            EquityPoint(timestamp=event.timestamp, equity=event.total_equity)
-        )
+        ts = event.timestamp
+        if self._last_equity_ts is not None and ts == self._last_equity_ts and self._equity_curve:
+            # 같은 timestamp → 마지막 값 덮어쓰기
+            self._equity_curve[-1] = EquityPoint(timestamp=ts, equity=event.total_equity)
+        else:
+            self._equity_curve.append(EquityPoint(timestamp=ts, equity=event.total_equity))
+        self._last_equity_ts = ts
 
     async def _on_fill(self, event: AnyEvent) -> None:
         """FillEvent → trade 기록."""
@@ -124,6 +135,20 @@ class AnalyticsEngine:
             )
             if is_closing:
                 self._close_trade(open_trade, fill)
+                return
+
+            # M-002: 같은 방향 추가 매매 → 가중평균 진입가 + 수량 누적
+            same_direction = (open_trade.direction == "LONG" and is_buy) or (
+                open_trade.direction == "SHORT" and not is_buy
+            )
+            if same_direction:
+                new_size = open_trade.size + fill.fill_qty
+                if new_size > 0:
+                    open_trade.entry_price = (
+                        open_trade.entry_price * open_trade.size + fill.fill_price * fill.fill_qty
+                    ) / new_size
+                    open_trade.size = new_size
+                    open_trade.fees += fill.fee
                 return
 
         # 새 포지션 진입
@@ -182,8 +207,17 @@ class AnalyticsEngine:
         values = [p.equity for p in self._equity_curve]
         return pd.Series(values, index=pd.DatetimeIndex(timestamps), dtype=float)
 
-    def compute_metrics(self) -> PerformanceMetrics:
-        """수집된 데이터로 PerformanceMetrics 계산."""
+    def compute_metrics(
+        self,
+        timeframe: str = "1D",
+        cost_model: CostModel | None = None,
+    ) -> PerformanceMetrics:
+        """수집된 데이터로 PerformanceMetrics 계산.
+
+        Args:
+            timeframe: 데이터 주기 (M-001: Sharpe/CAGR 연환산에 사용)
+            cost_model: 비용 모델 (H-002: 펀딩비 post-hoc 보정에 사용)
+        """
         trades = self._closed_trades
         winning = [t for t in trades if t.pnl is not None and t.pnl > 0]
         losing = [t for t in trades if t.pnl is not None and t.pnl <= 0]
@@ -198,15 +232,29 @@ class AnalyticsEngine:
         avg_loss = _avg_pnl_pct(losing) if losing else None
         profit_factor = _profit_factor(winning, losing)
 
+        # M-001: timeframe-aware annualization
+        hours_per_bar = _freq_to_hours(timeframe)
+
         # Equity curve 기반 지표
         equity_values = [p.equity for p in self._equity_curve]
         if len(equity_values) >= _MIN_DATA_POINTS:
-            total_return = (equity_values[-1] / equity_values[0] - 1) * 100
             returns = np.diff(equity_values) / np.array(equity_values[:-1])
-            sharpe = _annualized_sharpe(returns)
+
+            # H-002: 펀딩비 post-hoc 보정
+            if cost_model is not None and cost_model.funding_rate_8h > 0:
+                funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+                returns = returns - funding_drag
+
+            total_return = float(np.prod(1 + returns) - 1) * 100
+            sharpe = _annualized_sharpe(returns, hours_per_bar)
             max_dd = _max_drawdown(equity_values)
-            cagr = _compute_cagr(equity_values, len(self._bar_timestamps))
-            vol = float(np.std(returns) * np.sqrt(365) * 100) if len(returns) > 1 else None
+            cagr = _compute_cagr(equity_values, len(self._bar_timestamps), hours_per_bar)
+            periods_per_year = (365 * 24) / hours_per_bar
+            vol = (
+                float(np.std(returns, ddof=1) * np.sqrt(periods_per_year) * 100)
+                if len(returns) > 1
+                else None
+            )
         else:
             total_return = 0.0
             sharpe = 0.0
@@ -251,15 +299,16 @@ def _profit_factor(
     return gross_profit / gross_loss
 
 
-def _annualized_sharpe(returns: np.ndarray) -> float:  # type: ignore[type-arg]
-    """연환산 Sharpe ratio (365일 기준)."""
+def _annualized_sharpe(returns: np.ndarray, hours_per_bar: float = 24.0) -> float:  # type: ignore[type-arg]
+    """연환산 Sharpe ratio (M-001: timeframe 인식)."""
     if len(returns) < _MIN_DATA_POINTS:
         return 0.0
     mean_ret = float(np.mean(returns))
     std_ret = float(np.std(returns, ddof=1))
     if std_ret == 0:
         return 0.0
-    return mean_ret / std_ret * np.sqrt(365)
+    periods_per_year = (365 * 24) / hours_per_bar
+    return mean_ret / std_ret * np.sqrt(periods_per_year)
 
 
 def _max_drawdown(equity_values: list[float]) -> float:
@@ -273,12 +322,39 @@ def _max_drawdown(equity_values: list[float]) -> float:
     return max_dd
 
 
-def _compute_cagr(equity_values: list[float], n_bars: int) -> float:
-    """CAGR (연평균 복리 수익률, %)."""
+def _compute_cagr(equity_values: list[float], n_bars: int, hours_per_bar: float = 24.0) -> float:
+    """CAGR (연평균 복리 수익률, %). M-001: timeframe 인식."""
     if n_bars <= 0 or equity_values[0] <= 0:
         return 0.0
-    years = n_bars / 365
+    years = n_bars * hours_per_bar / (365 * 24)
     if years <= 0:
         return 0.0
     total_return = equity_values[-1] / equity_values[0]
     return (total_return ** (1 / years) - 1) * 100
+
+
+def _freq_to_hours(freq: str) -> float:
+    """freq 문자열을 시간 단위로 변환.
+
+    Args:
+        freq: 데이터 주기 문자열 (예: "1D", "4h", "15T")
+
+    Returns:
+        시간 수
+    """
+    freq_upper = freq.strip().upper()
+    num_str = ""
+    unit = ""
+    for ch in freq_upper:
+        if ch.isdigit() or ch == ".":
+            num_str += ch
+        else:
+            unit += ch
+    num = float(num_str) if num_str else 1.0
+    if unit in ("D", "DAY", "DAYS"):
+        return num * 24.0
+    if unit in ("H", "HOUR", "HOURS"):
+        return num
+    if unit in ("T", "MIN", "MINUTE", "MINUTES"):
+        return num / 60.0
+    return 24.0  # 기본값: 일봉

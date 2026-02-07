@@ -30,7 +30,6 @@ class TestEDAConfig:
         assert config.event_log_path is None
         assert config.enable_heartbeat is True
         assert config.heartbeat_interval_bars == 100
-        assert config.backtest_fill_delay_bars == 1
 
     def test_custom_config(self) -> None:
         config = EDAConfig(
@@ -38,7 +37,6 @@ class TestEDAConfig:
             event_queue_size=5000,
             event_log_path="logs/events.jsonl",
             enable_heartbeat=False,
-            backtest_fill_delay_bars=0,
         )
         assert config.execution_mode == ExecutionMode.SHADOW
         assert config.event_log_path == "logs/events.jsonl"
@@ -55,10 +53,6 @@ class TestEDAConfig:
     def test_heartbeat_interval_minimum(self) -> None:
         with pytest.raises(ValidationError):
             EDAConfig(heartbeat_interval_bars=0)  # < 1
-
-    def test_fill_delay_allows_zero(self) -> None:
-        config = EDAConfig(backtest_fill_delay_bars=0)
-        assert config.backtest_fill_delay_bars == 0
 
     def test_json_serialization(self) -> None:
         config = EDAConfig(execution_mode=ExecutionMode.PAPER)
