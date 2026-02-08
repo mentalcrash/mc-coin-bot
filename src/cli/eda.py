@@ -1,8 +1,9 @@
 """Typer CLI for EDA (Event-Driven Architecture) backtesting.
 
 Commands:
-    - run: EDA 백테스트 실행 (단일 심볼)
-    - run-multi: EDA 백테스트 실행 (멀티 심볼)
+    - run: EDA 백테스트 실행 (단일 심볼, --mode로 backtest/backtest-agg/shadow 선택)
+    - run-agg: EDA 1m 집계 백테스트 (하위 호환)
+    - run-multi: EDA 멀티에셋 백테스트
 
 Rules Applied:
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
@@ -12,8 +13,9 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+import enum
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from loguru import logger
@@ -29,68 +31,35 @@ from src.eda.runner import EDARunner
 from src.portfolio.config import PortfolioManagerConfig
 from src.strategy import get_strategy
 
+if TYPE_CHECKING:
+    from src.models.backtest import PerformanceMetrics
+
+
+class RunMode(str, enum.Enum):
+    """EDA 실행 모드."""
+
+    BACKTEST = "backtest"
+    BACKTEST_AGG = "backtest-agg"
+    SHADOW = "shadow"
+
+
 console = Console()
 app = typer.Typer(help="EDA (Event-Driven Architecture) backtesting")
 
 
-@app.command()
-def run(
-    strategy_name: Annotated[str, typer.Argument(help="Strategy name (e.g., tsmom)")],
-    symbol: Annotated[str, typer.Argument(help="Trading symbol (e.g., BTC/USDT)")],
-    start: Annotated[str, typer.Option(help="Start date (YYYY-MM-DD)")] = "2024-01-01",
-    end: Annotated[str, typer.Option(help="End date (YYYY-MM-DD)")] = "2025-12-31",
-    capital: Annotated[float, typer.Option(help="Initial capital (USD)")] = 10000.0,
-    leverage: Annotated[float, typer.Option(help="Max leverage cap")] = 2.0,
-    rebalance: Annotated[float, typer.Option(help="Rebalance threshold")] = 0.05,
-    timeframe: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+def _display_metrics(
+    title: str,
+    metrics: PerformanceMetrics,
+    extra_rows: list[tuple[str, str]] | None = None,
 ) -> None:
-    """Run EDA backtest for a single symbol."""
-    setup_logger()
-    settings = get_settings()
-
-    try:
-        strategy_cls = get_strategy(strategy_name)
-        strategy = strategy_cls()
-    except (KeyError, ValueError, TypeError) as e:
-        console.print(f"[red]Strategy not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
-
-    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
-
-    # Load data
-    try:
-        service = MarketDataService(settings)
-        request = MarketDataRequest(
-            symbol=symbol,
-            timeframe=timeframe,
-            start=start_dt,
-            end=end_dt,
-        )
-        data = service.get(request)
-    except DataNotFoundError as e:
-        console.print(f"[red]Data not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
-
-    config = PortfolioManagerConfig(
-        max_leverage_cap=leverage,
-        rebalance_threshold=rebalance,
-    )
-
-    runner = EDARunner.backtest(
-        strategy=strategy,
-        data=data,
-        config=config,
-        initial_capital=capital,
-    )
-
-    logger.info("Running EDA backtest: {} {} {}-{}", strategy_name, symbol, start, end)
-    metrics = asyncio.run(runner.run())
-
-    # Display results
-    table = Table(title=f"EDA Backtest: {strategy_name} / {symbol}")
+    """Rich Table로 PerformanceMetrics를 출력한다."""
+    table = Table(title=title)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
+
+    if extra_rows:
+        for label, value in extra_rows:
+            table.add_row(label, value)
 
     table.add_row("Total Return", f"{metrics.total_return:.2f}%")
     table.add_row("CAGR", f"{metrics.cagr:.2f}%")
@@ -107,6 +76,115 @@ def run(
         table.add_row("Profit Factor", f"{metrics.profit_factor:.4f}")
 
     console.print(table)
+
+
+@app.command()
+def run(
+    strategy_name: Annotated[str, typer.Argument(help="Strategy name (e.g., tsmom)")],
+    symbol: Annotated[str, typer.Argument(help="Trading symbol (e.g., BTC/USDT)")],
+    start: Annotated[str, typer.Option(help="Start date (YYYY-MM-DD)")] = "2024-01-01",
+    end: Annotated[str, typer.Option(help="End date (YYYY-MM-DD)")] = "2025-12-31",
+    capital: Annotated[float, typer.Option(help="Initial capital (USD)")] = 10000.0,
+    leverage: Annotated[float, typer.Option(help="Max leverage cap")] = 2.0,
+    rebalance: Annotated[float, typer.Option(help="Rebalance threshold")] = 0.05,
+    timeframe: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    mode: Annotated[RunMode, typer.Option(help="Execution mode")] = RunMode.BACKTEST,
+) -> None:
+    """Run EDA backtest for a single symbol.
+
+    Modes:
+        - backtest: 기본 백테스트 (--timeframe 해상도)
+        - backtest-agg: 1m 데이터 로드 후 --timeframe으로 집계
+        - shadow: 시그널 로깅만 (체결 없음)
+    """
+    setup_logger()
+    settings = get_settings()
+
+    try:
+        strategy_cls = get_strategy(strategy_name)
+        strategy = strategy_cls()
+    except (KeyError, ValueError, TypeError) as e:
+        console.print(f"[red]Strategy not found: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
+
+    config = PortfolioManagerConfig(
+        max_leverage_cap=leverage,
+        rebalance_threshold=rebalance,
+    )
+
+    service = MarketDataService(settings)
+
+    if mode == RunMode.BACKTEST_AGG:
+        # 1m 데이터 로드 → target TF로 집계
+        try:
+            request_1m = MarketDataRequest(
+                symbol=symbol,
+                timeframe="1m",
+                start=start_dt,
+                end=end_dt,
+            )
+            data = service.get(request_1m)
+        except DataNotFoundError as e:
+            console.print(f"[red]1m data not found: {e}[/red]")
+            raise typer.Exit(code=1) from e
+
+        target_tf = timeframe.upper() if timeframe.lower() == "1d" else timeframe
+        runner = EDARunner.backtest_agg(
+            strategy=strategy,
+            data=data,
+            target_timeframe=target_tf,
+            config=config,
+            initial_capital=capital,
+        )
+        title = f"EDA Aggregation: {strategy_name} / {symbol} (1m → {target_tf})"
+        logger.info(
+            "Running EDA aggregation backtest: {} {} {}-{} (1m → {})",
+            strategy_name,
+            symbol,
+            start,
+            end,
+            target_tf,
+        )
+    else:
+        # backtest / shadow 공통: timeframe 해상도 데이터 로드
+        try:
+            request = MarketDataRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start_dt,
+                end=end_dt,
+            )
+            data = service.get(request)
+        except DataNotFoundError as e:
+            console.print(f"[red]Data not found: {e}[/red]")
+            raise typer.Exit(code=1) from e
+
+        if mode == RunMode.SHADOW:
+            runner = EDARunner.shadow(
+                strategy=strategy,
+                data=data,
+                config=config,
+                initial_capital=capital,
+            )
+            title = f"EDA Shadow: {strategy_name} / {symbol}"
+            logger.info("Running EDA shadow: {} {} {}-{}", strategy_name, symbol, start, end)
+        else:
+            runner = EDARunner.backtest(
+                strategy=strategy,
+                data=data,
+                config=config,
+                initial_capital=capital,
+            )
+            title = f"EDA Backtest: {strategy_name} / {symbol}"
+            logger.info("Running EDA backtest: {} {} {}-{}", strategy_name, symbol, start, end)
+
+    metrics = asyncio.run(runner.run())
+
+    extra_rows = [("Mode", mode.value)] if mode != RunMode.BACKTEST else None
+    _display_metrics(title, metrics, extra_rows=extra_rows)
 
 
 @app.command(name="run-agg")
@@ -178,26 +256,7 @@ def run_agg(
     )
     metrics = asyncio.run(runner.run())
 
-    # Display results
-    table = Table(title=f"EDA Aggregation: {strategy_name} / {symbol} (1m → {target_tf})")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Total Return", f"{metrics.total_return:.2f}%")
-    table.add_row("CAGR", f"{metrics.cagr:.2f}%")
-    table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.4f}")
-    table.add_row("Max Drawdown", f"{metrics.max_drawdown:.2f}%")
-    table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
-    table.add_row("Total Trades", str(metrics.total_trades))
-    table.add_row("Winning Trades", str(metrics.winning_trades))
-    table.add_row("Losing Trades", str(metrics.losing_trades))
-
-    if metrics.volatility is not None:
-        table.add_row("Volatility", f"{metrics.volatility:.2f}%")
-    if metrics.profit_factor is not None:
-        table.add_row("Profit Factor", f"{metrics.profit_factor:.4f}")
-
-    console.print(table)
+    _display_metrics(f"EDA Aggregation: {strategy_name} / {symbol} (1m → {target_tf})", metrics)
 
 
 _DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT"
@@ -292,24 +351,8 @@ def run_multi(
     )
     metrics = asyncio.run(runner.run())
 
-    # Display results
-    table = Table(title=f"EDA Multi-Asset: {strategy_name} / {len(loaded_symbols)} symbols")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Symbols", ", ".join(loaded_symbols))
-    table.add_row("Total Return", f"{metrics.total_return:.2f}%")
-    table.add_row("CAGR", f"{metrics.cagr:.2f}%")
-    table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.4f}")
-    table.add_row("Max Drawdown", f"{metrics.max_drawdown:.2f}%")
-    table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
-    table.add_row("Total Trades", str(metrics.total_trades))
-    table.add_row("Winning Trades", str(metrics.winning_trades))
-    table.add_row("Losing Trades", str(metrics.losing_trades))
-
-    if metrics.volatility is not None:
-        table.add_row("Volatility", f"{metrics.volatility:.2f}%")
-    if metrics.profit_factor is not None:
-        table.add_row("Profit Factor", f"{metrics.profit_factor:.4f}")
-
-    console.print(table)
+    _display_metrics(
+        f"EDA Multi-Asset: {strategy_name} / {len(loaded_symbols)} symbols",
+        metrics,
+        extra_rows=[("Symbols", ", ".join(loaded_symbols))],
+    )
