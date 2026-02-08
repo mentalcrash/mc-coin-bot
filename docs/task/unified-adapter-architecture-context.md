@@ -11,7 +11,7 @@
 | Phase | 이름 | 상태 | 테스트 |
 |-------|------|:----:|:------:|
 | **6-A** | Port Protocol 정의 | **DONE** | 401 passed |
-| 6-B | Runner 팩토리 메서드 | TODO | — |
+| **6-B** | Runner 팩토리 메서드 | **DONE** | 406 passed |
 | 6-C | 통합 Metrics 엔진 | TODO | — |
 | 6-D | 통합 CLI | TODO | — |
 
@@ -74,20 +74,63 @@ pytest:      401 passed (기존 397 + 신규 4)
 
 ---
 
-## Phase 6-B: Runner 팩토리 메서드 — TODO
+## Phase 6-B: Runner 팩토리 메서드 — DONE
 
-### 핵심 작업
+### 완료일: 2026-02-08
 
-- `EDARunner`에 `@classmethod` 팩토리: `backtest()`, `backtest_agg()`, `shadow()`
-- `_from_adapters()` private 팩토리로 어댑터 직접 주입
-- `run()` 내부에서 `self._feed`, `self._executor` 사용
-- `BacktestExecutor.on_bar()` 처리: `hasattr` 체크 패턴
-- CLI에서 팩토리 메서드 사용
-- 기존 `__init__` 하위 호환 유지
+### 변경 내역
 
-### 의존성
+| 파일 | 변경 유형 | 내용 |
+|------|:--------:|------|
+| `src/eda/runner.py` | 수정 | `__init__`에서 feed/executor 생성, `_from_adapters` + 공개 팩토리 3개, `run()` 리팩토링 |
+| `src/cli/eda.py` | 수정 | 3개 커맨드 (`run`, `run-agg`, `run-multi`) 팩토리 메서드 호출로 교체 |
+| `tests/eda/test_runner_factory.py` | **신규** | 팩토리 메서드 테스트 5개 |
 
-- Phase 6-A 완료 필요 ✅
+### 구현 세부사항
+
+**1. `src/eda/runner.py` — 핵심 리팩토링**
+
+- `__init__`: `self._data` 제거 → `self._data_timeframe` 으로 대체, feed/executor를 인스턴스에서 생성
+- `_from_adapters()` private classmethod: `object.__new__(cls)`로 인스턴스 생성, 어댑터 직접 주입
+- 공개 팩토리 3개:
+  - `backtest()`: `HistoricalDataFeed` + `BacktestExecutor`
+  - `backtest_agg()`: `AggregatingDataFeed` + `BacktestExecutor`
+  - `shadow()`: `HistoricalDataFeed` + `ShadowExecutor`
+- `run()`: feed/executor 생성 로직 제거 → `self._feed`/`self._executor` 사용
+- `BacktestExecutor.on_bar()`: `isinstance(executor, BacktestExecutor)` 체크로 타입 안전하게 처리
+- `self._data.timeframe` → `self._data_timeframe` 참조 변경
+- import 추가: `ShadowExecutor` (runtime), `ExecutorPort` (TYPE_CHECKING)
+
+**2. `src/cli/eda.py` — 팩토리 메서드 사용**
+
+| 커맨드 | 변경 전 | 변경 후 |
+|--------|---------|---------|
+| `run` | `EDARunner(strategy, data, config, capital)` | `EDARunner.backtest(strategy, data, config, capital)` |
+| `run-agg` | `EDARunner(..., target_timeframe=target_tf)` | `EDARunner.backtest_agg(strategy, data_1m, target_tf, config, capital)` |
+| `run-multi` | `EDARunner(..., asset_weights=weights)` | `EDARunner.backtest(strategy, multi_data, config, capital, asset_weights=weights)` |
+
+**3. `tests/eda/test_runner_factory.py` — 신규 테스트**
+
+- `test_backtest_factory_creates_correct_types`: feed=HistoricalDataFeed, executor=BacktestExecutor
+- `test_backtest_agg_factory_creates_correct_types`: feed=AggregatingDataFeed, executor=BacktestExecutor
+- `test_shadow_factory_creates_correct_types`: feed=HistoricalDataFeed, executor=ShadowExecutor
+- `test_original_init_backward_compat`: `EDARunner(strategy, data, config)` 정상 동작
+- `test_backtest_factory_run_produces_metrics`: 실제 run() 실행하여 PerformanceMetrics 반환 확인
+
+### 검증 결과
+
+```
+ruff check:  0 errors
+pyright:     0 errors, 0 warnings
+pytest:      406 passed (기존 401 + 신규 5)
+```
+
+### 설계 메모
+
+- `__init__` 시그니처 동일 유지 → 기존 18개 테스트 하위 호환 통과
+- `isinstance(executor, BacktestExecutor)` 체크: `hasattr` 대신 사용하여 pyright 타입 narrowing 활용
+- `_from_adapters()`에 `data_timeframe` 파라미터 추가: `data` 객체 의존성 제거, timeframe 문자열만 전달
+- 향후 `LiveDataFeed`, `PaperExecutor` 등 새 어댑터 추가 시 Runner 수정 없이 팩토리만 추가 가능
 
 ---
 
@@ -122,4 +165,4 @@ pytest:      401 passed (기존 397 + 신규 4)
 
 ### 의존성
 
-- Phase 6-B 완료 필요
+- Phase 6-B 완료 필요 ✅

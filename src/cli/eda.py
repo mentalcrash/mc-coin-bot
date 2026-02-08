@@ -77,7 +77,7 @@ def run(
         rebalance_threshold=rebalance,
     )
 
-    runner = EDARunner(
+    runner = EDARunner.backtest(
         strategy=strategy,
         data=data,
         config=config,
@@ -160,12 +160,12 @@ def run_agg(
     # Normalize timeframe for aggregation target
     target_tf = timeframe.upper() if timeframe.lower() == "1d" else timeframe
 
-    runner = EDARunner(
+    runner = EDARunner.backtest_agg(
         strategy=strategy,
         data=data_1m,
+        target_timeframe=target_tf,
         config=config,
         initial_capital=capital,
-        target_timeframe=target_tf,
     )
 
     logger.info(
@@ -200,9 +200,7 @@ def run_agg(
     console.print(table)
 
 
-_DEFAULT_SYMBOLS = (
-    "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT"
-)
+_DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT"
 
 
 @app.command(name="run-multi")
@@ -277,7 +275,7 @@ def run_multi(
         rebalance_threshold=rebalance,
     )
 
-    runner = EDARunner(
+    runner = EDARunner.backtest(
         strategy=strategy,
         data=multi_data,
         config=config,

@@ -360,20 +360,24 @@ EVENT_TYPE_MAP: dict[EventType, type[AnyEvent]] = {
 }
 
 # 절대 드롭 불가 이벤트 (backpressure 정책)
-NEVER_DROP_EVENTS: frozenset[EventType] = frozenset({
-    EventType.SIGNAL,
-    EventType.FILL,
-    EventType.ORDER_REQUEST,
-    EventType.ORDER_ACK,
-    EventType.ORDER_REJECTED,
-    EventType.POSITION_UPDATE,
-    EventType.BALANCE_UPDATE,
-    EventType.CIRCUIT_BREAKER,
-})
+NEVER_DROP_EVENTS: frozenset[EventType] = frozenset(
+    {
+        EventType.SIGNAL,
+        EventType.FILL,
+        EventType.ORDER_REQUEST,
+        EventType.ORDER_ACK,
+        EventType.ORDER_REJECTED,
+        EventType.POSITION_UPDATE,
+        EventType.BALANCE_UPDATE,
+        EventType.CIRCUIT_BREAKER,
+    }
+)
 
 # 드롭 가능 이벤트 (stale 데이터 드롭)
-DROPPABLE_EVENTS: frozenset[EventType] = frozenset({
-    EventType.BAR,
-    EventType.HEARTBEAT,
-    EventType.RISK_ALERT,
-})
+DROPPABLE_EVENTS: frozenset[EventType] = frozenset(
+    {
+        EventType.BAR,
+        EventType.HEARTBEAT,
+        EventType.RISK_ALERT,
+    }
+)

@@ -549,9 +549,7 @@ class TestRealStrategyParity:
 
         # VBT
         portfolio = Portfolio.create(initial_capital=int(capital), config=config)
-        request = BacktestRequest(
-            data=data, strategy=strategy, portfolio=portfolio
-        )
+        request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
         vbt_result = BacktestEngine().run(request)
 
         # EDA

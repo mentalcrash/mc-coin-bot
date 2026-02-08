@@ -111,9 +111,9 @@ class TestAggregator1h:
         base = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
 
         prices = [
-            (100.0, 105.0, 98.0, 102.0, 5.0),   # bar 0: O=100, H=105, L=98, C=102, V=5
+            (100.0, 105.0, 98.0, 102.0, 5.0),  # bar 0: O=100, H=105, L=98, C=102, V=5
             (102.0, 110.0, 101.0, 108.0, 3.0),  # bar 1: H=110 → new high
-            (108.0, 109.0, 95.0, 96.0, 7.0),    # bar 2: L=95 → new low, C=96 → last close
+            (108.0, 109.0, 95.0, 96.0, 7.0),  # bar 2: L=95 → new low, C=96 → last close
         ]
 
         for i, (o, h, lo, c, v) in enumerate(prices):
@@ -123,10 +123,10 @@ class TestAggregator1h:
         # flush로 미완성 캔들 완성
         candle = agg.flush_partial("BTC/USDT")
         assert candle is not None
-        assert candle.open == 100.0   # first open
-        assert candle.high == 110.0   # max high
-        assert candle.low == 95.0     # min low
-        assert candle.close == 96.0   # last close
+        assert candle.open == 100.0  # first open
+        assert candle.high == 110.0  # max high
+        assert candle.low == 95.0  # min low
+        assert candle.close == 96.0  # last close
         assert candle.volume == 15.0  # sum volume
 
 
@@ -254,18 +254,30 @@ class TestGapHandling:
         agg = CandleAggregator("1h")
 
         # 12:00에 bar 1개
-        agg.on_1m_bar(_make_1m_bar(
-            "BTC/USDT",
-            datetime(2024, 6, 15, 12, 0, tzinfo=UTC),
-            open_=100.0, high=105.0, low=99.0, close=103.0, volume=10.0,
-        ))
+        agg.on_1m_bar(
+            _make_1m_bar(
+                "BTC/USDT",
+                datetime(2024, 6, 15, 12, 0, tzinfo=UTC),
+                open_=100.0,
+                high=105.0,
+                low=99.0,
+                close=103.0,
+                volume=10.0,
+            )
+        )
 
         # 3시간 gap → 15:00에 다음 bar
-        completed = agg.on_1m_bar(_make_1m_bar(
-            "BTC/USDT",
-            datetime(2024, 6, 15, 15, 0, tzinfo=UTC),
-            open_=200.0, high=210.0, low=195.0, close=205.0, volume=20.0,
-        ))
+        completed = agg.on_1m_bar(
+            _make_1m_bar(
+                "BTC/USDT",
+                datetime(2024, 6, 15, 15, 0, tzinfo=UTC),
+                open_=200.0,
+                high=210.0,
+                low=195.0,
+                close=205.0,
+                volume=20.0,
+            )
+        )
 
         assert completed is not None
         assert completed.open == 100.0  # 12:00 기간의 유일한 bar

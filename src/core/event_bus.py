@@ -122,9 +122,7 @@ class EventBus:
         self.metrics.events_published += 1
 
         # 최대 큐 깊이 추적
-        self.metrics.max_queue_depth = max(
-            self.metrics.max_queue_depth, self._queue.qsize()
-        )
+        self.metrics.max_queue_depth = max(self.metrics.max_queue_depth, self._queue.qsize())
 
     async def start(self) -> None:
         """이벤트 소비 루프를 시작합니다.

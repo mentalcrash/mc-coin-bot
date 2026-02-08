@@ -19,7 +19,7 @@ from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.eda.analytics import AnalyticsEngine
 from src.eda.data_feed import AggregatingDataFeed, HistoricalDataFeed
-from src.eda.executors import BacktestExecutor
+from src.eda.executors import BacktestExecutor, ShadowExecutor
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
 from src.eda.risk_manager import EDARiskManager
@@ -27,7 +27,7 @@ from src.eda.strategy_engine import StrategyEngine
 
 if TYPE_CHECKING:
     from src.data.market_data import MarketDataSet, MultiSymbolData
-    from src.eda.ports import DataFeedPort
+    from src.eda.ports import DataFeedPort, ExecutorPort
     from src.models.backtest import PerformanceMetrics
     from src.portfolio.config import PortfolioManagerConfig
     from src.strategy.base import BaseStrategy
@@ -58,17 +58,128 @@ class EDARunner:
         target_timeframe: str | None = None,
     ) -> None:
         self._strategy = strategy
-        self._data = data
         self._config = config
         self._initial_capital = initial_capital
         self._asset_weights = asset_weights
         self._queue_size = queue_size
         self._target_timeframe = target_timeframe
+        self._data_timeframe: str = data.timeframe
+
+        # feed/executor 생성 (기존 run() 내부 로직을 여기로 이동)
+        if target_timeframe is not None:
+            self._feed: DataFeedPort = AggregatingDataFeed(data, target_timeframe=target_timeframe)
+        else:
+            self._feed = HistoricalDataFeed(data)
+        self._executor: ExecutorPort = BacktestExecutor(cost_model=config.cost_model)
 
         # Components (run() 시 초기화)
         self._bus: EventBus | None = None
         self._analytics: AnalyticsEngine | None = None
         self._pm: EDAPortfolioManager | None = None
+
+    @classmethod
+    def _from_adapters(
+        cls,
+        strategy: BaseStrategy,
+        feed: DataFeedPort,
+        executor: ExecutorPort,
+        config: PortfolioManagerConfig,
+        data_timeframe: str,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+        queue_size: int = 10000,
+        target_timeframe: str | None = None,
+    ) -> EDARunner:
+        """어댑터를 직접 주입하여 Runner를 생성합니다 (내부용)."""
+        instance = object.__new__(cls)
+        instance._strategy = strategy
+        instance._feed = feed
+        instance._executor = executor
+        instance._config = config
+        instance._data_timeframe = data_timeframe
+        instance._initial_capital = initial_capital
+        instance._asset_weights = asset_weights
+        instance._queue_size = queue_size
+        instance._target_timeframe = target_timeframe
+        instance._bus = None
+        instance._analytics = None
+        instance._pm = None
+        return instance
+
+    @classmethod
+    def backtest(
+        cls,
+        strategy: BaseStrategy,
+        data: MarketDataSet | MultiSymbolData,
+        config: PortfolioManagerConfig,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+        queue_size: int = 10000,
+    ) -> EDARunner:
+        """백테스트용 Runner 생성.
+
+        HistoricalDataFeed + BacktestExecutor 조합입니다.
+        """
+        return cls._from_adapters(
+            strategy=strategy,
+            feed=HistoricalDataFeed(data),
+            executor=BacktestExecutor(cost_model=config.cost_model),
+            config=config,
+            data_timeframe=data.timeframe,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+            queue_size=queue_size,
+        )
+
+    @classmethod
+    def backtest_agg(
+        cls,
+        strategy: BaseStrategy,
+        data: MarketDataSet | MultiSymbolData,
+        target_timeframe: str,
+        config: PortfolioManagerConfig,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+        queue_size: int = 10000,
+    ) -> EDARunner:
+        """1m 집계 백테스트용 Runner 생성.
+
+        AggregatingDataFeed + BacktestExecutor 조합입니다.
+        """
+        return cls._from_adapters(
+            strategy=strategy,
+            feed=AggregatingDataFeed(data, target_timeframe=target_timeframe),
+            executor=BacktestExecutor(cost_model=config.cost_model),
+            config=config,
+            data_timeframe=data.timeframe,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+            queue_size=queue_size,
+            target_timeframe=target_timeframe,
+        )
+
+    @classmethod
+    def shadow(
+        cls,
+        strategy: BaseStrategy,
+        data: MarketDataSet | MultiSymbolData,
+        config: PortfolioManagerConfig,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+    ) -> EDARunner:
+        """Shadow 모드 Runner 생성.
+
+        HistoricalDataFeed + ShadowExecutor (로깅만, 체결 없음) 조합입니다.
+        """
+        return cls._from_adapters(
+            strategy=strategy,
+            feed=HistoricalDataFeed(data),
+            executor=ShadowExecutor(),
+            config=config,
+            data_timeframe=data.timeframe,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+        )
 
     async def run(self) -> PerformanceMetrics:
         """EDA 백테스트 실행.
@@ -80,13 +191,8 @@ class EDARunner:
         bus = EventBus(queue_size=self._queue_size)
         self._bus = bus
 
-        # 데이터 피드 선택: target_timeframe 설정 시 1m aggregation 모드
-        if self._target_timeframe is not None:
-            feed: DataFeedPort = AggregatingDataFeed(
-                self._data, target_timeframe=self._target_timeframe
-            )
-        else:
-            feed = HistoricalDataFeed(self._data)
+        feed = self._feed
+        executor = self._executor
 
         strategy_engine = StrategyEngine(self._strategy, target_timeframe=self._target_timeframe)
         pm = EDAPortfolioManager(
@@ -100,19 +206,21 @@ class EDARunner:
             portfolio_manager=pm,
             enable_circuit_breaker=False,
         )
-        executor = BacktestExecutor(cost_model=self._config.cost_model)
         oms = OMS(executor=executor, portfolio_manager=pm)
         analytics = AnalyticsEngine(initial_capital=self._initial_capital)
 
         self._analytics = analytics
         self._pm = pm
 
-        # Executor에 bar 가격 업데이트를 위한 핸들러 등록
-        async def executor_bar_handler(event: AnyEvent) -> None:
-            assert isinstance(event, BarEvent)
-            executor.on_bar(event)
+        # Executor에 bar 가격 업데이트를 위한 핸들러 등록 (BacktestExecutor만)
+        if isinstance(executor, BacktestExecutor):
+            bt_executor = executor
 
-        bus.subscribe(EventType.BAR, executor_bar_handler)
+            async def executor_bar_handler(event: AnyEvent) -> None:
+                assert isinstance(event, BarEvent)
+                bt_executor.on_bar(event)
+
+            bus.subscribe(EventType.BAR, executor_bar_handler)
 
         # 2. 모든 컴포넌트 등록 (순서 중요)
         await strategy_engine.register(bus)
@@ -135,7 +243,7 @@ class EDARunner:
         await bus_task
 
         # 4. 결과 생성
-        timeframe = self._target_timeframe or self._data.timeframe
+        timeframe = self._target_timeframe or self._data_timeframe
         metrics = analytics.compute_metrics(
             timeframe=timeframe,
             cost_model=self._config.cost_model,
