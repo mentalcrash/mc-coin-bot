@@ -1,4 +1,4 @@
-"""Tests for EDA CLI (RunMode enum, _display_metrics helper, --mode option)."""
+"""Tests for EDA CLI (RunMode enum, _display_metrics helper, config-based commands)."""
 
 from __future__ import annotations
 
@@ -55,11 +55,10 @@ class TestRunMode:
 
     def test_values(self) -> None:
         assert RunMode.BACKTEST.value == "backtest"
-        assert RunMode.BACKTEST_AGG.value == "backtest-agg"
         assert RunMode.SHADOW.value == "shadow"
 
     def test_member_count(self) -> None:
-        assert len(RunMode) == 3
+        assert len(RunMode) == 2
 
     def test_str_enum(self) -> None:
         """str 상속 확인 — Typer CLI 호환."""
@@ -92,18 +91,19 @@ class TestDisplayMetrics:
 
 
 # ---------------------------------------------------------------------------
-# TestRunCommandMode
+# TestRunCommandInterface
 # ---------------------------------------------------------------------------
 
 
-class TestRunCommandMode:
-    """run 커맨드의 --mode 옵션 검증."""
+class TestRunCommandInterface:
+    """run 커맨드의 config_path 인터페이스 검증."""
 
-    def test_invalid_mode_rejected(self) -> None:
-        """잘못된 mode 값은 Typer가 거부."""
+    def test_help_shows_config_path(self) -> None:
+        """--help에 CONFIG_PATH 표시."""
         runner = CliRunner()
-        result = runner.invoke(app, ["run", "tsmom", "BTC/USDT", "--mode", "invalid"])
-        assert result.exit_code != 0
+        result = runner.invoke(app, ["run", "--help"])
+        assert result.exit_code == 0
+        assert "CONFIG_PATH" in result.output or "config" in result.output.lower()
 
     def test_help_shows_mode_option(self) -> None:
         """--help에 --mode 옵션 표시."""
@@ -111,3 +111,28 @@ class TestRunCommandMode:
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "--mode" in result.output
+
+    def test_help_shows_verbose_option(self) -> None:
+        """--help에 --verbose 옵션 표시."""
+        runner = CliRunner()
+        result = runner.invoke(app, ["run", "--help"])
+        assert result.exit_code == 0
+        assert "--verbose" in result.output
+
+
+class TestRunMultiCommandInterface:
+    """run-multi 커맨드의 config_path 인터페이스 검증."""
+
+    def test_help_shows_config_path(self) -> None:
+        """--help에 CONFIG_PATH 표시."""
+        runner = CliRunner()
+        result = runner.invoke(app, ["run-multi", "--help"])
+        assert result.exit_code == 0
+        assert "CONFIG_PATH" in result.output or "config" in result.output.lower()
+
+    def test_help_shows_verbose_option(self) -> None:
+        """--help에 --verbose 옵션 표시."""
+        runner = CliRunner()
+        result = runner.invoke(app, ["run-multi", "--help"])
+        assert result.exit_code == 0
+        assert "--verbose" in result.output

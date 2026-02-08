@@ -39,7 +39,7 @@ from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
 # TSMOM strategy imports for diagnose/optimize commands
-from src.strategy.tsmom import MTFFilterConfig, MTFFilterMode, ShortMode, TSMOMConfig, TSMOMStrategy
+from src.strategy.tsmom import ShortMode, TSMOMConfig, TSMOMStrategy
 from src.strategy.tsmom.signal import generate_signals_with_diagnostics
 
 # Global Console Instance (Rich UI for user-facing output)
@@ -281,22 +281,10 @@ app = typer.Typer(
 
 @app.command()
 def run(  # noqa: PLR0912
-    symbol: Annotated[
+    config_path: Annotated[
         str,
-        typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
-    ] = "BTC/USDT",
-    strategy_name: Annotated[
-        str,
-        typer.Option(
-            "--strategy",
-            "-s",
-            help="Strategy name (use 'strategies' command to list available)",
-        ),
-    ] = "tsmom",
-    year: Annotated[
-        list[int],
-        typer.Option("--year", "-y", help="Year(s) to backtest"),
-    ] = [2024, 2025],  # noqa: B006
+        typer.Argument(help="YAML config file path"),
+    ],
     report: Annotated[
         bool,
         typer.Option("--report/--no-report", help="Generate QuantStats HTML report"),
@@ -305,84 +293,6 @@ def run(  # noqa: PLR0912
         bool,
         typer.Option("--verbose", "-V", help="Enable verbose output"),
     ] = False,
-    capital: Annotated[
-        float,
-        typer.Option("--capital", "-c", help="Initial capital (USD)"),
-    ] = 10000.0,
-    use_recommended: Annotated[
-        bool,
-        typer.Option(
-            "--recommended/--custom",
-            help="Use strategy's recommended portfolio settings",
-        ),
-    ] = True,
-    short_mode: Annotated[
-        str,
-        typer.Option(
-            "--short-mode",
-            "-m",
-            help="Short mode: disabled (long-only), hedge (drawdown protection), full (long/short)",
-        ),
-    ] = "hedge",
-    hedge_threshold: Annotated[
-        float,
-        typer.Option(
-            "--hedge-threshold",
-            help="Hedge activation threshold (e.g., -0.07 for -7%% drawdown)",
-        ),
-    ] = -0.07,
-    hedge_strength: Annotated[
-        float,
-        typer.Option(
-            "--hedge-strength",
-            help="Hedge short strength ratio (0.0-1.0)",
-        ),
-    ] = 0.8,
-    max_leverage: Annotated[
-        float,
-        typer.Option(
-            "--max-leverage",
-            "-l",
-            help="Maximum leverage cap (1.0-10.0)",
-        ),
-    ] = 2.0,
-    vol_target: Annotated[
-        float,
-        typer.Option(
-            "--vol-target",
-            "-v",
-            help="Volatility target for position sizing (0.1-1.0, higher = more leverage)",
-        ),
-    ] = 0.30,
-    lookback: Annotated[
-        int,
-        typer.Option(
-            "--lookback",
-            "-b",
-            help="Momentum lookback period in days (6-365)",
-        ),
-    ] = 30,
-    sideways_filter: Annotated[
-        bool,
-        typer.Option(
-            "--sideways-filter/--no-sideways-filter",
-            help="Enable ADX-based sideways market filter",
-        ),
-    ] = False,
-    adx_threshold: Annotated[
-        float,
-        typer.Option(
-            "--adx-threshold",
-            help="ADX threshold for sideways detection (below = sideways)",
-        ),
-    ] = 25.0,
-    sideways_scale: Annotated[
-        float,
-        typer.Option(
-            "--sideways-scale",
-            help="Position scale in sideways market (0=cash, 1=full)",
-        ),
-    ] = 0.3,
     validation: Annotated[
         str,
         typer.Option(
@@ -397,116 +307,44 @@ def run(  # noqa: PLR0912
             help="Run Strategy Advisor analysis after backtest",
         ),
     ] = False,
-    # MTF 필터 옵션
-    mtf_enabled: Annotated[
-        bool,
-        typer.Option(
-            "--mtf/--no-mtf",
-            help="Enable Multi-Timeframe filter (higher TF trend alignment)",
-        ),
-    ] = False,
-    mtf_timeframe: Annotated[
-        str,
-        typer.Option(
-            "--mtf-tf",
-            help="Higher timeframe for MTF filter (e.g., 1W for weekly)",
-        ),
-    ] = "1W",
-    mtf_mode: Annotated[
-        str,
-        typer.Option(
-            "--mtf-mode",
-            help="MTF filter mode: consensus, veto, weighted",
-        ),
-    ] = "consensus",
 ) -> None:
-    """Run strategy backtest on historical data.
-
-    Supports multiple strategies via the Registry pattern.
-    Use --strategy to select a strategy (default: tsmom).
-    Use --recommended to use the strategy's optimized portfolio settings.
+    """Run strategy backtest on historical data from config file.
 
     Example:
-        uv run python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
-        uv run python -m src.cli.backtest run BTC/USDT -s adaptive-breakout -y 2024
-        uv run python -m src.cli.backtest run BTC/USDT -s tsmom --custom -c 50000
-        uv run python -m src.cli.backtest run ETH/USDT -y 2025 --verbose --report
+        uv run python -m src.cli.backtest run config/default.yaml
+        uv run python -m src.cli.backtest run config/default.yaml --report --verbose
     """
+    from src.config.config_loader import build_strategy, load_config
+
     # 로깅 설정: verbose 모드에서 DEBUG 레벨, 아니면 WARNING 레벨
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
 
-    # 전략 클래스 로드 (Registry에서)
-    try:
-        strategy_class = get_strategy(strategy_name)
-    except KeyError as e:
-        logger.error(f"Strategy not found: {e}")
-        available = ", ".join(list_strategies())
-        console.print(f"[red]Error:[/red] Strategy '{strategy_name}' not found.")
-        console.print(f"Available strategies: {available}")
-        raise typer.Exit(code=1) from e
-
-    # short_mode 변환 (TSMOM 전략용)
-    short_mode_map = {
-        "disabled": ShortMode.DISABLED,
-        "hedge": ShortMode.HEDGE_ONLY,
-        "full": ShortMode.FULL,
-    }
-    parsed_short_mode = short_mode_map.get(short_mode.lower(), ShortMode.DISABLED)
-
-    # 전략 인스턴스 생성 (TSMOM은 short_mode, vol_target, lookback, sideways_filter 적용)
-    if strategy_name == "tsmom":
-        # MTF 필터 설정 (옵션이 활성화된 경우)
-        mtf_config = None
-        if mtf_enabled:
-            mtf_config = MTFFilterConfig(
-                enabled=True,
-                higher_timeframe=mtf_timeframe,
-                mode=MTFFilterMode(mtf_mode),
-            )
-
-        tsmom_config = TSMOMConfig(
-            short_mode=parsed_short_mode,
-            hedge_threshold=hedge_threshold,
-            hedge_strength_ratio=hedge_strength,
-            vol_target=vol_target,
-            lookback=lookback,
-            vol_window=lookback,  # lookback과 동일하게 설정
-            use_sideways_filter=sideways_filter,
-            adx_threshold=adx_threshold,
-            sideways_position_scale=sideways_scale,
-            mtf_filter=mtf_config,
-        )
-        strategy_instance = TSMOMStrategy(tsmom_config)
-    else:
-        strategy_instance = strategy_class()
+    cfg = load_config(config_path)
+    strategy_instance = build_strategy(cfg)
+    symbol = cfg.backtest.symbols[0]
+    capital = cfg.backtest.capital
 
     ctx_logger = get_strategy_logger(strategy=strategy_instance.name, symbol=symbol)
 
     if verbose:
         ctx_logger.info("Debug mode enabled - detailed logs will be shown")
 
-    # 포트폴리오 생성 (권장 설정 또는 기본 설정)
-    if use_recommended:
-        config_kwargs = strategy_class.recommended_config()
-        # CLI에서 지정한 max_leverage로 오버라이드
-        config_kwargs["max_leverage_cap"] = max_leverage
-        portfolio = Portfolio.create(
-            initial_capital=Decimal(str(capital)),
-            config=PortfolioManagerConfig(**config_kwargs),
-        )
-        ctx_logger.debug(f"Using recommended portfolio for {strategy_instance.name}")
-    else:
-        portfolio = Portfolio.create(
-            initial_capital=Decimal(str(capital)),
-            config=PortfolioManagerConfig(max_leverage_cap=max_leverage),
-        )
-        ctx_logger.debug("Using default portfolio settings")
+    # 포트폴리오 생성 (YAML config의 portfolio 섹션 사용)
+    portfolio = Portfolio.create(
+        initial_capital=Decimal(str(capital)),
+        config=cfg.portfolio,
+    )
+
+    # 연도 범위 계산
+    start_date = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_date = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
+    years = list(range(start_date.year, end_date.year + 1))
 
     # 시작 정보 패널 (실제 설정값 표시)
     _print_startup_panel(
         symbol=symbol,
-        years=year,
+        years=years,
         capital=capital,
         strategy=strategy_instance,
         portfolio=portfolio,
@@ -517,10 +355,6 @@ def run(  # noqa: PLR0912
     try:
         settings = get_settings()
         data_service = MarketDataService(settings)
-
-        # 연도 범위 계산
-        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
-        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
 
         data_request = MarketDataRequest(
             symbol=symbol,
@@ -533,23 +367,6 @@ def run(  # noqa: PLR0912
         logger.success(
             f"Loaded {data.symbol}: {data.periods:,} daily candles ({data.start.date()} ~ {data.end.date()})"
         )
-
-        # MTF 필터용 상위 TF 데이터 로드
-        if (
-            mtf_enabled
-            and strategy_name == "tsmom"
-            and isinstance(strategy_instance, TSMOMStrategy)
-        ):
-            htf_request = MarketDataRequest(
-                symbol=symbol,
-                timeframe=mtf_timeframe,
-                start=start_date,
-                end=end_date,
-            )
-            htf_data = data_service.get(htf_request)
-            logger.success(f"Loaded HTF data: {htf_data.periods:,} {mtf_timeframe} candles")
-            # TSMOMStrategy에 상위 TF 데이터 설정
-            strategy_instance.set_htf_data(htf_data.ohlcv)
 
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
@@ -1517,25 +1334,10 @@ VW-TSMOM combines volume-weighted returns with volatility scaling:
 
 @app.command(name="run-multi")
 def run_multi(
-    strategy_name: Annotated[
+    config_path: Annotated[
         str,
-        typer.Option("--strategy", "-s", help="Strategy name"),
-    ] = "tsmom",
-    symbols: Annotated[
-        str,
-        typer.Option(
-            "--symbols",
-            help="Comma-separated symbols (e.g., BTC/USDT,ETH/USDT)",
-        ),
-    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT",
-    year: Annotated[
-        list[int],
-        typer.Option("--year", "-y", help="Year(s) to backtest"),
-    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
-    capital: Annotated[
-        float,
-        typer.Option("--capital", "-c", help="Initial capital (USD)"),
-    ] = 100_000.0,
+        typer.Argument(help="YAML config file path"),
+    ],
     report: Annotated[
         bool,
         typer.Option("--report/--no-report", help="Generate QuantStats report"),
@@ -1549,43 +1351,43 @@ def run_multi(
         typer.Option("--validation", help="Validation: none, quick, milestone, final"),
     ] = "none",
 ) -> None:
-    """Run multi-asset portfolio backtest.
+    """Run multi-asset portfolio backtest from config file.
 
     8-asset Equal Weight portfolio with VectorBT cash_sharing.
 
     Example:
-        uv run python -m src.cli.backtest run-multi -s tsmom -y 2024 -y 2025
-        uv run python -m src.cli.backtest run-multi --symbols BTC/USDT,ETH/USDT -c 50000
+        uv run python -m src.cli.backtest run-multi config/default.yaml
+        uv run python -m src.cli.backtest run-multi config/default.yaml --report
     """
     from src.backtest.request import MultiAssetBacktestRequest
+    from src.config.config_loader import build_strategy, load_config
 
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
 
-    symbol_list = [s.strip() for s in symbols.split(",")]
+    cfg = load_config(config_path)
+    symbol_list = cfg.backtest.symbols
     n_assets = len(symbol_list)
+    capital = cfg.backtest.capital
 
-    try:
-        strategy_class = get_strategy(strategy_name)
-    except KeyError as e:
-        console.print(f"[red]Error:[/red] Strategy '{strategy_name}' not found.")
-        raise typer.Exit(code=1) from e
+    strategy_instance = build_strategy(cfg)
 
-    strategy_instance = strategy_class()
-
-    # 포트폴리오 (recommended config)
-    config_kwargs = strategy_class.recommended_config()
+    # 포트폴리오 (YAML config의 portfolio 섹션 사용)
     portfolio = Portfolio.create(
         initial_capital=Decimal(str(capital)),
-        config=PortfolioManagerConfig(**config_kwargs),
+        config=cfg.portfolio,
     )
+
+    start_date = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_date = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
+    years = list(range(start_date.year, end_date.year + 1))
 
     console.print(
         Panel.fit(
             (
                 f"[bold]{strategy_instance.name} Multi-Asset Backtest[/bold]\n"
                 f"Assets: {n_assets} ({', '.join(symbol_list[:4])}...)\n"
-                f"Years: {', '.join(map(str, year))}\n"
+                f"Years: {', '.join(map(str, years))}\n"
                 f"Capital: ${capital:,.0f}\n"
                 f"Weighting: Equal Weight (1/{n_assets})"
             ),
@@ -1598,9 +1400,6 @@ def run_multi(
     try:
         settings = get_settings()
         data_service = MarketDataService(settings)
-
-        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
-        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
 
         multi_data = data_service.get_multi(
             symbols=symbol_list,

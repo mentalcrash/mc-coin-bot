@@ -1,8 +1,7 @@
 """Typer CLI for EDA (Event-Driven Architecture) backtesting.
 
 Commands:
-    - run: EDA 백테스트 실행 (단일 심볼, --mode로 backtest/backtest-agg/shadow 선택)
-    - run-agg: EDA 1m 집계 백테스트 (하위 호환)
+    - run: EDA 백테스트 실행 (단일 심볼, --mode로 backtest/shadow 선택)
     - run-multi: EDA 멀티에셋 백테스트
 
 Rules Applied:
@@ -22,14 +21,13 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
+from src.config.config_loader import build_strategy, load_config
 from src.config.settings import get_settings
 from src.core.exceptions import DataNotFoundError
 from src.core.logger import setup_logger
 from src.data.market_data import MarketDataRequest, MultiSymbolData
 from src.data.service import MarketDataService
 from src.eda.runner import EDARunner
-from src.portfolio.config import PortfolioManagerConfig
-from src.strategy import get_strategy
 
 if TYPE_CHECKING:
     from src.models.backtest import PerformanceMetrics
@@ -39,7 +37,6 @@ class RunMode(str, enum.Enum):
     """EDA 실행 모드."""
 
     BACKTEST = "backtest"
-    BACKTEST_AGG = "backtest-agg"
     SHADOW = "shadow"
 
 
@@ -80,220 +77,96 @@ def _display_metrics(
 
 @app.command()
 def run(
-    strategy_name: Annotated[str, typer.Argument(help="Strategy name (e.g., tsmom)")],
-    symbol: Annotated[str, typer.Argument(help="Trading symbol (e.g., BTC/USDT)")],
-    start: Annotated[str, typer.Option(help="Start date (YYYY-MM-DD)")] = "2024-01-01",
-    end: Annotated[str, typer.Option(help="End date (YYYY-MM-DD)")] = "2025-12-31",
-    capital: Annotated[float, typer.Option(help="Initial capital (USD)")] = 10000.0,
-    leverage: Annotated[float, typer.Option(help="Max leverage cap")] = 2.0,
-    rebalance: Annotated[float, typer.Option(help="Rebalance threshold")] = 0.05,
-    timeframe: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
     mode: Annotated[RunMode, typer.Option(help="Execution mode")] = RunMode.BACKTEST,
+    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
-    """Run EDA backtest for a single symbol.
+    """Run EDA backtest for a single symbol from config file.
+
+    항상 1m 데이터를 로드하여 config의 timeframe으로 집계합니다.
 
     Modes:
-        - backtest: 기본 백테스트 (--timeframe 해상도)
-        - backtest-agg: 1m 데이터 로드 후 --timeframe으로 집계
+        - backtest: 기본 백테스트
         - shadow: 시그널 로깅만 (체결 없음)
     """
-    setup_logger()
+    setup_logger(console_level="DEBUG" if verbose else "WARNING")
+
+    cfg = load_config(config_path)
     settings = get_settings()
 
-    try:
-        strategy_cls = get_strategy(strategy_name)
-        strategy = strategy_cls()
-    except (KeyError, ValueError, TypeError) as e:
-        console.print(f"[red]Strategy not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
+    strategy = build_strategy(cfg)
+    symbol = cfg.backtest.symbols[0]
 
-    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
-
-    config = PortfolioManagerConfig(
-        max_leverage_cap=leverage,
-        rebalance_threshold=rebalance,
-    )
+    start_dt = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_dt = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
 
     service = MarketDataService(settings)
 
-    if mode == RunMode.BACKTEST_AGG:
-        # 1m 데이터 로드 → target TF로 집계
-        try:
-            request_1m = MarketDataRequest(
-                symbol=symbol,
-                timeframe="1m",
-                start=start_dt,
-                end=end_dt,
-            )
-            data = service.get(request_1m)
-        except DataNotFoundError as e:
-            console.print(f"[red]1m data not found: {e}[/red]")
-            raise typer.Exit(code=1) from e
-
-        target_tf = timeframe.upper() if timeframe.lower() == "1d" else timeframe
-        runner = EDARunner.backtest_agg(
-            strategy=strategy,
-            data=data,
-            target_timeframe=target_tf,
-            config=config,
-            initial_capital=capital,
-        )
-        title = f"EDA Aggregation: {strategy_name} / {symbol} (1m → {target_tf})"
-        logger.info(
-            "Running EDA aggregation backtest: {} {} {}-{} (1m → {})",
-            strategy_name,
-            symbol,
-            start,
-            end,
-            target_tf,
-        )
-    else:
-        # backtest / shadow 공통: timeframe 해상도 데이터 로드
-        try:
-            request = MarketDataRequest(
-                symbol=symbol,
-                timeframe=timeframe,
-                start=start_dt,
-                end=end_dt,
-            )
-            data = service.get(request)
-        except DataNotFoundError as e:
-            console.print(f"[red]Data not found: {e}[/red]")
-            raise typer.Exit(code=1) from e
-
-        if mode == RunMode.SHADOW:
-            runner = EDARunner.shadow(
-                strategy=strategy,
-                data=data,
-                config=config,
-                initial_capital=capital,
-            )
-            title = f"EDA Shadow: {strategy_name} / {symbol}"
-            logger.info("Running EDA shadow: {} {} {}-{}", strategy_name, symbol, start, end)
-        else:
-            runner = EDARunner.backtest(
-                strategy=strategy,
-                data=data,
-                config=config,
-                initial_capital=capital,
-            )
-            title = f"EDA Backtest: {strategy_name} / {symbol}"
-            logger.info("Running EDA backtest: {} {} {}-{}", strategy_name, symbol, start, end)
-
-    metrics = asyncio.run(runner.run())
-
-    extra_rows = [("Mode", mode.value)] if mode != RunMode.BACKTEST else None
-    _display_metrics(title, metrics, extra_rows=extra_rows)
-
-
-@app.command(name="run-agg")
-def run_agg(
-    strategy_name: Annotated[str, typer.Argument(help="Strategy name (e.g., tsmom)")],
-    symbol: Annotated[str, typer.Argument(help="Trading symbol (e.g., BTC/USDT)")],
-    start: Annotated[str, typer.Option(help="Start date (YYYY-MM-DD)")] = "2024-01-01",
-    end: Annotated[str, typer.Option(help="End date (YYYY-MM-DD)")] = "2025-12-31",
-    capital: Annotated[float, typer.Option(help="Initial capital (USD)")] = 10000.0,
-    leverage: Annotated[float, typer.Option(help="Max leverage cap")] = 2.0,
-    rebalance: Annotated[float, typer.Option(help="Rebalance threshold")] = 0.05,
-    timeframe: Annotated[str, typer.Option(help="Target timeframe for aggregation")] = "1d",
-) -> None:
-    """Run EDA backtest with 1m aggregation mode.
-
-    Silver 1m 데이터를 로드하여 CandleAggregator로 target TF에 집계합니다.
-    라이브 환경과 동일한 데이터 흐름을 백테스트에서 재현합니다.
-    """
-    setup_logger()
-    settings = get_settings()
-
+    # 항상 1m 데이터 로드
     try:
-        strategy_cls = get_strategy(strategy_name)
-        strategy = strategy_cls()
-    except (KeyError, ValueError, TypeError) as e:
-        console.print(f"[red]Strategy not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
-
-    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
-
-    # Load 1m data
-    try:
-        service = MarketDataService(settings)
         request_1m = MarketDataRequest(
             symbol=symbol,
             timeframe="1m",
             start=start_dt,
             end=end_dt,
         )
-        data_1m = service.get(request_1m)
+        data = service.get(request_1m)
     except DataNotFoundError as e:
         console.print(f"[red]1m data not found: {e}[/red]")
         raise typer.Exit(code=1) from e
 
-    config = PortfolioManagerConfig(
-        max_leverage_cap=leverage,
-        rebalance_threshold=rebalance,
-    )
+    tf = cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
 
-    # Normalize timeframe for aggregation target
-    target_tf = timeframe.upper() if timeframe.lower() == "1d" else timeframe
+    if mode == RunMode.SHADOW:
+        runner = EDARunner.shadow(
+            strategy=strategy,
+            data=data,
+            target_timeframe=target_tf,
+            config=cfg.portfolio,
+            initial_capital=cfg.backtest.capital,
+        )
+        title = f"EDA Shadow: {cfg.strategy.name} / {symbol} (1m → {target_tf})"
+    else:
+        runner = EDARunner.backtest(
+            strategy=strategy,
+            data=data,
+            target_timeframe=target_tf,
+            config=cfg.portfolio,
+            initial_capital=cfg.backtest.capital,
+        )
+        title = f"EDA Backtest: {cfg.strategy.name} / {symbol} (1m → {target_tf})"
 
-    runner = EDARunner.backtest_agg(
-        strategy=strategy,
-        data=data_1m,
-        target_timeframe=target_tf,
-        config=config,
-        initial_capital=capital,
-    )
-
-    logger.info(
-        "Running EDA aggregation backtest: {} {} {}-{} (1m → {})",
-        strategy_name,
-        symbol,
-        start,
-        end,
-        target_tf,
-    )
+    logger.info("Running EDA {}: {} {} (1m → {})", mode.value, cfg.strategy.name, symbol, target_tf)
     metrics = asyncio.run(runner.run())
 
-    _display_metrics(f"EDA Aggregation: {strategy_name} / {symbol} (1m → {target_tf})", metrics)
-
-
-_DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT"
+    extra_rows = [("Mode", mode.value)] if mode != RunMode.BACKTEST else None
+    _display_metrics(title, metrics, extra_rows=extra_rows)
 
 
 @app.command(name="run-multi")
 def run_multi(
-    strategy_name: Annotated[str, typer.Argument(help="Strategy name (e.g., tsmom)")],
-    symbols: Annotated[str, typer.Option(help="Comma-separated symbols")] = _DEFAULT_SYMBOLS,
-    start: Annotated[str, typer.Option(help="Start date (YYYY-MM-DD)")] = "2024-01-01",
-    end: Annotated[str, typer.Option(help="End date (YYYY-MM-DD)")] = "2025-12-31",
-    capital: Annotated[float, typer.Option(help="Initial capital (USD)")] = 100000.0,
-    leverage: Annotated[float, typer.Option(help="Max leverage cap")] = 2.0,
-    rebalance: Annotated[float, typer.Option(help="Rebalance threshold")] = 0.05,
-    timeframe: Annotated[str, typer.Option(help="Timeframe")] = "1d",
+    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
+    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
-    """Run EDA backtest for multiple symbols (equal-weight portfolio)."""
-    setup_logger()
+    """Run EDA backtest for multiple symbols (equal-weight portfolio) from config file."""
+    setup_logger(console_level="DEBUG" if verbose else "WARNING")
+
+    cfg = load_config(config_path)
     settings = get_settings()
 
-    symbol_list = [s.strip() for s in symbols.split(",")]
+    symbol_list = cfg.backtest.symbols
     _min_symbols = 2
     if len(symbol_list) < _min_symbols:
-        console.print("[red]At least 2 symbols required.[/red]")
+        console.print("[red]At least 2 symbols required in config.[/red]")
         raise typer.Exit(code=1)
 
-    try:
-        strategy_cls = get_strategy(strategy_name)
-        strategy = strategy_cls()
-    except (KeyError, ValueError, TypeError) as e:
-        console.print(f"[red]Strategy not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
+    strategy = build_strategy(cfg)
 
-    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
+    start_dt = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_dt = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
 
-    # Load data for each symbol
+    # Load 1m data for each symbol
     service = MarketDataService(settings)
     ohlcv_dict: dict[str, object] = {}
     loaded_symbols: list[str] = []
@@ -302,7 +175,7 @@ def run_multi(
         try:
             request = MarketDataRequest(
                 symbol=sym,
-                timeframe=timeframe,
+                timeframe="1m",
                 start=start_dt,
                 end=end_dt,
             )
@@ -317,10 +190,13 @@ def run_multi(
         console.print("[red]Need at least 2 symbols with data.[/red]")
         raise typer.Exit(code=1)
 
+    tf = cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
+
     # Construct MultiSymbolData
     multi_data = MultiSymbolData(
         symbols=loaded_symbols,
-        timeframe=timeframe,
+        timeframe="1m",
         start=start_dt,
         end=end_dt,
         ohlcv=ohlcv_dict,  # type: ignore[arg-type]
@@ -329,30 +205,25 @@ def run_multi(
     # Equal weights
     weights = {s: 1.0 / len(loaded_symbols) for s in loaded_symbols}
 
-    config = PortfolioManagerConfig(
-        max_leverage_cap=leverage,
-        rebalance_threshold=rebalance,
-    )
-
     runner = EDARunner.backtest(
         strategy=strategy,
         data=multi_data,
-        config=config,
-        initial_capital=capital,
+        target_timeframe=target_tf,
+        config=cfg.portfolio,
+        initial_capital=cfg.backtest.capital,
         asset_weights=weights,
     )
 
     logger.info(
-        "Running EDA multi-asset backtest: {} {} symbols {}-{}",
-        strategy_name,
+        "Running EDA multi-asset backtest: {} {} symbols (1m → {})",
+        cfg.strategy.name,
         len(loaded_symbols),
-        start,
-        end,
+        target_tf,
     )
     metrics = asyncio.run(runner.run())
 
     _display_metrics(
-        f"EDA Multi-Asset: {strategy_name} / {len(loaded_symbols)} symbols",
+        f"EDA Multi-Asset: {cfg.strategy.name} / {len(loaded_symbols)} symbols",
         metrics,
         extra_rows=[("Symbols", ", ".join(loaded_symbols))],
     )
