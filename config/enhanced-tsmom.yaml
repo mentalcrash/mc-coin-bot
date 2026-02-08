@@ -1,0 +1,33 @@
+# MC Coin Bot - Enhanced VW-TSMOM Configuration
+# Volume Ratio Normalization 기반 개선된 TSMOM 전략
+
+backtest:
+  symbols:
+    - BTC/USDT
+  timeframe: "1D"
+  start: "2024-01-01"
+  end: "2025-12-31"
+  capital: 100000.0
+
+strategy:
+  name: enhanced-tsmom
+  params:
+    lookback: 30
+    vol_window: 30
+    vol_target: 0.35
+    volume_lookback: 20
+    volume_clip_max: 5.0
+    short_mode: 1            # ShortMode.HEDGE_ONLY
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10
+  system_stop_loss: 0.10
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  cost_model:
+    maker_fee: 0.0002
+    taker_fee: 0.0004
+    slippage: 0.0005
+    funding_rate_8h: 0.0001
+    market_impact: 0.0002

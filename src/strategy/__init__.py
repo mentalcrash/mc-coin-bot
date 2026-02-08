@@ -26,7 +26,12 @@ Example:
 import src.strategy.bb_rsi  # 전략 등록 side effect
 import src.strategy.breakout  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
+import src.strategy.enhanced_tsmom  # 전략 등록 side effect
+import src.strategy.gk_breakout  # 전략 등록 side effect
+import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
+import src.strategy.vol_regime  # 전략 등록 side effect
+import src.strategy.zscore_mr  # 전략 등록 side effect
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import (
     get_strategy,
