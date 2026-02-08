@@ -98,9 +98,7 @@ def calculate_vol_regime(
         변동성 percentile rank 시리즈 (0~1 범위)
     """
     vol = returns.rolling(vol_regime_lookback, min_periods=vol_regime_lookback).std()
-    vol_pct = vol.rolling(
-        vol_rank_lookback, min_periods=min(vol_rank_lookback, 60)
-    ).rank(pct=True)
+    vol_pct = vol.rolling(vol_rank_lookback, min_periods=min(vol_rank_lookback, 60)).rank(pct=True)
     return pd.Series(vol_pct, index=returns.index, name="vol_regime")
 
 

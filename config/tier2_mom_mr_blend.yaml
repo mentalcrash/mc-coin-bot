@@ -1,0 +1,15 @@
+strategy: mom-mr-blend
+timeframe: "1d"
+params:
+  mom_lookback: 28
+  mom_z_window: 90
+  mr_lookback: 14
+  mr_z_window: 90
+  mom_weight: 0.5
+  mr_weight: 0.5
+  vol_target: 0.40
+  short_mode: 0
+portfolio:
+  max_leverage_cap: 2.0
+  system_stop_loss: 0.10
+  rebalance_threshold: 0.05

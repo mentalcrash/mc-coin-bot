@@ -1,0 +1,1 @@
+"""TTM Squeeze strategy tests."""

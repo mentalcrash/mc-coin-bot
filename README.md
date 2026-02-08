@@ -122,35 +122,6 @@ WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
 
 ---
 
-## 프로젝트 구조
-
-```
-mc-coin-bot/
-├── config/                 # YAML 설정 파일 (전략/포트폴리오/백테스트 통합)
-│   └── default.yaml        # 8-asset EW TSMOM 최적 설정
-├── src/
-│   ├── backtest/           # BacktestEngine, Analyzer, Validation
-│   │   └── validation/     # IS/OOS, WFA, CPCV, DSR, PBO
-│   ├── cli/                # Typer CLI (backtest, eda, ingest)
-│   ├── config/             # 환경변수, YAML 로더 (config_loader.py)
-│   ├── core/               # 공통 모듈, EventBus
-│   ├── data/               # Medallion (Bronze/Silver), MarketDataService
-│   ├── eda/                # EDA 시스템 (Runner, PM, RM, OMS, Analytics)
-│   ├── exchange/           # Binance 커넥터
-│   ├── models/             # Pydantic 모델 (BacktestResult 등)
-│   ├── portfolio/          # PortfolioManagerConfig, Portfolio
-│   └── strategy/           # BaseStrategy, TSMOM, Breakout 등
-├── tests/                  # pytest (421 tests)
-├── docs/                   # 상세 문서
-│   ├── architecture/       # 백테스트 엔진 아키텍처
-│   └── strategy-evaluation/# 전략 평가 지식베이스 (핵심)
-└── data/                   # Bronze/Silver 데이터
-    ├── bronze/
-    └── silver/
-```
-
----
-
 ## 빠른 시작
 
 ### 환경 설정
@@ -179,11 +150,8 @@ uv run python -m src.cli.backtest run config/default.yaml --advisor
 ### EDA 백테스트 실행
 
 ```bash
-# 단일에셋 EDA 백테스트 (1m 데이터 → config의 timeframe으로 집계)
+# EDA 백테스트 (config의 symbols 개수로 단일/멀티 자동 판별)
 uv run python main.py eda run config/default.yaml
-
-# 멀티에셋 EDA 백테스트
-uv run python main.py eda run-multi config/default.yaml
 
 # Shadow 모드 (시그널 로깅만, 체결 없음)
 uv run python main.py eda run config/default.yaml --mode shadow
@@ -213,55 +181,3 @@ python main.py ingest validate BTC/USDT --year 2025
 ```
 
 ---
-
-## 개발
-
-### 코드 품질 (Zero-Tolerance Lint Policy)
-
-```bash
-uv run ruff check --fix . && uv run ruff format .   # lint + format
-uv run pyright src/                                   # type check
-uv run pytest --cov=src                               # test + coverage
-```
-
-### 핵심 금지 사항
-
-- `float` for prices/amounts → use `Decimal`
-- `iterrows()`, loops on DataFrame → use vectorized ops
-- `inplace=True` → use immutable operations
-- `except:` → use specific exceptions
-- `# noqa`, `# type: ignore` → 정당한 사유 없이 사용 금지
-
----
-
-## 로드맵
-
-```
-Phase 1: 단일에셋 백테스트     ✅ 완료 (VectorBT, 4 strategies, Numba)
-Phase 2: 멀티에셋 백테스트     ✅ 완료 (run_multi, cash_sharing, 8-asset EW)
-Phase 3: 고급 검증             ✅ 완료 (IS/OOS, WFA, CPCV, DSR, PBO)
-Phase 4: EDA 시스템            ← 현재 (EventBus + 이벤트 기반 백테스트)
-Phase 5: Dry Run              예정 (Shadow → Paper → Canary)
-Phase 6: Live Trading         예정 (점진적 자본 투입 5% → 100%)
-Phase 7: 모니터링              예정 (Streamlit + Grafana + Discord)
-```
-
-상세 로드맵: [docs/strategy-evaluation/implementation-roadmap.md](docs/strategy-evaluation/implementation-roadmap.md)
-
----
-
-## 문서
-
-| 문서 | 설명 |
-|------|------|
-| [strategy-evaluation/](docs/strategy-evaluation/) | 전략 평가 지식베이스 (핵심) |
-| [strategy-evaluation/README.md](docs/strategy-evaluation/README.md) | 전략 평가 요약 + 확정 설정 |
-| [strategy-evaluation/implementation-roadmap.md](docs/strategy-evaluation/implementation-roadmap.md) | Phase 2~7 상세 로드맵 |
-| [architecture/backtest-engine.md](docs/architecture/backtest-engine.md) | 백테스트 엔진 아키텍처 |
-| [architecture/eda-system.md](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (Phase 4) |
-| [portfolio-manager.md](docs/portfolio-manager.md) | 포트폴리오 매니저 아키텍처 |
-| [backtesting-best-practices.md](docs/backtesting-best-practices.md) | 백테스팅 모범사례 가이드 |
-
----
-
-> **Disclaimer:** 이 프로젝트는 교육 및 연구 목적으로 개발되었습니다. 암호화폐 거래는 높은 위험을 수반하며, 실제 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다.

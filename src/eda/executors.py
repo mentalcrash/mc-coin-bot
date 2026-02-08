@@ -10,6 +10,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -76,13 +77,17 @@ class BacktestExecutor:
                 return None
 
         # 수량 계산 (notional / price)
-        if fill_price <= 0:
+        if fill_price <= 0 or not math.isfinite(fill_price):
             return None
 
-        fill_qty = order.notional_usd / fill_price
+        notional = order.notional_usd
+        if not math.isfinite(notional) or notional <= 0:
+            return None
+
+        fill_qty = notional / fill_price
 
         # 수수료 계산
-        fee = order.notional_usd * self._cost_model.total_fee_rate
+        fee = notional * self._cost_model.total_fee_rate
 
         # 백테스트: bar_timestamp 사용, 없으면 현재 시각 (라이브 호환)
         fill_ts = self._last_bar_timestamp.get(symbol, datetime.now(UTC))

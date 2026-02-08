@@ -187,10 +187,7 @@ class ZScoreMRConfig(BaseModel):
         """
         # entry_z > exit_z
         if self.entry_z <= self.exit_z:
-            msg = (
-                f"entry_z ({self.entry_z}) must be > "
-                f"exit_z ({self.exit_z})"
-            )
+            msg = f"entry_z ({self.entry_z}) must be > exit_z ({self.exit_z})"
             raise ValueError(msg)
 
         # long_lookback > short_lookback

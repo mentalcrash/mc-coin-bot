@@ -152,9 +152,7 @@ def generate_signals(
     short_entry = (direction == Direction.SHORT) & (prev_direction != Direction.SHORT)
     entries = pd.Series(long_entry | short_entry, index=df.index, name="entries")
 
-    to_neutral = (direction == Direction.NEUTRAL) & (
-        prev_direction != Direction.NEUTRAL
-    )
+    to_neutral = (direction == Direction.NEUTRAL) & (prev_direction != Direction.NEUTRAL)
     reversal = direction * prev_direction < 0
     exits = pd.Series(to_neutral | reversal, index=df.index, name="exits")
 

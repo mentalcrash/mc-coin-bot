@@ -12,6 +12,7 @@ Usage:
 
 import typer
 
+from src.cli.backtest import app as backtest_app
 from src.cli.eda import app as eda_app
 from src.cli.ingest import app as ingest_app
 
@@ -24,6 +25,7 @@ app = typer.Typer(
 
 # Register sub-applications
 app.add_typer(ingest_app, name="ingest", help="Data ingestion pipeline (Bronze/Silver)")
+app.add_typer(backtest_app, name="backtest", help="Strategy backtesting (VectorBT)")
 app.add_typer(eda_app, name="eda", help="EDA (Event-Driven Architecture) backtesting")
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from src.cli.eda import RunMode, _display_metrics, app
+from src.cli.eda import RunMode, _display_metrics, _tf_to_pandas_freq, app
 from src.models.backtest import PerformanceMetrics
 
 # ---------------------------------------------------------------------------
@@ -119,20 +119,49 @@ class TestRunCommandInterface:
         assert result.exit_code == 0
         assert "--verbose" in result.output
 
-
-class TestRunMultiCommandInterface:
-    """run-multi 커맨드의 config_path 인터페이스 검증."""
-
-    def test_help_shows_config_path(self) -> None:
-        """--help에 CONFIG_PATH 표시."""
+    def test_help_shows_report_option(self) -> None:
+        """--help에 --report 옵션 표시."""
         runner = CliRunner()
-        result = runner.invoke(app, ["run-multi", "--help"])
+        result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
-        assert "CONFIG_PATH" in result.output or "config" in result.output.lower()
+        assert "--report" in result.output
 
-    def test_help_shows_verbose_option(self) -> None:
-        """--help에 --verbose 옵션 표시."""
-        runner = CliRunner()
-        result = runner.invoke(app, ["run-multi", "--help"])
-        assert result.exit_code == 0
-        assert "--verbose" in result.output
+
+class TestRunMultiCommandRemoved:
+    """run-multi 커맨드가 제거되었는지 검증."""
+
+    def test_run_multi_not_registered(self) -> None:
+        """run-multi 커맨드가 더 이상 등록되어 있지 않다."""
+        registered = {cmd.name for cmd in app.registered_commands}
+        assert "run-multi" not in registered
+
+
+# ---------------------------------------------------------------------------
+# TestTfToPandasFreq
+# ---------------------------------------------------------------------------
+
+
+class TestTfToPandasFreq:
+    """_tf_to_pandas_freq() 단위 테스트."""
+
+    def test_1d_upper(self) -> None:
+        assert _tf_to_pandas_freq("1D") == "1D"
+
+    def test_1d_lower(self) -> None:
+        assert _tf_to_pandas_freq("1d") == "1D"
+
+    def test_4h(self) -> None:
+        assert _tf_to_pandas_freq("4h") == "4h"
+
+    def test_1h(self) -> None:
+        assert _tf_to_pandas_freq("1h") == "1h"
+
+    def test_1m(self) -> None:
+        assert _tf_to_pandas_freq("1m") == "1min"
+
+    def test_15m(self) -> None:
+        assert _tf_to_pandas_freq("15m") == "15min"
+
+    def test_passthrough(self) -> None:
+        """알 수 없는 TF는 그대로 반환."""
+        assert _tf_to_pandas_freq("2W") == "2W"

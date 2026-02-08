@@ -1,8 +1,7 @@
 """Typer CLI for EDA (Event-Driven Architecture) backtesting.
 
 Commands:
-    - run: EDA 백테스트 실행 (단일 심볼, --mode로 backtest/shadow 선택)
-    - run-multi: EDA 멀티에셋 백테스트
+    - run: EDA 백테스트 실행 (config의 symbols 개수로 단일/멀티 자동 판별)
 
 Rules Applied:
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
@@ -25,13 +24,14 @@ from src.config.config_loader import build_strategy, load_config
 from src.config.settings import get_settings
 from src.core.exceptions import DataNotFoundError
 from src.core.logger import setup_logger
-from src.data.market_data import MarketDataRequest, MultiSymbolData
+from src.data.market_data import MarketDataRequest, MarketDataSet, MultiSymbolData
 from src.data.service import MarketDataService
 from src.eda.runner import EDARunner
 
 if TYPE_CHECKING:
     import pandas as pd
 
+    from src.config.config_loader import RunConfig
     from src.models.backtest import PerformanceMetrics
 
 
@@ -86,8 +86,9 @@ def run(
     ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
-    """Run EDA backtest for a single symbol from config file.
+    """Run EDA backtest from config file.
 
+    config의 symbols 개수로 단일/멀티에셋을 자동 판별합니다.
     항상 1m 데이터를 로드하여 config의 timeframe으로 집계합니다.
 
     Modes:
@@ -100,104 +101,95 @@ def run(
     settings = get_settings()
 
     strategy = build_strategy(cfg)
-    symbol = cfg.backtest.symbols[0]
+    symbol_list = cfg.backtest.symbols
 
     start_dt = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
     end_dt = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
-
-    service = MarketDataService(settings)
-
-    # 항상 1m 데이터 로드
-    try:
-        request_1m = MarketDataRequest(
-            symbol=symbol,
-            timeframe="1m",
-            start=start_dt,
-            end=end_dt,
-        )
-        data = service.get(request_1m)
-    except DataNotFoundError as e:
-        console.print(f"[red]1m data not found: {e}[/red]")
-        raise typer.Exit(code=1) from e
 
     tf = cfg.backtest.timeframe
     target_tf = tf.upper() if tf.lower() == "1d" else tf
 
-    if mode == RunMode.SHADOW:
-        runner = EDARunner.shadow(
-            strategy=strategy,
-            data=data,
-            target_timeframe=target_tf,
-            config=cfg.portfolio,
-            initial_capital=cfg.backtest.capital,
-        )
-        title = f"EDA Shadow: {cfg.strategy.name} / {symbol} (1m → {target_tf})"
-    else:
-        runner = EDARunner.backtest(
-            strategy=strategy,
-            data=data,
-            target_timeframe=target_tf,
-            config=cfg.portfolio,
-            initial_capital=cfg.backtest.capital,
-        )
-        title = f"EDA Backtest: {cfg.strategy.name} / {symbol} (1m → {target_tf})"
+    service = MarketDataService(settings)
+    is_multi = len(symbol_list) > 1
 
-    logger.info("Running EDA {}: {} {} (1m → {})", mode.value, cfg.strategy.name, symbol, target_tf)
+    if is_multi:
+        data, loaded_symbols = _load_multi_symbol_data(service, symbol_list, start_dt, end_dt)
+        weights = {s: 1.0 / len(loaded_symbols) for s in loaded_symbols}
+        asset_weights: dict[str, float] | None = weights
+        label = f"{len(loaded_symbols)} symbols"
+    else:
+        data = _load_single_symbol_data(service, symbol_list[0], start_dt, end_dt)
+        loaded_symbols = symbol_list
+        asset_weights = None
+        label = symbol_list[0]
+
+    factory = EDARunner.shadow if mode == RunMode.SHADOW else EDARunner.backtest
+    runner = factory(
+        strategy=strategy,
+        data=data,
+        target_timeframe=target_tf,
+        config=cfg.portfolio,
+        initial_capital=cfg.backtest.capital,
+        asset_weights=asset_weights,
+    )
+
+    mode_label = "Shadow" if mode == RunMode.SHADOW else "Backtest"
+    title = f"EDA {mode_label}: {cfg.strategy.name} / {label} (1m → {target_tf})"
+
+    logger.info("Running EDA {}: {} {} (1m → {})", mode.value, cfg.strategy.name, label, target_tf)
     metrics = asyncio.run(runner.run())
 
-    extra_rows = [("Mode", mode.value)] if mode != RunMode.BACKTEST else None
-    _display_metrics(title, metrics, extra_rows=extra_rows)
+    extra_rows: list[tuple[str, str]] = []
+    if mode != RunMode.BACKTEST:
+        extra_rows.append(("Mode", mode.value))
+    if is_multi:
+        extra_rows.append(("Symbols", ", ".join(loaded_symbols)))
+    _display_metrics(title, metrics, extra_rows=extra_rows or None)
 
     if report:
-        freq = _tf_to_pandas_freq(target_tf)
-        close_tf = data.ohlcv["close"].resample(freq).last().dropna()
-        benchmark_returns = close_tf.pct_change().dropna()
-
-        _generate_eda_report(
+        _generate_report_for_run(
             runner=runner,
-            benchmark_returns=benchmark_returns,
-            title=f"EDA {cfg.strategy.name} - {symbol} ({cfg.backtest.start} ~ {cfg.backtest.end})",
+            cfg=cfg,
+            is_multi=is_multi,
+            loaded_symbols=loaded_symbols,
+            target_tf=target_tf,
+            data=data,
         )
 
 
-@app.command(name="run-multi")
-def run_multi(
-    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
-    report: Annotated[
-        bool, typer.Option("--report/--no-report", help="Generate QuantStats HTML report")
-    ] = False,
-    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
-) -> None:
-    """Run EDA backtest for multiple symbols (equal-weight portfolio) from config file."""
-    setup_logger(console_level="DEBUG" if verbose else "WARNING")
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
-    cfg = load_config(config_path)
-    settings = get_settings()
 
-    symbol_list = cfg.backtest.symbols
-    _min_symbols = 2
-    if len(symbol_list) < _min_symbols:
-        console.print("[red]At least 2 symbols required in config.[/red]")
-        raise typer.Exit(code=1)
+def _load_single_symbol_data(
+    service: MarketDataService,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+) -> MarketDataSet:
+    """단일 심볼 1m 데이터 로드."""
+    try:
+        request = MarketDataRequest(symbol=symbol, timeframe="1m", start=start, end=end)
+        return service.get(request)
+    except DataNotFoundError as e:
+        console.print(f"[red]1m data not found: {e}[/red]")
+        raise typer.Exit(code=1) from e
 
-    strategy = build_strategy(cfg)
 
-    start_dt = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_dt = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
-
-    # Load 1m data for each symbol
-    service = MarketDataService(settings)
+def _load_multi_symbol_data(
+    service: MarketDataService,
+    symbol_list: list[str],
+    start: datetime,
+    end: datetime,
+) -> tuple[MultiSymbolData, list[str]]:
+    """멀티 심볼 1m 데이터 로드. (MultiSymbolData, loaded_symbols) 반환."""
     ohlcv_dict: dict[str, object] = {}
     loaded_symbols: list[str] = []
 
     for sym in symbol_list:
         try:
-            request = MarketDataRequest(
-                symbol=sym,
-                timeframe="1m",
-                start=start_dt,
-                end=end_dt,
-            )
+            request = MarketDataRequest(symbol=sym, timeframe="1m", start=start, end=end)
             data = service.get(request)
             ohlcv_dict[sym] = data.ohlcv
             loaded_symbols.append(sym)
@@ -205,71 +197,49 @@ def run_multi(
         except DataNotFoundError:
             console.print(f"[yellow]Warning: Data not found for {sym}, skipping.[/yellow]")
 
+    _min_symbols = 2
     if len(loaded_symbols) < _min_symbols:
         console.print("[red]Need at least 2 symbols with data.[/red]")
         raise typer.Exit(code=1)
 
-    tf = cfg.backtest.timeframe
-    target_tf = tf.upper() if tf.lower() == "1d" else tf
-
-    # Construct MultiSymbolData
     multi_data = MultiSymbolData(
         symbols=loaded_symbols,
         timeframe="1m",
-        start=start_dt,
-        end=end_dt,
+        start=start,
+        end=end,
         ohlcv=ohlcv_dict,  # type: ignore[arg-type]
     )
+    return multi_data, loaded_symbols
 
-    # Equal weights
-    weights = {s: 1.0 / len(loaded_symbols) for s in loaded_symbols}
 
-    runner = EDARunner.backtest(
-        strategy=strategy,
-        data=multi_data,
-        target_timeframe=target_tf,
-        config=cfg.portfolio,
-        initial_capital=cfg.backtest.capital,
-        asset_weights=weights,
-    )
+def _generate_report_for_run(
+    runner: EDARunner,
+    cfg: RunConfig,
+    is_multi: bool,
+    loaded_symbols: list[str],
+    target_tf: str,
+    data: MarketDataSet | MultiSymbolData,
+) -> None:
+    """run 커맨드의 --report 처리."""
+    freq = _tf_to_pandas_freq(target_tf)
 
-    logger.info(
-        "Running EDA multi-asset backtest: {} {} symbols (1m → {})",
-        cfg.strategy.name,
-        len(loaded_symbols),
-        target_tf,
-    )
-    metrics = asyncio.run(runner.run())
-
-    _display_metrics(
-        f"EDA Multi-Asset: {cfg.strategy.name} / {len(loaded_symbols)} symbols",
-        metrics,
-        extra_rows=[("Symbols", ", ".join(loaded_symbols))],
-    )
-
-    if report:
+    if is_multi:
         import pandas as pd
 
-        # 각 심볼의 1m close를 target TF로 resample → EW 벤치마크
         sym_returns: list[pd.Series] = []
-        freq = _tf_to_pandas_freq(target_tf)
         for sym in loaded_symbols:
-            close_1m = ohlcv_dict[sym]["close"]  # type: ignore[index]
+            close_1m = data.ohlcv[sym]["close"]  # type: ignore[index]
             close_tf: pd.Series = close_1m.resample(freq).last().dropna()  # type: ignore[assignment]
             sym_returns.append(close_tf.pct_change().dropna())
-
         benchmark_returns: pd.Series = pd.concat(sym_returns, axis=1).mean(axis=1)  # type: ignore[assignment]
+        title = f"EDA Multi-Asset: {cfg.strategy.name} / {len(loaded_symbols)} symbols ({cfg.backtest.start} ~ {cfg.backtest.end})"
+    else:
+        symbol = loaded_symbols[0]
+        close_tf_s = data.ohlcv["close"].resample(freq).last().dropna()  # type: ignore[union-attr]
+        benchmark_returns = close_tf_s.pct_change().dropna()
+        title = f"EDA {cfg.strategy.name} - {symbol} ({cfg.backtest.start} ~ {cfg.backtest.end})"
 
-        _generate_eda_report(
-            runner=runner,
-            benchmark_returns=benchmark_returns,
-            title=f"EDA Multi-Asset: {cfg.strategy.name} / {len(loaded_symbols)} symbols ({cfg.backtest.start} ~ {cfg.backtest.end})",
-        )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+    _generate_eda_report(runner=runner, benchmark_returns=benchmark_returns, title=title)
 
 
 def _tf_to_pandas_freq(tf: str) -> str:
