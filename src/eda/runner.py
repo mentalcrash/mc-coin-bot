@@ -27,6 +27,7 @@ from src.eda.strategy_engine import StrategyEngine
 
 if TYPE_CHECKING:
     from src.data.market_data import MarketDataSet, MultiSymbolData
+    from src.eda.ports import DataFeedPort
     from src.models.backtest import PerformanceMetrics
     from src.portfolio.config import PortfolioManagerConfig
     from src.strategy.base import BaseStrategy
@@ -81,7 +82,7 @@ class EDARunner:
 
         # 데이터 피드 선택: target_timeframe 설정 시 1m aggregation 모드
         if self._target_timeframe is not None:
-            feed: HistoricalDataFeed | AggregatingDataFeed = AggregatingDataFeed(
+            feed: DataFeedPort = AggregatingDataFeed(
                 self._data, target_timeframe=self._target_timeframe
             )
         else:

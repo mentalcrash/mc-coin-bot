@@ -13,7 +13,7 @@ Rules Applied:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -21,33 +21,17 @@ from src.core.events import (
     AnyEvent,
     CircuitBreakerEvent,
     EventType,
-    FillEvent,
     OrderAckEvent,
     OrderRequestEvent,
 )
+from src.eda.ports import ExecutorPort
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
     from src.eda.portfolio_manager import EDAPortfolioManager
 
-
-@runtime_checkable
-class Executor(Protocol):
-    """주문 실행기 인터페이스.
-
-    BacktestExecutor, ShadowExecutor, LiveExecutor 등이 구현합니다.
-    """
-
-    async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
-        """주문 실행.
-
-        Args:
-            order: 검증된 주문 요청
-
-        Returns:
-            체결 결과 (None이면 체결 실패)
-        """
-        ...
+Executor = ExecutorPort
+"""Backward-compatible alias for ExecutorPort."""
 
 
 class OMS:
@@ -63,7 +47,7 @@ class OMS:
 
     def __init__(
         self,
-        executor: Executor,
+        executor: ExecutorPort,
         portfolio_manager: EDAPortfolioManager | None = None,
     ) -> None:
         self._executor = executor
