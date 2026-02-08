@@ -36,8 +36,14 @@ from src.strategy.tsmom.config import ShortMode, TSMOMConfig
 # =============================================================================
 
 ASSETS = [
-    "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT",
-    "DOGE/USDT", "LINK/USDT", "ADA/USDT", "AVAX/USDT",
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "DOGE/USDT",
+    "LINK/USDT",
+    "ADA/USDT",
+    "AVAX/USDT",
 ]
 
 START = datetime(2020, 1, 1, tzinfo=UTC)
@@ -75,7 +81,9 @@ def compute_portfolio_metrics(daily_returns: pd.Series) -> dict[str, float]:  # 
     """EW 포트폴리오 일간 수익률에서 성과 지표를 계산."""
     returns = daily_returns.dropna()
     if len(returns) < 30:
-        return dict.fromkeys(["sharpe", "cagr", "total_return", "mdd", "ann_vol", "calmar", "sortino"], np.nan)
+        return dict.fromkeys(
+            ["sharpe", "cagr", "total_return", "mdd", "ann_vol", "calmar", "sortino"], np.nan
+        )
 
     cum_returns = (1 + returns).cumprod()
     total_return = float(cum_returns.iloc[-1] - 1)
@@ -90,7 +98,9 @@ def compute_portfolio_metrics(daily_returns: pd.Series) -> dict[str, float]:  # 
     calmar = cagr / abs(mdd) if abs(mdd) > 0 else 0.0
 
     downside = returns[returns < 0]
-    downside_std = float(downside.std() * np.sqrt(ANNUALIZATION_FOR_METRICS)) if len(downside) > 0 else 0.0
+    downside_std = (
+        float(downside.std() * np.sqrt(ANNUALIZATION_FOR_METRICS)) if len(downside) > 0 else 0.0
+    )
     sortino = cagr / downside_std if downside_std > 0 else 0.0
 
     return {
@@ -159,7 +169,9 @@ def main() -> None:
     print(f"Time Horizons: {TIME_HORIZONS_DAYS} days")
     print(f"Assets: {len(ASSETS)} | Period: {START.year}-{END.year}")
     print(f"Fixed: vol_target={VOL_TARGET}, leverage_cap={MAX_LEVERAGE_CAP}x")
-    print(f"Grid: {len(TIMEFRAMES)} TF × {len(TIME_HORIZONS_DAYS)} lookbacks = {total_combos} combos")
+    print(
+        f"Grid: {len(TIMEFRAMES)} TF × {len(TIME_HORIZONS_DAYS)} lookbacks = {total_combos} combos"
+    )
     print(f"Total backtests: {total_backtests}")
     print("=" * 90)
 
@@ -177,9 +189,14 @@ def main() -> None:
         for symbol in ASSETS:
             print(f"    {symbol}...", end=" ", flush=True)
             try:
-                data = service.get(MarketDataRequest(
-                    symbol=symbol, timeframe=tf_name, start=START, end=END,
-                ))
+                data = service.get(
+                    MarketDataRequest(
+                        symbol=symbol,
+                        timeframe=tf_name,
+                        start=START,
+                        end=END,
+                    )
+                )
                 data_cache[(tf_name, symbol)] = data
                 print(f"{data.periods:,} candles")
             except Exception as e:
@@ -197,7 +214,11 @@ def main() -> None:
         for horizon_days in TIME_HORIZONS_DAYS:
             lookback = candles_for_horizon(horizon_days, cpd)
             combo_idx += 1
-            print(f"  [{combo_idx:2d}/{total_combos}] {tf_name} lookback={lookback} ({horizon_days}d)...", end=" ", flush=True)
+            print(
+                f"  [{combo_idx:2d}/{total_combos}] {tf_name} lookback={lookback} ({horizon_days}d)...",
+                end=" ",
+                flush=True,
+            )
 
             all_returns: list[pd.Series] = []  # type: ignore[type-arg]
             per_asset: dict[str, dict[str, float]] = {}
@@ -218,13 +239,15 @@ def main() -> None:
                     per_asset[symbol] = asset_m
 
                     # Store asset-level result
-                    asset_level_results.append({
-                        "timeframe": tf_name,
-                        "horizon_days": horizon_days,
-                        "lookback": lookback,
-                        "symbol": symbol,
-                        **asset_m,
-                    })
+                    asset_level_results.append(
+                        {
+                            "timeframe": tf_name,
+                            "horizon_days": horizon_days,
+                            "lookback": lookback,
+                            "symbol": symbol,
+                            **asset_m,
+                        }
+                    )
 
             if len(all_returns) < len(ASSETS):
                 print(f"SKIP (only {len(all_returns)}/{len(ASSETS)} assets)")
@@ -238,16 +261,20 @@ def main() -> None:
             metrics = compute_portfolio_metrics(ew_returns)
             avg_asset_sharpe = np.mean([m["sharpe"] for m in per_asset.values()])
 
-            results.append({
-                "timeframe": tf_name,
-                "horizon_days": horizon_days,
-                "lookback": lookback,
-                **metrics,
-                "avg_asset_sharpe": round(float(avg_asset_sharpe), 2),
-                "n_days_data": len(returns_df),
-            })
+            results.append(
+                {
+                    "timeframe": tf_name,
+                    "horizon_days": horizon_days,
+                    "lookback": lookback,
+                    **metrics,
+                    "avg_asset_sharpe": round(float(avg_asset_sharpe), 2),
+                    "n_days_data": len(returns_df),
+                }
+            )
 
-            print(f"Sharpe={metrics['sharpe']:.2f}, CAGR={metrics['cagr']:.1f}%, MDD={metrics['mdd']:.1f}%")
+            print(
+                f"Sharpe={metrics['sharpe']:.2f}, CAGR={metrics['cagr']:.1f}%, MDD={metrics['mdd']:.1f}%"
+            )
 
     # =========================================================================
     # 3. Analysis
@@ -260,37 +287,49 @@ def main() -> None:
 
     # --- 3.1: Sharpe Heatmap (TF × Horizon) ---
     print("\n### 3.1 Sharpe Ratio Heatmap (Timeframe × Time Horizon)")
-    sharpe_pivot = df.pivot_table(values="sharpe", index="timeframe", columns="horizon_days", aggfunc="first")
+    sharpe_pivot = df.pivot_table(
+        values="sharpe", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     sharpe_pivot = sharpe_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(sharpe_pivot.to_string(float_format="{:.2f}".format))
 
     # --- 3.2: CAGR Heatmap ---
     print("\n### 3.2 CAGR % Heatmap (Timeframe × Time Horizon)")
-    cagr_pivot = df.pivot_table(values="cagr", index="timeframe", columns="horizon_days", aggfunc="first")
+    cagr_pivot = df.pivot_table(
+        values="cagr", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     cagr_pivot = cagr_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(cagr_pivot.to_string(float_format="{:.1f}".format))
 
     # --- 3.3: MDD Heatmap ---
     print("\n### 3.3 MDD % Heatmap (Timeframe × Time Horizon)")
-    mdd_pivot = df.pivot_table(values="mdd", index="timeframe", columns="horizon_days", aggfunc="first")
+    mdd_pivot = df.pivot_table(
+        values="mdd", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     mdd_pivot = mdd_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(mdd_pivot.to_string(float_format="{:.1f}".format))
 
     # --- 3.4: Calmar Heatmap ---
     print("\n### 3.4 Calmar Ratio Heatmap (Timeframe × Time Horizon)")
-    calmar_pivot = df.pivot_table(values="calmar", index="timeframe", columns="horizon_days", aggfunc="first")
+    calmar_pivot = df.pivot_table(
+        values="calmar", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     calmar_pivot = calmar_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(calmar_pivot.to_string(float_format="{:.2f}".format))
 
     # --- 3.5: Sortino Heatmap ---
     print("\n### 3.5 Sortino Ratio Heatmap (Timeframe × Time Horizon)")
-    sortino_pivot = df.pivot_table(values="sortino", index="timeframe", columns="horizon_days", aggfunc="first")
+    sortino_pivot = df.pivot_table(
+        values="sortino", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     sortino_pivot = sortino_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(sortino_pivot.to_string(float_format="{:.2f}".format))
 
     # --- 3.6: AnnVol Heatmap ---
     print("\n### 3.6 AnnVol % Heatmap (Timeframe × Time Horizon)")
-    vol_pivot = df.pivot_table(values="ann_vol", index="timeframe", columns="horizon_days", aggfunc="first")
+    vol_pivot = df.pivot_table(
+        values="ann_vol", index="timeframe", columns="horizon_days", aggfunc="first"
+    )
     vol_pivot = vol_pivot.reindex(index=[tf[0] for tf in TIMEFRAMES])
     print(vol_pivot.to_string(float_format="{:.1f}".format))
 
@@ -373,7 +412,9 @@ def main() -> None:
                 continue
             best_idx = sym_df["sharpe"].idxmax()
             b = sym_df.loc[best_idx]
-            print(f"{symbol:>12} {b['timeframe']:>8} {int(b['horizon_days']):>5}d {b['sharpe']:>7.2f} {b['cagr']:>7.1f} {b['mdd']:>7.1f}")
+            print(
+                f"{symbol:>12} {b['timeframe']:>8} {int(b['horizon_days']):>5}d {b['sharpe']:>7.2f} {b['cagr']:>7.1f} {b['mdd']:>7.1f}"
+            )
 
     # --- 3.12: Same Time Horizon Across Timeframes ---
     print("\n### 3.12 Same Time Horizon (30d) Across Timeframes")
@@ -414,8 +455,12 @@ def main() -> None:
     print("FINAL SUMMARY")
     print("=" * 90)
     overall_best = df_sorted.iloc[0]
-    print(f"\n  Overall Best: {overall_best['timeframe']} lookback={int(overall_best['lookback'])} ({int(overall_best['horizon_days'])}d)")
-    print(f"  Sharpe={overall_best['sharpe']:.2f}, CAGR={overall_best['cagr']:.1f}%, MDD={overall_best['mdd']:.1f}%, Calmar={overall_best['calmar']:.2f}, Sortino={overall_best['sortino']:.2f}")
+    print(
+        f"\n  Overall Best: {overall_best['timeframe']} lookback={int(overall_best['lookback'])} ({int(overall_best['horizon_days'])}d)"
+    )
+    print(
+        f"  Sharpe={overall_best['sharpe']:.2f}, CAGR={overall_best['cagr']:.1f}%, MDD={overall_best['mdd']:.1f}%, Calmar={overall_best['calmar']:.2f}, Sortino={overall_best['sortino']:.2f}"
+    )
 
     # Compare vs 1D baseline
     if not baseline.empty:

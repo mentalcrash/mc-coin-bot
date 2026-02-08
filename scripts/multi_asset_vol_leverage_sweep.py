@@ -195,7 +195,9 @@ def main() -> None:
     print("=" * 80)
     print("Multi-Asset TSMOM: vol_target x max_leverage_cap Parameter Sweep")
     print(f"Assets: {len(ASSETS)} | Period: {START.year}-{END.year}")
-    print(f"Grid: {len(VOL_TARGETS)} vol_targets x {len(LEVERAGE_CAPS)} leverage_caps = {len(VOL_TARGETS) * len(LEVERAGE_CAPS)} combos")
+    print(
+        f"Grid: {len(VOL_TARGETS)} vol_targets x {len(LEVERAGE_CAPS)} leverage_caps = {len(VOL_TARGETS) * len(LEVERAGE_CAPS)} combos"
+    )
     print(f"Total backtests: {len(VOL_TARGETS) * len(LEVERAGE_CAPS) * len(ASSETS)}")
     print("=" * 80)
 
@@ -212,13 +214,19 @@ def main() -> None:
     n_assets = len(data_map)
 
     # 2. Run parameter sweep
-    print(f"\n[2/3] Running parameter sweep ({len(VOL_TARGETS) * len(LEVERAGE_CAPS)} combinations)...")
+    print(
+        f"\n[2/3] Running parameter sweep ({len(VOL_TARGETS) * len(LEVERAGE_CAPS)} combinations)..."
+    )
     engine = BacktestEngine()
     results: list[dict[str, float | str]] = []
     total_combos = len(VOL_TARGETS) * len(LEVERAGE_CAPS)
 
     for idx, (vt, lc) in enumerate(product(VOL_TARGETS, LEVERAGE_CAPS), 1):
-        print(f"  [{idx:3d}/{total_combos}] vol_target={vt:.2f}, leverage_cap={lc:.1f}x ...", end=" ", flush=True)
+        print(
+            f"  [{idx:3d}/{total_combos}] vol_target={vt:.2f}, leverage_cap={lc:.1f}x ...",
+            end=" ",
+            flush=True,
+        )
 
         # Run backtest for each asset
         all_returns: list[pd.Series] = []  # type: ignore[type-arg]
@@ -256,7 +264,9 @@ def main() -> None:
         }
         results.append(row)
 
-        print(f"Sharpe={metrics['sharpe']:.2f}, CAGR={metrics['cagr']:.1f}%, MDD={metrics['mdd']:.1f}%")
+        print(
+            f"Sharpe={metrics['sharpe']:.2f}, CAGR={metrics['cagr']:.1f}%, MDD={metrics['mdd']:.1f}%"
+        )
 
     # 3. Results
     print("\n[3/3] Results Summary")
@@ -355,12 +365,16 @@ def main() -> None:
     baseline = df[(df["vol_target"] == 0.30) & (df["leverage_cap"] == 2.0)]
     if not baseline.empty:
         b = baseline.iloc[0]
-        print(f"  Sharpe={b['sharpe']:.2f}, CAGR={b['cagr']:.1f}%, MDD={b['mdd']:.1f}%, AnnVol={b['ann_vol']:.1f}%, Calmar={b['calmar']:.2f}")
+        print(
+            f"  Sharpe={b['sharpe']:.2f}, CAGR={b['cagr']:.1f}%, MDD={b['mdd']:.1f}%, AnnVol={b['ann_vol']:.1f}%, Calmar={b['calmar']:.2f}"
+        )
 
     best = df.iloc[0]
     print("\n### Best Combination (by Sharpe)")
     print(f"  vol_target={best['vol_target']:.2f}, leverage_cap={best['leverage_cap']:.1f}x")
-    print(f"  Sharpe={best['sharpe']:.2f}, CAGR={best['cagr']:.1f}%, MDD={best['mdd']:.1f}%, AnnVol={best['ann_vol']:.1f}%, Calmar={best['calmar']:.2f}")
+    print(
+        f"  Sharpe={best['sharpe']:.2f}, CAGR={best['cagr']:.1f}%, MDD={best['mdd']:.1f}%, AnnVol={best['ann_vol']:.1f}%, Calmar={best['calmar']:.2f}"
+    )
 
     # Save full results to CSV
     csv_path = "data/multi_asset_vol_leverage_sweep.csv"

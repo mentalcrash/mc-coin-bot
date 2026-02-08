@@ -206,9 +206,7 @@ def run_multi_asset_backtest(
     all_returns: list[pd.Series] = []  # type: ignore[type-arg]
 
     for symbol, data in data_map.items():
-        ret = run_single_backtest(
-            engine, data, short_mode, hedge_threshold, hedge_strength_ratio
-        )
+        ret = run_single_backtest(engine, data, short_mode, hedge_threshold, hedge_strength_ratio)
         if ret is not None:
             all_returns.append(ret)
 
@@ -252,7 +250,9 @@ def main() -> None:
     print("=" * 80)
     print("Multi-Asset TSMOM: hedge_threshold x hedge_strength_ratio Parameter Sweep")
     print(f"Assets: {len(ASSETS)} | Period: {START.year}-{END.year}")
-    print(f"Grid: {len(HEDGE_THRESHOLDS)} thresholds x {len(HEDGE_STRENGTH_RATIOS)} ratios = {total_combos} combos")
+    print(
+        f"Grid: {len(HEDGE_THRESHOLDS)} thresholds x {len(HEDGE_STRENGTH_RATIOS)} ratios = {total_combos} combos"
+    )
     print("Baselines: DISABLED (Long-Only) + FULL (Long/Short)")
     print(f"Total backtests: {total_backtests}")
     print(f"Fixed: vol_target=0.35, lookback=30, leverage_cap={MAX_LEVERAGE_CAP}x")
@@ -276,12 +276,16 @@ def main() -> None:
     print("  DISABLED (Long-Only)...", end=" ", flush=True)
     baseline_disabled = run_multi_asset_backtest(engine, data_map, ShortMode.DISABLED)
     if baseline_disabled:
-        print(f"Sharpe={baseline_disabled['sharpe']:.2f}, CAGR={baseline_disabled['cagr']:.1f}%, MDD={baseline_disabled['mdd']:.1f}%")
+        print(
+            f"Sharpe={baseline_disabled['sharpe']:.2f}, CAGR={baseline_disabled['cagr']:.1f}%, MDD={baseline_disabled['mdd']:.1f}%"
+        )
 
     print("  FULL (Long/Short)...", end=" ", flush=True)
     baseline_full = run_multi_asset_backtest(engine, data_map, ShortMode.FULL)
     if baseline_full:
-        print(f"Sharpe={baseline_full['sharpe']:.2f}, CAGR={baseline_full['cagr']:.1f}%, MDD={baseline_full['mdd']:.1f}%")
+        print(
+            f"Sharpe={baseline_full['sharpe']:.2f}, CAGR={baseline_full['cagr']:.1f}%, MDD={baseline_full['mdd']:.1f}%"
+        )
 
     # 3. Run hedge parameter sweep
     print(f"\n[3/4] Running hedge parameter sweep ({total_combos} combinations)...")
@@ -294,9 +298,7 @@ def main() -> None:
             flush=True,
         )
 
-        metrics = run_multi_asset_backtest(
-            engine, data_map, ShortMode.HEDGE_ONLY, ht, hsr
-        )
+        metrics = run_multi_asset_backtest(engine, data_map, ShortMode.HEDGE_ONLY, ht, hsr)
         if metrics is None:
             print("SKIP")
             continue
@@ -392,9 +394,7 @@ def main() -> None:
 
     # Current default comparison
     print("\n### Current Default (threshold=-0.07, strength=0.8)")
-    current = df[
-        (df["hedge_threshold"] == -0.07) & (df["hedge_strength_ratio"] == 0.8)
-    ]
+    current = df[(df["hedge_threshold"] == -0.07) & (df["hedge_strength_ratio"] == 0.8)]
     if not current.empty:
         c = current.iloc[0]
         print(
@@ -417,15 +417,11 @@ def main() -> None:
     if baseline_disabled:
         delta_s = best["sharpe"] - baseline_disabled["sharpe"]
         delta_m = best["mdd"] - baseline_disabled["mdd"]
-        print(
-            f"  vs DISABLED: Sharpe {delta_s:+.2f}, MDD {delta_m:+.1f}pp"
-        )
+        print(f"  vs DISABLED: Sharpe {delta_s:+.2f}, MDD {delta_m:+.1f}pp")
     if baseline_full:
         delta_s = best["sharpe"] - baseline_full["sharpe"]
         delta_m = best["mdd"] - baseline_full["mdd"]
-        print(
-            f"  vs FULL:     Sharpe {delta_s:+.2f}, MDD {delta_m:+.1f}pp"
-        )
+        print(f"  vs FULL:     Sharpe {delta_s:+.2f}, MDD {delta_m:+.1f}pp")
 
     # Save full results to CSV
     csv_path = "data/multi_asset_hedge_sweep.csv"
@@ -439,9 +435,7 @@ def main() -> None:
             baselines_data.append({"mode": "DISABLED", **baseline_disabled})
         if baseline_full:
             baselines_data.append({"mode": "FULL", **baseline_full})
-        pd.DataFrame(baselines_data).to_csv(
-            "data/multi_asset_hedge_baselines.csv", index=False
-        )
+        pd.DataFrame(baselines_data).to_csv("data/multi_asset_hedge_baselines.csv", index=False)
         print("Baselines saved to: data/multi_asset_hedge_baselines.csv")
 
 

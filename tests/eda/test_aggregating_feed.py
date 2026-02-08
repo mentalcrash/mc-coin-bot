@@ -1,4 +1,4 @@
-"""AggregatingDataFeed 통합 테스트.
+"""HistoricalDataFeed 통합 테스트.
 
 1m 데이터를 CandleAggregator로 집계하여 TF bar를 생성하는 파이프라인을 검증합니다.
 """
@@ -11,7 +11,7 @@ import pandas as pd
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.data.market_data import MarketDataSet
-from src.eda.data_feed import AggregatingDataFeed
+from src.eda.data_feed import HistoricalDataFeed
 
 
 # =========================================================================
@@ -57,13 +57,13 @@ def _make_1m_dataset(
 # =========================================================================
 # 단일 심볼 테스트
 # =========================================================================
-class TestAggregatingFeedSingle:
-    """단일 심볼 AggregatingDataFeed 테스트."""
+class TestHistoricalDataFeedSingle:
+    """단일 심볼 HistoricalDataFeed 테스트."""
 
     async def test_emits_1m_and_tf_bars(self) -> None:
         """1m bar와 완성된 TF bar를 모두 발행."""
         data = _make_1m_dataset(periods=120)  # 2시간 = 2개 1h candle
-        feed = AggregatingDataFeed(data, target_timeframe="1h")
+        feed = HistoricalDataFeed(data, target_timeframe="1h")
         bus = EventBus(queue_size=10000)
 
         bars_1m: list[BarEvent] = []
@@ -92,7 +92,7 @@ class TestAggregatingFeedSingle:
         """집계된 TF bar의 OHLCV 정합성."""
         start = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         data = _make_1m_dataset(start=start, periods=120)
-        feed = AggregatingDataFeed(data, target_timeframe="1h")
+        feed = HistoricalDataFeed(data, target_timeframe="1h")
         bus = EventBus(queue_size=10000)
 
         bars_tf: list[BarEvent] = []
@@ -126,7 +126,7 @@ class TestAggregatingFeedSingle:
     async def test_bars_emitted_count(self) -> None:
         """bars_emitted 카운터 정확성."""
         data = _make_1m_dataset(periods=60)  # 1시간
-        feed = AggregatingDataFeed(data, target_timeframe="1h")
+        feed = HistoricalDataFeed(data, target_timeframe="1h")
         bus = EventBus(queue_size=10000)
 
         task = asyncio.create_task(bus.start())
@@ -141,14 +141,14 @@ class TestAggregatingFeedSingle:
 # =========================================================================
 # 1D 집계 테스트
 # =========================================================================
-class TestAggregatingFeed1D:
+class TestHistoricalDataFeed1D:
     """1m → 1D 집계."""
 
     async def test_1440_1m_bars_to_1d(self) -> None:
         """1440 1m bars → 1 daily candle (flush)."""
         start = datetime(2024, 6, 15, 0, 0, tzinfo=UTC)
         data = _make_1m_dataset(start=start, periods=1440)
-        feed = AggregatingDataFeed(data, target_timeframe="1D")
+        feed = HistoricalDataFeed(data, target_timeframe="1D")
         bus = EventBus(queue_size=100000)
 
         bars_tf: list[BarEvent] = []
@@ -181,7 +181,7 @@ class TestAggregationParity:
         start = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         periods = 180  # 3시간
         data = _make_1m_dataset(start=start, periods=periods)
-        feed = AggregatingDataFeed(data, target_timeframe="1h")
+        feed = HistoricalDataFeed(data, target_timeframe="1h")
         bus = EventBus(queue_size=10000)
 
         bars_tf: list[BarEvent] = []
@@ -217,13 +217,13 @@ class TestAggregationParity:
 # =========================================================================
 # Source 확인
 # =========================================================================
-class TestAggregatingFeedSource:
+class TestHistoricalDataFeedSource:
     """소스 태깅 테스트."""
 
     async def test_1m_bar_source(self) -> None:
-        """1m bar는 AggregatingDataFeed 소스."""
+        """1m bar는 HistoricalDataFeed 소스."""
         data = _make_1m_dataset(periods=5)
-        feed = AggregatingDataFeed(data, target_timeframe="1h")
+        feed = HistoricalDataFeed(data, target_timeframe="1h")
         bus = EventBus(queue_size=100)
 
         bars: list[BarEvent] = []
@@ -240,7 +240,7 @@ class TestAggregatingFeedSource:
         await task
 
         one_m_bars = [b for b in bars if b.timeframe == "1m"]
-        assert all(b.source == "AggregatingDataFeed" for b in one_m_bars)
+        assert all(b.source == "HistoricalDataFeed" for b in one_m_bars)
 
         tf_bars = [b for b in bars if b.timeframe == "1h"]
         assert all(b.source == "CandleAggregator" for b in tf_bars)

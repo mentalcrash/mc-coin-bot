@@ -45,7 +45,7 @@ class StrategyEngine:
         self,
         strategy: BaseStrategy,
         warmup_periods: int | None = None,
-        target_timeframe: str | None = None,
+        target_timeframe: str = "1D",
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -75,8 +75,8 @@ class StrategyEngine:
         assert isinstance(event, BarEvent)
         bar = event
 
-        # TF 필터: target_timeframe 설정 시 해당 TF만 처리
-        if self._target_timeframe is not None and bar.timeframe != self._target_timeframe:
+        # TF 필터: target_timeframe에 해당하는 TF만 처리
+        if bar.timeframe != self._target_timeframe:
             return
 
         symbol = bar.symbol
@@ -166,8 +166,7 @@ class StrategyEngine:
             lookback = config_dict.get("lookback", 0)
             vol_window = config_dict.get("vol_window", 0)
             if lookback > 0:
-                # lookback + vol_window + 여유분
-                return int(lookback + vol_window + 10)
+                return int(max(lookback, vol_window) + 10)
         return 50  # 안전한 기본값
 
     @property

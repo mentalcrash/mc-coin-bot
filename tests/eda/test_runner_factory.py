@@ -1,6 +1,6 @@
 """EDA Runner 팩토리 메서드 테스트.
 
-backtest, backtest_agg, shadow 팩토리 및 하위호환 테스트.
+backtest, shadow 팩토리 및 하위호환 테스트.
 """
 
 from datetime import UTC, datetime
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.market_data import MarketDataSet
-from src.eda.data_feed import AggregatingDataFeed, HistoricalDataFeed
+from src.eda.data_feed import HistoricalDataFeed
 from src.eda.executors import BacktestExecutor, ShadowExecutor
 from src.eda.runner import EDARunner
 from src.portfolio.config import PortfolioManagerConfig
@@ -54,29 +54,30 @@ class SimpleMovingAverageStrategy(BaseStrategy):
         )
 
 
-def _make_trending_data(n: int = 100, base: float = 50000.0) -> MarketDataSet:
-    """상승 트렌드 테스트 데이터."""
+def _make_1m_data(n_days: int = 3, base: float = 50000.0) -> MarketDataSet:
+    """1m 상승 트렌드 테스트 데이터."""
     rng = np.random.default_rng(42)
+    n = n_days * 1440
     start = datetime(2024, 1, 1, tzinfo=UTC)
-    timestamps = pd.date_range(start=start, periods=n, freq="1D", tz=UTC)
+    timestamps = pd.date_range(start=start, periods=n, freq="1min", tz=UTC)
 
     trend = np.linspace(0, 5000, n)
-    noise = rng.standard_normal(n) * 200
+    noise = rng.standard_normal(n) * 20
     close = base + trend + noise
 
     df = pd.DataFrame(
         {
-            "open": close * 0.999,
-            "high": close * 1.01,
-            "low": close * 0.99,
+            "open": close * 0.9999,
+            "high": close * 1.001,
+            "low": close * 0.999,
             "close": close,
-            "volume": rng.integers(100, 1000, n) * 1000.0,
+            "volume": rng.integers(10, 100, n) * 10.0,
         },
         index=timestamps,
     )
     return MarketDataSet(
         symbol="BTC/USDT",
-        timeframe="1D",
+        timeframe="1m",
         start=timestamps[0].to_pydatetime(),  # type: ignore[union-attr]
         end=timestamps[-1].to_pydatetime(),  # type: ignore[union-attr]
         ohlcv=df,
@@ -96,49 +97,37 @@ class TestRunnerFactoryTypes:
 
     def test_backtest_factory_creates_correct_types(self) -> None:
         """backtest() → HistoricalDataFeed + BacktestExecutor."""
-        data = _make_trending_data(50)
+        data = _make_1m_data(2)
         strategy = SimpleMovingAverageStrategy()
         config = _make_config()
 
-        runner = EDARunner.backtest(strategy=strategy, data=data, config=config)
-
-        assert isinstance(runner._feed, HistoricalDataFeed)
-        assert isinstance(runner._executor, BacktestExecutor)
-
-    def test_backtest_agg_factory_creates_correct_types(self) -> None:
-        """backtest_agg() → AggregatingDataFeed + BacktestExecutor."""
-        data = _make_trending_data(50)
-        strategy = SimpleMovingAverageStrategy()
-        config = _make_config()
-
-        runner = EDARunner.backtest_agg(
-            strategy=strategy,
-            data=data,
-            target_timeframe="1D",
-            config=config,
+        runner = EDARunner.backtest(
+            strategy=strategy, data=data, target_timeframe="1D", config=config
         )
 
-        assert isinstance(runner._feed, AggregatingDataFeed)
+        assert isinstance(runner._feed, HistoricalDataFeed)
         assert isinstance(runner._executor, BacktestExecutor)
 
     def test_shadow_factory_creates_correct_types(self) -> None:
         """shadow() → HistoricalDataFeed + ShadowExecutor."""
-        data = _make_trending_data(50)
+        data = _make_1m_data(2)
         strategy = SimpleMovingAverageStrategy()
         config = _make_config()
 
-        runner = EDARunner.shadow(strategy=strategy, data=data, config=config)
+        runner = EDARunner.shadow(
+            strategy=strategy, data=data, target_timeframe="1D", config=config
+        )
 
         assert isinstance(runner._feed, HistoricalDataFeed)
         assert isinstance(runner._executor, ShadowExecutor)
 
-    def test_original_init_backward_compat(self) -> None:
-        """기존 __init__ 호출이 여전히 동작."""
-        data = _make_trending_data(50)
+    def test_init_creates_correct_types(self) -> None:
+        """__init__ 호출이 올바른 타입을 생성."""
+        data = _make_1m_data(2)
         strategy = SimpleMovingAverageStrategy()
         config = _make_config()
 
-        runner = EDARunner(strategy=strategy, data=data, config=config)
+        runner = EDARunner(strategy=strategy, data=data, target_timeframe="1D", config=config)
 
         assert isinstance(runner._feed, HistoricalDataFeed)
         assert isinstance(runner._executor, BacktestExecutor)
@@ -149,12 +138,16 @@ class TestRunnerFactoryRun:
 
     async def test_backtest_factory_run_produces_metrics(self) -> None:
         """backtest() 팩토리 → run() → PerformanceMetrics 반환."""
-        data = _make_trending_data(100)
+        data = _make_1m_data(3)
         strategy = SimpleMovingAverageStrategy()
         config = _make_config()
 
         runner = EDARunner.backtest(
-            strategy=strategy, data=data, config=config, initial_capital=10000.0
+            strategy=strategy,
+            data=data,
+            target_timeframe="1D",
+            config=config,
+            initial_capital=10000.0,
         )
         metrics = await runner.run()
 

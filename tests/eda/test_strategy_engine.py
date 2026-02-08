@@ -340,10 +340,10 @@ class TestStrategyEngineTimeframeFilter:
         # warmup=3: buf_len 1,2 스킵 → buf_len 3,4,5에서 시그널 → 3개
         assert all(s.symbol == "BTC/USDT" for s in signals)
 
-    async def test_no_filter_when_none(self) -> None:
-        """target_timeframe=None → 모든 bar 통과 (기존 동작)."""
+    async def test_matching_tf_passes_all(self) -> None:
+        """target_timeframe='1D'이고 bar도 '1D' → 모든 bar 통과."""
         strategy = SimpleTestStrategy()
-        engine = StrategyEngine(strategy, warmup_periods=3, target_timeframe=None)
+        engine = StrategyEngine(strategy, warmup_periods=3, target_timeframe="1D")
         bus = EventBus(queue_size=100)
         signals: list[SignalEvent] = []
 

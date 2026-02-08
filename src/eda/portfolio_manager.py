@@ -95,7 +95,7 @@ class EDAPortfolioManager:
         config: PortfolioManagerConfig,
         initial_capital: float,
         asset_weights: dict[str, float] | None = None,
-        target_timeframe: str | None = None,
+        target_timeframe: str = "1D",
     ) -> None:
         self._config = config
         self._initial_capital = initial_capital
@@ -465,7 +465,7 @@ class EDAPortfolioManager:
         bar = event
 
         # 0. TF bar일 때만 stopped set 리셋 (1m bar에서는 리셋 안 함)
-        is_tf_bar = self._target_timeframe is None or bar.timeframe == self._target_timeframe
+        is_tf_bar = bar.timeframe == self._target_timeframe
         if is_tf_bar and self._current_bar_ts != bar.bar_timestamp:
             self._current_bar_ts = bar.bar_timestamp
             self._stopped_this_bar.clear()

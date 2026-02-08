@@ -1322,15 +1322,15 @@ class TestIntrabarStopLoss:
 
         assert len(bal_events) > bal_before
 
-    async def test_no_target_tf_backwards_compat(self) -> None:
-        """target_timeframe=None → 기존 동작과 동일."""
+    async def test_tf_bar_triggers_full_logic(self) -> None:
+        """target_timeframe='1D' → 1D bar에서 전체 로직 실행."""
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
             rebalance_threshold=0.01,
             system_stop_loss=None,
             cost_model=CostModel.zero(),
         )
-        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
         bus = EventBus(queue_size=200)
         bal_events: list[BalanceUpdateEvent] = []
 
@@ -1346,7 +1346,7 @@ class TestIntrabarStopLoss:
         await bus.flush()
         bal_before = len(bal_events)
 
-        # 어떤 TF든 전체 로직 실행
+        # 1D bar → 전체 로직 실행
         await bus.publish(_make_bar(close=51000.0, high=52000.0, low=50000.0))
         await bus.flush()
         await bus.stop()

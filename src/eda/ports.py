@@ -4,7 +4,7 @@ DataFeed와 Executor의 명시적 인터페이스를 정의합니다.
 structural subtyping으로 기존 구현체가 자동으로 만족합니다.
 
 Ports:
-    - DataFeedPort: 데이터 피드 인터페이스 (HistoricalDataFeed, AggregatingDataFeed)
+    - DataFeedPort: 데이터 피드 인터페이스 (HistoricalDataFeed, LiveDataFeed)
     - ExecutorPort: 주문 실행기 인터페이스 (BacktestExecutor, ShadowExecutor, LiveExecutor)
 """
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class DataFeedPort(Protocol):
     """데이터 피드 인터페이스.
 
-    HistoricalDataFeed, AggregatingDataFeed, LiveDataFeed 등이 구현합니다.
+    HistoricalDataFeed, LiveDataFeed 등이 구현합니다.
     """
 
     async def start(self, bus: EventBus) -> None:

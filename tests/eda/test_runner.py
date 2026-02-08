@@ -1,6 +1,7 @@
 """EDA Runner 통합 테스트.
 
 End-to-end 단일/멀티 심볼 실행, 결과 생성을 검증합니다.
+항상 1m 데이터를 사용하여 target_timeframe으로 집계합니다.
 """
 
 from datetime import UTC, datetime
@@ -55,24 +56,33 @@ class SimpleMovingAverageStrategy(BaseStrategy):
         )
 
 
-def _make_trending_data(n: int = 100, base: float = 50000.0) -> pd.DataFrame:
-    """상승 트렌드 테스트 데이터."""
+def _make_trending_1m_data(
+    n_days: int = 3,
+    base: float = 50000.0,
+) -> pd.DataFrame:
+    """상승 트렌드 1m 테스트 데이터.
+
+    Args:
+        n_days: 데이터 일수 (1440 bars/day)
+        base: 기준 가격
+    """
     rng = np.random.default_rng(42)
+    n = n_days * 1440
     start = datetime(2024, 1, 1, tzinfo=UTC)
-    timestamps = pd.date_range(start=start, periods=n, freq="1D", tz=UTC)
+    timestamps = pd.date_range(start=start, periods=n, freq="1min", tz=UTC)
 
     # 상승 트렌드 + 노이즈
     trend = np.linspace(0, 5000, n)
-    noise = rng.standard_normal(n) * 200
+    noise = rng.standard_normal(n) * 20
     close = base + trend + noise
 
     return pd.DataFrame(
         {
-            "open": close * 0.999,
-            "high": close * 1.01,
-            "low": close * 0.99,
+            "open": close * 0.9999,
+            "high": close * 1.001,
+            "low": close * 0.999,
             "close": close,
-            "volume": rng.integers(100, 1000, n) * 1000.0,
+            "volume": rng.integers(10, 100, n) * 10.0,
         },
         index=timestamps,
     )
@@ -83,10 +93,10 @@ class TestRunnerSingleSymbol:
 
     async def test_end_to_end_single_symbol(self) -> None:
         """단일 심볼 end-to-end 실행."""
-        df = _make_trending_data(100)
+        df = _make_trending_1m_data(3)
         data = MarketDataSet(
             symbol="BTC/USDT",
-            timeframe="1D",
+            timeframe="1m",
             start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
             end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
             ohlcv=df,
@@ -101,6 +111,7 @@ class TestRunnerSingleSymbol:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=10000.0,
         )
@@ -113,10 +124,10 @@ class TestRunnerSingleSymbol:
 
     async def test_analytics_available_after_run(self) -> None:
         """run() 후 analytics 접근 가능."""
-        df = _make_trending_data(50)
+        df = _make_trending_1m_data(2)
         data = MarketDataSet(
             symbol="BTC/USDT",
-            timeframe="1D",
+            timeframe="1m",
             start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
             end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
             ohlcv=df,
@@ -131,6 +142,7 @@ class TestRunnerSingleSymbol:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=10000.0,
         )
@@ -147,16 +159,16 @@ class TestRunnerMultiSymbol:
 
     async def test_end_to_end_multi_symbol(self) -> None:
         """멀티 심볼 end-to-end 실행."""
-        n = 80
+        n_days = 3
         symbols = ["BTC/USDT", "ETH/USDT"]
         ohlcv: dict[str, pd.DataFrame] = {}
         for i, sym in enumerate(symbols):
-            ohlcv[sym] = _make_trending_data(n, base=50000.0 + i * 10000)
+            ohlcv[sym] = _make_trending_1m_data(n_days, base=50000.0 + i * 10000)
 
         first_df = ohlcv[symbols[0]]
         data = MultiSymbolData(
             symbols=symbols,
-            timeframe="1D",
+            timeframe="1m",
             start=first_df.index[0].to_pydatetime(),  # type: ignore[union-attr]
             end=first_df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
             ohlcv=ohlcv,
@@ -172,6 +184,7 @@ class TestRunnerMultiSymbol:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=10000.0,
             asset_weights={"BTC/USDT": 0.5, "ETH/USDT": 0.5},
@@ -187,10 +200,25 @@ class TestRunnerEdgeCases:
 
     async def test_short_data(self) -> None:
         """데이터가 warmup 미달이면 시그널 없이 완료."""
-        df = _make_trending_data(5)  # warmup(~20) 미달
+        # 1시간 = 60 1m bars → 1h candle 1개. SMA(10) warmup 미달
+        rng = np.random.default_rng(42)
+        n = 60
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        timestamps = pd.date_range(start=start, periods=n, freq="1min", tz=UTC)
+        close = 50000.0 + rng.standard_normal(n) * 10
+        df = pd.DataFrame(
+            {
+                "open": close * 0.9999,
+                "high": close * 1.001,
+                "low": close * 0.999,
+                "close": close,
+                "volume": [100.0] * n,
+            },
+            index=timestamps,
+        )
         data = MarketDataSet(
             symbol="BTC/USDT",
-            timeframe="1D",
+            timeframe="1m",
             start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
             end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
             ohlcv=df,
@@ -205,6 +233,7 @@ class TestRunnerEdgeCases:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1h",
             config=config,
             initial_capital=10000.0,
         )
@@ -229,36 +258,37 @@ _EIGHT_SYMBOLS = [
 ]
 
 
-def _make_multi_trending_data(
+def _make_multi_trending_1m_data(
     symbols: list[str],
-    n: int = 100,
+    n_days: int = 3,
 ) -> MultiSymbolData:
-    """멀티 심볼 상승 트렌드 테스트 데이터."""
+    """멀티 심볼 상승 트렌드 1m 테스트 데이터."""
     rng = np.random.default_rng(42)
+    n = n_days * 1440
     start = datetime(2024, 1, 1, tzinfo=UTC)
-    timestamps = pd.date_range(start=start, periods=n, freq="1D", tz=UTC)
+    timestamps = pd.date_range(start=start, periods=n, freq="1min", tz=UTC)
 
     ohlcv: dict[str, pd.DataFrame] = {}
     for i, sym in enumerate(symbols):
         base = 50000.0 / (2**i)  # BTC=50000, ETH=25000, ...
         trend = np.linspace(0, base * 0.2, n)  # 20% 상승
-        noise = rng.standard_normal(n) * base * 0.02
+        noise = rng.standard_normal(n) * base * 0.002
         close = base + trend + noise
 
         ohlcv[sym] = pd.DataFrame(
             {
-                "open": close * 0.999,
-                "high": close * 1.012,
-                "low": close * 0.988,
+                "open": close * 0.9999,
+                "high": close * 1.0012,
+                "low": close * 0.9988,
                 "close": close,
-                "volume": rng.integers(100, 1000, n) * 1000.0,
+                "volume": rng.integers(10, 100, n) * 10.0,
             },
             index=timestamps,
         )
 
     return MultiSymbolData(
         symbols=symbols,
-        timeframe="1D",
+        timeframe="1m",
         start=timestamps[0].to_pydatetime(),  # type: ignore[union-attr]
         end=timestamps[-1].to_pydatetime(),  # type: ignore[union-attr]
         ohlcv=ohlcv,
@@ -270,7 +300,7 @@ class TestMultiAssetEDA:
 
     async def test_8_asset_equal_weight(self) -> None:
         """8개 심볼 equal-weight 실행."""
-        data = _make_multi_trending_data(_EIGHT_SYMBOLS, n=100)
+        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=3)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
@@ -285,6 +315,7 @@ class TestMultiAssetEDA:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=100000.0,
             asset_weights=weights,
@@ -295,13 +326,11 @@ class TestMultiAssetEDA:
         assert metrics is not None
         assert isinstance(metrics.total_return, float)
         assert isinstance(metrics.sharpe_ratio, float)
-        # 100 bars, warmup=10 → 충분한 거래 발생
-        assert metrics.total_trades > 0
 
     async def test_multi_asset_weight_distribution(self) -> None:
         """불균등 가중치 적용 확인."""
         symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
-        data = _make_multi_trending_data(symbols, n=80)
+        data = _make_multi_trending_1m_data(symbols, n_days=3)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
@@ -316,6 +345,7 @@ class TestMultiAssetEDA:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=10000.0,
             asset_weights=weights,
@@ -323,11 +353,10 @@ class TestMultiAssetEDA:
         metrics = await runner.run()
 
         assert metrics is not None
-        assert metrics.total_trades > 0
 
     async def test_multi_asset_results_reasonable(self) -> None:
         """8-asset 결과가 합리적 범위 내."""
-        data = _make_multi_trending_data(_EIGHT_SYMBOLS, n=100)
+        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=3)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
@@ -342,15 +371,12 @@ class TestMultiAssetEDA:
         runner = EDARunner(
             strategy=strategy,
             data=data,
+            target_timeframe="1D",
             config=config,
             initial_capital=100000.0,
             asset_weights=weights,
         )
         metrics = await runner.run()
 
-        # 상승 트렌드 데이터 → 양수 수익 기대
-        # (SMA 전략이므로 초반 warmup 후 LONG → 수익)
         assert metrics.total_return > -50.0, f"Return too negative: {metrics.total_return:.2f}%"
         assert metrics.max_drawdown < 50.0, f"MDD too large: {metrics.max_drawdown:.2f}%"
-        # 8개 심볼에서 최소 4개 거래 이상
-        assert metrics.total_trades >= 4

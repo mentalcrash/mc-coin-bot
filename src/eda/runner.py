@@ -18,7 +18,7 @@ from loguru import logger
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.eda.analytics import AnalyticsEngine
-from src.eda.data_feed import AggregatingDataFeed, HistoricalDataFeed
+from src.eda.data_feed import HistoricalDataFeed
 from src.eda.executors import BacktestExecutor, ShadowExecutor
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
@@ -40,7 +40,8 @@ class EDARunner:
 
     Args:
         strategy: 전략 인스턴스
-        data: 단일 또는 멀티 심볼 데이터
+        data: 단일 또는 멀티 심볼 데이터 (1m)
+        target_timeframe: 집계 목표 TF ("1D", "4h", "1h" 등)
         config: 포트폴리오 설정
         initial_capital: 초기 자본 (USD)
         asset_weights: 에셋별 가중치 (None이면 균등분배)
@@ -51,11 +52,11 @@ class EDARunner:
         self,
         strategy: BaseStrategy,
         data: MarketDataSet | MultiSymbolData,
+        target_timeframe: str,
         config: PortfolioManagerConfig,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
-        target_timeframe: str | None = None,
     ) -> None:
         self._strategy = strategy
         self._config = config
@@ -63,13 +64,9 @@ class EDARunner:
         self._asset_weights = asset_weights
         self._queue_size = queue_size
         self._target_timeframe = target_timeframe
-        self._data_timeframe: str = data.timeframe
 
-        # feed/executor 생성 (기존 run() 내부 로직을 여기로 이동)
-        if target_timeframe is not None:
-            self._feed: DataFeedPort = AggregatingDataFeed(data, target_timeframe=target_timeframe)
-        else:
-            self._feed = HistoricalDataFeed(data)
+        # feed/executor 생성
+        self._feed: DataFeedPort = HistoricalDataFeed(data, target_timeframe=target_timeframe)
         self._executor: ExecutorPort = BacktestExecutor(cost_model=config.cost_model)
 
         # Components (run() 시 초기화)
@@ -83,12 +80,11 @@ class EDARunner:
         strategy: BaseStrategy,
         feed: DataFeedPort,
         executor: ExecutorPort,
+        target_timeframe: str,
         config: PortfolioManagerConfig,
-        data_timeframe: str,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
-        target_timeframe: str | None = None,
     ) -> EDARunner:
         """어댑터를 직접 주입하여 Runner를 생성합니다 (내부용)."""
         instance = object.__new__(cls)
@@ -96,7 +92,6 @@ class EDARunner:
         instance._feed = feed
         instance._executor = executor
         instance._config = config
-        instance._data_timeframe = data_timeframe
         instance._initial_capital = initial_capital
         instance._asset_weights = asset_weights
         instance._queue_size = queue_size
@@ -111,6 +106,7 @@ class EDARunner:
         cls,
         strategy: BaseStrategy,
         data: MarketDataSet | MultiSymbolData,
+        target_timeframe: str,
         config: PortfolioManagerConfig,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
@@ -118,44 +114,17 @@ class EDARunner:
     ) -> EDARunner:
         """백테스트용 Runner 생성.
 
-        HistoricalDataFeed + BacktestExecutor 조합입니다.
+        HistoricalDataFeed(1m→target_tf) + BacktestExecutor 조합입니다.
         """
         return cls._from_adapters(
             strategy=strategy,
-            feed=HistoricalDataFeed(data),
+            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe),
             executor=BacktestExecutor(cost_model=config.cost_model),
-            config=config,
-            data_timeframe=data.timeframe,
-            initial_capital=initial_capital,
-            asset_weights=asset_weights,
-            queue_size=queue_size,
-        )
-
-    @classmethod
-    def backtest_agg(
-        cls,
-        strategy: BaseStrategy,
-        data: MarketDataSet | MultiSymbolData,
-        target_timeframe: str,
-        config: PortfolioManagerConfig,
-        initial_capital: float = 10000.0,
-        asset_weights: dict[str, float] | None = None,
-        queue_size: int = 10000,
-    ) -> EDARunner:
-        """1m 집계 백테스트용 Runner 생성.
-
-        AggregatingDataFeed + BacktestExecutor 조합입니다.
-        """
-        return cls._from_adapters(
-            strategy=strategy,
-            feed=AggregatingDataFeed(data, target_timeframe=target_timeframe),
-            executor=BacktestExecutor(cost_model=config.cost_model),
-            config=config,
-            data_timeframe=data.timeframe,
-            initial_capital=initial_capital,
-            asset_weights=asset_weights,
-            queue_size=queue_size,
             target_timeframe=target_timeframe,
+            config=config,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+            queue_size=queue_size,
         )
 
     @classmethod
@@ -163,20 +132,21 @@ class EDARunner:
         cls,
         strategy: BaseStrategy,
         data: MarketDataSet | MultiSymbolData,
+        target_timeframe: str,
         config: PortfolioManagerConfig,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
     ) -> EDARunner:
         """Shadow 모드 Runner 생성.
 
-        HistoricalDataFeed + ShadowExecutor (로깅만, 체결 없음) 조합입니다.
+        HistoricalDataFeed(1m→target_tf) + ShadowExecutor (로깅만, 체결 없음) 조합입니다.
         """
         return cls._from_adapters(
             strategy=strategy,
-            feed=HistoricalDataFeed(data),
+            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe),
             executor=ShadowExecutor(),
+            target_timeframe=target_timeframe,
             config=config,
-            data_timeframe=data.timeframe,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
         )
@@ -243,7 +213,7 @@ class EDARunner:
         await bus_task
 
         # 4. 결과 생성
-        timeframe = self._target_timeframe or self._data_timeframe
+        timeframe = self._target_timeframe
         metrics = analytics.compute_metrics(
             timeframe=timeframe,
             cost_model=self._config.cost_model,
