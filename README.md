@@ -28,31 +28,37 @@ VectorBT 기반 백테스트와 3단계 과적합 검증을 거쳐 실거래로 
 
 ---
 
-## 확정 설정
+## 확정 설정 (`config/default.yaml`)
 
-```python
-# 8-asset Equal-Weight TSMOM Portfolio
-assets = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT",
-          "DOGE/USDT", "LINK/USDT", "ADA/USDT", "AVAX/USDT"]
-weight = 1/8  # Equal-Weight
-timeframe = "1D"
+모든 트레이딩 설정은 YAML 파일 하나로 관리됩니다.
+VBT 백테스트와 EDA 백테스트에서 동일한 설정을 공유합니다.
 
-TSMOMConfig(
-    lookback=30,              # 30일 모멘텀
-    vol_window=30,            # 30일 변동성
-    vol_target=0.35,          # 균형 설정
-    annualization_factor=365, # 일봉 연환산
-    short_mode=ShortMode.HEDGE_ONLY,
-    hedge_threshold=-0.07,    # -7% 드로다운 시 헤지
-    hedge_strength_ratio=0.3, # 롱의 30%로 방어적 숏
-)
-PortfolioManagerConfig(
-    max_leverage_cap=2.0,
-    system_stop_loss=0.10,              # 10% 손절 (안전망)
-    use_trailing_stop=True,
-    trailing_stop_atr_multiplier=3.0,   # 3x ATR (MDD 핵심 방어)
-    rebalance_threshold=0.10,           # 10% (거래비용 최적화)
-)
+```yaml
+# config/default.yaml — 8-Asset EW TSMOM (Best Configuration)
+backtest:
+  symbols: [BTC/USDT, ETH/USDT, BNB/USDT, SOL/USDT,
+            DOGE/USDT, LINK/USDT, ADA/USDT, AVAX/USDT]
+  timeframe: "1D"
+  start: "2020-01-01"
+  end: "2025-12-31"
+  capital: 100000.0
+
+strategy:
+  name: tsmom
+  params:
+    lookback: 30              # 30일 모멘텀
+    vol_window: 30            # 30일 변동성
+    vol_target: 0.35          # 균형 설정
+    short_mode: 1             # HEDGE_ONLY
+    hedge_threshold: -0.07    # -7% 드로다운 시 헤지
+    hedge_strength_ratio: 0.3 # 롱의 30%로 방어적 숏
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10           # 10% (거래비용 최적화)
+  system_stop_loss: 0.10              # 10% 손절 (안전망)
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0   # 3x ATR (MDD 핵심 방어)
 ```
 
 ---
@@ -120,23 +126,24 @@ WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
 
 ```
 mc-coin-bot/
+├── config/                 # YAML 설정 파일 (전략/포트폴리오/백테스트 통합)
+│   └── default.yaml        # 8-asset EW TSMOM 최적 설정
 ├── src/
 │   ├── backtest/           # BacktestEngine, Analyzer, Validation
 │   │   └── validation/     # IS/OOS, WFA, CPCV, DSR, PBO
-│   ├── cli/                # Typer CLI (backtest, ingest)
-│   ├── config/             # 환경변수, 설정
-│   ├── core/               # 공통 모듈
+│   ├── cli/                # Typer CLI (backtest, eda, ingest)
+│   ├── config/             # 환경변수, YAML 로더 (config_loader.py)
+│   ├── core/               # 공통 모듈, EventBus
 │   ├── data/               # Medallion (Bronze/Silver), MarketDataService
+│   ├── eda/                # EDA 시스템 (Runner, PM, RM, OMS, Analytics)
 │   ├── exchange/           # Binance 커넥터
 │   ├── models/             # Pydantic 모델 (BacktestResult 등)
 │   ├── portfolio/          # PortfolioManagerConfig, Portfolio
 │   └── strategy/           # BaseStrategy, TSMOM, Breakout 등
-├── tests/                  # pytest (191+ tests)
+├── tests/                  # pytest (421 tests)
 ├── docs/                   # 상세 문서
 │   ├── architecture/       # 백테스트 엔진 아키텍처
-│   ├── strategy-evaluation/# 전략 평가 지식베이스 (핵심)
-│   ├── backtesting-best-practices.md
-│   └── portfolio-manager.md
+│   └── strategy-evaluation/# 전략 평가 지식베이스 (핵심)
 └── data/                   # Bronze/Silver 데이터
     ├── bronze/
     └── silver/
@@ -153,20 +160,33 @@ uv sync --group dev --group research
 cp .env.example .env  # API 키 설정
 ```
 
-### 백테스트 실행
+### VBT 백테스트 실행
 
 ```bash
-# 단일에셋 백테스트
-uv run python -m src.cli.backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
+# 단일에셋 백테스트 (config 파일의 첫 번째 심볼 사용)
+uv run python -m src.cli.backtest run config/default.yaml
 
 # 8-asset 멀티에셋 포트폴리오
-uv run python -m src.cli.backtest run-multi -s tsmom -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
-
-# 파라미터 스윕
-uv run python -m src.cli.backtest sweep tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
+uv run python -m src.cli.backtest run-multi config/default.yaml
 
 # QuantStats HTML 리포트
-uv run python -m src.cli.backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31 --report
+uv run python -m src.cli.backtest run config/default.yaml --report
+
+# Strategy Advisor 분석
+uv run python -m src.cli.backtest run config/default.yaml --advisor
+```
+
+### EDA 백테스트 실행
+
+```bash
+# 단일에셋 EDA 백테스트 (1m 데이터 → config의 timeframe으로 집계)
+uv run python main.py eda run config/default.yaml
+
+# 멀티에셋 EDA 백테스트
+uv run python main.py eda run-multi config/default.yaml
+
+# Shadow 모드 (시그널 로깅만, 체결 없음)
+uv run python main.py eda run config/default.yaml --mode shadow
 ```
 
 ### 과적합 검증
