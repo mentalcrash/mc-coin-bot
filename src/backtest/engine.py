@@ -51,6 +51,7 @@ def apply_stop_loss_to_weights(
     low: npt.NDArray[np.float64],
     stop_loss_pct: float,
     use_intrabar: bool = False,
+    execution_prices: npt.NDArray[np.float64] = np.empty(0, dtype=np.float64),
 ) -> npt.NDArray[np.float64]:
     """목표 비중 배열에 손절매 로직을 적용합니다 (Long/Short 모두 지원).
 
@@ -58,11 +59,12 @@ def apply_stop_loss_to_weights(
 
     Args:
         weights: 목표 비중 배열 (양수=롱, 음수=숏)
-        close: 종가 배열 (진입가 기록용)
+        close: 종가 배열 (손절 체크용)
         high: 고가 배열 (숏 손절 체크용, use_intrabar=True)
         low: 저가 배열 (롱 손절 체크용, use_intrabar=True)
         stop_loss_pct: 손절 비율 (예: 0.10 = 10%)
         use_intrabar: True면 Low/High로 손절 체크, False면 Close 기준
+        execution_prices: 실제 체결 가격 배열 (진입가 기록용, 비어있으면 close 사용)
 
     Returns:
         손절이 적용된 비중 배열
@@ -70,13 +72,14 @@ def apply_stop_loss_to_weights(
     out_weights = weights.copy()
     entry_price = 0.0
     position_direction = 0  # 1=롱, -1=숏, 0=중립
+    use_exec = len(execution_prices) == len(weights)
 
     for i in range(len(weights)):
         current_weight = weights[i]
 
         # 1. 포지션이 없다가 새로 생기는 경우 (진입)
         if position_direction == 0 and current_weight != 0:
-            entry_price = close[i]
+            entry_price = execution_prices[i] if use_exec else close[i]
             position_direction = 1 if current_weight > 0 else -1
 
         # 2. 이미 포지션이 있는 경우
@@ -91,7 +94,7 @@ def apply_stop_loss_to_weights(
             new_direction = 1 if current_weight > 0 else -1
             if new_direction != position_direction:
                 # 새 포지션으로 진입가 갱신
-                entry_price = close[i]
+                entry_price = execution_prices[i] if use_exec else close[i]
                 position_direction = new_direction
                 continue
 
@@ -123,6 +126,7 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
     low: npt.NDArray[np.float64],
     atr: npt.NDArray[np.float64],
     atr_multiplier: float,
+    execution_prices: npt.NDArray[np.float64] = np.empty(0, dtype=np.float64),
 ) -> npt.NDArray[np.float64]:
     """목표 비중 배열에 Trailing Stop 로직을 적용합니다.
 
@@ -141,6 +145,7 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
         low: 저가 배열
         atr: ATR 배열 (Average True Range)
         atr_multiplier: ATR 배수 (예: 2.0 = 2 ATR)
+        execution_prices: 실제 체결 가격 배열 (비어있으면 high/low 사용)
 
     Returns:
         Trailing Stop이 적용된 비중 배열
@@ -149,6 +154,7 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
     position_direction = 0  # 1=롱, -1=숏, 0=중립
     highest_since_entry = 0.0
     lowest_since_entry = 0.0
+    use_exec = len(execution_prices) == len(weights)
 
     for i in range(len(weights)):
         current_weight = weights[i]
@@ -162,9 +168,11 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
         if position_direction == 0 and current_weight != 0:
             position_direction = 1 if current_weight > 0 else -1
             if position_direction == 1:
-                highest_since_entry = high[i]
+                exec_p = execution_prices[i] if use_exec else high[i]
+                highest_since_entry = max(high[i], exec_p)
             else:
-                lowest_since_entry = low[i]
+                exec_p = execution_prices[i] if use_exec else low[i]
+                lowest_since_entry = min(low[i], exec_p)
 
         # 2. 이미 포지션이 있는 경우
         elif position_direction != 0:
@@ -180,10 +188,12 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
             if new_direction != position_direction:
                 position_direction = new_direction
                 if new_direction == 1:
-                    highest_since_entry = high[i]
+                    exec_p = execution_prices[i] if use_exec else high[i]
+                    highest_since_entry = max(high[i], exec_p)
                     lowest_since_entry = 0.0
                 else:
-                    lowest_since_entry = low[i]
+                    exec_p = execution_prices[i] if use_exec else low[i]
+                    lowest_since_entry = min(low[i], exec_p)
                     highest_since_entry = 0.0
                 continue
 
@@ -532,6 +542,14 @@ class BacktestEngine:
                 f"Leverage Capping | {capped_count} signals exceeded {pm.max_leverage_cap}x limit and were capped",
             )
 
+        # 2.5. execution_prices 준비 (SL/TS에서 체결가 기준 진입가 설정)
+        if pm.price_type == "next_open" and "open" in df.columns:
+            exec_prices = np.asarray(
+                df["open"].shift(-1).fillna(df["close"]).values, dtype=np.float64
+            )
+        else:
+            exec_prices = np.asarray(df["close"].values, dtype=np.float64)
+
         # 3. 시스템 손절매 적용 (System Stop Loss)
         stop_loss_count = 0
         if pm.system_stop_loss is not None and pm.system_stop_loss > 0:
@@ -543,6 +561,7 @@ class BacktestEngine:
                 np.asarray(df["low"].values, dtype=np.float64),
                 pm.system_stop_loss,
                 pm.use_intrabar_stop,
+                exec_prices,
             )
             target_weights = pd.Series(target_weights_sl, index=target_weights.index)
             # NaN 복원 (원래 NaN이었던 곳은 유지)
@@ -566,6 +585,7 @@ class BacktestEngine:
                 np.asarray(df["low"].values, dtype=np.float64),
                 np.asarray(df["atr"].fillna(0).values, dtype=np.float64),
                 pm.trailing_stop_atr_multiplier,
+                exec_prices,
             )
             target_weights = pd.Series(target_weights_ts, index=target_weights.index)
             # NaN 복원 (원래 NaN이었던 곳은 유지)
@@ -609,7 +629,7 @@ class BacktestEngine:
             direction="both",
             price=price,
             fees=pm.cost_model.effective_fee,
-            slippage=pm.cost_model.slippage,
+            slippage=pm.cost_model.slippage + pm.cost_model.market_impact,
             init_cash=portfolio.initial_capital_float,
             freq=freq,
         )
@@ -854,7 +874,7 @@ class BacktestEngine:
             direction="both",
             price=price_df,
             fees=pm.cost_model.effective_fee,
-            slippage=pm.cost_model.slippage,
+            slippage=pm.cost_model.slippage + pm.cost_model.market_impact,
             init_cash=portfolio.initial_capital_float,
             cash_sharing=True,
             group_by=True,
@@ -1084,6 +1104,12 @@ def _apply_pm_rules_to_weights(
     # 1. max_leverage_cap 적용
     weights = weights.clip(lower=-pm.max_leverage_cap, upper=pm.max_leverage_cap)
 
+    # 1.5. execution_prices 준비 (SL/TS에서 체결가 기준 진입가 설정)
+    if pm.price_type == "next_open" and "open" in df.columns:
+        exec_prices = np.asarray(df["open"].shift(-1).fillna(df["close"]).values, dtype=np.float64)
+    else:
+        exec_prices = np.asarray(df["close"].values, dtype=np.float64)
+
     # 2. 시스템 손절매 (System Stop Loss)
     if pm.system_stop_loss is not None and pm.system_stop_loss > 0:
         weights_before = weights.copy()
@@ -1094,6 +1120,7 @@ def _apply_pm_rules_to_weights(
             np.asarray(df["low"].values, dtype=np.float64),
             pm.system_stop_loss,
             pm.use_intrabar_stop,
+            exec_prices,
         )
         weights = pd.Series(result_arr, index=weights.index)
         weights = weights.where(weights_before.notna() | (weights != 0), np.nan)
@@ -1108,6 +1135,7 @@ def _apply_pm_rules_to_weights(
             np.asarray(df["low"].values, dtype=np.float64),
             np.asarray(df["atr"].fillna(0).values, dtype=np.float64),
             pm.trailing_stop_atr_multiplier,
+            exec_prices,
         )
         weights = pd.Series(result_arr, index=weights.index)
         weights = weights.where(weights_before.notna() | (weights != 0), np.nan)

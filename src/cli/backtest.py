@@ -420,8 +420,11 @@ def run(  # noqa: PLR0912
         if validation_level != "none":
             ctx_logger.info(f"Running with {validation_level} validation")
             result, validation_result = engine.run_validated(request, level=validation_level)
-            strategy_returns = data.ohlcv["close"].pct_change().dropna()
-            benchmark_returns = strategy_returns.copy()
+            if report or advisor:
+                _, strategy_returns, benchmark_returns = engine.run_with_returns(request)
+            else:
+                strategy_returns = None
+                benchmark_returns = None
         elif report or advisor:
             ctx_logger.debug("Running with returns for report/advisor")
             result, strategy_returns, benchmark_returns = engine.run_with_returns(request)
@@ -466,7 +469,7 @@ def run(  # noqa: PLR0912
     except ImportError as e:
         ctx_logger.exception("VectorBT import failed")
         logger.warning(f"VectorBT import failed: {e}")
-        logger.info("Install VectorBT with: pip install vectorbt")
+        logger.info("Install VectorBT with: uv add vectorbt")
         raise typer.Exit(code=1) from e
 
 
@@ -672,6 +675,8 @@ def _diagnose_breakout(
         year: 분석 연도 목록
         verbose: 상세 로그 출력 여부
     """
+    import numpy as np
+
     from src.strategy.breakout import AdaptiveBreakoutConfig, AdaptiveBreakoutStrategy
 
     # 로깅 설정
@@ -839,9 +844,13 @@ def _diagnose_breakout(
     vol_table.add_row("ATR Mean", f"${float(processed_df['atr'].mean()):,.2f}")
     vol_table.add_row("Threshold Mean", f"${float(threshold.mean()):,.2f}")
     vol_table.add_row("Band Width Mean", f"${float((upper - lower).mean()):,.2f}")
+    band_width = upper - lower
+    threshold_band_ratio = threshold / band_width.replace(0, np.nan)
     vol_table.add_row(
         "Threshold/Band Ratio",
-        f"{float((threshold / (upper - lower)).mean()) * 100:.1f}%",
+        f"{float(threshold_band_ratio.mean()) * 100:.1f}%"
+        if not threshold_band_ratio.isna().all()
+        else "N/A",
     )
     console.print(vol_table)
 
@@ -1124,10 +1133,10 @@ def diagnose(
     final_weights: pd.Series = diagnostics_df["final_target_weight"]  # type: ignore[assignment]
     signal_direction = pd.Series(np.sign(final_weights), index=diagnostics_df.index)
 
-    next_day_return = benchmark_returns.reindex(diagnostics_df.index).shift(-1).fillna(0)
-    next_day_direction = pd.Series(np.sign(next_day_return), index=diagnostics_df.index)
+    current_return = benchmark_returns.reindex(diagnostics_df.index).fillna(0)
+    current_direction = pd.Series(np.sign(current_return), index=diagnostics_df.index)
 
-    correct_signals = (signal_direction == next_day_direction) & (signal_direction != 0)
+    correct_signals = (signal_direction == current_direction) & (signal_direction != 0)
     total_signals = int((signal_direction != 0).sum())
     hit_rate = float(correct_signals.sum()) / total_signals * 100 if total_signals > 0 else 0.0
 
@@ -1424,6 +1433,8 @@ def run_multi(
         )
 
         validation_level = validation.lower()
+        strategy_returns = None
+        benchmark_returns = None
         validation_result = None
 
         if validation_level != "none":
@@ -1442,11 +1453,20 @@ def run_multi(
         metrics_table.add_row("Total Return", f"{metrics.total_return:+.1f}%")
         metrics_table.add_row("CAGR", f"{metrics.cagr:+.1f}%")
         metrics_table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
-        metrics_table.add_row("Sortino Ratio", f"{metrics.sortino_ratio:.2f}")
+        metrics_table.add_row(
+            "Sortino Ratio",
+            f"{metrics.sortino_ratio:.2f}" if metrics.sortino_ratio is not None else "N/A",
+        )
         metrics_table.add_row("Max Drawdown", f"{metrics.max_drawdown:.1f}%")
-        metrics_table.add_row("Calmar Ratio", f"{metrics.calmar_ratio:.2f}")
+        metrics_table.add_row(
+            "Calmar Ratio",
+            f"{metrics.calmar_ratio:.2f}" if metrics.calmar_ratio is not None else "N/A",
+        )
         metrics_table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
-        metrics_table.add_row("Profit Factor", f"{metrics.profit_factor:.2f}")
+        metrics_table.add_row(
+            "Profit Factor",
+            f"{metrics.profit_factor:.2f}" if metrics.profit_factor is not None else "N/A",
+        )
         console.print(metrics_table)
 
         # 심볼별 기여도
@@ -1467,11 +1487,11 @@ def run_multi(
             _print_validation_result(validation_result, validation_level)
 
         # HTML 리포트
-        if report and not validation_result:
+        if report and strategy_returns is not None and benchmark_returns is not None:
             logger.info("Generating QuantStats report...")
             report_path = generate_quantstats_report(
-                returns=strategy_returns,  # type: ignore[possibly-undefined]
-                benchmark_returns=benchmark_returns,  # type: ignore[possibly-undefined]
+                returns=strategy_returns,
+                benchmark_returns=benchmark_returns,
                 title=f"{strategy_instance.name} Multi-Asset - {n_assets} assets",
             )
             logger.success(f"Report saved: {report_path}")

@@ -265,7 +265,7 @@ class CostModel(BaseModel):
         """
         return {
             "fees": self.effective_fee,
-            "slippage": self.slippage,
+            "slippage": self.slippage + self.market_impact,
         }
 
     def estimate_breakeven_return(self, trades_per_day: float = 1.0) -> float:
