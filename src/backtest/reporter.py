@@ -161,6 +161,10 @@ def _prepare_returns_for_quantstats(returns: pd.Series) -> pd.Series:
     if not isinstance(clean.index, pd.DatetimeIndex):
         clean.index = pd.to_datetime(clean.index)
 
+    # timezone 제거 (QuantStats는 tz-naive 인덱스 필요)
+    if clean.index.tz is not None:
+        clean.index = clean.index.tz_localize(None)
+
     # 정렬
     clean = clean.sort_index()
 
