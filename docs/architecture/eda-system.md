@@ -478,9 +478,37 @@ src/
 
 ---
 
+## 11. EDA vs VBT 실전 비교 결과 (2026-02-07)
+
+> 상세 분석: [docs/eda-vs-vbt-comparison.md](../eda-vs-vbt-comparison.md)
+
+### 통제 환경 Parity (SimpleMomentum)
+
+| Metric | VBT | EDA | Delta |
+|--------|:---:|:---:|:-----:|
+| Total Return | 2.77% | 2.72% | -0.05pp |
+| Trades | 21 | 20 | -1 |
+
+**판정: PASS** — 통제 환경에서 parity 확보.
+
+### 실전 전략 비교 (BTC/USDT 2024-2025)
+
+| Strategy | Engine | Return | Trades | 이슈 |
+|----------|--------|-------:|-------:|------|
+| TSMOM | VBT / EDA | +47% / **-45%** | 95 / **3** | Signal dedup 과도 |
+| Breakout | VBT / EDA | +16% / **+632%** | 23 / 20 | 수익률 이상치 |
+| BB-RSI | VBT / EDA | -3% / -11% | 117 / 62 | 가장 유사 |
+
+### Phase 4 → Phase 5 전환 판정: **NOT READY**
+
+**필수 수정:** PM vol-target 리밸런싱, 실전 전략 parity 테스트 강화
+
+---
+
 ## 변경 이력
 
 | 날짜 | 변경 내용 |
 |------|----------|
 | 2026-02-06 | 초기 문서 작성 — EDA 아키텍처 설계, Shadow/Paper/Canary 검증 체크리스트 |
 | 2026-02-06 | PM 강화 — Equity 이중 계산 수정, Position SL/Trailing Stop, 매 Bar BalanceUpdate, Parity 결과 추가 |
+| 2026-02-07 | EDA vs VBT 실전 비교 — 4 전략 × 3 심볼 비교, parity 분석, 페이퍼 트레이딩 준비도 NOT READY 판정 |

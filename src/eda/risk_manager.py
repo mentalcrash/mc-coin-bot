@@ -56,12 +56,15 @@ class EDARiskManager:
         portfolio_manager: EDAPortfolioManager,
         max_open_positions: int = DEFAULT_MAX_OPEN_POSITIONS,
         max_order_size_usd: float = DEFAULT_MAX_ORDER_SIZE_USD,
+        *,
+        enable_circuit_breaker: bool = True,
     ) -> None:
         self._config = config
         self._pm = portfolio_manager
         self._max_open_positions = max_open_positions
         self._max_order_size_usd = max_order_size_usd
         self._bus: EventBus | None = None
+        self._enable_circuit_breaker = enable_circuit_breaker
 
         # Drawdown 추적
         self._peak_equity: float = portfolio_manager.total_equity
@@ -169,8 +172,8 @@ class EDARiskManager:
         if is_new_position and open_count >= self._max_open_positions:
             return f"Max open positions reached ({open_count}/{self._max_open_positions})"
 
-        # 3. Single order size check
-        if order.notional_usd > self._max_order_size_usd:
+        # 3. Single order size check (포지션 축소 주문은 제외)
+        if order.notional_usd > self._max_order_size_usd and not self._is_reducing_position(order):
             return f"Order size ${order.notional_usd:,.0f} > max ${self._max_order_size_usd:,.0f}"
 
         return None
@@ -196,6 +199,11 @@ class EDARiskManager:
         assert isinstance(event, BalanceUpdateEvent)
         balance = event
         equity = balance.total_equity
+
+        # Circuit breaker 비활성화 시 peak만 추적
+        if not self._enable_circuit_breaker:
+            self._peak_equity = max(self._peak_equity, equity)
+            return
 
         # System stop-loss 체크 (peak 업데이트 전에 drawdown 계산)
         if self._config.system_stop_loss is None:

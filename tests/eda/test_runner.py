@@ -212,3 +212,145 @@ class TestRunnerEdgeCases:
 
         # warmup 미달 → 거래 0
         assert metrics.total_trades == 0
+
+
+# =========================================================================
+# Multi-Asset EDA 통합 테스트
+# =========================================================================
+_EIGHT_SYMBOLS = [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "DOGE/USDT",
+    "LINK/USDT",
+    "ADA/USDT",
+    "AVAX/USDT",
+]
+
+
+def _make_multi_trending_data(
+    symbols: list[str],
+    n: int = 100,
+) -> MultiSymbolData:
+    """멀티 심볼 상승 트렌드 테스트 데이터."""
+    rng = np.random.default_rng(42)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    timestamps = pd.date_range(start=start, periods=n, freq="1D", tz=UTC)
+
+    ohlcv: dict[str, pd.DataFrame] = {}
+    for i, sym in enumerate(symbols):
+        base = 50000.0 / (2**i)  # BTC=50000, ETH=25000, ...
+        trend = np.linspace(0, base * 0.2, n)  # 20% 상승
+        noise = rng.standard_normal(n) * base * 0.02
+        close = base + trend + noise
+
+        ohlcv[sym] = pd.DataFrame(
+            {
+                "open": close * 0.999,
+                "high": close * 1.012,
+                "low": close * 0.988,
+                "close": close,
+                "volume": rng.integers(100, 1000, n) * 1000.0,
+            },
+            index=timestamps,
+        )
+
+    return MultiSymbolData(
+        symbols=symbols,
+        timeframe="1D",
+        start=timestamps[0].to_pydatetime(),  # type: ignore[union-attr]
+        end=timestamps[-1].to_pydatetime(),  # type: ignore[union-attr]
+        ohlcv=ohlcv,
+    )
+
+
+class TestMultiAssetEDA:
+    """8-asset 멀티 심볼 EDA 통합 테스트."""
+
+    async def test_8_asset_equal_weight(self) -> None:
+        """8개 심볼 equal-weight 실행."""
+        data = _make_multi_trending_data(_EIGHT_SYMBOLS, n=100)
+        strategy = SimpleMovingAverageStrategy()
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+
+        n_symbols = len(_EIGHT_SYMBOLS)
+        weights = dict.fromkeys(_EIGHT_SYMBOLS, 1.0 / n_symbols)
+
+        runner = EDARunner(
+            strategy=strategy,
+            data=data,
+            config=config,
+            initial_capital=100000.0,
+            asset_weights=weights,
+        )
+        metrics = await runner.run()
+
+        # 기본 검증
+        assert metrics is not None
+        assert isinstance(metrics.total_return, float)
+        assert isinstance(metrics.sharpe_ratio, float)
+        # 100 bars, warmup=10 → 충분한 거래 발생
+        assert metrics.total_trades > 0
+
+    async def test_multi_asset_weight_distribution(self) -> None:
+        """불균등 가중치 적용 확인."""
+        symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+        data = _make_multi_trending_data(symbols, n=80)
+        strategy = SimpleMovingAverageStrategy()
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+
+        # BTC 60%, ETH 30%, SOL 10%
+        weights = {"BTC/USDT": 0.6, "ETH/USDT": 0.3, "SOL/USDT": 0.1}
+
+        runner = EDARunner(
+            strategy=strategy,
+            data=data,
+            config=config,
+            initial_capital=10000.0,
+            asset_weights=weights,
+        )
+        metrics = await runner.run()
+
+        assert metrics is not None
+        assert metrics.total_trades > 0
+
+    async def test_multi_asset_results_reasonable(self) -> None:
+        """8-asset 결과가 합리적 범위 내."""
+        data = _make_multi_trending_data(_EIGHT_SYMBOLS, n=100)
+        strategy = SimpleMovingAverageStrategy()
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+
+        n_symbols = len(_EIGHT_SYMBOLS)
+        weights = dict.fromkeys(_EIGHT_SYMBOLS, 1.0 / n_symbols)
+
+        runner = EDARunner(
+            strategy=strategy,
+            data=data,
+            config=config,
+            initial_capital=100000.0,
+            asset_weights=weights,
+        )
+        metrics = await runner.run()
+
+        # 상승 트렌드 데이터 → 양수 수익 기대
+        # (SMA 전략이므로 초반 warmup 후 LONG → 수익)
+        assert metrics.total_return > -50.0, f"Return too negative: {metrics.total_return:.2f}%"
+        assert metrics.max_drawdown < 50.0, f"MDD too large: {metrics.max_drawdown:.2f}%"
+        # 8개 심볼에서 최소 4개 거래 이상
+        assert metrics.total_trades >= 4

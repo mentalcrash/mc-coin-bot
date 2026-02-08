@@ -87,16 +87,18 @@ class EDARunner:
         else:
             feed = HistoricalDataFeed(self._data)
 
-        strategy_engine = StrategyEngine(
-            self._strategy, target_timeframe=self._target_timeframe
-        )
+        strategy_engine = StrategyEngine(self._strategy, target_timeframe=self._target_timeframe)
         pm = EDAPortfolioManager(
             config=self._config,
             initial_capital=self._initial_capital,
             asset_weights=self._asset_weights,
             target_timeframe=self._target_timeframe,
         )
-        rm = EDARiskManager(config=self._config, portfolio_manager=pm)
+        rm = EDARiskManager(
+            config=self._config,
+            portfolio_manager=pm,
+            enable_circuit_breaker=False,
+        )
         executor = BacktestExecutor(cost_model=self._config.cost_model)
         oms = OMS(executor=executor, portfolio_manager=pm)
         analytics = AnalyticsEngine(initial_capital=self._initial_capital)
@@ -123,6 +125,11 @@ class EDARunner:
         bus_task = asyncio.create_task(bus.start())
 
         await feed.start(bus)
+
+        # 마지막 batch flush (데이터 종료 후 미처리 signal 처리)
+        await pm.flush_pending_signals()
+        await bus.flush()
+
         await bus.stop()
         await bus_task
 

@@ -241,8 +241,13 @@ class AnalyticsEngine:
             returns = np.diff(equity_values) / np.array(equity_values[:-1])
 
             # H-002: 펀딩비 post-hoc 보정
+            # equity curve 포인트 수는 bar 수보다 많을 수 있으므로 (멀티에셋, 다중 fill)
+            # per-bar funding drag를 equity curve 길이로 스케일링
             if cost_model is not None and cost_model.funding_rate_8h > 0:
-                funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+                n_bars = len(self._bar_timestamps)
+                n_points = len(returns)
+                scale = n_bars / n_points if n_points > 0 else 1.0
+                funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0) * scale
                 returns = returns - funding_drag
 
             total_return = float(np.prod(1 + returns) - 1) * 100

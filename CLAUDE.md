@@ -48,6 +48,13 @@
 
 ---
 
+## Critical Rules
+- NEVER use pip install; 항상 `uv add` 또는 `uv pip install` 사용
+- 모든 금융 계산은 반드시 known sources와 교차 검증 필요
+- Type hints 모든 함수에 필수
+- .env 파일 절대 커밋 금지
+- 모든 전략은 expected values 포함한 백테스트 필수
+
 ## Zero-Tolerance Lint Policy
 
 모든 코드는 Ruff/Pyright 에러 0개를 유지해야 합니다.
@@ -113,3 +120,8 @@ CLI/Main → Strategy, Backtest → Data, Exchange, Portfolio → Models, Core �
 - `iterrows()`, loops on DataFrame → use vectorized ops
 - `inplace=True` → use immutable operations
 - `except:` → use specific exceptions
+
+## Gotchas
+- Binance API rate limit: 1200 req/min (초과 시 IP 밴)
+- 소수점 정밀도: Decimal 모듈 사용 필수, float 금지
+- 복잡한 아키텍처 변경 전 반드시 clarifying questions 요청할 것

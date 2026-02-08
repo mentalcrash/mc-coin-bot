@@ -110,6 +110,13 @@ class EDAPortfolioManager:
         self._current_bar_ts: datetime | None = None
         self._target_timeframe = target_timeframe
 
+        # Batch processing (멀티에셋 전용)
+        self._batch_mode = len(self._asset_weights) > 1
+        self._pending_signals: dict[str, float] = {}  # symbol → target_weight
+        self._batch_ts: datetime | None = None
+        self._last_executed_targets: dict[str, float] = {}  # VBT parity: 마지막 실행 target
+        self._deferred_close_targets: dict[str, float] = {}  # SL/TS deferred close (batch mode)
+
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
         self._bus = bus
@@ -188,10 +195,85 @@ class EDAPortfolioManager:
         # 3. target weight 저장 (per-bar rebalancing에서도 사용)
         self._last_target_weights[symbol] = target_weight
 
-        # 4. 리밸런스 평가
-        await self._evaluate_rebalance(
-            symbol, signal.correlation_id, source_strategy=signal.strategy_name
-        )
+        # 4. 배치 모드 vs 즉시 모드
+        if self._batch_mode:
+            # Deferred SL/TS close: target=0.0으로 수집 (fill at next bar's open)
+            if symbol in self._deferred_close_targets:
+                target_weight = self._deferred_close_targets.pop(symbol)
+            elif symbol in self._stopped_this_bar:
+                # SL bar의 일반 signal은 수집하지 않음 (VBT parity: SL bar에서 weight=0)
+                return
+            # 새 timestamp → 이전 배치 flush
+            if self._batch_ts is not None and signal.bar_timestamp != self._batch_ts:
+                await self._flush_signal_batch()
+            self._batch_ts = signal.bar_timestamp
+            self._pending_signals[symbol] = target_weight
+        else:
+            await self._evaluate_rebalance(
+                symbol, signal.correlation_id, source_strategy=signal.strategy_name
+            )
+
+    async def _flush_signal_batch(self) -> None:
+        """수집된 signal을 동일 equity snapshot으로 일괄 주문 생성.
+
+        VBT parity: threshold 비교는 last_executed_target vs new_target
+        (VBT의 apply_rebalance_threshold_numba와 동일한 로직).
+        """
+        if not self._pending_signals:
+            return
+
+        bus = self._bus
+        assert bus is not None
+
+        # Equity snapshot 1회
+        equity = self.total_equity
+        threshold = self._config.rebalance_threshold
+
+        for symbol, target_weight in self._pending_signals.items():
+            # stop-loss 후 재진입 방지 (deferred close target=0.0은 통과)
+            if symbol in self._stopped_this_bar and target_weight != 0.0:
+                continue
+
+            # VBT parity: last_executed_target vs new_target 비교
+            last_executed = self._last_executed_targets.get(symbol, 0.0)
+            change = abs(target_weight - last_executed)
+
+            # VBT 동일 로직: threshold 초과 또는 첫 진입 (0→non-zero)
+            if change < threshold and not (last_executed == 0.0 and target_weight != 0.0):
+                continue
+
+            # 주문 생성 (동일 equity 사용)
+            pos = self._positions.get(symbol)
+            current_weight = pos.current_weight if pos else 0.0
+            self._order_counter += 1
+            delta_weight = target_weight - current_weight
+            notional = abs(delta_weight) * equity
+            side: str = "BUY" if delta_weight > 0 else "SELL"
+
+            order = OrderRequestEvent(
+                client_order_id=f"batch-{symbol}-{self._order_counter}",
+                symbol=symbol,
+                side=side,  # type: ignore[arg-type]
+                target_weight=target_weight,
+                notional_usd=notional,
+                correlation_id=None,
+                source="PortfolioManager",
+            )
+            await bus.publish(order)
+
+            # 실행된 target 기록
+            self._last_executed_targets[symbol] = target_weight
+
+        self._pending_signals.clear()
+
+    async def flush_pending_signals(self) -> None:
+        """마지막 timestamp의 미처리 signal 일괄 처리 (Runner에서 호출)."""
+        if self._batch_mode:
+            # Remaining deferred closes를 pending에 추가
+            for sym, tw in self._deferred_close_targets.items():
+                self._pending_signals[sym] = tw
+            self._deferred_close_targets.clear()
+            await self._flush_signal_batch()
 
     async def _evaluate_rebalance(
         self,
@@ -396,8 +478,8 @@ class EDAPortfolioManager:
         # === TF bar 로직 (기존과 동일) ===
         pos = self._positions.get(bar.symbol)
         if pos is None or not pos.is_open:
-            # 포지션 없어도 per-bar rebalancing 체크 (새 진입 가능)
-            if bar.symbol in self._last_target_weights:
+            # 포지션 없어도 per-bar rebalancing 체크 (단일에셋 모드만)
+            if not self._batch_mode and bar.symbol in self._last_target_weights:
                 await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
             return
 
@@ -413,18 +495,14 @@ class EDAPortfolioManager:
 
         # 3. Position stop-loss 체크
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
-            self._stopped_this_bar.add(bar.symbol)
-            await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
-            await self._publish_balance_update(bar.correlation_id)
+            await self._handle_stop_trigger(pos, bar, "stop-loss")
             return
 
         # 4. Trailing stop 체크
         if self._config.use_trailing_stop:
             self._update_peak_trough(pos, bar)
             if atr is not None and self._check_trailing_stop(pos, bar, atr):
-                self._stopped_this_bar.add(bar.symbol)
-                await self._emit_close_order(pos, bar.correlation_id, "trailing-stop")
-                await self._publish_balance_update(bar.correlation_id)
+                await self._handle_stop_trigger(pos, bar, "trailing-stop")
                 return
 
         # 5. Weight 업데이트
@@ -436,8 +514,8 @@ class EDAPortfolioManager:
         # 6. BalanceUpdateEvent 발행 (RM 실시간 drawdown 추적)
         await self._publish_balance_update(bar.correlation_id)
 
-        # 7. Per-bar rebalancing (market drift 보상)
-        if bar.symbol in self._last_target_weights:
+        # 7. Per-bar rebalancing (단일에셋 모드만 — 배치 모드는 signal에서 처리)
+        if not self._batch_mode and bar.symbol in self._last_target_weights:
             await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
 
     # =========================================================================
@@ -457,14 +535,42 @@ class EDAPortfolioManager:
         # Stop-loss
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
             self._stopped_this_bar.add(bar.symbol)
-            await self._emit_close_order(pos, bar.correlation_id, "stop-loss")
+            await self._emit_close_order(pos, bar.correlation_id, "stop-loss", fill_price=bar.close)
             return
         # Trailing stop
         if self._config.use_trailing_stop:
             self._update_peak_trough(pos, bar)
             if atr is not None and self._check_trailing_stop(pos, bar, atr):
                 self._stopped_this_bar.add(bar.symbol)
-                await self._emit_close_order(pos, bar.correlation_id, "trailing-stop")
+                await self._emit_close_order(
+                    pos, bar.correlation_id, "trailing-stop", fill_price=bar.close
+                )
+
+    # =========================================================================
+    # Stop Trigger Handler (batch/non-batch 분기)
+    # =========================================================================
+    async def _handle_stop_trigger(self, pos: Position, bar: BarEvent, reason: str) -> None:
+        """SL/TS 발동 처리.
+
+        Batch mode: deferred close (next bar's open에서 체결, VBT parity).
+        Non-batch mode: 즉시 close (bar.close에서 체결).
+        """
+        self._stopped_this_bar.add(bar.symbol)
+        if self._batch_mode:
+            # Stale signal 제거 + deferred close 등록
+            self._pending_signals.pop(bar.symbol, None)
+            self._deferred_close_targets[bar.symbol] = 0.0
+            self._last_target_weights[bar.symbol] = 0.0
+            logger.info(
+                "{} triggered for {} (deferred close): entry={:.2f} last={:.2f}",
+                reason,
+                pos.symbol,
+                pos.avg_entry_price,
+                pos.last_price,
+            )
+        else:
+            await self._emit_close_order(pos, bar.correlation_id, reason, fill_price=bar.close)
+            await self._publish_balance_update(bar.correlation_id)
 
     # =========================================================================
     # Stop-Loss / Trailing Stop Helpers
@@ -531,9 +637,20 @@ class EDAPortfolioManager:
         return False
 
     async def _emit_close_order(
-        self, pos: Position, correlation_id: UUID | None, reason: str
+        self,
+        pos: Position,
+        correlation_id: UUID | None,
+        reason: str,
+        fill_price: float | None = None,
     ) -> None:
-        """포지션 청산 주문 발행."""
+        """포지션 청산 주문 발행.
+
+        Args:
+            pos: 청산할 포지션
+            correlation_id: 이벤트 추적 ID
+            reason: 청산 사유 ("stop-loss", "trailing-stop")
+            fill_price: 체결 가격 (SL/TS: bar.close, None이면 executor 기본값)
+        """
         bus = self._bus
         assert bus is not None
 
@@ -547,10 +664,16 @@ class EDAPortfolioManager:
             side=side,  # type: ignore[arg-type]
             target_weight=0.0,
             notional_usd=pos.notional,
+            price=fill_price,
             correlation_id=correlation_id,
             source="PortfolioManager",
         )
         await bus.publish(order)
+
+        # Batch mode: 이전 batch의 stale signal 제거 + last_executed 리셋
+        if self._batch_mode:
+            self._pending_signals.pop(pos.symbol, None)
+            self._last_executed_targets[pos.symbol] = 0.0
         logger.info(
             "{} triggered for {} @ {}: entry={:.2f} last={:.2f}",
             reason,

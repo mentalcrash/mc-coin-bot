@@ -61,7 +61,12 @@ class BacktestExecutor:
         EDA에서는 현재 bar의 open을 사용합니다 (Bar 수신 후 체결이므로).
         """
         symbol = order.symbol
-        fill_price = self._last_open.get(symbol)
+
+        # SL/TS 체결: order.price 설정 시 해당 가격 사용 (close price)
+        # 일반 주문: _last_open 사용 (current bar's open = VBT의 next-open 동일)
+        fill_price: float | None = (
+            order.price if order.price is not None else self._last_open.get(symbol)
+        )
 
         if fill_price is None:
             # Fallback: close 가격 사용

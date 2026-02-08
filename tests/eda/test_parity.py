@@ -491,3 +491,160 @@ class TestDeepParityComparison:
         assert 0.5 < ratio < 2.0, (
             f"Trade count ratio out of range: VBT={vbt_trades}, EDA={eda_trades}, ratio={ratio:.2f}"
         )
+
+
+# =========================================================================
+# Real Strategy Parity Tests
+# =========================================================================
+def _make_longer_market_data(n: int = 400) -> MarketDataSet:
+    """장기 상승 트렌드 데이터 (전략 warmup 충분)."""
+    rng = np.random.default_rng(42)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    timestamps = pd.date_range(start=start, periods=n, freq="1D", tz=UTC)
+
+    trend = np.linspace(0, 15000, n)
+    noise = np.cumsum(rng.standard_normal(n) * 300)
+    close = 45000.0 + trend + noise
+    close = np.maximum(close, 5000.0)
+
+    df = pd.DataFrame(
+        {
+            "open": close * 0.999,
+            "high": close * 1.012,
+            "low": close * 0.988,
+            "close": close,
+            "volume": rng.integers(100, 1000, n) * 1000.0,
+        },
+        index=timestamps,
+    )
+
+    return MarketDataSet(
+        symbol="BTC/USDT",
+        timeframe="1D",
+        start=df.index[0].to_pydatetime(),  # type: ignore[union-attr]
+        end=df.index[-1].to_pydatetime(),  # type: ignore[union-attr]
+        ohlcv=df,
+    )
+
+
+class TestRealStrategyParity:
+    """실전 전략의 EDA vs VBT parity 테스트."""
+
+    @staticmethod
+    async def _run_vbt_and_eda(
+        strategy_name: str,
+        data: MarketDataSet,
+        config: PortfolioManagerConfig,
+        capital: float = 10000.0,
+    ) -> tuple:
+        """VBT와 EDA 양쪽 결과를 반환하는 헬퍼.
+
+        Returns:
+            (vbt_metrics, eda_metrics)
+        """
+        from src.strategy import get_strategy
+
+        strategy_cls = get_strategy(strategy_name)
+        strategy = strategy_cls()
+
+        # VBT
+        portfolio = Portfolio.create(initial_capital=int(capital), config=config)
+        request = BacktestRequest(
+            data=data, strategy=strategy, portfolio=portfolio
+        )
+        vbt_result = BacktestEngine().run(request)
+
+        # EDA
+        runner = EDARunner(
+            strategy=strategy_cls(),  # 새 인스턴스
+            data=data,
+            config=config,
+            initial_capital=capital,
+        )
+        eda_metrics = await runner.run()
+
+        return vbt_result.metrics, eda_metrics
+
+    async def test_tsmom_trade_count_parity(self) -> None:
+        """TSMOM: EDA가 충분한 거래를 생성하는지 확인.
+
+        EDA는 per-bar rebalancing으로 VBT보다 많은 거래를 생성할 수 있음.
+        VBT의 거래 수는 entry/exit 쌍이지만, EDA는 리밸런스도 포함.
+        핵심: EDA가 거래를 생성하고, 수익률이 유사한 방향인지 확인.
+        """
+        data = _make_longer_market_data(400)
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        vbt_m, eda_m = await self._run_vbt_and_eda("tsmom", data, config)
+
+        assert vbt_m.total_trades > 0, "VBT must produce trades"
+        assert eda_m.total_trades > 0, "EDA must produce trades (vol-target rebalancing)"
+
+        # EDA는 per-bar rebalancing으로 VBT보다 더 많은 거래 가능 (최대 20x)
+        # 중요한 것은 EDA가 3건이 아니라 충분한 거래를 생성하는 것
+        assert eda_m.total_trades >= vbt_m.total_trades, (
+            f"TSMOM: EDA should have >= VBT trades. "
+            f"VBT={vbt_m.total_trades}, EDA={eda_m.total_trades}"
+        )
+
+    async def test_tsmom_return_sign_parity(self) -> None:
+        """TSMOM: 수익률 부호 일치."""
+        data = _make_longer_market_data(400)
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        vbt_m, eda_m = await self._run_vbt_and_eda("tsmom", data, config)
+
+        if abs(vbt_m.total_return) > 1.0 and abs(eda_m.total_return) > 1.0:
+            assert (vbt_m.total_return > 0) == (eda_m.total_return > 0), (
+                f"TSMOM return sign mismatch: "
+                f"VBT={vbt_m.total_return:.2f}%, EDA={eda_m.total_return:.2f}%"
+            )
+
+    async def test_breakout_parity(self) -> None:
+        """Adaptive-Breakout: 양쪽 거래 존재 시 방향 일치."""
+        data = _make_longer_market_data(400)
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        vbt_m, eda_m = await self._run_vbt_and_eda("adaptive-breakout", data, config)
+
+        # Breakout은 합성 데이터에서 거래가 없을 수 있음
+        # 양쪽 모두 거래가 있고 수익이 유의미하면 방향 일치 확인
+        both_have_trades = vbt_m.total_trades > 0 and eda_m.total_trades > 0
+        both_significant = abs(vbt_m.total_return) > 1.0 and abs(eda_m.total_return) > 1.0
+        if both_have_trades and both_significant:
+            assert (vbt_m.total_return > 0) == (eda_m.total_return > 0), (
+                f"Breakout return sign mismatch: "
+                f"VBT={vbt_m.total_return:.2f}%, EDA={eda_m.total_return:.2f}%"
+            )
+
+    async def test_bb_rsi_parity(self) -> None:
+        """BB-RSI: 거래 수 및 수익 방향 (가장 유사할 것으로 예상)."""
+        data = _make_longer_market_data(400)
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.05,
+            system_stop_loss=None,
+            cost_model=CostModel.zero(),
+        )
+        vbt_m, eda_m = await self._run_vbt_and_eda("bb-rsi", data, config)
+
+        assert eda_m.total_trades > 0, "EDA BB-RSI must produce trades"
+
+        if vbt_m.total_trades > 0:
+            ratio = eda_m.total_trades / vbt_m.total_trades
+            assert 0.3 <= ratio <= 3.0, (
+                f"BB-RSI trade ratio: VBT={vbt_m.total_trades}, "
+                f"EDA={eda_m.total_trades}, ratio={ratio:.2f}"
+            )

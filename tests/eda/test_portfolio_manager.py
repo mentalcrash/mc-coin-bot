@@ -29,13 +29,14 @@ def _make_signal(
     symbol: str = "BTC/USDT",
     direction: Direction = Direction.LONG,
     strength: float = 1.0,
+    bar_timestamp: datetime | None = None,
 ) -> SignalEvent:
     return SignalEvent(
         symbol=symbol,
         strategy_name="tsmom",
         direction=direction,
         strength=strength,
-        bar_timestamp=datetime.now(UTC),
+        bar_timestamp=bar_timestamp or datetime.now(UTC),
         correlation_id=uuid4(),
         source="test",
     )
@@ -155,7 +156,7 @@ class TestSignalToOrder:
         assert len(orders) == 0
 
     async def test_asset_weights_applied(self) -> None:
-        """멀티 에셋 가중치 적용."""
+        """멀티 에셋 가중치 적용 (배치 모드 flush 통해 검증)."""
         config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
         pm = EDAPortfolioManager(
             config=config,
@@ -174,7 +175,13 @@ class TestSignalToOrder:
 
         task = asyncio.create_task(bus.start())
         # strength=1.0, weight=0.5 → target=0.5
-        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0))
+        t1 = datetime(2024, 1, 1, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+
+        # 배치 모드 → flush_pending_signals로 주문 생성
+        await pm.flush_pending_signals()
+        await bus.flush()
         await bus.stop()
         await task
 
@@ -1000,15 +1007,6 @@ class TestVolTargetRebalancing:
         await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.2, fee=0.0))
         await bus.flush()
 
-        # 가격 큰 폭 하락 → weight drift
-        # close=40000 → notional=8000, cash=0, equity=8000
-        # weight = 8000/8000 = 1.0 (아직 OK)
-        # close=30000 → notional=6000, cash=0, equity=6000
-        # weight = 6000/6000 = 1.0 (leveraged position)
-        # 실제로 weight가 1.0 유지되므로 큰 변화 필요
-        # 가격 상승 시: close=70000 → notional=14000, cash=0, equity=14000
-        # weight = 14000/14000 = 1.0 (여전히 1.0)
-
         # weight drift는 multi-asset에서 더 뚜렷함
         # 단일 에셋은 target=1.0이면 항상 weight=1.0이 유지
         # target을 0.5로 설정해서 drift 테스트
@@ -1197,9 +1195,7 @@ class TestIntrabarStopLoss:
             use_intrabar_stop=True,
             cost_model=CostModel.zero(),
         )
-        pm = EDAPortfolioManager(
-            config=config, initial_capital=10000.0, target_timeframe="1D"
-        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
         bus = EventBus(queue_size=200)
         orders: list[OrderRequestEvent] = []
 
@@ -1240,9 +1236,7 @@ class TestIntrabarStopLoss:
             system_stop_loss=None,
             cost_model=CostModel.zero(),
         )
-        pm = EDAPortfolioManager(
-            config=config, initial_capital=10000.0, target_timeframe="1D"
-        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
         bus = EventBus(queue_size=200)
         orders: list[OrderRequestEvent] = []
         bal_events: list[BalanceUpdateEvent] = []
@@ -1297,9 +1291,7 @@ class TestIntrabarStopLoss:
             system_stop_loss=None,
             cost_model=CostModel.zero(),
         )
-        pm = EDAPortfolioManager(
-            config=config, initial_capital=10000.0, target_timeframe="1D"
-        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
         bus = EventBus(queue_size=200)
         bal_events: list[BalanceUpdateEvent] = []
 
@@ -1372,9 +1364,7 @@ class TestIntrabarStopLoss:
             trailing_stop_atr_multiplier=2.0,
             cost_model=CostModel.zero(),
         )
-        pm = EDAPortfolioManager(
-            config=config, initial_capital=10000.0, target_timeframe="1D"
-        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
         bus = EventBus(queue_size=500)
         orders: list[OrderRequestEvent] = []
 
@@ -1421,3 +1411,355 @@ class TestIntrabarStopLoss:
 
         close_orders = [o for o in orders if o.target_weight == 0.0]
         assert len(close_orders) >= 1
+
+
+# =========================================================================
+# H. Batch Order Processing (멀티에셋)
+# =========================================================================
+class TestBatchOrderProcessing:
+    """멀티에셋 배치 주문 처리 테스트."""
+
+    def _make_multi_pm(
+        self,
+        rebalance_threshold: float = 0.10,
+        stop_loss: float | None = None,
+    ) -> EDAPortfolioManager:
+        """8-asset EW PM 생성 (batch_mode=True)."""
+        symbols = [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "BNB/USDT",
+            "ADA/USDT",
+            "XRP/USDT",
+            "DOT/USDT",
+            "AVAX/USDT",
+        ]
+        weights = dict.fromkeys(symbols, 0.125)
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=rebalance_threshold,
+            system_stop_loss=stop_loss,
+            use_intrabar_stop=True,
+            cost_model=CostModel.zero(),
+        )
+        return EDAPortfolioManager(
+            config=config,
+            initial_capital=10000.0,
+            asset_weights=weights,
+        )
+
+    async def test_batch_mode_activated(self) -> None:
+        """멀티에셋 → _batch_mode=True."""
+        pm = self._make_multi_pm()
+        assert pm._batch_mode is True
+
+    async def test_single_asset_no_batch(self) -> None:
+        """단일에셋 → _batch_mode=False."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        assert pm._batch_mode is False
+
+    async def test_signals_collected_not_executed(self) -> None:
+        """배치 모드: signal 수신 시 즉시 주문 생성하지 않음."""
+        pm = self._make_multi_pm()
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 동일 timestamp의 signal들 → 수집만 됨
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=ts))
+        await bus.flush()
+        await bus.publish(_make_signal(symbol="ETH/USDT", strength=1.0, bar_timestamp=ts))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 같은 timestamp → flush 안 됨 → 주문 없음
+        assert len(orders) == 0
+        assert len(pm._pending_signals) == 2
+
+    async def test_flush_on_new_timestamp(self) -> None:
+        """새 timestamp signal → 이전 배치 flush."""
+        pm = self._make_multi_pm(rebalance_threshold=0.10)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # T1: 8개 signal 수집
+        t1 = datetime(2024, 1, 1, tzinfo=UTC)
+        symbols = [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "BNB/USDT",
+            "ADA/USDT",
+            "XRP/USDT",
+            "DOT/USDT",
+            "AVAX/USDT",
+        ]
+        for sym in symbols:
+            await bus.publish(_make_signal(symbol=sym, strength=1.0, bar_timestamp=t1))
+            await bus.flush()
+
+        assert len(orders) == 0  # 아직 flush 안 됨
+
+        # T2: 새 timestamp → T1 배치 flush
+        t2 = datetime(2024, 1, 2, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t2))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # T1의 8개 signal이 flush → 8개 주문
+        # (VBT parity: last_executed=0, target=0.125≠0 → special case → 모두 실행)
+        assert len(orders) == 8
+
+    async def test_same_equity_for_all_orders(self) -> None:
+        """배치 flush 시 모든 주문이 동일 equity 기반."""
+        pm = self._make_multi_pm(rebalance_threshold=0.10)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # T1: 2개 signal
+        t1 = datetime(2024, 1, 1, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+        await bus.publish(_make_signal(symbol="ETH/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+
+        # T2: flush 트리거
+        t2 = datetime(2024, 1, 2, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t2))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 2개 주문 생성
+        assert len(orders) == 2
+        # 동일 equity 기반 → notional 비율 동일 (둘 다 weight=0.125)
+        assert abs(orders[0].notional_usd - orders[1].notional_usd) < 1.0
+
+    async def test_threshold_vbt_parity(self) -> None:
+        """VBT parity: |new_target - last_executed| < threshold → 주문 미생성.
+
+        첫 진입 후 동일 target 반복 시 rebalancing 안 함.
+        """
+        pm = self._make_multi_pm(rebalance_threshold=0.10)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # T1: strength=1.0 → target=0.125, last_executed=0 → 첫 진입 (special case)
+        t1 = datetime(2024, 1, 1, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+
+        # T2: flush T1 (1개 주문) + 수집 T2
+        t2 = datetime(2024, 1, 2, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t2))
+        await bus.flush()
+        assert len(orders) == 1  # T1 flush: 첫 진입
+
+        # T3: flush T2. target=0.125, last_executed=0.125, change=0 < 0.10 → skip
+        t3 = datetime(2024, 1, 3, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t3))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # T2 flush에서 추가 주문 없음 (동일 target)
+        assert len(orders) == 1
+
+    async def test_flush_pending_signals_shutdown(self) -> None:
+        """Runner shutdown 시 마지막 batch flush."""
+        pm = self._make_multi_pm(rebalance_threshold=0.10)
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # signal 수집 (flush 트리거 없이 종료)
+        t1 = datetime(2024, 1, 1, tzinfo=UTC)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+        await bus.publish(_make_signal(symbol="ETH/USDT", strength=1.0, bar_timestamp=t1))
+        await bus.flush()
+
+        assert len(orders) == 0
+
+        # 명시적 flush (Runner가 호출)
+        await pm.flush_pending_signals()
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        assert len(orders) == 2
+
+    async def test_stop_loss_prevents_batch_execution(self) -> None:
+        """stop-loss 발동된 symbol은 batch flush 시 스킵."""
+        pm = self._make_multi_pm(rebalance_threshold=0.10, stop_loss=0.10)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # BTC 포지션 생성
+        await bus.publish(
+            _make_fill(symbol="BTC/USDT", side="BUY", price=50000.0, qty=0.025, fee=0.0)
+        )
+        await bus.flush()
+
+        # BTC stop-loss 발동 bar
+        ts = datetime(2024, 1, 2, tzinfo=UTC)
+        await bus.publish(
+            _make_bar_tf(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                close=44000.0,
+                high=50000.0,
+                low=43000.0,
+                ts=ts,
+            )
+        )
+        await bus.flush()
+
+        # BTC가 _stopped_this_bar에 있음
+        assert "BTC/USDT" in pm._stopped_this_bar
+
+        sl_orders = len(orders)
+
+        # signal 수집 (BTC, ETH 동일 timestamp)
+        await bus.publish(_make_signal(symbol="BTC/USDT", strength=1.0, bar_timestamp=ts))
+        await bus.flush()
+        await bus.publish(_make_signal(symbol="ETH/USDT", strength=1.0, bar_timestamp=ts))
+        await bus.flush()
+
+        # flush 트리거 (Runner가 하는 것처럼 직접 flush)
+        await pm.flush_pending_signals()
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # ETH만 주문 생성 (BTC는 SL bar에서 signal 수집 안 됨)
+        batch_orders = orders[sl_orders:]
+        assert len(batch_orders) == 1
+        assert batch_orders[0].symbol == "ETH/USDT"
+
+    async def test_batch_no_bar_drift_rebalancing(self) -> None:
+        """배치 모드: _on_bar에서 per-bar drift rebalancing 안 함."""
+        pm = self._make_multi_pm(rebalance_threshold=0.10)
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # BTC 포지션 생성 + target weight 설정
+        await bus.publish(
+            _make_fill(symbol="BTC/USDT", side="BUY", price=50000.0, qty=0.025, fee=0.0)
+        )
+        await bus.flush()
+        pm._last_target_weights["BTC/USDT"] = 0.5  # 강제 drift
+
+        orders_before = len(orders)
+
+        # bar 발행 → 배치 모드이므로 per-bar rebalancing 안 함
+        await bus.publish(_make_bar(close=50000.0, high=51000.0, low=49000.0))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        assert len(orders) == orders_before
+
+    async def test_single_asset_backward_compat(self) -> None:
+        """단일에셋: 기존 즉시 실행 동작 유지."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        assert pm._batch_mode is False
+
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # signal → 즉시 주문 (배치 아님)
+        await bus.publish(_make_signal(strength=1.0))
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        assert len(orders) == 1
