@@ -11,8 +11,13 @@ Rules Applied:
 # pyright: reportArgumentType=false, reportOperatorIssue=false
 # pandas Scalar 타입은 실제로 숫자형이지만 타입 체커가 모든 가능성(complex, datetime 등)을 고려함
 
+from collections.abc import Sequence
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
+
+from src.models.backtest import PerformanceMetrics, TradeRecord
 
 
 def calculate_returns(
@@ -52,7 +57,7 @@ def calculate_total_return(returns: pd.Series) -> float:
 
 def calculate_cagr(
     returns: pd.Series,
-    periods_per_year: int = 8760,  # 시간봉 기준
+    periods_per_year: float = 8760,  # 시간봉 기준
 ) -> float:
     """CAGR (연평균 복리 수익률) 계산.
 
@@ -80,7 +85,7 @@ def calculate_cagr(
 def calculate_sharpe_ratio(
     returns: pd.Series,
     risk_free_rate: float = 0.05,  # 연 5%
-    periods_per_year: int = 8760,
+    periods_per_year: float = 8760,
 ) -> float:
     """샤프 비율 계산.
 
@@ -112,7 +117,7 @@ def calculate_sharpe_ratio(
 def calculate_sortino_ratio(
     returns: pd.Series,
     risk_free_rate: float = 0.05,
-    periods_per_year: int = 8760,
+    periods_per_year: float = 8760,
 ) -> float:
     """소르티노 비율 계산.
 
@@ -251,7 +256,7 @@ def calculate_profit_factor(
 
 def calculate_volatility(
     returns: pd.Series,
-    periods_per_year: int = 8760,
+    periods_per_year: float = 8760,
 ) -> float:
     """연환산 변동성 계산.
 
@@ -379,7 +384,7 @@ def calculate_rolling_sharpe(
     returns: pd.Series,
     window: int = 168,  # 1주일 (시간봉)
     risk_free_rate: float = 0.05,
-    periods_per_year: int = 8760,
+    periods_per_year: float = 8760,
 ) -> pd.Series:
     """롤링 샤프 비율 계산.
 
@@ -405,7 +410,7 @@ def calculate_rolling_sharpe(
 def calculate_all_metrics(
     returns: pd.Series,
     trade_returns: pd.Series | None = None,
-    periods_per_year: int = 8760,
+    periods_per_year: float = 8760,
     risk_free_rate: float = 0.05,
 ) -> dict[str, float | None]:
     """모든 성과 지표 계산.
@@ -453,3 +458,188 @@ def calculate_all_metrics(
         "profit_factor": profit_factor,
         "total_trades": total_trades,
     }
+
+
+# =============================================================================
+# Unified Metrics API (Phase 6-C)
+# =============================================================================
+
+_HOURS_PER_YEAR = 365 * 24
+
+
+class TradeStatsResult(NamedTuple):
+    """거래 통계 결과."""
+
+    total_trades: int
+    winning_trades: int
+    losing_trades: int
+    win_rate: float  # 0-100
+    avg_win: float | None  # %
+    avg_loss: float | None  # %
+    profit_factor: float | None
+
+
+def freq_to_periods_per_year(freq: str) -> float:
+    """Timeframe 문자열 → 연간 기간 수 변환.
+
+    Args:
+        freq: 데이터 주기 문자열 (예: "1D", "4h", "15T")
+
+    Returns:
+        연간 기간 수 (예: "1D" → 365, "4h" → 2190)
+    """
+    freq_upper = freq.strip().upper()
+    num_str = ""
+    unit = ""
+    for ch in freq_upper:
+        if ch.isdigit() or ch == ".":
+            num_str += ch
+        else:
+            unit += ch
+    num = float(num_str) if num_str else 1.0
+
+    if unit in ("D", "DAY", "DAYS"):
+        hours = num * 24.0
+    elif unit in ("H", "HOUR", "HOURS"):
+        hours = num
+    elif unit in ("T", "MIN", "MINUTE", "MINUTES"):
+        hours = num / 60.0
+    else:
+        hours = 24.0  # 기본값: 일봉
+
+    return _HOURS_PER_YEAR / hours
+
+
+def compute_trade_stats(trades: Sequence[TradeRecord]) -> TradeStatsResult:
+    """TradeRecord 리스트에서 거래 통계 계산.
+
+    Args:
+        trades: 종결된 거래 목록
+
+    Returns:
+        TradeStatsResult
+    """
+    if not trades:
+        return TradeStatsResult(
+            total_trades=0,
+            winning_trades=0,
+            losing_trades=0,
+            win_rate=0.0,
+            avg_win=None,
+            avg_loss=None,
+            profit_factor=None,
+        )
+
+    winning = [t for t in trades if t.pnl is not None and t.pnl > 0]
+    losing = [t for t in trades if t.pnl is not None and t.pnl <= 0]
+
+    total = len(trades)
+    w_count = len(winning)
+    l_count = len(losing)
+    win_rate = (w_count / total * 100) if total > 0 else 0.0
+
+    # avg pnl %
+    w_pcts = [t.pnl_pct for t in winning if t.pnl_pct is not None]
+    avg_win = float(np.mean(w_pcts) * 100) if w_pcts else None
+
+    l_pcts = [t.pnl_pct for t in losing if t.pnl_pct is not None]
+    avg_loss = float(np.mean(l_pcts) * 100) if l_pcts else None
+
+    # profit factor
+    gross_profit = sum(float(t.pnl) for t in winning if t.pnl is not None)
+    gross_loss = abs(sum(float(t.pnl) for t in losing if t.pnl is not None))
+    pf: float | None = None
+    if gross_loss > 0:
+        pf = gross_profit / gross_loss
+    elif gross_profit > 0:
+        pf = float("inf")
+
+    return TradeStatsResult(
+        total_trades=total,
+        winning_trades=w_count,
+        losing_trades=l_count,
+        win_rate=round(win_rate, 2),
+        avg_win=round(avg_win, 4) if avg_win is not None else None,
+        avg_loss=round(avg_loss, 4) if avg_loss is not None else None,
+        profit_factor=round(pf, 4) if pf is not None else None,
+    )
+
+
+def build_performance_metrics(
+    equity_curve: pd.Series,
+    trades: Sequence[TradeRecord],
+    periods_per_year: float = 365.0,
+    risk_free_rate: float = 0.0,
+    funding_drag_per_period: float = 0.0,
+) -> PerformanceMetrics:
+    """Equity curve + TradeRecord → PerformanceMetrics.
+
+    EDA와 (향후) VBT 양쪽에서 호출하는 단일 진입점.
+    기존 calculate_* 함수들을 조합하여 PerformanceMetrics를 생성합니다.
+
+    Args:
+        equity_curve: 시계열 equity 값 (pd.Series)
+        trades: 종결된 거래 목록
+        periods_per_year: 연간 기간 수 (예: 365 for daily)
+        risk_free_rate: 무위험 수익률 (연율, 기본 0.0)
+        funding_drag_per_period: 기간별 펀딩비 차감 (기본 0.0)
+
+    Returns:
+        PerformanceMetrics
+    """
+    if len(equity_curve) < _MIN_DATA_POINTS:
+        ts = compute_trade_stats(trades)
+        return PerformanceMetrics(
+            total_return=0.0,
+            cagr=0.0,
+            sharpe_ratio=0.0,
+            max_drawdown=0.0,
+            win_rate=ts.win_rate,
+            total_trades=ts.total_trades,
+            winning_trades=ts.winning_trades,
+            losing_trades=ts.losing_trades,
+        )
+
+    # returns from equity curve
+    returns = equity_curve.pct_change().dropna()
+
+    # funding drag
+    if funding_drag_per_period != 0.0:
+        returns = returns - funding_drag_per_period
+
+    # core metrics via existing functions
+    total_return = calculate_total_return(returns)
+    cagr = calculate_cagr(returns, periods_per_year)
+    sharpe = calculate_sharpe_ratio(returns, risk_free_rate, periods_per_year)
+    sortino = calculate_sortino_ratio(returns, risk_free_rate, periods_per_year)
+    max_dd_negative = calculate_max_drawdown(equity_curve=equity_curve)
+    max_dd_positive = abs(max_dd_negative)  # EDA 규약: 양수
+    calmar = calculate_calmar_ratio(cagr, max_dd_negative)
+    volatility = calculate_volatility(returns, periods_per_year)
+    skewness = calculate_skewness(returns)
+    kurtosis = calculate_kurtosis(returns)
+
+    # trade stats
+    ts = compute_trade_stats(trades)
+
+    return PerformanceMetrics(
+        total_return=round(total_return, 2),
+        cagr=round(cagr, 2),
+        sharpe_ratio=round(sharpe, 4),
+        sortino_ratio=round(sortino, 4) if sortino != float("inf") else None,
+        max_drawdown=round(max_dd_positive, 2),
+        calmar_ratio=round(calmar, 4) if calmar is not None else None,
+        volatility=round(volatility, 2),
+        skewness=round(skewness, 4),
+        kurtosis=round(kurtosis, 4),
+        win_rate=ts.win_rate,
+        total_trades=ts.total_trades,
+        winning_trades=ts.winning_trades,
+        losing_trades=ts.losing_trades,
+        avg_win=ts.avg_win,
+        avg_loss=ts.avg_loss,
+        profit_factor=ts.profit_factor,
+    )
+
+
+_MIN_DATA_POINTS = 2

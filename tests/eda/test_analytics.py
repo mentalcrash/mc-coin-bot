@@ -7,13 +7,14 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from src.backtest.metrics import freq_to_periods_per_year
 from src.core.event_bus import EventBus
 from src.core.events import (
     BalanceUpdateEvent,
     BarEvent,
     FillEvent,
 )
-from src.eda.analytics import AnalyticsEngine, _freq_to_hours
+from src.eda.analytics import AnalyticsEngine
 from src.portfolio.cost_model import CostModel
 
 
@@ -275,12 +276,12 @@ class TestFundingAdjustment:
 class TestTimeframeAwareness:
     """M-001: CAGR/Sharpe timeframe 인식 테스트."""
 
-    def test_freq_to_hours(self) -> None:
-        """_freq_to_hours 헬퍼 동작 확인."""
-        assert _freq_to_hours("1D") == 24.0
-        assert _freq_to_hours("4h") == 4.0
-        assert _freq_to_hours("1h") == 1.0
-        assert _freq_to_hours("15T") == 0.25
+    def test_freq_to_periods_per_year(self) -> None:
+        """freq_to_periods_per_year 헬퍼 동작 확인."""
+        assert freq_to_periods_per_year("1D") == 365.0
+        assert freq_to_periods_per_year("4h") == 2190.0
+        assert freq_to_periods_per_year("1h") == 8760.0
+        assert freq_to_periods_per_year("15T") == 35040.0
 
     async def test_cagr_4h_timeframe(self) -> None:
         """4h 타임프레임에서 CAGR이 올바르게 계산."""

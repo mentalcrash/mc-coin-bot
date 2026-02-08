@@ -12,7 +12,7 @@
 |-------|------|:----:|:------:|
 | **6-A** | Port Protocol 정의 | **DONE** | 401 passed |
 | **6-B** | Runner 팩토리 메서드 | **DONE** | 406 passed |
-| 6-C | 통합 Metrics 엔진 | TODO | — |
+| **6-C** | 통합 Metrics 엔진 | **DONE** | 425 passed |
 | 6-D | 통합 CLI | TODO | — |
 
 ---
@@ -134,24 +134,63 @@ pytest:      406 passed (기존 401 + 신규 5)
 
 ---
 
-## Phase 6-C: 통합 Metrics 엔진 — TODO
+## Phase 6-C: 통합 Metrics 엔진 — DONE
 
-### 핵심 작업
+### 완료일: 2026-02-08
 
-- `PerformanceAnalyzer` (VBT)와 `AnalyticsEngine` (EDA) 메트릭 계산 로직 비교
-- `src/backtest/metrics.py` 공통 순수 함수 추출
-- 양쪽에서 `build_performance_metrics()` 호출하도록 리팩토링
-- Parity 테스트
+### 변경 내역
 
-### 리스크
+| 파일 | 변경 유형 | 내용 |
+|------|:--------:|------|
+| `src/backtest/metrics.py` | 수정 | `TradeStatsResult`, `freq_to_periods_per_year()`, `compute_trade_stats()`, `build_performance_metrics()` 추가. `periods_per_year` 타입 `int → float` 변경 |
+| `src/eda/analytics.py` | 수정 | `compute_metrics()` → `build_performance_metrics()` 호출로 교체. 헬퍼 함수 6개 제거 |
+| `tests/eda/test_analytics.py` | 수정 | `_freq_to_hours` import → `freq_to_periods_per_year` 변경 |
+| `tests/backtest/test_metrics_unified.py` | **신규** | `build_performance_metrics()` 단위 테스트 19개 |
 
-- 두 구현의 annualization factor, 거래일 수 가정, drawdown 기준점이 다를 수 있음
-- VBT equity curve와 EDA equity curve의 형태(index, frequency) 차이
+### 구현 세부사항
 
-### 의존성
+**1. `src/backtest/metrics.py` — 통합 API 추가**
 
-- Phase 6-A 완료 필요 ✅
-- Phase 6-B와 병렬 진행 가능
+- `TradeStatsResult(NamedTuple)`: total_trades, winning/losing, win_rate, avg_win/loss, profit_factor
+- `freq_to_periods_per_year(freq)`: timeframe 문자열 → 연간 기간 수 ("1D"→365, "4h"→2190, "1h"→8760, "15T"→35040)
+- `compute_trade_stats(trades)`: `Sequence[TradeRecord]` → `TradeStatsResult`
+- `build_performance_metrics(equity_curve, trades, ...)`: 기존 `calculate_*` 함수들을 조합하여 `PerformanceMetrics` 생성
+- 기존 함수들의 `periods_per_year` 파라미터 타입을 `int → float`로 변경 (하위 호환)
+
+**2. `src/eda/analytics.py` — 리팩토링**
+
+- `compute_metrics()` 내부 ~60행 자체 계산 로직 → `build_performance_metrics()` 단일 호출로 교체
+- 제거된 헬퍼 함수: `_avg_pnl_pct`, `_profit_factor`, `_annualized_sharpe`, `_max_drawdown`, `_compute_cagr`, `_freq_to_hours`
+- 펀딩비 계산 로직은 유지 (`funding_drag_per_period` 파라미터로 전달)
+- `numpy` import 제거
+
+**3. `tests/backtest/test_metrics_unified.py` — 신규 테스트**
+
+- `TestFreqToPeriodsPerYear`: 5개 (1D, 4h, 1h, 15T, unknown unit)
+- `TestComputeTradeStats`: 5개 (empty, all winners, mixed, profit factor, NamedTuple)
+- `TestBuildPerformanceMetrics`: 9개 (monotonic equity, drawdown, trades, empty, funding drag, sortino, skew/kurt, volatility, MDD positive)
+
+### 설계 결정
+
+- **Max drawdown 양수 규약**: `build_performance_metrics()`는 `abs()` 변환하여 양수 반환 (EDA 규약). `calculate_max_drawdown()`은 기존 음수 반환 유지 (하위 호환)
+- **risk_free_rate=0.0 기본값**: EDA 기존 동작 유지 (VBT의 0.05와 다름)
+- **VBT 미변경**: `PerformanceAnalyzer.analyze()`는 현 Phase에서 변경 없음. VBT는 `vbt_portfolio.stats()`에서 값 추출하는 구조
+- **EDA 신규 메트릭**: sortino, calmar, skewness, kurtosis가 이제 채워짐 (기존에는 None)
+
+### 검증 결과
+
+```
+ruff check:  0 errors
+pyright:     0 errors, 0 warnings
+pytest:      425 passed (기존 406 + 신규 19)
+parity:      14/14 통과 (VBT vs EDA)
+```
+
+### 설계 메모
+
+- `build_performance_metrics()`는 EDA와 (향후) VBT 양쪽에서 호출 가능한 단일 진입점
+- `freq_to_periods_per_year()`는 기존 EDA `_freq_to_hours()`와 동일 파싱 로직, 반환값만 다름 (hours → periods/year)
+- `compute_trade_stats()`는 `Sequence[TradeRecord]` 기반 — VBT `pd.Series` trade_returns와 독립
 
 ---
 
