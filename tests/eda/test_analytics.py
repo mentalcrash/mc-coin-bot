@@ -18,14 +18,17 @@ from src.eda.analytics import AnalyticsEngine
 from src.portfolio.cost_model import CostModel
 
 
-def _make_balance(equity: float) -> BalanceUpdateEvent:
-    return BalanceUpdateEvent(
-        total_equity=equity,
-        available_cash=equity * 0.5,
-        total_margin_used=equity * 0.5,
-        correlation_id=uuid4(),
-        source="test",
-    )
+def _make_balance(equity: float, ts: datetime | None = None) -> BalanceUpdateEvent:
+    kwargs: dict[str, object] = {
+        "total_equity": equity,
+        "available_cash": equity * 0.5,
+        "total_margin_used": equity * 0.5,
+        "correlation_id": uuid4(),
+        "source": "test",
+    }
+    if ts is not None:
+        kwargs["timestamp"] = ts
+    return BalanceUpdateEvent(**kwargs)  # type: ignore[arg-type]
 
 
 def _make_fill(
@@ -182,7 +185,7 @@ class TestPerformanceMetrics:
             ts = base + timedelta(days=i)
             equity = 10000.0 + i * 100  # 단조 증가
             await bus.publish(_make_bar(ts=ts))
-            await bus.publish(_make_balance(equity))
+            await bus.publish(_make_balance(equity, ts=ts))
         await bus.stop()
         await task
 
@@ -204,10 +207,10 @@ class TestPerformanceMetrics:
         t4 = datetime(2024, 1, 4, tzinfo=UTC)
 
         # Equity curve
-        await bus.publish(_make_balance(10000.0))
-        await bus.publish(_make_balance(10100.0))
-        await bus.publish(_make_balance(10050.0))
-        await bus.publish(_make_balance(10200.0))
+        await bus.publish(_make_balance(10000.0, ts=t1))
+        await bus.publish(_make_balance(10100.0, ts=t2))
+        await bus.publish(_make_balance(10050.0, ts=t3))
+        await bus.publish(_make_balance(10200.0, ts=t4))
 
         # 승리 거래
         await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0, ts=t1))
@@ -258,9 +261,10 @@ class TestFundingAdjustment:
         task = asyncio.create_task(bus.start())
         base = datetime(2024, 1, 1, tzinfo=UTC)
         for i in range(30):
+            ts = base + timedelta(days=i)
             equity = 10000.0 + i * 50
-            await bus.publish(_make_bar(ts=base + timedelta(days=i)))
-            await bus.publish(_make_balance(equity))
+            await bus.publish(_make_bar(ts=ts))
+            await bus.publish(_make_balance(equity, ts=ts))
         await bus.stop()
         await task
 
@@ -296,7 +300,7 @@ class TestTimeframeAwareness:
             equity = 10000.0 + i * 10
             ts = base + timedelta(hours=4 * i)
             await bus.publish(_make_bar(ts=ts))
-            await bus.publish(_make_balance(equity))
+            await bus.publish(_make_balance(equity, ts=ts))
         await bus.stop()
         await task
 
@@ -319,7 +323,7 @@ class TestTimeframeAwareness:
             equity = 10000.0 + i * 20  # 단조 증가
             ts = base + timedelta(hours=i)
             await bus.publish(_make_bar(ts=ts))
-            await bus.publish(_make_balance(equity))
+            await bus.publish(_make_balance(equity, ts=ts))
         await bus.stop()
         await task
 

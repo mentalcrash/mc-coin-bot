@@ -30,6 +30,8 @@ from src.data.service import MarketDataService
 from src.eda.runner import EDARunner
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from src.models.backtest import PerformanceMetrics
 
 
@@ -79,6 +81,9 @@ def _display_metrics(
 def run(
     config_path: Annotated[str, typer.Argument(help="YAML config file path")],
     mode: Annotated[RunMode, typer.Option(help="Execution mode")] = RunMode.BACKTEST,
+    report: Annotated[
+        bool, typer.Option("--report/--no-report", help="Generate QuantStats HTML report")
+    ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
     """Run EDA backtest for a single symbol from config file.
@@ -143,10 +148,24 @@ def run(
     extra_rows = [("Mode", mode.value)] if mode != RunMode.BACKTEST else None
     _display_metrics(title, metrics, extra_rows=extra_rows)
 
+    if report:
+        freq = _tf_to_pandas_freq(target_tf)
+        close_tf = data.ohlcv["close"].resample(freq).last().dropna()
+        benchmark_returns = close_tf.pct_change().dropna()
+
+        _generate_eda_report(
+            runner=runner,
+            benchmark_returns=benchmark_returns,
+            title=f"EDA {cfg.strategy.name} - {symbol} ({cfg.backtest.start} ~ {cfg.backtest.end})",
+        )
+
 
 @app.command(name="run-multi")
 def run_multi(
     config_path: Annotated[str, typer.Argument(help="YAML config file path")],
+    report: Annotated[
+        bool, typer.Option("--report/--no-report", help="Generate QuantStats HTML report")
+    ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
     """Run EDA backtest for multiple symbols (equal-weight portfolio) from config file."""
@@ -227,3 +246,79 @@ def run_multi(
         metrics,
         extra_rows=[("Symbols", ", ".join(loaded_symbols))],
     )
+
+    if report:
+        import pandas as pd
+
+        # 각 심볼의 1m close를 target TF로 resample → EW 벤치마크
+        sym_returns: list[pd.Series] = []
+        freq = _tf_to_pandas_freq(target_tf)
+        for sym in loaded_symbols:
+            close_1m = ohlcv_dict[sym]["close"]  # type: ignore[index]
+            close_tf: pd.Series = close_1m.resample(freq).last().dropna()  # type: ignore[assignment]
+            sym_returns.append(close_tf.pct_change().dropna())
+
+        benchmark_returns: pd.Series = pd.concat(sym_returns, axis=1).mean(axis=1)  # type: ignore[assignment]
+
+        _generate_eda_report(
+            runner=runner,
+            benchmark_returns=benchmark_returns,
+            title=f"EDA Multi-Asset: {cfg.strategy.name} / {len(loaded_symbols)} symbols ({cfg.backtest.start} ~ {cfg.backtest.end})",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _tf_to_pandas_freq(tf: str) -> str:
+    """Target timeframe → pandas resample frequency."""
+    from src.eda.analytics import tf_to_pandas_freq
+
+    return tf_to_pandas_freq(tf)
+
+
+def _generate_eda_report(
+    runner: EDARunner,
+    benchmark_returns: pd.Series,
+    title: str,
+) -> None:
+    """EDA 백테스트 결과를 QuantStats HTML 리포트로 생성.
+
+    Args:
+        runner: EDA runner (config, target_timeframe, analytics 포함)
+        benchmark_returns: 벤치마크 수익률 (target TF로 리샘플링 완료)
+        title: 리포트 제목
+    """
+    from src.backtest.reporter import generate_quantstats_report
+
+    analytics = runner.analytics
+    if analytics is None:
+        console.print("[yellow]Analytics not available — skipping report.[/yellow]")
+        return
+
+    # compute_metrics()와 동일한 returns 사용 (리샘플링 + funding drag)
+    strategy_returns = analytics.get_strategy_returns(
+        timeframe=runner.target_timeframe,
+        cost_model=runner.config.cost_model,
+    )
+    _min_points = 2
+    if len(strategy_returns) < _min_points:
+        console.print("[yellow]Equity curve too short — skipping report.[/yellow]")
+        return
+
+    # 벤치마크와 인덱스 정렬 (공통 날짜만)
+    common_idx = strategy_returns.index.intersection(benchmark_returns.index)
+    if len(common_idx) < _min_points:
+        console.print("[yellow]Not enough overlapping dates for report — skipping.[/yellow]")
+        return
+    strategy_returns = strategy_returns.loc[common_idx]
+    benchmark_aligned = benchmark_returns.loc[common_idx]
+
+    report_path = generate_quantstats_report(
+        returns=strategy_returns,
+        benchmark_returns=benchmark_aligned,
+        title=title,
+    )
+    console.print(f"[green]Report saved: {report_path}[/green]")

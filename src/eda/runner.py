@@ -174,6 +174,7 @@ class EDARunner:
         rm = EDARiskManager(
             config=self._config,
             portfolio_manager=pm,
+            max_order_size_usd=self._initial_capital * self._config.max_leverage_cap,
             enable_circuit_breaker=False,
         )
         oms = OMS(executor=executor, portfolio_manager=pm)
@@ -236,3 +237,13 @@ class EDARunner:
     def portfolio_manager(self) -> EDAPortfolioManager | None:
         """PM 참조 (run() 후 접근 가능)."""
         return self._pm
+
+    @property
+    def config(self) -> PortfolioManagerConfig:
+        """포트폴리오 설정."""
+        return self._config
+
+    @property
+    def target_timeframe(self) -> str:
+        """타겟 타임프레임."""
+        return self._target_timeframe

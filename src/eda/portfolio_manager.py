@@ -117,6 +117,9 @@ class EDAPortfolioManager:
         self._last_executed_targets: dict[str, float] = {}  # VBT parity: 마지막 실행 target
         self._deferred_close_targets: dict[str, float] = {}  # SL/TS deferred close (batch mode)
 
+        # SL/TS pending close: close fill 수신 전까지 해당 심볼 주문 차단
+        self._pending_close: set[str] = set()
+
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
         self._bus = bus
@@ -227,6 +230,9 @@ class EDAPortfolioManager:
 
         # Equity snapshot 1회
         equity = self.total_equity
+        if equity <= 0:
+            self._pending_signals.clear()
+            return
         threshold = self._config.rebalance_threshold
 
         for symbol, target_weight in self._pending_signals.items():
@@ -281,7 +287,12 @@ class EDAPortfolioManager:
         correlation_id: UUID | None,
         source_strategy: str = "rebalance",
     ) -> None:
-        """저장된 target weight와 현재 weight 비교 → 리밸런스 주문 생성."""
+        """저장된 target weight와 last executed 비교 → 리밸런스 주문 생성.
+
+        VBT parity: target vs last_executed_target 비교 (weight drift 무시).
+        VBT의 apply_rebalance_threshold_numba와 동일한 로직으로,
+        신호 변화가 threshold 이상일 때만 리밸런싱합니다.
+        """
         bus = self._bus
         assert bus is not None
 
@@ -289,23 +300,40 @@ class EDAPortfolioManager:
         if symbol in self._stopped_this_bar:
             return
 
+        # SL/TS close 대기 중 → 재진입 방지
+        if symbol in self._pending_close:
+            return
+
         target_weight = self._last_target_weights.get(symbol)
         if target_weight is None:
+            return
+
+        # VBT parity: target vs last_executed (not current_weight vs target)
+        # VBT의 apply_rebalance_threshold_numba와 동일: 신호 변화 < threshold면 무시
+        last_executed = self._last_executed_targets.get(symbol, 0.0)
+        change = abs(target_weight - last_executed)
+        if change < self._config.rebalance_threshold:
             return
 
         pos = self._positions.get(symbol)
         current_weight = pos.current_weight if pos else 0.0
 
-        if not self._config.should_rebalance(current_weight, target_weight):
+        # 주문 생성
+        equity = self.total_equity
+        if equity <= 0:
             return
 
-        # 주문 생성
         self._order_counter += 1
         client_order_id = f"{source_strategy}-{symbol}-{self._order_counter}"
 
-        equity = self.total_equity
         delta_weight = target_weight - current_weight
         notional = abs(delta_weight) * equity
+
+        # 최소 주문 크기 필터 (overflow fix로 생긴 tiny position 정리용)
+        if notional < 1.0:
+            self._last_executed_targets[symbol] = target_weight
+            return
+
         side: str = "BUY" if delta_weight > 0 else "SELL"
 
         order = OrderRequestEvent(
@@ -318,6 +346,9 @@ class EDAPortfolioManager:
             source="PortfolioManager",
         )
         await bus.publish(order)
+
+        # 실행된 target 기록 (VBT parity)
+        self._last_executed_targets[symbol] = target_weight
 
     async def _on_fill(self, event: AnyEvent) -> None:
         """FillEvent → 포지션/잔고 업데이트."""
@@ -336,6 +367,10 @@ class EDAPortfolioManager:
 
         # 포지션 업데이트 (로직 분리)
         self._apply_fill_to_position(pos, fill, fill_notional, is_buy=is_buy)
+
+        # Close fill → _pending_close 해제 (포지션 종료 확인)
+        if not pos.is_open and symbol in self._pending_close:
+            self._pending_close.discard(symbol)
 
         # 현금 업데이트
         if is_buy:
@@ -362,8 +397,8 @@ class EDAPortfolioManager:
         )
         await bus.publish(pos_event)
 
-        # BalanceUpdateEvent 발행
-        await self._publish_balance_update(fill.correlation_id)
+        # BalanceUpdateEvent 발행 (fill의 bar timestamp 사용)
+        await self._publish_balance_update(fill.correlation_id, timestamp=fill.fill_timestamp)
 
         logger.debug(
             "Fill processed: {} {} {} qty={:.6f} price={:.2f} fee={:.4f}",
@@ -393,12 +428,13 @@ class EDAPortfolioManager:
             self._apply_sell(pos, fill, fill_notional)
 
     def _apply_buy(self, pos: Position, fill: FillEvent, fill_notional: float) -> None:
-        """BUY fill 처리: 롱 진입/추가 또는 숏 청산."""
+        """BUY fill 처리: 롱 진입/추가 또는 숏 청산(+flip)."""
         if pos.direction == Direction.SHORT:
-            # 숏 포지션 청산/축소
-            realized = (pos.avg_entry_price - fill.fill_price) * fill.fill_qty
+            # 숏 포지션 청산/축소 (close_qty = min(fill, size)로 overflow 방지)
+            close_qty = min(fill.fill_qty, pos.size)
+            realized = (pos.avg_entry_price - fill.fill_price) * close_qty
             pos.realized_pnl += realized
-            pos.size -= fill.fill_qty
+            pos.size -= close_qty
             if pos.size < _POSITION_ZERO_THRESHOLD:
                 pos.size = 0.0
                 pos.direction = Direction.NEUTRAL
@@ -406,6 +442,15 @@ class EDAPortfolioManager:
                 pos.unrealized_pnl = 0.0
                 pos.peak_price_since_entry = 0.0
                 pos.trough_price_since_entry = 0.0
+                # Overflow → 롱 포지션 신규 진입 (close/open 가격 차이로 발생)
+                remaining = fill.fill_qty - close_qty
+                if remaining > _POSITION_ZERO_THRESHOLD:
+                    pos.size = remaining
+                    pos.direction = Direction.LONG
+                    pos.avg_entry_price = fill.fill_price
+                    pos.peak_price_since_entry = fill.fill_price
+                    pos.trough_price_since_entry = 0.0
+                    pos.atr_values = []
         else:
             # 롱 포지션 신규 진입 또는 추가
             is_new = pos.size <= _POSITION_ZERO_THRESHOLD
@@ -425,12 +470,13 @@ class EDAPortfolioManager:
         pos.last_price = fill.fill_price
 
     def _apply_sell(self, pos: Position, fill: FillEvent, fill_notional: float) -> None:
-        """SELL fill 처리: 숏 진입/추가 또는 롱 청산."""
+        """SELL fill 처리: 숏 진입/추가 또는 롱 청산(+flip)."""
         if pos.direction == Direction.LONG:
-            # 롱 포지션 청산/축소
-            realized = (fill.fill_price - pos.avg_entry_price) * fill.fill_qty
+            # 롱 포지션 청산/축소 (close_qty = min(fill, size)로 overflow 방지)
+            close_qty = min(fill.fill_qty, pos.size)
+            realized = (fill.fill_price - pos.avg_entry_price) * close_qty
             pos.realized_pnl += realized
-            pos.size -= fill.fill_qty
+            pos.size -= close_qty
             if pos.size < _POSITION_ZERO_THRESHOLD:
                 pos.size = 0.0
                 pos.direction = Direction.NEUTRAL
@@ -438,6 +484,15 @@ class EDAPortfolioManager:
                 pos.unrealized_pnl = 0.0
                 pos.peak_price_since_entry = 0.0
                 pos.trough_price_since_entry = 0.0
+                # Overflow → 숏 포지션 신규 진입 (close/open 가격 차이로 발생)
+                remaining = fill.fill_qty - close_qty
+                if remaining > _POSITION_ZERO_THRESHOLD:
+                    pos.size = remaining
+                    pos.direction = Direction.SHORT
+                    pos.avg_entry_price = fill.fill_price
+                    pos.trough_price_since_entry = fill.fill_price
+                    pos.peak_price_since_entry = 0.0
+                    pos.atr_values = []
         else:
             # 숏 포지션 신규 진입 또는 추가
             is_new = pos.size <= _POSITION_ZERO_THRESHOLD
@@ -493,6 +548,11 @@ class EDAPortfolioManager:
         elif pos.direction == Direction.SHORT:
             pos.unrealized_pnl = (pos.avg_entry_price - bar.close) * pos.size
 
+        # Close 대기 중이면 SL/TS/rebalance 스킵 (mark-to-market만 수행)
+        if bar.symbol in self._pending_close:
+            await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
+            return
+
         # 3. Position stop-loss 체크
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
             await self._handle_stop_trigger(pos, bar, "stop-loss")
@@ -512,7 +572,7 @@ class EDAPortfolioManager:
             pos.current_weight = direction_sign * pos.notional / equity
 
         # 6. BalanceUpdateEvent 발행 (RM 실시간 drawdown 추적)
-        await self._publish_balance_update(bar.correlation_id)
+        await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
 
         # 7. Per-bar rebalancing (단일에셋 모드만 — 배치 모드는 signal에서 처리)
         if not self._batch_mode and bar.symbol in self._last_target_weights:
@@ -526,6 +586,9 @@ class EDAPortfolioManager:
         pos = self._positions.get(bar.symbol)
         if pos is None or not pos.is_open:
             return
+        # 이미 이번 TF bar에서 SL/TS 발동 → 중복 close 방지
+        if bar.symbol in self._stopped_this_bar:
+            return
         atr = self._update_atr(pos, bar)
         pos.last_price = bar.close
         if pos.direction == Direction.LONG:
@@ -535,6 +598,7 @@ class EDAPortfolioManager:
         # Stop-loss
         if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
             self._stopped_this_bar.add(bar.symbol)
+            self._last_executed_targets[bar.symbol] = 0.0
             await self._emit_close_order(pos, bar.correlation_id, "stop-loss", fill_price=bar.close)
             return
         # Trailing stop
@@ -542,6 +606,7 @@ class EDAPortfolioManager:
             self._update_peak_trough(pos, bar)
             if atr is not None and self._check_trailing_stop(pos, bar, atr):
                 self._stopped_this_bar.add(bar.symbol)
+                self._last_executed_targets[bar.symbol] = 0.0
                 await self._emit_close_order(
                     pos, bar.correlation_id, "trailing-stop", fill_price=bar.close
                 )
@@ -570,7 +635,8 @@ class EDAPortfolioManager:
             )
         else:
             await self._emit_close_order(pos, bar.correlation_id, reason, fill_price=bar.close)
-            await self._publish_balance_update(bar.correlation_id)
+            self._last_executed_targets[bar.symbol] = 0.0
+            await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
 
     # =========================================================================
     # Stop-Loss / Trailing Stop Helpers
@@ -670,6 +736,9 @@ class EDAPortfolioManager:
         )
         await bus.publish(order)
 
+        # Close fill 수신 전까지 해당 심볼 주문 차단
+        self._pending_close.add(pos.symbol)
+
         # Batch mode: 이전 batch의 stale signal 제거 + last_executed 리셋
         if self._batch_mode:
             self._pending_signals.pop(pos.symbol, None)
@@ -683,17 +752,27 @@ class EDAPortfolioManager:
             pos.last_price,
         )
 
-    async def _publish_balance_update(self, correlation_id: UUID | None) -> None:
-        """BalanceUpdateEvent 발행 (공통 헬퍼)."""
+    async def _publish_balance_update(
+        self, correlation_id: UUID | None, timestamp: datetime | None = None
+    ) -> None:
+        """BalanceUpdateEvent 발행 (공통 헬퍼).
+
+        Args:
+            correlation_id: 이벤트 추적 ID
+            timestamp: bar/fill 시각 (None이면 현재 시각 사용)
+        """
         bus = self._bus
         assert bus is not None
 
         margin_used = sum(p.notional for p in self._positions.values() if p.is_open)
-        bal_event = BalanceUpdateEvent(
-            total_equity=self.total_equity,
-            available_cash=self._cash,
-            total_margin_used=margin_used,
-            correlation_id=correlation_id,
-            source="PortfolioManager",
-        )
+        kwargs: dict[str, object] = {
+            "total_equity": self.total_equity,
+            "available_cash": self._cash,
+            "total_margin_used": margin_used,
+            "correlation_id": correlation_id,
+            "source": "PortfolioManager",
+        }
+        if timestamp is not None:
+            kwargs["timestamp"] = timestamp
+        bal_event = BalanceUpdateEvent(**kwargs)  # type: ignore[arg-type]
         await bus.publish(bal_event)

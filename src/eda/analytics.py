@@ -10,6 +10,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -160,6 +161,9 @@ class AnalyticsEngine:
 
     def _close_trade(self, open_trade: OpenTrade, fill: FillEvent) -> None:
         """거래 종결 처리."""
+        # open trade 삭제를 먼저 보장 (ValidationError 시 cascade 방지)
+        del self._open_trades[open_trade.symbol]
+
         if open_trade.direction == "LONG":
             pnl = (fill.fill_price - open_trade.entry_price) * open_trade.size
         else:
@@ -169,6 +173,14 @@ class AnalyticsEngine:
         pnl_after_fees = pnl - total_fees
         entry_notional = open_trade.entry_price * open_trade.size
         pnl_pct = pnl_after_fees / entry_notional if entry_notional > 0 else 0.0
+
+        # NaN/Inf 방어: 유한하지 않은 값은 0으로 대체
+        if not math.isfinite(open_trade.entry_price) or not math.isfinite(open_trade.size):
+            return
+        if not math.isfinite(pnl_after_fees):
+            pnl_after_fees = 0.0
+        if not math.isfinite(total_fees):
+            total_fees = 0.0
 
         trade = TradeRecord(
             entry_time=open_trade.entry_time,
@@ -183,7 +195,6 @@ class AnalyticsEngine:
             fees=Decimal(str(round(total_fees, 4))),
         )
         self._closed_trades.append(trade)
-        del self._open_trades[open_trade.symbol]
 
     async def _on_bar(self, event: AnyEvent) -> None:
         """BarEvent → bar timestamp 기록."""
@@ -203,6 +214,42 @@ class AnalyticsEngine:
         values = [p.equity for p in self._equity_curve]
         return pd.Series(values, index=pd.DatetimeIndex(timestamps), dtype=float)
 
+    def get_strategy_returns(
+        self,
+        timeframe: str = "1D",
+        cost_model: CostModel | None = None,
+    ) -> pd.Series:
+        """Funding drag 적용된 리샘플링 수익률 시리즈 반환.
+
+        compute_metrics()와 QuantStats 리포트 양쪽에서 동일한 데이터를 사용하기 위해
+        공통 메서드로 추출.
+
+        Args:
+            timeframe: 데이터 주기 (예: "1D", "4h")
+            cost_model: 비용 모델 (펀딩비 보정)
+
+        Returns:
+            리샘플링 + funding drag 적용된 수익률 시리즈
+        """
+        import pandas as pd
+
+        equity_series = self.get_equity_series()
+        if len(equity_series) == 0:
+            return pd.Series(dtype=float)
+
+        pandas_freq = tf_to_pandas_freq(timeframe)
+        equity_resampled = equity_series.resample(pandas_freq).last().dropna()
+        returns: pd.Series = equity_resampled.pct_change().dropna()  # type: ignore[assignment]
+
+        # H-002: 펀딩비 post-hoc 보정
+        ppy = freq_to_periods_per_year(timeframe)
+        if cost_model is not None and cost_model.funding_rate_8h > 0:
+            hours_per_bar = _HOURS_PER_YEAR / ppy
+            funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+            returns = returns - funding_drag
+
+        return returns
+
     def compute_metrics(
         self,
         timeframe: str = "1D",
@@ -215,16 +262,19 @@ class AnalyticsEngine:
             cost_model: 비용 모델 (H-002: 펀딩비 post-hoc 보정에 사용)
         """
         equity_series = self.get_equity_series()
+
+        # Equity curve를 target TF로 리샘플링 (intrabar 업데이트 → 일별 등)
+        if len(equity_series) > 0:
+            pandas_freq = tf_to_pandas_freq(timeframe)
+            equity_series = equity_series.resample(pandas_freq).last().dropna()
+
         ppy = freq_to_periods_per_year(timeframe)
 
-        # H-002: 펀딩비 post-hoc 보정
+        # H-002: 펀딩비 post-hoc 보정 (per equity-period drag)
         funding_drag = 0.0
         if cost_model is not None and cost_model.funding_rate_8h > 0:
             hours_per_bar = _HOURS_PER_YEAR / ppy
-            n_bars = len(self._bar_timestamps)
-            n_points = len(equity_series) - 1
-            scale = n_bars / n_points if n_points > 0 else 1.0
-            funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0) * scale
+            funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
 
         return build_performance_metrics(
             equity_curve=equity_series,
@@ -236,3 +286,20 @@ class AnalyticsEngine:
 
 
 _HOURS_PER_YEAR = 365 * 24
+
+# Timeframe → pandas resample frequency 매핑
+TF_FREQ_MAP: dict[str, str] = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1h": "1h",
+    "4h": "4h",
+    "1D": "1D",
+    "1d": "1D",
+}
+
+
+def tf_to_pandas_freq(tf: str) -> str:
+    """Target timeframe → pandas resample frequency."""
+    return TF_FREQ_MAP.get(tf, tf)

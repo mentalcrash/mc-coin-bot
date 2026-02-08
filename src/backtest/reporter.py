@@ -46,6 +46,9 @@ def generate_quantstats_report(
     """
     qs = _import_quantstats()
 
+    # pandas FutureWarning 억제 (QuantStats 내부 fillna downcasting)
+    pd.set_option("future.no_silent_downcasting", True)
+
     # QuantStats 확장 활성화
     qs.extend_pandas()  # type: ignore[no-untyped-call]
 
@@ -74,7 +77,7 @@ def generate_quantstats_report(
         title=title,
         periods_per_year=365,  # 암호화폐는 연중무휴
         compounded=True,
-        rf=0.05,  # 5% 무위험 수익률 (스테이블코인 예치)
+        rf=0.0,  # 내부 메트릭과 동일한 무위험 수익률
     )
 
     if auto_open:
@@ -151,6 +154,10 @@ def _prepare_returns_for_quantstats(returns: pd.Series) -> pd.Series:
     Returns:
         정제된 수익률 시리즈
     """
+    # Decimal → float 변환 (QuantStats는 float만 지원)
+    if returns.dtype == object:
+        returns = returns.astype(float)
+
     # NaN 제거
     clean = returns.dropna()
 
