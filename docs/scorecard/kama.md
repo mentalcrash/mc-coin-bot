@@ -45,8 +45,8 @@
 ```
 G0 아이디어  [PASS] 22/30점
 G1 백테스트  [PASS] Sharpe 1.14, MDD 13.25%
-G2 IS/OOS    [FAIL] OOS Sharpe -0.02, Decay 102.8%
-G3 파라미터  [    ]
+G2 IS/OOS    [PASS] OOS Sharpe 1.01, Decay 21.8%
+G3 파라미터  [PASS] 3/3 고원 + ±20% 안정
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
 G6 모의거래  [    ]
@@ -55,8 +55,12 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-**Gate 2** (FAIL): IS Sharpe 0.71, OOS Sharpe -0.02, Decay 102.8%
-  - 실패 사유: OOS Sharpe (-0.02) < 0.5; Sharpe Decay (102.8%) > 30%
+**Gate 2** (PASS): IS Sharpe 1.30, OOS Sharpe 1.01, Decay 21.8%, OOS Return +31.8%
+
+**Gate 3** (PASS): 3개 핵심 파라미터 모두 고원 존재 + ±20% Sharpe 부호 유지
+- `er_lookback`: 고원 7개 (5~12), ±20% Sharpe 0.97~1.15
+- `slow_period`: 고원 10개 (20~50), ±20% Sharpe 1.10~1.16 — 매우 안정
+- `vol_target`: 고원 8개 (0.2~0.5), ±20% Sharpe 1.05~1.14
 
 ---
 
@@ -66,4 +70,5 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 22/30점 |
 | 2026-02-09 | G1 | PASS | DOGE/USDT Sharpe 1.14 |
-| 2026-02-09 | G2 | FAIL | OOS Sharpe -0.02, Decay 102.8% |
+| 2026-02-09 | G2 | PASS | OOS Sharpe 1.01, Decay 21.8% |
+| 2026-02-09 | G3 | PASS | 3/3 파라미터 고원+안정 |

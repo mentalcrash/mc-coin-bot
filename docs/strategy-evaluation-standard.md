@@ -390,7 +390,7 @@ docs/scorecard/
 |------|------|
 | Gate 1 | `uv run python -m src.cli.backtest run {config}` |
 | Gate 2 | `uv run python -m src.cli.backtest validate -m quick -s {name}` |
-| Gate 3 | `uv run python -m src.cli.backtest sweep {config}` |
+| Gate 3 | `uv run python scripts/gate3_param_sweep.py` |
 | Gate 4 (WFA) | `uv run python -m src.cli.backtest validate -m milestone -s {name}` |
 | Gate 4 (CPCV) | `uv run python -m src.cli.backtest validate -m final -s {name}` |
 | Gate 5 | `uv run python main.py eda run {config}` |

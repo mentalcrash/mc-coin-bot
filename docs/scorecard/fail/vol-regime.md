@@ -45,7 +45,7 @@
 ```
 G0 아이디어  [PASS] 23/30점
 G1 백테스트  [PASS] Sharpe 1.41, MDD 32.34%
-G2 IS/OOS    [FAIL] OOS Sharpe 0.09, Decay 95.4%
+G2 IS/OOS    [FAIL] OOS Sharpe 0.37, Decay 77.3%
 G3 파라미터  [    ]
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
@@ -55,8 +55,8 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-**Gate 2** (FAIL): IS Sharpe 1.86, OOS Sharpe 0.09, Decay 95.4%
-  - 실패 사유: OOS Sharpe (0.09) < 0.5; Sharpe Decay (95.4%) > 30%
+**Gate 2** (FAIL): IS Sharpe 1.65, OOS Sharpe 0.37, Decay 77.3%
+  - 실패 사유: Sharpe Decay (77.3%) >= 50%
 
 ---
 
@@ -66,4 +66,4 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 23/30점 |
 | 2026-02-09 | G1 | PASS | ETH/USDT Sharpe 1.41 |
-| 2026-02-09 | G2 | FAIL | OOS Sharpe 0.09, Decay 95.4% |
+| 2026-02-09 | G2 | FAIL | OOS Sharpe 0.37, Decay 77.3% |

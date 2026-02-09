@@ -45,7 +45,7 @@
 ```
 G0 아이디어  [PASS] 24/30점
 G1 백테스트  [PASS] Sharpe 1.22, MDD 37.52%
-G2 IS/OOS    [FAIL] OOS Sharpe 0.64, Decay 39.4%
+G2 IS/OOS    [FAIL] OOS Sharpe 0.25, Decay 85.2%
 G3 파라미터  [    ]
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
@@ -55,8 +55,8 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-**Gate 2** (FAIL): IS Sharpe 1.06, OOS Sharpe 0.64, Decay 39.4%
-  - 실패 사유: Sharpe Decay (39.4%) > 30%
+**Gate 2** (FAIL): IS Sharpe 1.67, OOS Sharpe 0.25, Decay 85.2%
+  - 실패 사유: OOS Sharpe (0.25) < 0.3; Sharpe Decay (85.2%) >= 50%
 
 ---
 
@@ -66,4 +66,4 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 24/30점 |
 | 2026-02-09 | G1 | PASS | BTC/USDT Sharpe 1.22 |
-| 2026-02-09 | G2 | FAIL | OOS Sharpe 0.64, Decay 39.4% |
+| 2026-02-09 | G2 | FAIL | OOS Sharpe 0.25, Decay 85.2% |

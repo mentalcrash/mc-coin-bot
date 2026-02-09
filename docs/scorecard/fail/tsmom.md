@@ -244,14 +244,20 @@
 | **MDD** | -35.4% | < 40% |
 | **날짜** | 2025 | |
 
-### Gate 2: 표본 내/외 검증 — `PASS`
+### Gate 2: 표본 내/외 검증 — `FAIL` (평가 표준 기준)
 
 | 항목 | 값 | 기준 |
 |------|---|------|
-| **판정** | **PASS** | |
-| **IS/OOS Split** | 70/30 (TieredValidator) | |
-| **검증 결과** | PASS (과적합 검증 통과) | |
-| **날짜** | 2026-02 | |
+| **판정** | **FAIL** | 평가 표준 기준 |
+| **IS/OOS Split** | 70/30 | |
+| **IS Sharpe** | 1.49 | |
+| **OOS Sharpe** | 0.19 | >= 0.3 필요 |
+| **Sharpe Decay** | 87.2% | < 50% 필요 |
+| **OOS Return** | +2.6% | > 0% (통과) |
+| **날짜** | 2026-02-09 | gate2_validate.py 표준 검증 |
+
+> **참고**: 단순 70/30 시계열 분할에서 IS(2020-2024.3)는 강세장, OOS(2024.3-2025.12)는 횡보/조정 포함.
+> Gate 3 WFA(5-fold 롤링)와 Gate 4 CPCV는 PASS — 레짐 교차 검증에서는 견고함 확인.
 
 ### Gate 3: 파라미터 조율 — `PASS`
 
@@ -426,7 +432,7 @@
 ```
 0단계 아이디어: [PASS] 평가표 점수: 24/30
 1단계 시제품:   [PASS] IS Sharpe: 1.04, MDD: 35.4%, CAGR: +31.3% (BTC)
-2단계 IS/OOS:   [PASS] 과적합 검증 통과
+2단계 IS/OOS:   [FAIL] OOS Sharpe 0.19, Decay 87.2% (WFA/CPCV는 PASS)
 3단계 파라미터: [PASS] 고원: [Y], ±20%: [Y], 1,536+ 백테스트
 4단계 심층검증: [PASS] IS/OOS, WFA, CPCV, DSR, PBO 모두 PASS
 5단계 자산선정: [PASS] 최적 자산: SOL/USDT, Sharpe: 1.33 (5개 자산 비교)
@@ -494,7 +500,8 @@ DonchianEns      0.40    0.25      0.60      0.80         1.00
 |------|------|------|------|------|
 | 2025 | Gate 0 | PASS | Moskowitz (2012) 논문 기반, 경제적 논거 확실 | 초기 개발 시작 |
 | 2025 | Gate 1 | PASS | BTC 단일 Sharpe 1.04, CAGR +31.3% | 기본 파라미터 |
-| 2026-01 | Gate 2 | PASS | IS/OOS 검증 통과 | TieredValidator |
+| 2026-01 | Gate 2 | PASS | IS/OOS 검증 통과 (내부 기준) | TieredValidator |
+| 2026-02-09 | Gate 2 | **FAIL** | 평가 표준 기준: OOS Sharpe 0.19 < 0.3, Decay 87.2% >= 50% | 70/30 단순 분할, WFA/CPCV는 PASS |
 | 2026-01 | Gate 3 | PASS | 1,536+ 백테스트, 파라미터 고원 확인 | 8단계 스윕 |
 | 2026-02 | Gate 4 | PASS | WFA, CPCV, DSR, PBO 모두 통과 | 심층 검증 |
 | 2026-02 | 감사 | Grade A- | 6건 수정, 펀딩비 반영 | Data 10/10, Signal 9/10, Exec 8/10 |

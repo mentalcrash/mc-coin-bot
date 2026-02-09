@@ -45,8 +45,8 @@
 ```
 G0 아이디어  [PASS] 22/30점
 G1 백테스트  [WATCH] Sharpe 0.82, MDD 13.86%
-G2 IS/OOS    [    ]
-G3 파라미터  [    ]
+G2 IS/OOS    [PASS] OOS Sharpe 0.80, Decay 6.2%
+G3 파라미터  [PASS] 3/3 고원 + ±20% 안정
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
 G6 모의거래  [    ]
@@ -55,7 +55,12 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-> Gate 2 이후의 상세 결과는 해당 Gate 완료 시 추가한다.
+**Gate 2** (PASS): IS Sharpe 0.85, OOS Sharpe 0.80, Decay 6.2%, OOS Return +10.4%
+
+**Gate 3** (PASS): 3개 핵심 파라미터 모두 고원 존재 + ±20% Sharpe 부호 유지
+- `lookback`: 고원 11개 (5~20), ±20% Sharpe 0.77~0.83 — 전 범위 안정
+- `vol_target`: 고원 6개 (0.2~0.5), ±20% Sharpe 0.76~0.91
+- `max_weight`: 고원 7개 (0.3~0.7), ±20% Sharpe 0.78~0.94 — 가중치에 둔감
 
 ---
 
@@ -65,3 +70,5 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 22/30점 |
 | 2026-02-09 | G1 | WATCH | DOGE/USDT Sharpe 0.82 |
+| 2026-02-09 | G2 | PASS | OOS Sharpe 0.80, Decay 6.2% |
+| 2026-02-09 | G3 | PASS | 3/3 파라미터 고원+안정 |

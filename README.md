@@ -2,7 +2,7 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-18개 전략을 체계적으로 평가하고, 검증된 전략을 멀티에셋 포트폴리오로 운용합니다.
+24개 전략을 체계적으로 평가하여 4개 검증 전략을 선별, 멀티에셋 포트폴리오로 운용합니다.
 VectorBT + EDA 이중 백테스트와 3단계 과적합 검증을 거쳐 실거래로 전환합니다.
 
 ---
@@ -233,49 +233,63 @@ uv run python scripts/generate_scorecards.py
 
 ---
 
-## 전략 스코어카드 (Gate 0-1 평가)
+## 전략 스코어카드 (Gate 0-3 평가)
 
-17개 활성 전략 + 6개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 결과.
+4개 활성 전략 + 20개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 + IS/OOS 70/30 + 파라미터 안정성 검증 결과.
 
-### 활성 전략
+### 활성 전략 (G3 PASS)
 
-| # | 전략 | Best Asset | Sharpe | CAGR | MDD | G0 | G1 | G2 | 스코어카드 |
-|---|------|-----------|--------|------|-----|:--:|:--:|:--:|-----------|
-| 1 | **Vol Regime** | ETH/USDT | 1.41 | +57.6% | -32.3% | P | P | — | [scorecard](docs/scorecard/vol-regime.md) |
-| 2 | **TSMOM** | SOL/USDT | 1.33 | +50.0% | -26.0% | P | P | — | [scorecard](docs/scorecard/tsmom.md) |
-| 3 | **Enhanced VW-TSMOM** | BTC/USDT | 1.22 | +39.1% | -37.5% | P | P | — | [scorecard](docs/scorecard/enhanced-tsmom.md) |
-| 4 | **Vol Structure** | SOL/USDT | 1.18 | +31.8% | -28.3% | P | P | — | [scorecard](docs/scorecard/vol-structure.md) |
-| 5 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.2% | P | P | — | [scorecard](docs/scorecard/kama.md) |
-| 6 | **Vol-Adaptive** | SOL/USDT | 1.08 | +31.5% | -44.9% | P | P | — | [scorecard](docs/scorecard/vol-adaptive.md) |
-| 7 | **Donchian Channel** | SOL/USDT | 1.01 | +30.5% | -50.0% | P | P | — | [scorecard](docs/scorecard/donchian.md) |
-| 8 | Donchian Ensemble | ETH/USDT | 0.99 | +10.8% | -9.7% | P | W | — | [scorecard](docs/scorecard/donchian-ensemble.md) |
-| 9 | ADX Regime | SOL/USDT | 0.94 | +23.1% | -33.9% | P | W | — | [scorecard](docs/scorecard/adx-regime.md) |
-| 10 | TTM Squeeze | BTC/USDT | 0.94 | +17.7% | -37.7% | P | W | — | [scorecard](docs/scorecard/ttm-squeeze.md) |
-| 11 | Stochastic Momentum | SOL/USDT | 0.94 | +7.0% | -9.0% | P | W | — | [scorecard](docs/scorecard/stoch-mom.md) |
-| 12 | MAX-MIN | DOGE/USDT | 0.82 | +15.3% | -13.9% | P | W | — | [scorecard](docs/scorecard/max-min.md) |
-| 13 | GK Breakout | DOGE/USDT | 0.77 | +13.1% | -23.1% | P | W | — | [scorecard](docs/scorecard/gk-breakout.md) |
-| 14 | MTF-MACD | SOL/USDT | 0.76 | +6.6% | -8.4% | P | W | — | [scorecard](docs/scorecard/mtf-macd.md) |
-| 15 | HMM Regime | BTC/USDT | 0.75 | +18.7% | -31.7% | P | W | — | [scorecard](docs/scorecard/hmm-regime.md) |
-| 16 | Adaptive Breakout | SOL/USDT | 0.54 | +6.7% | -12.1% | P | W | — | [scorecard](docs/scorecard/adaptive-breakout.md) |
-| 17 | BB-RSI | SOL/USDT | 0.53 | +4.1% | -15.1% | P | W | — | [scorecard](docs/scorecard/bb-rsi.md) |
-| — | Mom-MR Blend | ETH/USDT | 0.48 | +6.7% | -29.2% | P | W | — | [scorecard](docs/scorecard/mom-mr-blend.md) |
+| # | 전략 | Best Asset | Sharpe | CAGR | MDD | G0 | G1 | G2 | G3 | 스코어카드 |
+|---|------|-----------|--------|------|-----|:--:|:--:|:--:|:--:|-----------|
+| 1 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.2% | P | P | P | P | [scorecard](docs/scorecard/kama.md) |
+| 2 | **Donchian Ensemble** | ETH/USDT | 0.99 | +10.8% | -9.7% | P | W | P | P | [scorecard](docs/scorecard/donchian-ensemble.md) |
+| 3 | **MAX-MIN** | DOGE/USDT | 0.82 | +15.3% | -13.9% | P | W | P | P | [scorecard](docs/scorecard/max-min.md) |
+| 4 | **BB-RSI** | SOL/USDT | 0.53 | +4.1% | -15.1% | P | W | P | P | [scorecard](docs/scorecard/bb-rsi.md) |
 
-> `P` = PASS, `W` = WATCH, `F` = FAIL, `—` = PENDING (해당 Gate 미도달)
+> `P` = PASS, `W` = WATCH, `F` = FAIL
 >
-> Gate 2 (IS/OOS 단일에셋 검증)는 Gate 1 PASS 전략에 대해 순차 진행 예정.
+> **Gate 3 기준**: 핵심 파라미터의 고원(plateau) 존재 + ±20% 범위에서 Sharpe 부호 유지.
+> 4개 전략 모두 넓은 파라미터 범위에서 안정적 성과. Gate 4(WFA+CPCV) 진행 대상.
 
 ### 폐기된 전략 (Deprecated)
 
-아래 전략은 Gate 1 평가에서 구조적 문제 또는 성과 부족으로 **코드 삭제** 처리되었습니다.
+아래 전략은 Gate 평가에서 구조적 문제 또는 성과 부족으로 폐기 처리되었습니다.
 동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
 
-| 전략 | Sharpe | 실패 Gate | 폐기 사유 | 스코어카드 |
-|------|--------|:-------:|----------|-----------|
-| Larry VB | 0.15 | G1 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | [scorecard](docs/scorecard/fail/larry-vb.md) |
-| Overnight | 0.00 | G1 | 1H TF 데이터 부족 + 계절성 불안정 | [scorecard](docs/scorecard/fail/overnight.md) |
-| Z-Score MR | -0.02 | G1 | 단일 z-score 평균회귀, 낮은 Sharpe | [scorecard](docs/scorecard/fail/zscore-mr.md) |
-| RSI Crossover | -0.16 | G1 | RSI 단순 크로스오버, 통계적 무의미 | [scorecard](docs/scorecard/fail/rsi-crossover.md) |
-| Hurst/ER Regime | 0.24 | G1 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
-| Risk Momentum | 0.77 | G1 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
+#### Gate 3 실패 (파라미터 불안정)
 
-> **교훈**: 단일지표 < 앙상블, 단일코인 < 멀티에셋. 고빈도 거래는 비용 구조 확인 필수. MDD > 50%는 무조건 폐기.
+| 전략 | Sharpe | 폐기 사유 | 스코어카드 |
+|------|--------|----------|-----------|
+| TTM Squeeze | 0.94 | bb_period, kc_mult 고원 부재 — bb_period ±2에서 Sharpe 급락, kc_mult 1.0에서 거래 0건 | [scorecard](docs/scorecard/fail/ttm-squeeze.md) |
+
+#### Gate 2 실패 (IS/OOS 과적합)
+
+| 전략 | Sharpe | OOS Sharpe | Decay | 폐기 사유 | 스코어카드 |
+|------|--------|-----------|-------|----------|-----------|
+| Vol Regime | 1.41 | 0.37 | 77.3% | IS 고성과가 OOS에서 유지 안됨 (Decay 77%) | [scorecard](docs/scorecard/fail/vol-regime.md) |
+| TSMOM | 1.33 | 0.19 | 87.2% | OOS Sharpe 0.19, Decay 87% (WFA/CPCV는 PASS) | [scorecard](docs/scorecard/fail/tsmom.md) |
+| Enhanced VW-TSMOM | 1.22 | 0.25 | 85.2% | OOS Sharpe 0.25, Decay 85% | [scorecard](docs/scorecard/fail/enhanced-tsmom.md) |
+| Vol Structure | 1.18 | 0.59 | 57.2% | OOS Sharpe 양호하나 Decay 57% | [scorecard](docs/scorecard/fail/vol-structure.md) |
+| Vol-Adaptive | 1.08 | -0.97 | 155.9% | OOS Sharpe 음수, 완전 과적합 | [scorecard](docs/scorecard/fail/vol-adaptive.md) |
+| Donchian Channel | 1.01 | 0.12 | 91.1% | OOS Sharpe 0.12, OOS Return -0.6% | [scorecard](docs/scorecard/fail/donchian.md) |
+| ADX Regime | 0.94 | -0.68 | 146.3% | OOS Sharpe 음수, OOS Return -26.8% | [scorecard](docs/scorecard/fail/adx-regime.md) |
+| Stochastic Momentum | 0.94 | -0.34 | 124.9% | OOS Sharpe 음수, 포트폴리오 분산 효과 부재 | [scorecard](docs/scorecard/fail/stoch-mom.md) |
+| GK Breakout | 0.77 | 0.39 | 59.0% | Decay 59%, OOS Sharpe borderline | [scorecard](docs/scorecard/fail/gk-breakout.md) |
+| MTF-MACD | 0.76 | 0.21 | 78.1% | OOS Sharpe 0.21, 신호 빈도 부족 | [scorecard](docs/scorecard/fail/mtf-macd.md) |
+| HMM Regime | 0.75 | -0.66 | 162.9% | OOS Sharpe 음수, HMM 수렴 불안정 | [scorecard](docs/scorecard/fail/hmm-regime.md) |
+| Adaptive Breakout | 0.54 | -0.68 | 201.1% | OOS Sharpe 음수, Decay 201% (최악) | [scorecard](docs/scorecard/fail/adaptive-breakout.md) |
+| Mom-MR Blend | 0.48 | -0.10 | 109.1% | OOS Sharpe 음수, Mom+MR alpha 상쇄 | [scorecard](docs/scorecard/fail/mom-mr-blend.md) |
+
+#### Gate 1 실패 (코드 삭제)
+
+| 전략 | Sharpe | 폐기 사유 | 스코어카드 |
+|------|--------|----------|-----------|
+| Larry VB | 0.15 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | [scorecard](docs/scorecard/fail/larry-vb.md) |
+| Overnight | 0.00 | 1H TF 데이터 부족 + 계절성 불안정 | [scorecard](docs/scorecard/fail/overnight.md) |
+| Z-Score MR | -0.02 | 단일 z-score 평균회귀, 낮은 Sharpe | [scorecard](docs/scorecard/fail/zscore-mr.md) |
+| RSI Crossover | -0.16 | RSI 단순 크로스오버, 통계적 무의미 | [scorecard](docs/scorecard/fail/rsi-crossover.md) |
+| Hurst/ER Regime | 0.24 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
+| Risk Momentum | 0.77 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
+
+> **G3 교훈**: G2 통과 5개 중 **G3 통과는 4개**. TTM Squeeze는 G2 Decay 45.6%(borderline)이었으며, bb_period ±2에서 Sharpe가 0.94→0.53으로 급락하는 뾰족한 최적해.
+> 반면 KAMA, Donchian Ensemble, MAX-MIN, BB-RSI는 넓은 파라미터 범위에서 안정적 고원 — **로버스트한 전략은 파라미터에 둔감**.

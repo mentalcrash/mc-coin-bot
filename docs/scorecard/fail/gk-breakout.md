@@ -45,7 +45,7 @@
 ```
 G0 아이디어  [PASS] 23/30점
 G1 백테스트  [WATCH] Sharpe 0.77, MDD 23.15%
-G2 IS/OOS    [    ]
+G2 IS/OOS    [FAIL] OOS Sharpe 0.39, Decay 59.0%
 G3 파라미터  [    ]
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
@@ -55,7 +55,8 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-> Gate 2 이후의 상세 결과는 해당 Gate 완료 시 추가한다.
+**Gate 2** (FAIL): IS Sharpe 0.96, OOS Sharpe 0.39, Decay 59.0%
+  - 실패 사유: Sharpe Decay (59.0%) >= 50%
 
 ---
 
@@ -65,3 +66,4 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 23/30점 |
 | 2026-02-09 | G1 | WATCH | DOGE/USDT Sharpe 0.77 |
+| 2026-02-09 | G2 | FAIL | OOS Sharpe 0.39, Decay 59.0% |

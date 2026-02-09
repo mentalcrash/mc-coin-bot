@@ -51,7 +51,7 @@ SYMBOLS = [
 START = datetime(2020, 1, 1, tzinfo=UTC)
 END = datetime(2025, 12, 31, tzinfo=UTC)
 
-INITIAL_CAPITAL = Decimal("100000")
+INITIAL_CAPITAL = Decimal(100000)
 
 RESULTS_DIR = ROOT / "results"
 
@@ -163,7 +163,9 @@ def main() -> None:
     strategies = sorted(s for s in list_strategies() if s not in EXCLUDE)
     total = len(strategies) * len(SYMBOLS)
 
-    logger.info(f"Bulk Backtest: {len(strategies)} strategies × {len(SYMBOLS)} symbols = {total} runs")
+    logger.info(
+        f"Bulk Backtest: {len(strategies)} strategies × {len(SYMBOLS)} symbols = {total} runs"
+    )
     logger.info(f"Period: {START.date()} ~ {END.date()}, Capital: ${INITIAL_CAPITAL}")
 
     engine = BacktestEngine()

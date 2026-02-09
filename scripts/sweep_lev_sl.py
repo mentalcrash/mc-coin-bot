@@ -161,16 +161,14 @@ def print_results(
 async def sweep_asset(symbol: str, config_path: str) -> list[dict[str, object]]:
     """단일 자산에 대해 모든 조합 스윕."""
     combos = list(itertools.product(LEVERAGE_CAPS, STOP_LOSSES))
-    console.print(f"\n[cyan]{'='*60}[/cyan]")
+    console.print(f"\n[cyan]{'=' * 60}[/cyan]")
     console.print(f"[cyan]{symbol}: Running {len(combos)} combinations...[/cyan]")
     console.print(f"[cyan]Fixed: TS={FIXED_TS_MULT}x, Rebal={FIXED_REBAL:.0%}[/cyan]")
-    console.print(f"[cyan]{'='*60}[/cyan]\n")
+    console.print(f"[cyan]{'=' * 60}[/cyan]\n")
 
     results: list[dict[str, object]] = []
     for i, (lev, sl) in enumerate(combos, 1):
-        console.print(
-            f"  [{i}/{len(combos)}] Lev={lev:.1f}x, SL={sl:.0%}...", end=" "
-        )
+        console.print(f"  [{i}/{len(combos)}] Lev={lev:.1f}x, SL={sl:.0%}...", end=" ")
         result = await run_single(config_path, lev, sl)
         console.print(
             f"Sharpe={result['sharpe']:.2f}, CAGR={result['cagr']:.1f}%, "

@@ -45,8 +45,8 @@
 ```
 G0 아이디어  [PASS] 25/30점
 G1 백테스트  [WATCH] Sharpe 0.99, MDD 9.73%
-G2 IS/OOS    [    ]
-G3 파라미터  [    ]
+G2 IS/OOS    [PASS] OOS Sharpe 0.99, Decay 1.7%
+G3 파라미터  [PASS] 2/2 고원 + ±20% 안정
 G4 심층검증  [    ]
 G5 EDA검증   [    ]
 G6 모의거래  [    ]
@@ -55,7 +55,11 @@ G7 실전배포  [    ]
 
 ### Gate 상세 (완료된 Gate만 기록)
 
-> Gate 2 이후의 상세 결과는 해당 Gate 완료 시 추가한다.
+**Gate 2** (PASS): IS Sharpe 1.01, OOS Sharpe 0.99, Decay 1.7%, OOS Return +13.4%
+
+**Gate 3** (PASS): 2개 핵심 파라미터 모두 고원 존재 + ±20% Sharpe 부호 유지
+- `vol_target`: 고원 10개 (0.2~0.55), ±20% Sharpe 0.95~0.99 — 전 범위 안정
+- `atr_period`: 고원 10개 (8~25), ±20% Sharpe 0.95~1.00 — 전 범위 안정
 
 ---
 
@@ -65,3 +69,5 @@ G7 실전배포  [    ]
 |------|------|------|------|
 | 2026-02-09 | G0 | PASS | 25/30점 |
 | 2026-02-09 | G1 | WATCH | ETH/USDT Sharpe 0.99 |
+| 2026-02-09 | G2 | PASS | OOS Sharpe 0.99, Decay 1.7% |
+| 2026-02-09 | G3 | PASS | 2/2 파라미터 고원+안정 |
