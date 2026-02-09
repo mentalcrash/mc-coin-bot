@@ -86,8 +86,8 @@ portfolio:
 
 ## 전략 평가 체계
 
-전략은 Gate 0 → Gate 1 순서로 평가되며, 각 단계를 통과해야 다음 단계로 진행합니다.
-상세 결과는 각 전략의 [scorecard](docs/strategy/)를 참조하세요.
+전략은 Gate 0 → Gate 7 순서로 평가되며, 각 단계를 통과해야 다음 단계로 진행합니다.
+상세 기준은 [전략 평가 표준](docs/strategy-evaluation-standard.md), 개별 결과는 [스코어카드](docs/scorecard/)를 참조하세요.
 
 ### Gate 0: Idea Viability (아이디어 검증)
 
@@ -233,47 +233,49 @@ uv run python scripts/generate_scorecards.py
 
 ---
 
-## 전략 스코어카드 (Gate 1 일괄 평가)
+## 전략 스코어카드 (Gate 0-1 평가)
 
-18개 전략 대상 6년(2020-2025) 5-coin 백테스트 결과. Best Asset 기준 단일에셋 성과.
+17개 활성 전략 + 6개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 결과.
 
 ### 활성 전략
 
-| # | 전략 | Best Asset | Sharpe | CAGR | MDD | 판정 | 스코어카드 |
-|---|------|-----------|--------|------|-----|------|-----------|
-| 1 | **Vol-Regime** | ETH/USDT | 1.41 | +57.6% | -32.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-regime.md) |
-| 2 | **TSMOM** | SOL/USDT | 1.33 | +50.0% | -26.0% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-tsmom.md) |
-| 3 | **Enhanced TSMOM** | BTC/USDT | 1.22 | +39.1% | -37.5% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-enhanced-tsmom.md) |
-| 4 | **Vol-Structure** | SOL/USDT | 1.18 | +31.8% | -28.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-structure.md) |
-| 5 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-kama.md) |
-| 6 | **Vol-Adaptive** | SOL/USDT | 1.08 | +31.5% | -44.9% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-adaptive.md) |
-| 7 | **Donchian** | SOL/USDT | 1.01 | +30.5% | -50.0% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-donchian.md) |
-| 8 | Donchian Ensemble | ETH/USDT | 0.99 | +10.8% | -9.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-donchian-ensemble.md) |
-| 9 | TTM Squeeze | BTC/USDT | 0.94 | +17.7% | -37.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-ttm-squeeze.md) |
-| 10 | ADX Regime | SOL/USDT | 0.94 | +23.1% | -33.9% | WATCH | [scorecard](docs/strategy/strategy-scorecard-adx-regime.md) |
-| 11 | Stoch-Mom | SOL/USDT | 0.94 | +7.1% | -9.0% | WATCH | [scorecard](docs/strategy/strategy-scorecard-stoch-mom.md) |
-| 12 | Max-Min | DOGE/USDT | 0.82 | +15.3% | -13.9% | WATCH | [scorecard](docs/strategy/strategy-scorecard-max-min.md) |
-| 13 | GK Breakout | DOGE/USDT | 0.77 | +13.1% | -23.2% | WATCH | [scorecard](docs/strategy/strategy-scorecard-gk-breakout.md) |
-| 14 | MTF-MACD | SOL/USDT | 0.76 | +6.6% | -8.4% | WATCH | [scorecard](docs/strategy/strategy-scorecard-mtf-macd.md) |
-| 15 | HMM Regime | BTC/USDT | 0.75 | +18.7% | -31.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-hmm-regime.md) |
-| 16 | Adaptive Breakout | SOL/USDT | 0.54 | +6.7% | -12.1% | WATCH | [scorecard](docs/strategy/strategy-scorecard-adaptive-breakout.md) |
-| 17 | BB-RSI | SOL/USDT | 0.53 | +4.1% | -15.1% | WATCH | [scorecard](docs/strategy/strategy-scorecard-bb-rsi.md) |
-| — | Mom-MR Blend | ETH/USDT | 0.48 | +6.7% | -29.2% | WATCH | [scorecard](docs/strategy/strategy-scorecard-mom-mr-blend.md) |
+| # | 전략 | Best Asset | Sharpe | CAGR | MDD | G0 | G1 | G2 | 스코어카드 |
+|---|------|-----------|--------|------|-----|:--:|:--:|:--:|-----------|
+| 1 | **Vol Regime** | ETH/USDT | 1.41 | +57.6% | -32.3% | P | P | — | [scorecard](docs/scorecard/vol-regime.md) |
+| 2 | **TSMOM** | SOL/USDT | 1.33 | +50.0% | -26.0% | P | P | — | [scorecard](docs/scorecard/tsmom.md) |
+| 3 | **Enhanced VW-TSMOM** | BTC/USDT | 1.22 | +39.1% | -37.5% | P | P | — | [scorecard](docs/scorecard/enhanced-tsmom.md) |
+| 4 | **Vol Structure** | SOL/USDT | 1.18 | +31.8% | -28.3% | P | P | — | [scorecard](docs/scorecard/vol-structure.md) |
+| 5 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.2% | P | P | — | [scorecard](docs/scorecard/kama.md) |
+| 6 | **Vol-Adaptive** | SOL/USDT | 1.08 | +31.5% | -44.9% | P | P | — | [scorecard](docs/scorecard/vol-adaptive.md) |
+| 7 | **Donchian Channel** | SOL/USDT | 1.01 | +30.5% | -50.0% | P | P | — | [scorecard](docs/scorecard/donchian.md) |
+| 8 | Donchian Ensemble | ETH/USDT | 0.99 | +10.8% | -9.7% | P | W | — | [scorecard](docs/scorecard/donchian-ensemble.md) |
+| 9 | ADX Regime | SOL/USDT | 0.94 | +23.1% | -33.9% | P | W | — | [scorecard](docs/scorecard/adx-regime.md) |
+| 10 | TTM Squeeze | BTC/USDT | 0.94 | +17.7% | -37.7% | P | W | — | [scorecard](docs/scorecard/ttm-squeeze.md) |
+| 11 | Stochastic Momentum | SOL/USDT | 0.94 | +7.0% | -9.0% | P | W | — | [scorecard](docs/scorecard/stoch-mom.md) |
+| 12 | MAX-MIN | DOGE/USDT | 0.82 | +15.3% | -13.9% | P | W | — | [scorecard](docs/scorecard/max-min.md) |
+| 13 | GK Breakout | DOGE/USDT | 0.77 | +13.1% | -23.1% | P | W | — | [scorecard](docs/scorecard/gk-breakout.md) |
+| 14 | MTF-MACD | SOL/USDT | 0.76 | +6.6% | -8.4% | P | W | — | [scorecard](docs/scorecard/mtf-macd.md) |
+| 15 | HMM Regime | BTC/USDT | 0.75 | +18.7% | -31.7% | P | W | — | [scorecard](docs/scorecard/hmm-regime.md) |
+| 16 | Adaptive Breakout | SOL/USDT | 0.54 | +6.7% | -12.1% | P | W | — | [scorecard](docs/scorecard/adaptive-breakout.md) |
+| 17 | BB-RSI | SOL/USDT | 0.53 | +4.1% | -15.1% | P | W | — | [scorecard](docs/scorecard/bb-rsi.md) |
+| — | Mom-MR Blend | ETH/USDT | 0.48 | +6.7% | -29.2% | P | W | — | [scorecard](docs/scorecard/mom-mr-blend.md) |
 
-> **PASS**: Sharpe >= 1.0 + 구조적 결함 없음. **WATCH**: 0.5 <= Sharpe < 1.0, 멀티에셋/파라미터 최적화 후 재평가.
+> `P` = PASS, `W` = WATCH, `F` = FAIL, `—` = PENDING (해당 Gate 미도달)
+>
+> Gate 2 (IS/OOS 단일에셋 검증)는 Gate 1 PASS 전략에 대해 순차 진행 예정.
 
 ### 폐기된 전략 (Deprecated)
 
 아래 전략은 Gate 1 평가에서 구조적 문제 또는 성과 부족으로 **코드 삭제** 처리되었습니다.
 동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
 
-| 전략 | Sharpe | 폐기 사유 | 폐기일 |
-|------|--------|----------|--------|
-| Larry-VB | 0.15 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | 2026-02-09 |
-| Overnight | 0.00 | 1H 전용 전략, 1D 백테스트 거래 0건. 구조적 TF 불일치 | 2026-02-09 |
-| Z-Score MR | -0.02 | 총수익 음수, MDD -52%. Mean-reversion 전략의 한계 | 2026-02-09 |
-| RSI Crossover | -0.16 | 총수익 음수, 단순 RSI 전략의 한계 | 2026-02-09 |
-| Hurst Regime | 0.24 | MDD -57%, 462건 거래에도 CAGR 1.9%. Hurst exponent 불안정 | 2026-02-09 |
-| Risk-Momentum | 0.77 | MDD -95.5% -- 사실상 파산. 리스크 조절 실패 | 2026-02-09 |
+| 전략 | Sharpe | 실패 Gate | 폐기 사유 | 스코어카드 |
+|------|--------|:-------:|----------|-----------|
+| Larry VB | 0.15 | G1 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | [scorecard](docs/scorecard/fail/larry-vb.md) |
+| Overnight | 0.00 | G1 | 1H TF 데이터 부족 + 계절성 불안정 | [scorecard](docs/scorecard/fail/overnight.md) |
+| Z-Score MR | -0.02 | G1 | 단일 z-score 평균회귀, 낮은 Sharpe | [scorecard](docs/scorecard/fail/zscore-mr.md) |
+| RSI Crossover | -0.16 | G1 | RSI 단순 크로스오버, 통계적 무의미 | [scorecard](docs/scorecard/fail/rsi-crossover.md) |
+| Hurst/ER Regime | 0.24 | G1 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
+| Risk Momentum | 0.77 | G1 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
 
 > **교훈**: 단일지표 < 앙상블, 단일코인 < 멀티에셋. 고빈도 거래는 비용 구조 확인 필수. MDD > 50%는 무조건 폐기.

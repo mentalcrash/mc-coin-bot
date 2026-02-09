@@ -1,6 +1,6 @@
 # 전략 평가표: TSMOM (Time-Series Momentum)
 
-> **템플릿 참조**: [strategy-scorecard-template.md](strategy-scorecard-template.md)
+> **템플릿 참조**: [template.md](template.md) | 평가 기준: [strategy-evaluation-standard.md](../strategy-evaluation-standard.md)
 
 ---
 
