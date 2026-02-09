@@ -58,6 +58,12 @@ Gate 7: 실전 배포 + 모니터링
 - Alpha, Beta 등 벤치마크 대비 지표는 모두 이 기준으로 산출한다.
 - **Alpha** = 전략 CAGR - Beta × 벤치마크 CAGR (Jensen's Alpha).
 - **Beta** = Cov(전략 수익률, 벤치마크 수익률) / Var(벤치마크 수익률).
+- **Up Capture Ratio** = 벤치마크 상승월의 전략 평균 수익 / 벤치마크 평균 수익 × 100%.
+- **Down Capture Ratio** = 벤치마크 하락월의 전략 평균 수익 / 벤치마크 평균 수익 × 100%.
+
+> **Up/Down Capture의 의미**: Up Capture 40%는 "BTC가 10% 오를 때 전략은 4% 오른다",
+> Down Capture 15%는 "BTC가 10% 떨어질 때 전략은 1.5%만 떨어진다"를 의미.
+> **비대칭 캡처 (Up >> Down)가 좋은 전략의 핵심 특성.**
 
 ### 비용 모델
 
@@ -119,7 +125,7 @@ Gate 7: 실전 배포 + 모니터링
 
 | 판정 | 조건 |
 |------|------|
-| **PASS** | Sharpe > **1.0** AND MDD < **40%** AND Trades > **50** |
+| **PASS** | Sharpe > **1.0** AND CAGR > **20%** AND MDD < **40%** AND Trades > **50** |
 | **WATCH** | 0.5 <= Sharpe <= 1.0, 또는 25% <= MDD <= 40% |
 | **FAIL** | (총수익 < 0 AND Trades < 20) 또는 (Sharpe < 0.5 AND Trades < 20) |
 
@@ -363,7 +369,7 @@ IS/OOS 각각에 대해 아래 지표를 기록한다 (판정 기준 아님, 분
 | Gate | 평가 대상 | 핵심 기준 | PASS 조건 |
 |------|----------|----------|----------|
 | **0** | 아이디어 | 경제적 타당성 | >= 18/30점 |
-| **1** | 5 에셋 x TF | Best Asset 선정 | Sharpe > 1.0, MDD < 40%, Trades > 50 |
+| **1** | 5 에셋 x TF | Best Asset 선정 | Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50 |
 | **2** | Best Asset | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% |
 | **3** | Best Asset | 파라미터 스윕 | 고원 존재, ±20% 안정 |
 | **4** | Best Asset | WFA + CPCV | WFE > 50%, PBO < 40%, DSR > 0.95 |

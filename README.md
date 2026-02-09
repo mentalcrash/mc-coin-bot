@@ -2,8 +2,8 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-24개 전략을 체계적으로 평가하여 4개 검증 전략을 선별, 멀티에셋 포트폴리오로 운용합니다.
-VectorBT + EDA 이중 백테스트와 3단계 과적합 검증을 거쳐 실거래로 전환합니다.
+24개 전략을 체계적으로 평가하여 실전 운용 후보를 선별합니다.
+VectorBT + EDA 이중 백테스트와 4단계 과적합 검증(IS/OOS, 파라미터 안정성, WFA, CPCV)을 거쳐 실거래로 전환합니다.
 
 ---
 
@@ -110,7 +110,7 @@ portfolio:
 
 | 판정 | 기준 |
 |------|------|
-| **PASS** | Sharpe > 1.0 + MDD < 40% + 거래 50건 이상 |
+| **PASS** | Sharpe > 1.0 + CAGR > 20% + MDD < 40% + 거래 50건 이상 |
 | **WATCH** | 0.5 <= Sharpe <= 1.0, 또는 25% <= MDD <= 40% |
 | **FAIL** | 총수익 음수 + 거래 20건 미만, 또는 MDD > 50% |
 
@@ -233,28 +233,32 @@ uv run python scripts/generate_scorecards.py
 
 ---
 
-## 전략 스코어카드 (Gate 0-3 평가)
+## 전략 스코어카드 (Gate 0-4 평가)
 
-4개 활성 전략 + 20개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 + IS/OOS 70/30 + 파라미터 안정성 검증 결과.
+0개 활성 전략 + 24개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 + IS/OOS 70/30 + 파라미터 안정성 + WFA/CPCV 심층 검증 결과.
 
-### 활성 전략 (G3 PASS)
+### 활성 전략
 
-| # | 전략 | Best Asset | Sharpe | CAGR | MDD | G0 | G1 | G2 | G3 | 스코어카드 |
-|---|------|-----------|--------|------|-----|:--:|:--:|:--:|:--:|-----------|
-| 1 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.2% | P | P | P | P | [scorecard](docs/scorecard/kama.md) |
-| 2 | **Donchian Ensemble** | ETH/USDT | 0.99 | +10.8% | -9.7% | P | W | P | P | [scorecard](docs/scorecard/donchian-ensemble.md) |
-| 3 | **MAX-MIN** | DOGE/USDT | 0.82 | +15.3% | -13.9% | P | W | P | P | [scorecard](docs/scorecard/max-min.md) |
-| 4 | **BB-RSI** | SOL/USDT | 0.53 | +4.1% | -15.1% | P | W | P | P | [scorecard](docs/scorecard/bb-rsi.md) |
-
-> `P` = PASS, `W` = WATCH, `F` = FAIL
->
-> **Gate 3 기준**: 핵심 파라미터의 고원(plateau) 존재 + ±20% 범위에서 Sharpe 부호 유지.
-> 4개 전략 모두 넓은 파라미터 범위에서 안정적 성과. Gate 4(WFA+CPCV) 진행 대상.
+> 현재 활성 전략 없음. Gate 1 CAGR > 20% 기준 추가로 기존 2개 전략 폐기 (2026-02-09).
 
 ### 폐기된 전략 (Deprecated)
 
 아래 전략은 Gate 평가에서 구조적 문제 또는 성과 부족으로 폐기 처리되었습니다.
 동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
+
+#### Gate 1 실패 (CAGR 미달)
+
+| 전략 | Sharpe | CAGR | MDD | 폐기 사유 | 스코어카드 |
+|------|--------|------|-----|----------|-----------|
+| Donchian Ensemble | 0.99 | +10.8% | -9.7% | CAGR +10.8% < 20% 최소 기준 | [scorecard](docs/scorecard/fail/donchian-ensemble.md) |
+| BB-RSI | 0.59 | +4.6% | -14.0% | CAGR +4.6% < 20% 최소 기준 | [scorecard](docs/scorecard/fail/bb-rsi.md) |
+
+#### Gate 4 실패 (WFA 심층검증)
+
+| 전략 | Sharpe | WFA OOS | WFA Decay | 폐기 사유 | 스코어카드 |
+|------|--------|---------|-----------|----------|-----------|
+| KAMA | 1.14 | 0.56 | 56.3% | WFA Decay 56% (>40%), Fold 2 OOS -0.06 (최근 기간 성과 급락) | [scorecard](docs/scorecard/fail/kama.md) |
+| MAX-MIN | 0.82 | 0.47 | 38.4% | WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34 (최근 기간 음수 전환) | [scorecard](docs/scorecard/fail/max-min.md) |
 
 #### Gate 3 실패 (파라미터 불안정)
 
@@ -291,5 +295,6 @@ uv run python scripts/generate_scorecards.py
 | Hurst/ER Regime | 0.24 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
 | Risk Momentum | 0.77 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
 
-> **G3 교훈**: G2 통과 5개 중 **G3 통과는 4개**. TTM Squeeze는 G2 Decay 45.6%(borderline)이었으며, bb_period ±2에서 Sharpe가 0.94→0.53으로 급락하는 뾰족한 최적해.
-> 반면 KAMA, Donchian Ensemble, MAX-MIN, BB-RSI는 넓은 파라미터 범위에서 안정적 고원 — **로버스트한 전략은 파라미터에 둔감**.
+> **교훈**: 24개 전략 중 Gate 4까지 통과한 전략은 4개였으나, CAGR > 20% 기준 추가로 전원 폐기.
+> 안정적이지만 절대 수익이 낮은 전략(Donchian Ensemble CAGR +10.8%, BB-RSI +4.6%)은 운용 효율 부족.
+> **낮지만 안정적인 Sharpe는 검증에는 강하나, 절대 수익 기준에서 탈락** — 다음 전략은 CAGR > 20%를 구조적으로 달성할 수 있는 설계 필요.
