@@ -26,15 +26,20 @@ Example:
 import src.strategy.adx_regime  # 전략 등록 side effect
 import src.strategy.bb_rsi  # 전략 등록 side effect
 import src.strategy.breakout  # 전략 등록 side effect
+import src.strategy.copula_pairs  # 전략 등록 side effect
+import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
 import src.strategy.donchian_ensemble  # 전략 등록 side effect
 import src.strategy.enhanced_tsmom  # 전략 등록 side effect
+import src.strategy.funding_carry  # 전략 등록 side effect
 import src.strategy.gk_breakout  # 전략 등록 side effect
+import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
+import src.strategy.multi_factor  # 전략 등록 side effect
 import src.strategy.regime_tsmom  # 전략 등록 side effect
 import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
@@ -42,6 +47,8 @@ import src.strategy.ttm_squeeze  # 전략 등록 side effect
 import src.strategy.vol_adaptive  # 전략 등록 side effect
 import src.strategy.vol_regime  # 전략 등록 side effect
 import src.strategy.vol_structure  # 전략 등록 side effect
+import src.strategy.vw_tsmom  # 전략 등록 side effect
+import src.strategy.xsmom  # 전략 등록 side effect
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import (
     get_strategy,

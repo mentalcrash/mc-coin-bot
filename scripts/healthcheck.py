@@ -55,14 +55,14 @@ def check_log_freshness(log_dir: str = "logs", max_stale_seconds: int = 600) -> 
 def main() -> None:
     """Health check 실행."""
     if not check_pid1_alive():
-        print("UNHEALTHY: PID 1 process not found")  # noqa: T201
+        print("UNHEALTHY: PID 1 process not found")
         sys.exit(1)
 
     if not check_log_freshness():
-        print("UNHEALTHY: logs are stale (>600s)")  # noqa: T201
+        print("UNHEALTHY: logs are stale (>600s)")
         sys.exit(1)
 
-    print("HEALTHY")  # noqa: T201
+    print("HEALTHY")
     sys.exit(0)
 
 

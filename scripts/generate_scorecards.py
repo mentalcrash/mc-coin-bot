@@ -190,6 +190,49 @@ STRATEGY_META: dict[str, tuple[str, str, str, str]] = {
         "1D",
         "가격의 통계적 이상값(z-score > 2)은 평균으로의 회귀 압력이 높음을 시사한다.",
     ),
+    # --- 신규 7개 전략 (2026-02-10) ---
+    "xsmom": (
+        "XSMOM",
+        "크로스섹셔널",
+        "1D",
+        "코인 간 상대 강도(herding, attention bias)를 활용한 market-neutral long-short 전략",
+    ),
+    "funding-carry": (
+        "Funding Carry",
+        "캐리",
+        "1D",
+        "Perpetual futures funding rate의 구조적 risk premium 수취 (FX carry trade 원리)",
+    ),
+    "ctrend": (
+        "CTREND",
+        "ML 앙상블",
+        "1D",
+        "28개 기술지표를 elastic net으로 결합한 regularized cross-sectional trend factor",
+    ),
+    "multi-factor": (
+        "Multi-Factor",
+        "멀티팩터",
+        "1D",
+        "직교 alpha source 3개를 균등가중 결합하여 factor diversification 달성",
+    ),
+    "copula-pairs": (
+        "Copula Pairs",
+        "통계적 차익",
+        "1D",
+        "코인 쌍의 공적분 관계 이탈 시 spread mean-reversion으로 수익",
+    ),
+    "vw-tsmom": (
+        "VW-TSMOM",
+        "추세추종",
+        "1D",
+        "거래량 가중 수익률로 informed trading 구간의 모멘텀에 집중",
+    ),
+    "har-vol": (
+        "HAR Vol",
+        "변동성 오버레이",
+        "1D",
+        "HAR-RV 모델의 변동성 예측 오차로 포지션 사이징 조절",
+    ),
 }
 
 # Gate 0 scores (idea evaluation)
@@ -364,6 +407,35 @@ GATE0_SCORES: dict[str, dict[str, int]] = {
         "capacity": 4,
         "regime": 3,
     },
+    # --- 신규 7개 전략 (2026-02-10) ---
+    "xsmom": {"economic": 5, "novelty": 3, "data": 5, "complexity": 4, "capacity": 4, "regime": 3},
+    "funding-carry": {
+        "economic": 5,
+        "novelty": 4,
+        "data": 4,
+        "complexity": 4,
+        "capacity": 4,
+        "regime": 4,
+    },
+    "ctrend": {"economic": 4, "novelty": 4, "data": 5, "complexity": 3, "capacity": 3, "regime": 3},
+    "multi-factor": {
+        "economic": 5,
+        "novelty": 3,
+        "data": 4,
+        "complexity": 3,
+        "capacity": 4,
+        "regime": 4,
+    },
+    "copula-pairs": {
+        "economic": 4,
+        "novelty": 3,
+        "data": 5,
+        "complexity": 2,
+        "capacity": 3,
+        "regime": 3,
+    },
+    "vw-tsmom": {"economic": 4, "novelty": 3, "data": 5, "complexity": 4, "capacity": 3, "regime": 2},
+    "har-vol": {"economic": 3, "novelty": 3, "data": 5, "complexity": 4, "capacity": 2, "regime": 2},
 }
 
 # 폐기 사유 (코드 삭제된 전략)

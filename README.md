@@ -259,11 +259,21 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ## 전략 스코어카드 (Gate 0-4 평가)
 
-0개 활성 전략 + 24개 폐기 전략. 6년(2020-2025) 5-coin 단일에셋 백테스트 + IS/OOS 70/30 + 파라미터 안정성 + WFA/CPCV 심층 검증 결과.
+7개 활성 전략 (G0 PASS) + 24개 폐기 전략. 신규 전략은 학술 논문 기반으로 재설계하여 Gate 0 통과 후 백테스트 대기 중.
 
 ### 활성 전략
 
-> 현재 활성 전략 없음. Gate 1 CAGR > 20% 기준 추가로 기존 2개 전략 폐기 (2026-02-09).
+| # | 전략 | G0 점수 | 유형 | 핵심 alpha source | 우선순위 |
+|---|------|---------|------|-------------------|----------|
+| 1 | **Funding Carry** (`funding-carry`) | 25/30 | 캐리 | Funding rate premium | 1순위 |
+| 2 | **XSMOM** (`xsmom`) | 24/30 | 크로스섹셔널 | Behavioral herding | 1순위 |
+| 3 | **Multi-Factor** (`multi-factor`) | 23/30 | 멀티팩터 | 직교 alpha 결합 | 2순위 |
+| 4 | **CTREND** (`ctrend`) | 22/30 | ML 앙상블 | Technical aggregate | 2순위 |
+| 5 | **VW-TSMOM** (`vw-tsmom`) | 21/30 | 추세추종 | Volume + momentum | 3순위 |
+| 6 | **Copula Pairs** (`copula-pairs`) | 20/30 | 통계적 차익 | Cointegration MR | 3순위 |
+| 7 | **HAR Vol** (`har-vol`) | 19/30 | 변동성 오버레이 | Vol forecast error | 보조 |
+
+> Gate 1 백테스트 미실행 상태. G0 PASS만 표시.
 
 ### 폐기된 전략 (Deprecated)
 

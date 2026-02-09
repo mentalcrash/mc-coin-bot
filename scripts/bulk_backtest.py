@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Bulk Backtest: 23개 전략 × 5개 자산 일괄 백테스트.
+"""Bulk Backtest: 등록 전략 × 5개 자산 일괄 백테스트.
 
-tsmom을 제외한 모든 등록 전략에 대해 Tier 1 자산(5개) × 2020-2025(6년)
-단일에셋 백테스트를 실행하고, 결과를 JSON으로 저장한다.
+EXCLUDE 목록(tsmom, funding-carry, copula-pairs)을 제외한 모든 등록 전략에 대해
+Tier 1 자산(5개) × 2020-2025(6년) 단일에셋 백테스트를 실행하고, 결과를 JSON으로 저장한다.
 
 Usage:
     uv run python scripts/bulk_backtest.py
@@ -38,7 +38,7 @@ from src.strategy import get_strategy, list_strategies
 # Constants
 # =============================================================================
 
-EXCLUDE = {"tsmom"}  # 이미 스코어카드 있음
+EXCLUDE = {"tsmom", "funding-carry", "copula-pairs"}  # tsmom: 스코어카드 있음, 나머지: 특수 데이터 필요
 
 SYMBOLS = [
     "BTC/USDT",
