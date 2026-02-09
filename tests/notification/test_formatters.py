@@ -1,0 +1,123 @@
+"""Event -> Discord Embed 변환 테스트."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from src.notification.formatters import (
+    format_balance_embed,
+    format_circuit_breaker_embed,
+    format_fill_embed,
+    format_position_embed,
+    format_risk_alert_embed,
+)
+
+if TYPE_CHECKING:
+    from src.core.events import (
+        BalanceUpdateEvent,
+        CircuitBreakerEvent,
+        FillEvent,
+        PositionUpdateEvent,
+        RiskAlertEvent,
+    )
+
+_COLOR_GREEN = 0x57F287
+_COLOR_RED = 0xED4245
+_COLOR_BLUE = 0x3498DB
+_COLOR_YELLOW = 0xFFFF00
+_COLOR_ORANGE = 0xE67E22
+
+
+class TestFormatFillEmbed:
+    def test_buy_fill(self, sample_fill: FillEvent) -> None:
+        embed = format_fill_embed(sample_fill)
+        assert "BUY" in embed["title"]
+        assert "BTC/USDT" in embed["title"]
+        assert embed["color"] == _COLOR_GREEN
+        assert len(embed["fields"]) == 4
+        assert embed["footer"]["text"] == "MC-Coin-Bot"
+        assert "timestamp" in embed
+
+    def test_sell_fill(self, sample_fill_sell: FillEvent) -> None:
+        embed = format_fill_embed(sample_fill_sell)
+        assert "SELL" in embed["title"]
+        assert "ETH/USDT" in embed["title"]
+        assert embed["color"] == _COLOR_RED
+
+    def test_price_field(self, sample_fill: FillEvent) -> None:
+        embed = format_fill_embed(sample_fill)
+        price_field = embed["fields"][0]
+        assert price_field["name"] == "Price"
+        assert "$50,000" in price_field["value"]
+        assert price_field["inline"] is True
+
+    def test_value_field(self, sample_fill: FillEvent) -> None:
+        embed = format_fill_embed(sample_fill)
+        value_field = embed["fields"][3]
+        assert value_field["name"] == "Value"
+        assert "$5,000" in value_field["value"]
+
+
+class TestFormatCircuitBreakerEmbed:
+    def test_embed_structure(self, sample_circuit_breaker: CircuitBreakerEvent) -> None:
+        embed = format_circuit_breaker_embed(sample_circuit_breaker)
+        assert embed["title"] == "CIRCUIT BREAKER TRIGGERED"
+        assert embed["color"] == _COLOR_ORANGE
+        assert embed["description"] == "System drawdown exceeded 10%"
+        assert embed["fields"][0]["value"] == "Yes"
+
+    def test_close_all_false(self) -> None:
+        from src.core.events import CircuitBreakerEvent
+
+        event = CircuitBreakerEvent(reason="Test", close_all_positions=False)
+        embed = format_circuit_breaker_embed(event)
+        assert embed["fields"][0]["value"] == "No"
+
+
+class TestFormatRiskAlertEmbed:
+    def test_warning(self, sample_risk_alert_warning: RiskAlertEvent) -> None:
+        embed = format_risk_alert_embed(sample_risk_alert_warning)
+        assert embed["title"] == "RISK WARNING"
+        assert embed["color"] == _COLOR_YELLOW
+        assert "7.5%" in embed["description"]
+
+    def test_critical(self, sample_risk_alert_critical: RiskAlertEvent) -> None:
+        embed = format_risk_alert_embed(sample_risk_alert_critical)
+        assert embed["title"] == "RISK CRITICAL"
+        assert embed["color"] == _COLOR_ORANGE
+
+
+class TestFormatBalanceEmbed:
+    def test_embed_structure(self, sample_balance_update: BalanceUpdateEvent) -> None:
+        embed = format_balance_embed(sample_balance_update)
+        assert embed["title"] == "Balance Update"
+        assert embed["color"] == _COLOR_BLUE
+        assert len(embed["fields"]) == 3
+        assert "$10,500" in embed["fields"][0]["value"]
+        assert "$8,000" in embed["fields"][1]["value"]
+        assert "$2,500" in embed["fields"][2]["value"]
+
+
+class TestFormatPositionEmbed:
+    def test_long_profit(self, sample_position_update: PositionUpdateEvent) -> None:
+        embed = format_position_embed(sample_position_update)
+        assert "BTC/USDT" in embed["title"]
+        assert embed["color"] == _COLOR_GREEN  # positive PnL
+        assert len(embed["fields"]) == 5
+        assert embed["fields"][0]["value"] == "LONG"
+        assert "250.00" in embed["fields"][3]["value"]
+
+    def test_loss_color(self) -> None:
+        from src.core.events import PositionUpdateEvent
+        from src.models.types import Direction
+
+        event = PositionUpdateEvent(
+            symbol="ETH/USDT",
+            direction=Direction.SHORT,
+            size=1.0,
+            avg_entry_price=3000.0,
+            unrealized_pnl=-150.0,
+        )
+        embed = format_position_embed(event)
+        assert embed["color"] == _COLOR_RED
+        assert embed["fields"][0]["value"] == "SHORT"

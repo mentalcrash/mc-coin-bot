@@ -37,11 +37,26 @@ if TYPE_CHECKING:
     from src.eda.persistence.state_manager import StateManager
     from src.eda.ports import ExecutorPort
     from src.exchange.binance_client import BinanceClient
+    from src.notification.bot import DiscordBotService
+    from src.notification.config import DiscordBotConfig
+    from src.notification.queue import NotificationQueue
     from src.portfolio.config import PortfolioManagerConfig
     from src.strategy.base import BaseStrategy
 
+from dataclasses import dataclass
+
 # 기본 상태 저장 주기 (초)
 _DEFAULT_SAVE_INTERVAL = 300.0
+
+
+@dataclass
+class _DiscordTasks:
+    """Discord 관련 task/service 번들."""
+
+    bot_service: DiscordBotService
+    notification_queue: NotificationQueue
+    queue_task: asyncio.Task[None]
+    bot_task: asyncio.Task[None]
 
 
 class LiveMode(StrEnum):
@@ -82,6 +97,7 @@ class LiveRunner:
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
         db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._feed = feed
@@ -94,6 +110,7 @@ class LiveRunner:
         self._queue_size = queue_size
         self._shutdown_event = asyncio.Event()
         self._db_path = db_path
+        self._discord_config = discord_config
 
     @classmethod
     def paper(
@@ -106,6 +123,7 @@ class LiveRunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -120,6 +138,7 @@ class LiveRunner:
             initial_capital=initial_capital,
             asset_weights=asset_weights,
             db_path=db_path,
+            discord_config=discord_config,
         )
 
     @classmethod
@@ -133,6 +152,7 @@ class LiveRunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
     ) -> LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -147,6 +167,7 @@ class LiveRunner:
             initial_capital=initial_capital,
             asset_weights=asset_weights,
             db_path=db_path,
+            discord_config=discord_config,
         )
 
     async def run(self) -> None:
@@ -218,10 +239,13 @@ class LiveRunner:
                 persistence = TradePersistence(db, strategy_name=self._strategy.name)
                 await persistence.register(bus)
 
-            # 6. Signal handler
+            # 6. Discord Bot + NotificationEngine (선택적)
+            discord_tasks = await self._setup_discord(bus, pm, rm, analytics)
+
+            # 7. Signal handler
             self._setup_signal_handlers()
 
-            # 7. 실행
+            # 8. 실행
             bus_task = asyncio.create_task(bus.start())
             feed_task = asyncio.create_task(self._feed.start(bus))
 
@@ -254,6 +278,9 @@ class LiveRunner:
             await bus.stop()
             await bus_task
 
+            # Discord Bot/Queue 종료
+            await self._shutdown_discord(discord_tasks)
+
             # 최종 상태 저장
             if state_mgr:
                 await state_mgr.save_all(pm, rm)
@@ -267,6 +294,63 @@ class LiveRunner:
     def request_shutdown(self) -> None:
         """외부에서 shutdown 요청 (테스트용)."""
         self._shutdown_event.set()
+
+    async def _setup_discord(
+        self,
+        bus: EventBus,
+        pm: EDAPortfolioManager,
+        rm: EDARiskManager,
+        analytics: AnalyticsEngine,
+    ) -> _DiscordTasks | None:
+        """Discord Bot + NotificationEngine 초기화 (선택적).
+
+        Returns:
+            _DiscordTasks 또는 None (비활성 시)
+        """
+        if not self._discord_config or not self._discord_config.is_bot_configured:
+            return None
+
+        from src.notification.bot import DiscordBotService, TradingContext
+        from src.notification.engine import NotificationEngine
+        from src.notification.queue import NotificationQueue
+
+        bot_service = DiscordBotService(self._discord_config)
+        notification_queue = NotificationQueue(bot_service)
+        notification_engine = NotificationEngine(notification_queue)
+        await notification_engine.register(bus)
+
+        trading_ctx = TradingContext(
+            pm=pm,
+            rm=rm,
+            analytics=analytics,
+            runner_shutdown=self.request_shutdown,
+        )
+        bot_service.set_trading_context(trading_ctx)
+
+        queue_task = asyncio.create_task(notification_queue.start())
+        bot_task = asyncio.create_task(bot_service.start())
+        logger.info("Discord Bot + NotificationEngine enabled")
+
+        return _DiscordTasks(
+            bot_service=bot_service,
+            notification_queue=notification_queue,
+            queue_task=queue_task,
+            bot_task=bot_task,
+        )
+
+    @staticmethod
+    async def _shutdown_discord(tasks: _DiscordTasks | None) -> None:
+        """Discord Bot/Queue 정리."""
+        if tasks is None:
+            return
+        await tasks.notification_queue.stop()
+        with contextlib.suppress(asyncio.CancelledError):
+            await tasks.queue_task
+        await tasks.bot_service.close()
+        tasks.bot_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await tasks.bot_task
+        logger.info("Discord Bot stopped")
 
     def _setup_signal_handlers(self) -> None:
         """SIGTERM/SIGINT 핸들러 등록."""

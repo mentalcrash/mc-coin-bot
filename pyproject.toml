@@ -32,13 +32,14 @@ dependencies = [
     # CLI
     "typer>=0.12.0",
     "rich>=13.0.0",
-    # Telegram Alerts
-    "python-telegram-bot>=21.0",
     # Retry & Progress (Data Ingestion)
     "tenacity>=8.2.0", # Exponential backoff retry
     "tqdm>=4.66.0", # Progress bar
     "ipykernel>=7.1.0",
     "hmmlearn>=0.3.3",
+    "discord-py>=2.6.0",
+    "statsmodels>=0.14.6",
+    "scikit-learn>=1.8.0",
 ]
 
 [project.scripts]
@@ -149,7 +150,7 @@ unfixable = []
 # [중요] 특정 파일/폴더에 대한 예외 규칙 적용
 [tool.ruff.lint.per-file-ignores]
 # 테스트 코드는 보안 검사 및 일부 엄격한 룰 제외
-"tests/**/*" = ["S101", "PLR2004", "PD", "N802"]
+"tests/**/*" = ["S101", "S106", "SLF001", "PLR2004", "PD", "N802"]
 # 연구용 노트북/스크립트는 print 사용 허용
 "research/**/*" = ["T201", "PD"]
 # 전략 __init__.py는 side effect import로 전략 자동 등록

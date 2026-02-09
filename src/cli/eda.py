@@ -313,6 +313,7 @@ def launch_live(
     mode: str = "paper",
     initial_capital: float | None = None,
     db_path: str | None = "data/trading.db",
+    enable_discord: bool = True,
 ) -> None:
     """LiveRunner 실행 공통 함수.
 
@@ -324,9 +325,11 @@ def launch_live(
         mode: 실행 모드 (``"paper"`` | ``"shadow"``).
         initial_capital: 초기 자본 오버라이드. ``None``이면 YAML config 값 사용.
         db_path: SQLite 경로. ``None``이면 영속화 비활성.
+        enable_discord: Discord Bot 활성화 여부 (기본 True).
     """
     from src.eda.live_runner import LiveMode, LiveRunner
     from src.exchange.binance_client import BinanceClient
+    from src.notification.config import DiscordBotConfig
 
     cfg = load_config(config_path)
     strategy = build_strategy(cfg)
@@ -343,6 +346,15 @@ def launch_live(
     live_mode = LiveMode.SHADOW if mode == "shadow" else LiveMode.PAPER
     capital = initial_capital if initial_capital is not None else cfg.backtest.capital
     mode_label = "Shadow" if live_mode == LiveMode.SHADOW else "Paper"
+
+    # Discord config 로드
+    discord_config = None
+    if enable_discord:
+        discord_config = DiscordBotConfig()
+        if discord_config.is_bot_configured:
+            console.print("[dim]Discord Bot enabled[/dim]")
+        else:
+            discord_config = None
 
     header = f"[bold cyan]EDA Live {mode_label}: {cfg.strategy.name} / {len(symbol_list)} symbols (1m → {target_tf})[/bold cyan]"
     console.print(header)
@@ -369,6 +381,7 @@ def launch_live(
                 initial_capital=capital,
                 asset_weights=asset_weights,
                 db_path=db_path,
+                discord_config=discord_config,
             )
             await runner.run()
 
