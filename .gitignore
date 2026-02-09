@@ -249,3 +249,9 @@ config.local.yml
 *.sqlite
 backtest_results/
 reports/
+
+# ----------------------------------------
+# Docker
+# ----------------------------------------
+docker/secrets/
+*.tar

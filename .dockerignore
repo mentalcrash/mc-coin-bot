@@ -1,0 +1,60 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+
+# Tooling caches
+.ruff_cache
+.mypy_cache
+.pytest_cache
+.cache
+
+# Coverage & reports
+htmlcov
+coverage.xml
+.coverage
+reports/
+backtest_results/
+
+# Tests & research (not needed in production)
+tests/
+research/
+
+# Documentation
+docs/
+
+# Scripts (dev/research only)
+scripts/
+
+# Data files (mounted as volumes in production)
+*.parquet
+data/bronze/
+data/silver/
+logs/
+*.db
+*.sqlite
+
+# Environment & secrets
+.env*
+!.env.example
+secrets.yaml
+credentials.json
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Docker build artifacts
+*.tar
+docker/secrets/

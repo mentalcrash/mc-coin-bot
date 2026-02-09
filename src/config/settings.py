@@ -201,6 +201,71 @@ class IngestionSettings(BaseSettings):
         )
 
 
+class DeploymentConfig(BaseSettings):
+    """배포 환경 설정 (MC_ 접두사).
+
+    Docker/Coolify 환경에서 환경 변수로 실행 모드를 제어합니다.
+    기존 YAML config + 환경 변수 오버라이드 패턴 유지.
+
+    Environment Variables:
+        - MC_EXECUTION_MODE: 실행 모드 (paper | shadow | live)
+        - MC_CONFIG_PATH: YAML 설정 파일 경로
+        - MC_INITIAL_CAPITAL: 초기 자본 (USD)
+        - MC_DB_PATH: SQLite DB 경로 (빈 문자열 = 비활성)
+        - MC_ENABLE_PERSISTENCE: 상태 영속화 on/off
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="MC_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    execution_mode: str = Field(
+        default="paper",
+        description="실행 모드 (paper | shadow | live)",
+    )
+    config_path: str = Field(
+        default="config/paper.yaml",
+        description="YAML 설정 파일 경로",
+    )
+    initial_capital: float = Field(
+        default=10000.0,
+        gt=0,
+        description="초기 자본 (USD)",
+    )
+    db_path: str = Field(
+        default="data/trading.db",
+        description="SQLite DB 경로 (빈 문자열 = 비활성)",
+    )
+    enable_persistence: bool = Field(
+        default=True,
+        description="상태 영속화 on/off",
+    )
+
+    @field_validator("execution_mode")
+    @classmethod
+    def validate_execution_mode(cls, v: str) -> str:
+        """실행 모드 검증."""
+        allowed = {"paper", "shadow", "live"}
+        if v not in allowed:
+            msg = f"execution_mode must be one of {allowed}, got '{v}'"
+            raise ValueError(msg)
+        return v
+
+
+@lru_cache
+def get_deployment_config() -> DeploymentConfig:
+    """배포 설정 싱글톤 인스턴스 반환.
+
+    Returns:
+        DeploymentConfig 인스턴스
+    """
+    return DeploymentConfig()
+
+
 @lru_cache
 def get_settings() -> IngestionSettings:
     """설정 싱글톤 인스턴스 반환.
