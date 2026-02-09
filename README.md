@@ -231,6 +231,30 @@ uv run python scripts/bulk_backtest.py
 uv run python scripts/generate_scorecards.py
 ```
 
+### 배포 (DigitalOcean + Coolify)
+
+```bash
+# Docker 빌드 (multi-stage, uv 기반)
+docker build -t mc-coin-bot:latest .
+
+# 로컬 실행 (환경 변수로 모드 제어)
+docker run --env-file .env \
+  -e MC_EXECUTION_MODE=paper \
+  -e MC_CONFIG_PATH=config/paper.yaml \
+  -e MC_INITIAL_CAPITAL=10000 \
+  mc-coin-bot:latest
+```
+
+DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실행 모드를 제어합니다.
+
+| 환경 변수 | 기본값 | 설명 |
+|----------|--------|------|
+| `MC_EXECUTION_MODE` | `paper` | 실행 모드 (`paper` / `shadow` / `live`) |
+| `MC_CONFIG_PATH` | `config/paper.yaml` | YAML 설정 파일 경로 |
+| `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 (USD) |
+| `MC_DB_PATH` | `data/trading.db` | SQLite 경로 |
+| `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
+
 ---
 
 ## 전략 스코어카드 (Gate 0-4 평가)
