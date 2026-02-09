@@ -1,1 +1,0 @@
-"""Overnight Seasonality strategy tests."""

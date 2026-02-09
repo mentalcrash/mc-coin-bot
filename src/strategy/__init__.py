@@ -31,22 +31,16 @@ import src.strategy.donchian_ensemble  # 전략 등록 side effect
 import src.strategy.enhanced_tsmom  # 전략 등록 side effect
 import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
-import src.strategy.hurst_regime  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
-import src.strategy.larry_vb  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
-import src.strategy.overnight  # 전략 등록 side effect
-import src.strategy.risk_mom  # 전략 등록 side effect
-import src.strategy.rsi_crossover  # 전략 등록 side effect
 import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
 import src.strategy.vol_adaptive  # 전략 등록 side effect
 import src.strategy.vol_regime  # 전략 등록 side effect
 import src.strategy.vol_structure  # 전략 등록 side effect
-import src.strategy.zscore_mr  # 전략 등록 side effect
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import (
     get_strategy,

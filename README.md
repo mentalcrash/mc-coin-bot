@@ -181,3 +181,50 @@ python main.py ingest validate BTC/USDT --year 2025
 ```
 
 ---
+
+## 전략 스코어카드 (Gate 1 일괄 평가)
+
+23개 전략 대상 6년(2020-2025) 5-coin 백테스트 결과. Best Asset 기준 단일에셋 성과.
+
+### 활성 전략 (17개)
+
+| # | 전략 | Best Asset | Sharpe | CAGR | MDD | 판정 | 스코어카드 |
+|---|------|-----------|--------|------|-----|------|-----------|
+| 1 | **Vol-Regime** | ETH/USDT | 1.41 | +57.6% | -32.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-regime.md) |
+| 2 | **TSMOM** | SOL/USDT | 1.33 | +50.0% | -26.0% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-tsmom.md) |
+| 3 | **Enhanced TSMOM** | BTC/USDT | 1.22 | +39.1% | -37.5% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-enhanced-tsmom.md) |
+| 4 | **Vol-Structure** | SOL/USDT | 1.18 | +31.8% | -28.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-structure.md) |
+| 5 | **KAMA** | DOGE/USDT | 1.14 | +35.8% | -13.3% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-kama.md) |
+| 6 | **Vol-Adaptive** | SOL/USDT | 1.08 | +31.5% | -44.9% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-vol-adaptive.md) |
+| 7 | **Donchian** | SOL/USDT | 1.01 | +30.5% | -50.0% | **PASS** | [scorecard](docs/strategy/strategy-scorecard-donchian.md) |
+| 8 | Donchian Ensemble | ETH/USDT | 0.99 | +10.8% | -9.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-donchian-ensemble.md) |
+| 9 | TTM Squeeze | BTC/USDT | 0.94 | +17.7% | -37.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-ttm-squeeze.md) |
+| 10 | ADX Regime | SOL/USDT | 0.94 | +23.1% | -33.9% | WATCH | [scorecard](docs/strategy/strategy-scorecard-adx-regime.md) |
+| 11 | Stoch-Mom | SOL/USDT | 0.94 | +7.1% | -9.0% | WATCH | [scorecard](docs/strategy/strategy-scorecard-stoch-mom.md) |
+| 12 | Max-Min | DOGE/USDT | 0.82 | +15.3% | -13.9% | WATCH | [scorecard](docs/strategy/strategy-scorecard-max-min.md) |
+| 13 | GK Breakout | DOGE/USDT | 0.77 | +13.1% | -23.2% | WATCH | [scorecard](docs/strategy/strategy-scorecard-gk-breakout.md) |
+| 14 | MTF-MACD | SOL/USDT | 0.76 | +6.6% | -8.4% | WATCH | [scorecard](docs/strategy/strategy-scorecard-mtf-macd.md) |
+| 15 | HMM Regime | BTC/USDT | 0.75 | +18.7% | -31.7% | WATCH | [scorecard](docs/strategy/strategy-scorecard-hmm-regime.md) |
+| 16 | Adaptive Breakout | SOL/USDT | 0.54 | +6.7% | -12.1% | WATCH | [scorecard](docs/strategy/strategy-scorecard-adaptive-breakout.md) |
+| 17 | BB-RSI | SOL/USDT | 0.53 | +4.1% | -15.1% | WATCH | [scorecard](docs/strategy/strategy-scorecard-bb-rsi.md) |
+| — | Mom-MR Blend | ETH/USDT | 0.48 | +6.7% | -29.2% | WATCH | [scorecard](docs/strategy/strategy-scorecard-mom-mr-blend.md) |
+
+> **PASS**: Sharpe >= 1.0 + 구조적 결함 없음. **WATCH**: 0.5 <= Sharpe < 1.0, 멀티에셋/파라미터 최적화 후 재평가.
+
+### 폐기된 전략 (Deprecated)
+
+아래 전략은 Gate 1 평가에서 구조적 문제 또는 성과 부족으로 **코드 삭제** 처리되었습니다.
+동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
+
+| 전략 | Sharpe | 폐기 사유 | 폐기일 |
+|------|--------|----------|--------|
+| Larry-VB | 0.15 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | 2026-02-09 |
+| Overnight | 0.00 | 1H 전용 전략, 1D 백테스트 거래 0건. 구조적 TF 불일치 | 2026-02-09 |
+| Z-Score MR | -0.02 | 총수익 음수, MDD -52%. Mean-reversion 전략의 한계 | 2026-02-09 |
+| RSI Crossover | -0.16 | 총수익 음수, 단순 RSI 전략의 한계 | 2026-02-09 |
+| Hurst Regime | 0.24 | MDD -57%, 462건 거래에도 CAGR 1.9%. Hurst exponent 불안정 | 2026-02-09 |
+| Risk-Momentum | 0.77 | MDD -95.5% — 사실상 파산. 리스크 조절 실패 | 2026-02-09 |
+
+> **교훈**: 단일지표 < 앙상블, 단일코인 < 멀티에셋. 고빈도 거래는 비용 구조 확인 필수. MDD > 50%는 무조건 폐기.
+
+---
