@@ -2,7 +2,7 @@
 
 > MC Coin Bot의 EDA 백테스트 → 공유 인프라 구축 → Paper Trading → Live 배포 전환을 위한 종합 리서치 문서
 >
-> 작성일: 2026-02-09 (v2: Shadow/Paper 분석 추가) | Python 3.13 + asyncio + Pydantic V2 + CCXT Pro 기준
+> 작성일: 2026-02-09 (v3: Discord Bot 단독 전략으로 전환) | Python 3.13 + asyncio + Pydantic V2 + CCXT Pro 기준
 
 ---
 
@@ -32,7 +32,7 @@
 | **AnalyticsEngine** | ✅ 완료 | Equity curve, trade records, PerformanceMetrics |
 | **EDARunner** | ✅ 완료 | `.backtest()` / `.shadow()` factory methods |
 | **CandleAggregator** | ✅ 완료 | 1m → target TF 집계, UTC boundary alignment |
-| **Discord Notifier** | ✅ 기본 | `src/notification/discord.py` — Embed 기반 webhook |
+| **Discord Notifier** | ✅ 기본 | `src/notification/discord.py` — Embed 기반 webhook (→ Bot 전환 예정) |
 | **BinanceClient** | ✅ 완료 | `src/exchange/binance_client.py` — CCXT Pro async wrapper |
 | **23 Strategies** | ✅ 완료 | Tier 1~3, 1623 tests |
 
@@ -49,11 +49,11 @@
 | **Dockerfile / docker-compose** | ❌ 미구현 | 6-C | VPS 배포 필수 |
 | **환경별 설정** (paper/live yaml) | ❌ 미구현 | 6-C | 모드 전환 용이 |
 | **NotificationEngine** (EventBus 연동) | ❌ 미구현 | 6-D | 알림 기반 |
-| **Telegram 알림** (aiogram 3.x) | ❌ 미구현 | 6-D | CRITICAL alert |
+| **Discord Bot** (discord.py 양방향) | ❌ 미구현 | 6-D | Slash commands + 알림 |
 | **Chart 생성/첨부** | ❌ 미구현 | 7.5 | Paper 운영 중 추가 |
 | **ReportScheduler** (주기적 리포트) | ❌ 미구현 | 7.5 | Paper 운영 중 추가 |
 | **Prometheus Metrics** | ❌ 미구현 | 7.5 | Paper 운영 중 추가 |
-| **Telegram 양방향** (/status, /kill) | ❌ 미구현 | 7.5 | Paper 운영 중 추가 |
+| **Discord Slash Commands** (/status, /kill) | ❌ 미구현 | 6-D | 양방향 명령 |
 | **LiveExecutor** (실제 주문 제출) | ❌ 미구현 | 8 | Live 전환 시 구현 |
 | **Reconciliation** (거래소 vs 로컬) | ❌ 미구현 | 8 | Live 전환 시 필수 |
 | **Kill Switch** (긴급 정지) | ❌ 미구현 | 8 | Live 전환 시 필수 |
@@ -92,7 +92,7 @@ LiveDataFeed (WebSocket) → BarEvent(1m) → CandleAggregator → BarEvent(targ
   → PM → OrderRequestEvent → RM → OMS → [Executor 교체] → FillEvent
   → PM → PositionUpdateEvent + BalanceUpdateEvent
   → AnalyticsEngine → PerformanceMetrics
-  → NotificationEngine → Discord/Telegram      ← 신규 (공유)
+  → NotificationEngine → Discord Bot            ← 신규 (공유)
   → PersistenceEngine → SQLite/JSONL           ← 신규 (공유)
   → StateManager → 재시작 복구                  ← 신규 (공유)
 ```
@@ -362,25 +362,45 @@ result = con.sql("""
 
 ## 3. 알림 시스템 설계
 
-### 3.1 Discord vs Telegram 비교
+### 3.1 Discord Webhook vs Discord Bot
 
-| 항목 | Discord Webhook | Telegram Bot API |
-|------|----------------|-----------------|
-| **설정** | URL 하나로 동작 | BotFather → 토큰 |
-| **양방향** | ❌ (webhook은 단방향) | ✅ (명령어 수신: `/status`, `/kill`) |
-| **Rate Limit** | 5 req / 2초 per webhook | 30 msg/sec (group), 개인 제한 없음 |
-| **Rich Format** | Embed (25 fields, 6000자) | Markdown/HTML + InlineKeyboard |
-| **이미지** | multipart/form-data | `sendPhoto` (BufferedInputFile) |
-| **모바일 푸시** | 양호 (멘션 시 강함) | **매우 우수** (즉시 도착) |
-| **양방향 명령** | Bot 별도 구현 필요 | 기본 지원 (`/status`, `/kill`) |
+기존 프로젝트에는 Discord **Webhook** (단방향)이 구현되어 있으나, 양방향 명령(`/status`, `/kill`)을 위해 **Discord Bot** (WebSocket Gateway)으로 전환합니다.
 
-#### 2026 커뮤니티 선호
+| 항목 | Discord Webhook (현재) | Discord Bot (전환) |
+|------|----------------------|-------------------|
+| **방향** | 단방향 (전송만) | **양방향** (전송 + 명령 수신) |
+| **프로토콜** | HTTP POST | **WebSocket Gateway** |
+| **Slash Commands** | ❌ 불가 | ✅ `/status`, `/kill`, `/report` |
+| **버튼/UI** | ❌ 불가 | ✅ 버튼, 드롭다운, 인터랙션 |
+| **Rate Limit** | 5 req/sec per webhook | 5 msg/5s per channel (60/min) |
+| **Rich Format** | Embed (25 fields, 6000자) | Embed + **인터랙션 UI** |
+| **이미지** | multipart/form-data | `discord.File` + Embed |
+| **모바일 푸시** | 약함 | **멘션 시 강함** |
+| **asyncio 통합** | aiohttp 직접 | **discord.py 내장** (event loop 공유) |
 
-- **Telegram 압도적 우위**: Freqtrade (가장 인기 OSS crypto bot)는 Telegram 전용 RPC. QuantConnect도 Telegram webhook 공식 지원.
-- **Discord는 보완적**: 커뮤니티 관리/토론에 강점, signal 자동화는 Telegram 대비 부족.
-- **동시 사용 권장**: Severity 기반 라우팅으로 두 플랫폼 병행.
+#### 왜 Discord 단독인가? (Telegram 불필요)
 
-### 3.2 권장: Dual-Channel 아키텍처
+1. **개인용 퀀트 시스템**: 외부 시그널 배포 계획 없음 → Telegram 크립토 커뮤니티 생태계 불필요
+2. **양방향 완전 지원**: Discord Bot은 Slash Commands로 `/status`, `/kill`, `/report` 등 Telegram과 동일한 양방향 명령 제공
+3. **Rich UI 우위**: Embed + 버튼 + 드롭다운으로 Telegram InlineKeyboard보다 풍부한 대시보드 구현 가능
+4. **서버/채널 구조**: `#trade-log`, `#alerts`, `#daily-report` 채널 분리가 자연스러움
+5. **의존성 최소화**: `discord.py` 하나로 알림 + 양방향 명령 모두 해결 (aiogram 불필요)
+6. **Rate Limit 충분**: 10-50 trades/day 기준, 일일 ~171 메시지 ≪ 86,400 한도
+
+> **확장성 참고**: 나중에 Telegram이 필요해지면 `NotificationPort` 프로토콜로 추상화하여 adapter 추가 가능. 현 단계에서는 Discord 단독이 최적.
+
+#### Rate Limit 상세 (트레이딩 봇 적합성)
+
+| 범위 | 제한 | MC Coin Bot 사용량 |
+|------|------|-------------------|
+| Global | 50 requests/second | ~171/day (문제없음) |
+| 채널 메시지 | 5 msg/5s (= 60/min) | ~2 trades/hour (문제없음) |
+| DM | 5 msg/5s | EMERGENCY 시에만 사용 |
+| 파일 업로드 | 25MB per file | 차트 PNG ~100-200KB (문제없음) |
+
+discord.py가 429 (Rate Limited) 응답을 자동 처리하므로 개발자가 직접 관리할 필요 없음.
+
+### 3.2 권장: Discord Bot 단일 아키텍처
 
 ```
 [NotificationEngine] ← EventBus subscriber (FillEvent, CircuitBreakerEvent, BalanceUpdateEvent)
@@ -389,27 +409,29 @@ result = con.sql("""
 [NotificationQueue] ← asyncio.Queue, retry/backoff, SpamGuard
         │
         ▼
-[NotificationRouter] ← Severity 기반 라우팅
+[Discord Bot] (discord.py 2.6+, WebSocket Gateway)
         │
-        ├── [Discord Webhook] (aiohttp, 현재 코드 확장)
+        ├── 채널 알림 (Background Task — 자동 전송)
         │     ├── #trade-log     ← INFO: 모든 거래 기록
-        │     ├── #errors        ← WARNING+: 에러/경고
-        │     └── #daily-report  ← 일일/주간 리포트
+        │     ├── #alerts        ← WARNING+: 에러/경고/CRITICAL
+        │     └── #daily-report  ← 일일/주간/월간 리포트 + 차트
         │
-        └── [Telegram Bot] (aiogram 3.x, 신규)
-              ├── Alert Chat   ← CRITICAL: 서킷 브레이커, 긴급 알림
-              ├── Trade Chat   ← INFO: 실시간 포지션 변경
-              └── 양방향 명령   ← /status, /kill, /report
+        └── Slash Commands (양방향 수신)
+              ├── /status        ← 현재 포지션, equity, PnL 조회
+              ├── /kill          ← CircuitBreaker 긴급 청산
+              ├── /report        ← 수동 리포트 생성
+              ├── /balance       ← 계좌 잔고 조회
+              └── /daily         ← 최근 7일 일별 손익
 ```
 
 #### Severity 라우팅 규칙
 
-| Severity | Discord | Telegram | 예시 |
-|----------|---------|----------|------|
-| **INFO** | ✅ trade-log | 선택적 | Trade entry/exit, signal 생성 |
-| **WARNING** | ✅ errors | ✅ alert | Drawdown 경고, 연결 불안정 |
-| **CRITICAL** | ✅ errors | ✅ alert (즉시) | Circuit breaker, 시스템 정지 |
-| **EMERGENCY** | ✅ errors | ✅ alert + 반복 | 자금 이상, 보안 위협 |
+| Severity | 채널 | 멘션 | 예시 |
+|----------|------|------|------|
+| **INFO** | #trade-log | 없음 | Trade entry/exit, signal 생성 |
+| **WARNING** | #alerts | `@here` | Drawdown 경고, 연결 불안정 |
+| **CRITICAL** | #alerts | `@owner` | Circuit breaker, 시스템 정지 |
+| **EMERGENCY** | #alerts | `@owner` + DM 반복 | 자금 이상, 보안 위협 |
 
 ### 3.3 알림 종류 상세
 
@@ -559,44 +581,27 @@ def generate_equity_chart(
     return buf.getvalue()
 ```
 
-#### Discord 이미지 전송
+#### Discord Bot 이미지 전송 (discord.py)
 
 ```python
-import aiohttp
-import json
+import io
+import discord
 
-async def send_discord_embed_with_chart(
-    webhook_url: str,
-    embed: dict,
+async def send_chart_to_channel(
+    channel: discord.TextChannel,
     chart_bytes: bytes,
+    title: str,
+    fields: dict[str, str] | None = None,
     filename: str = "chart.png",
-) -> bool:
-    """Discord webhook으로 Embed + 이미지 전송 (multipart/form-data)."""
-    embed["image"] = {"url": f"attachment://{filename}"}
-    form = aiohttp.FormData()
-    form.add_field("payload_json", json.dumps({"embeds": [embed]}), content_type="application/json")
-    form.add_field("files[0]", chart_bytes, filename=filename, content_type="image/png")
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(webhook_url, data=form) as resp:
-            return resp.status in (200, 204)
-```
-
-#### Telegram 이미지 전송 (aiogram 3.x)
-
-```python
-from aiogram import Bot
-from aiogram.types import BufferedInputFile
-
-async def send_telegram_chart(
-    bot: Bot,
-    chat_id: int,
-    chart_bytes: bytes,
-    caption: str,
 ) -> None:
-    """Telegram으로 차트 이미지 전송."""
-    photo = BufferedInputFile(chart_bytes, filename="chart.png")
-    await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML")
+    """Discord Bot으로 Embed + 차트 이미지 전송."""
+    file = discord.File(io.BytesIO(chart_bytes), filename=filename)
+    embed = discord.Embed(title=title, color=0x3498DB)
+    embed.set_image(url=f"attachment://{filename}")
+    if fields:
+        for name, value in fields.items():
+            embed.add_field(name=name, value=value, inline=True)
+    await channel.send(file=file, embed=embed)
 ```
 
 #### 모바일 최적화 가이드
@@ -608,31 +613,74 @@ async def send_telegram_chart(
 
 ### 3.5 Python 라이브러리 권장
 
-#### Discord
+#### Discord Bot 라이브러리 비교 (2026)
 
-| 라이브러리 | 권장도 | 비고 |
-|-----------|--------|------|
-| **aiohttp 직접 webhook** | **최우선** | 이미 프로젝트에서 사용, 의존성 추가 불필요 |
-| **disnake** | 양방향 필요 시 | discord.py 최고 fork, 활발히 유지보수 |
+| 라이브러리 | GitHub Stars | 최신 릴리즈 | 권장도 | 비고 |
+|-----------|------------|-----------|--------|------|
+| **discord.py** | 15.7k | 2.6.4 (2025-10) | **최우선** | 원본 부활, 최대 생태계, asyncio native |
+| **Pycord** | 2.7k | 2.6.x (2025-12) | 대안 | discord.py fork, 더 간결한 데코레이터 |
+| **Nextcord** | 2k | 3.1.1 (2025-08) | 참고 | Python >=3.12 요구, API 차이 있음 |
+| **Disnake** | 755 | 2.11.0 (2025) | 비추천 | 커뮤니티 규모 작음 |
 
-#### Telegram
+**discord.py 선택 이유:**
+- 압도적 생태계 (15.7k stars, 가장 많은 다운로드)
+- Danny(Rapptz) 복귀 후 적극 유지보수 중
+- `CommandTree`로 Slash Commands 네이티브 지원 (2.0+)
+- `discord.ext.tasks`로 주기적 리포트 Background Task 내장
+- Rate limit 자동 처리 (429 시 backoff)
+- pyright 호환 양호 (타입 힌트 완비)
 
-| 라이브러리 | 권장도 | 비고 |
-|-----------|--------|------|
-| **aiogram 3.x** | **최우선** | 완전 asyncio native, trading bot에 최적 |
-| **python-telegram-bot** | 대안 | 문서 우수하나 sync 기반, asyncio 프로젝트에 부적합 |
+#### Slash Commands 구현 예시 (discord.py 2.6+)
 
-#### Freqtrade 참고 알림 기능
+```python
+import discord
+from discord import app_commands
 
-Freqtrade (가장 인기 있는 OSS crypto trading bot)의 Telegram 인터페이스:
-- `/status`: 모든 오픈 트레이드 상태 (Trade ID, 방향, 미실현 PnL, 레버리지)
-- `/profit`: ROI 요약, 전체 거래 수, 평균 duration, 최고 성과 페어, profit factor, 승률, max drawdown
-- `/daily`: 최근 7일 일별 손익
-- `/performance`: 코인별 수익 성과 순위
-- `/balance`: 계좌 잔고
-- `/stop`: 봇 즉시 중지
+class TradingBot(discord.Client):
+    def __init__(self) -> None:
+        super().__init__(intents=discord.Intents.default())
+        self.tree = app_commands.CommandTree(self)
 
-→ MC Coin Bot에서도 동일한 양방향 명령어 세트 구현 권장.
+    async def setup_hook(self) -> None:
+        await self.tree.sync()  # slash commands 등록
+
+bot = TradingBot()
+
+@bot.tree.command(name="status", description="현재 포지션 및 PnL 조회")
+async def status(interaction: discord.Interaction) -> None:
+    # EDA PM에서 포지션 데이터 가져오기
+    embed = discord.Embed(title="Open Positions", color=0x3498DB)
+    embed.add_field(name="BTC/USDT", value="LONG 0.05 | PnL: +2.3%")
+    embed.add_field(name="NAV", value="$10,523.40")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="kill", description="긴급 전체 포지션 청산")
+async def kill(interaction: discord.Interaction) -> None:
+    await interaction.response.defer()  # 3초 이상 작업
+    # CircuitBreaker 트리거 → 전체 포지션 청산
+    await interaction.followup.send("All positions closed. Circuit breaker activated.")
+
+@bot.tree.command(name="report", description="일일 성과 리포트 생성")
+async def report(interaction: discord.Interaction) -> None:
+    await interaction.response.defer()
+    # matplotlib 차트 생성 → discord.File로 전송
+    chart_bytes = generate_equity_chart(...)
+    file = discord.File(io.BytesIO(chart_bytes), filename="report.png")
+    embed = discord.Embed(title="Daily Report")
+    embed.set_image(url="attachment://report.png")
+    await interaction.followup.send(file=file, embed=embed)
+```
+
+#### MC Coin Bot Slash Commands 목록 (Freqtrade 참고)
+
+| 명령어 | 설명 | Freqtrade 대응 |
+|--------|------|---------------|
+| `/status` | 오픈 포지션, equity, 미실현 PnL | `/status` |
+| `/kill` | CircuitBreaker 긴급 청산 | `/stop` |
+| `/report` | 일일/주간 성과 리포트 + 차트 | `/profit` |
+| `/daily` | 최근 7일 일별 손익 | `/daily` |
+| `/balance` | 계좌 잔고 조회 | `/balance` |
+| `/performance` | 전략별/코인별 수익 순위 | `/performance` |
 
 ### 3.6 구현 패턴: Async Queue + Retry + SpamGuard
 
@@ -974,7 +1022,7 @@ apt install fail2ban unattended-upgrades
 
 #### Kill Switch 트리거 방법
 
-1. **Telegram 명령**: `/kill` 메시지 수신 시 활성화
+1. **Discord Slash Command**: `/kill` 명령 수신 시 활성화
 2. **파일 기반**: `/app/KILL_SWITCH` 파일 존재 시 (가장 간단)
 3. **HTTP endpoint**: `POST /api/kill` (인증 필요)
 
@@ -1122,7 +1170,7 @@ Phase 8: Live Trading (LiveExecutor 구현)           ← 실제 자금
 | **LiveRunner** | Graceful shutdown + signal handler + TaskGroup | 프로세스 관리, 24/7 안정성 |
 | **TradePersistence** | SQLite 거래/시그널/equity 기록 | 결과 분석, 재시작 복구 |
 | **StateManager** | 봇 상태 저장/복구 | VPS 재시작 시 포지션 유지 |
-| **NotificationEngine** | EventBus subscriber → Discord/Telegram | 실시간 알림 수신 |
+| **NotificationEngine** | EventBus subscriber → Discord Bot | 실시간 알림 + 양방향 명령 |
 | **Dockerfile + docker-compose** | 컨테이너화, Prometheus/Grafana | VPS 배포 필수 |
 | **환경별 설정** | paper.yaml / live.yaml 분리 | 모드 전환 용이 |
 
@@ -1138,7 +1186,7 @@ Phase 8: Live Trading (LiveExecutor 구현)           ← 실제 자금
 - WebSocket 24시간 무중단 연결 유지
 - 시그널이 백테스트와 일관 (동일 bar에서 동일 방향)
 - 시뮬 PnL 부호가 백테스트와 일치
-- 알림 정상 수신 (Discord + Telegram)
+- 알림 정상 수신 (Discord Bot 채널 알림 + Slash Commands 응답)
 - 재시작 후 상태 정상 복구
 - Daily report 자동 생성
 
@@ -1334,10 +1382,10 @@ class TradingSettings(BaseSettings):
 │  ├ LiveRunner             ├ StateManager        ├ docker-compose  │
 │  └ CLI run-live           └ SQLite schema       └ 환경별 설정     │
 │                                                                  │
-│  6-D: 알림 시스템 (최소)                                          │
+│  6-D: 알림 시스템 (Discord Bot)                                    │
 │  ├ NotificationEngine (EventBus subscriber)                      │
-│  ├ Discord 거래 알림 (기존 확장)                                   │
-│  └ Telegram Critical alert (aiogram)                             │
+│  ├ Discord Bot (discord.py, 양방향 + 알림)                        │
+│  └ Slash Commands (/status, /kill, /report)                      │
 └──────────────────────────────────┬───────────────────────────────┘
                                    │
                                    ▼
@@ -1355,7 +1403,6 @@ class TradingSettings(BaseSettings):
 │                                                                  │
 │  ├ ChartGenerator (matplotlib equity/drawdown PNG)               │
 │  ├ ReportScheduler (daily/weekly/monthly)                        │
-│  ├ Telegram 양방향 명령 (/status, /kill, /report)                │
 │  ├ Prometheus + Grafana 대시보드                                  │
 │  └ Watchdog + KillSwitch                                        │
 └──────────────────────────────────┬───────────────────────────────┘
@@ -1401,13 +1448,13 @@ class TradingSettings(BaseSettings):
 | **6-C-3** | 환경별 설정 분리 (paper.yaml / live.yaml) + Pydantic Settings | — |
 | **6-C-4** | VPS 프로비저닝 (Oracle Free / Hetzner) + Docker Secrets | — |
 
-#### 6-D: 알림 시스템 (최소 MVP)
+#### 6-D: 알림 시스템 (Discord Bot)
 
 | Task | 설명 | 의존성 |
 |------|------|--------|
 | **6-D-1** | `NotificationEngine` — EventBus subscriber (Fill, CircuitBreaker, Balance) | EventBus |
-| **6-D-2** | Discord 거래 알림 확장 (기존 DiscordNotifier + 이미지 첨부) | aiohttp |
-| **6-D-3** | `TelegramNotifier` — aiogram 3.x, CRITICAL alert 전용 | `uv add aiogram` |
+| **6-D-2** | `DiscordBot` — discord.py 2.6+, WebSocket Gateway 연결, 채널 알림 자동 전송 | `uv add discord.py` |
+| **6-D-3** | Slash Commands — `/status`, `/kill`, `/report`, `/balance`, `/daily` | DiscordBot |
 | **6-D-4** | `NotificationQueue` — async retry + SpamGuard | — |
 
 ### Phase 7: Paper Trading 배포 (P1)
@@ -1428,12 +1475,11 @@ class TradingSettings(BaseSettings):
 | Task | 설명 | 의존성 |
 |------|------|--------|
 | **7.5-A** | `ChartGenerator` — matplotlib equity/drawdown PNG | matplotlib |
-| **7.5-B** | Discord/Telegram 차트 이미지 첨부 | ChartGenerator |
-| **7.5-C** | `ReportScheduler` — daily/weekly/monthly 자동 리포트 | ChartGenerator, DB |
-| **7.5-D** | Telegram 양방향 명령 (`/status`, `/kill`, `/report`) | aiogram |
-| **7.5-E** | Prometheus metrics 노출 + Grafana 대시보드 | `uv add prometheus-client` |
-| **7.5-F** | `Watchdog` — heartbeat 감시 + 알림 | NotificationEngine |
-| **7.5-G** | CI/CD Pipeline (GitHub Actions: lint → test → build → deploy) | Dockerfile |
+| **7.5-B** | Discord Bot 차트 이미지 첨부 (`discord.File` + Embed) | ChartGenerator |
+| **7.5-C** | `ReportScheduler` — daily/weekly/monthly 자동 리포트 (`discord.ext.tasks`) | ChartGenerator, DB |
+| **7.5-D** | Prometheus metrics 노출 + Grafana 대시보드 | `uv add prometheus-client` |
+| **7.5-E** | `Watchdog` — heartbeat 감시 + 알림 | NotificationEngine |
+| **7.5-F** | CI/CD Pipeline (GitHub Actions: lint → test → build → deploy) | Dockerfile |
 
 ### Phase 8: Live Trading (P3)
 
@@ -1443,7 +1489,7 @@ class TradingSettings(BaseSettings):
 |------|------|--------|
 | **8-A** | `LiveExecutor` — CCXT 주문 제출 (ExecutorPort 구현) | BinanceClient |
 | **8-B** | `Reconciliation` — 거래소 vs 로컬 포지션 교차 검증 | LiveExecutor |
-| **8-C** | `KillSwitch` — 긴급 정지 (Telegram `/kill` + 파일 기반) | Telegram, OMS |
+| **8-C** | `KillSwitch` — 긴급 정지 (Discord `/kill` + 파일 기반) | DiscordBot, OMS |
 | **8-D** | Testnet 검증 (1주, API 호출 테스트) | LiveExecutor |
 | **8-E** | Alpha rollout — BTC 1개, $1,000 (10%), 1개월 | 8-A~D |
 | **8-F** | Beta rollout — 3개 (BTC,ETH,SOL), $3,000 (30%), 1개월 | Alpha 성공 |
@@ -1455,11 +1501,10 @@ class TradingSettings(BaseSettings):
 ```
 Phase 6에서 추가할 Python 의존성 (3개만):
   uv add aiosqlite          # SQLite async (trade persistence, state manager)
-  uv add aiogram            # Telegram bot (알림, 양방향 명령)
+  uv add discord.py         # Discord Bot (양방향 알림 + slash commands)
   uv add prometheus-client   # Prometheus metrics (Phase 7.5)
 
 기존 의존성 활용 (추가 설치 불필요):
-  aiohttp                   # Discord webhook (이미 있음)
   matplotlib                # Chart 생성 (VBT 통해 이미 있음)
   ccxt                      # Binance WebSocket + REST API (이미 있음)
   loguru                    # Logging (이미 있음)
@@ -1482,7 +1527,7 @@ Week 3:  6-A-2 LiveRunner                      (프로세스 관리)
          6-B-3 StateManager                    (재시작 복구)
          6-D-1 NotificationEngine              (알림 연동)
 
-Week 4:  6-D-2~4 Discord/Telegram 알림         (알림 완성)
+Week 4:  6-D-2~4 Discord Bot + Slash Commands   (알림 완성)
          6-A-3 CLI run-live                     (통합)
          6-C-2 docker-compose                  (배포 완성)
          6-C-4 VPS 프로비저닝                   (배포 실행)
@@ -1505,14 +1550,16 @@ Week 5:  Phase 7 시작 — VPS 배포 + Shadow Warmup + Paper 전환
 - [Event Sourcing Database Architecture - Redpanda](https://www.redpanda.com/guides/event-stream-processing-event-sourcing-database)
 - [Freqtrade - SQLite-based Crypto Trading Bot](https://github.com/freqtrade/freqtrade)
 
-### Notification
-- [Freqtrade Telegram Usage](https://www.freqtrade.io/en/stable/telegram-usage/)
-- [aiogram 3.x Documentation](https://docs.aiogram.dev/en/dev-3.x/)
-- [Discord Webhook Embeds Guide](https://birdie0.github.io/discord-webhooks-guide/)
+### Notification (Discord Bot)
+- [discord.py Documentation](https://discordpy.readthedocs.io/en/stable/)
+- [discord.py GitHub](https://github.com/Rapptz/discord.py)
+- [discord.py 2.0 Slash Command Examples](https://gist.github.com/AbstractUmbra/a9c188797ae194e592efe05fa129c57f)
+- [Discord Application Commands Guide](https://www.pythondiscord.com/pages/guides/python-guides/app-commands/)
 - [Discord Rate Limits](https://discord.com/developers/docs/topics/rate-limits)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Discord Embed Limits](https://www.pythondiscord.com/pages/guides/python-guides/discord-embed-limits/)
+- [discord.ext.tasks — Background Tasks](https://discordpy.readthedocs.io/en/stable/ext/tasks/index.html)
+- [Freqtrade Telegram Usage (참고 — 명령어 설계)](https://www.freqtrade.io/en/stable/telegram-usage/)
 - [Plotly Kaleido 1.0](https://plotly.com/blog/kaleido-the-next-generation/)
-- [99bitcoins - Best Crypto Trading Signals 2026](https://99bitcoins.com/cryptocurrency/best-crypto-signals/)
 
 ### Production Deployment
 - [Step-by-Step Crypto Trading Bot Development 2026](https://appinventiv.com/blog/crypto-trading-bot-development/)

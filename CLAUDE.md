@@ -74,14 +74,21 @@ uv run pytest --cov=src
 `.env.example`을 `.env`로 복사 후 설정:
 
 ```bash
-# 필수
-BINANCE_API_KEY=your_key_here
-BINANCE_SECRET=your_secret_here
+# Binance API (필수)
+BINANCE_API_KEY=
+BINANCE_SECRET=
 
-# 선택 (기본값 있음)
-BRONZE_DIR=data/bronze
-SILVER_DIR=data/silver
-LOG_DIR=logs
+# Discord Bot (필수 — 알림 + 양방향 명령)
+DISCORD_BOT_TOKEN=
+DISCORD_GUILD_ID=
+DISCORD_TRADE_LOG_CHANNEL_ID=
+DISCORD_ALERTS_CHANNEL_ID=
+DISCORD_DAILY_REPORT_CHANNEL_ID=
+
+# Data Directories (선택 — 기본값 있음)
+# BRONZE_DIR=data/bronze
+# SILVER_DIR=data/silver
+# LOG_DIR=logs
 ```
 
 ---
