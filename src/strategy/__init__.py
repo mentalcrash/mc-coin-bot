@@ -35,6 +35,7 @@ import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
+import src.strategy.regime_tsmom  # 전략 등록 side effect
 import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
