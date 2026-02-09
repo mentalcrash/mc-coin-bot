@@ -52,6 +52,13 @@ Gate 7: 실전 배포 + 모니터링
 - **필수 요건**: 상승장(2020-2021), 하락장(2022), 횡보장(2023), 회복장(2024-2025) 레짐이 모두 포함.
 - **초기 자본**: $100,000.
 
+### 벤치마크
+
+- **기본 벤치마크**: BTC/USDT Buy & Hold (동일 기간).
+- Alpha, Beta 등 벤치마크 대비 지표는 모두 이 기준으로 산출한다.
+- **Alpha** = 전략 CAGR - Beta × 벤치마크 CAGR (Jensen's Alpha).
+- **Beta** = Cov(전략 수익률, 벤치마크 수익률) / Var(벤치마크 수익률).
+
 ### 비용 모델
 
 | 항목 | 기본값 | 설명 |
@@ -118,12 +125,20 @@ Gate 7: 실전 배포 + 모니터링
 
 ### 보조 기준 (참고, 판정에 직접 영향 없음)
 
-| 지표 | 권장 |
-|------|------|
-| Profit Factor | > 1.3 |
-| Win Rate | > 45% (추세추종), > 55% (평균회귀) |
-| Sortino Ratio | > 1.5 |
-| Calmar Ratio | > 1.0 |
+| 지표 | 권장 | 설명 |
+|------|------|------|
+| Profit Factor | > 1.3 | 총이익 / 총손실 |
+| Win Rate | > 45% (추세추종), > 55% (평균회귀) | 승률 |
+| Sortino Ratio | > 1.5 | 하방 변동성 기준 위험조정 수익 |
+| Calmar Ratio | > 1.0 | CAGR / MDD |
+| **Alpha** | > **0%** | 벤치마크(BTC B&H) 대비 초과 수익 |
+| **Beta** | < **0.5** | 벤치마크 민감도 (낮을수록 독립적) |
+| Tail Ratio | > 1.0 | 우측꼬리 / 좌측꼬리 (>1 = 양의 비대칭) |
+| Skewness | > 0 | 수익 분포 비대칭 (양수 = 큰 수익 쪽 치우침) |
+| Recovery Factor | > 3.0 | 순수익 / MDD (자본 효율) |
+| Expectancy ($) | > 0 | 거래당 평균 순이익 |
+| Avg Trade Duration | 기록 | 평균 보유 기간 (bars) |
+| Max Consecutive Losses | < 10 | 최대 연속 손실 횟수 |
 
 ### 즉시 폐기 기준
 
@@ -135,10 +150,11 @@ Gate 7: 실전 배포 + 모니터링
 
 ### Gate 1 산출물
 
-- **선정 에셋**: 예) SOL/USDT (Sharpe 1.33)
+- **선정 에셋**: 예) SOL/USDT (Sharpe 1.33, Alpha +12.3%, Beta 0.35)
 - **선정 타임프레임**: 예) 1D
-- **2위 에셋**: 예) ETH/USDT (Sharpe 1.05)
-- **3위 에셋**: 예) BTC/USDT (Sharpe 0.92)
+- **2위 에셋**: 예) ETH/USDT (Sharpe 1.05, Alpha +5.1%, Beta 0.42)
+- **3위 에셋**: 예) BTC/USDT (Sharpe 0.92, Alpha +2.0%, Beta 0.85)
+- **보조 지표**: Sortino, Calmar, Tail Ratio, Recovery Factor, Expectancy 기록
 
 ---
 
@@ -163,6 +179,20 @@ Gate 7: 실전 배포 + 모니터링
 
 > **Sharpe Decay** = (IS Sharpe - OOS Sharpe) / IS Sharpe x 100%
 > 50% 이상이면 과적합 의심. 100% 이상이면 OOS에서 손실.
+
+### 추가 기록 지표 (Gate 2)
+
+IS/OOS 각각에 대해 아래 지표를 기록한다 (판정 기준 아님, 분석용).
+
+| 지표 | IS | OOS | 비고 |
+|------|------|------|------|
+| Alpha (vs BTC B&H) | X.X% | X.X% | OOS Alpha > 0이면 양호 |
+| Beta | X.XX | X.XX | OOS Beta 변화가 크면 레짐 의존 |
+| CAGR | X.X% | X.X% | |
+| MDD | -X.X% | -X.X% | OOS MDD > IS MDD x 1.5이면 경고 |
+| Trades | N | N | OOS 거래 수 극단적 감소 시 경고 |
+| Sortino | X.XX | X.XX | |
+| Tail Ratio | X.XX | X.XX | OOS에서 급감 시 과적합 신호 |
 
 ### 판정
 
@@ -314,6 +344,10 @@ Gate 7: 실전 배포 + 모니터링
 | **3개월 이동 Sharpe** | < **0** | 은퇴 (운용 중단) |
 | **실시간 MDD** | < 백테스트 MDD | 유지 |
 | **실시간 MDD** | > 백테스트 MDD x 1.5 | 긴급 중단 |
+| **3개월 이동 Alpha** | > **0%** | 유지 (벤치마크 초과 확인) |
+| **3개월 이동 Alpha** | < **-5%** | 경고 (Alpha 소멸 검토) |
+| **Beta 변동** | ±0.2 이내 | 유지 (안정적 시장 노출) |
+| **Beta 변동** | ±0.2 초과 | 경고 (레짐 변화 가능성) |
 
 ### 은퇴 절차
 

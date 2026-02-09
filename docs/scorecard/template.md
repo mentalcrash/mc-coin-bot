@@ -20,11 +20,11 @@
 
 ### 에셋별 비교
 
-| 순위 | 에셋 | Sharpe | CAGR | MDD | Trades | PF |
-|------|------|--------|------|-----|--------|------|
-| **1** | **{BEST}** | **X.XX** | X.X% | -X.X% | N | X.XX |
-| 2 | {2ND} | X.XX | X.X% | -X.X% | N | X.XX |
-| ... | ... | ... | ... | ... | ... | ... |
+| 순위 | 에셋 | Sharpe | CAGR | MDD | Trades | PF | Alpha | Beta |
+|------|------|--------|------|-----|--------|------|-------|------|
+| **1** | **{BEST}** | **X.XX** | X.X% | -X.X% | N | X.XX | X.X% | X.XX |
+| 2 | {2ND} | X.XX | X.X% | -X.X% | N | X.XX | X.X% | X.XX |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... |
 
 ### Best Asset 핵심 지표
 
@@ -33,8 +33,16 @@
 | Sharpe | X.XX | > 1.0 | PASS/FAIL |
 | MDD | -X.X% | < 40% | PASS/FAIL |
 | Trades | N | > 50 | PASS/FAIL |
+| Alpha (vs BTC B&H) | X.X% | > 0% | — |
+| Beta (vs BTC) | X.XX | < 0.5 | — |
 | Win Rate | X.X% | > 45% | — |
 | Sortino | X.XX | > 1.5 | — |
+| Calmar | X.XX | > 1.0 | — |
+| Tail Ratio | X.XX | > 1.0 | — |
+| Recovery Factor | X.XX | > 3.0 | — |
+| Expectancy ($) | X.XX | > 0 | — |
+| Avg Trade Duration | N bars | — | — |
+| Max Consec. Losses | N | < 10 | — |
 
 ---
 
