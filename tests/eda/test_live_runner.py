@@ -234,3 +234,226 @@ class TestComponentAssembly:
             asset_weights=weights,
         )
         assert runner._asset_weights == weights
+
+
+class TestDbPathParameter:
+    """db_path 파라미터 전달 테스트."""
+
+    def test_paper_db_path_passed(self) -> None:
+        """paper() factory에 db_path가 전달되는지 확인."""
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            db_path="data/test.db",
+        )
+        assert runner._db_path == "data/test.db"
+
+    def test_shadow_db_path_passed(self) -> None:
+        """shadow() factory에 db_path가 전달되는지 확인."""
+        client = _make_mock_client()
+        runner = LiveRunner.shadow(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            db_path="data/test_shadow.db",
+        )
+        assert runner._db_path == "data/test_shadow.db"
+
+    def test_default_db_path_is_none(self) -> None:
+        """db_path 미지정 시 None이 기본값."""
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+        assert runner._db_path is None
+
+
+class TestRunWithDb:
+    """LiveRunner.run()에서 DB 통합 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_run_without_db_still_works(self) -> None:
+        """db_path=None이면 persistence 없이 정상 동작."""
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            db_path=None,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.1)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+        # 예외 없이 종료되면 성공
+
+    @pytest.mark.asyncio
+    async def test_run_with_db_creates_file(self, tmp_path: object) -> None:
+        """db_path 지정 시 DB 파일이 생성되고 shutdown 시 최종 상태가 저장."""
+        import pathlib
+
+        assert isinstance(tmp_path, pathlib.Path)
+        db_path = str(tmp_path / "runner_test.db")
+
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            db_path=db_path,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.15)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+
+        # DB 파일 생성 확인
+        assert pathlib.Path(db_path).exists()
+
+        # 최종 상태 저장 확인 — bot_state 테이블에 pm_state 존재
+        from src.eda.persistence.database import Database
+
+        db = Database(db_path)
+        await db.connect()
+        conn = db.connection
+        cursor = await conn.execute("SELECT key FROM bot_state")
+        keys = {row[0] for row in await cursor.fetchall()}
+        assert "pm_state" in keys
+        assert "rm_state" in keys
+        assert "last_save_timestamp" in keys
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_run_with_db_restores_state(self, tmp_path: object) -> None:
+        """DB에 저장된 상태가 다음 run에서 복구되는지 확인."""
+        import pathlib
+
+        assert isinstance(tmp_path, pathlib.Path)
+        db_path = str(tmp_path / "restore_test.db")
+
+        # 1차 run — DB에 상태 저장
+        from src.eda.persistence.database import Database
+        from src.eda.persistence.state_manager import StateManager
+        from src.eda.portfolio_manager import EDAPortfolioManager, Position
+        from src.models.types import Direction
+
+        db = Database(db_path)
+        await db.connect()
+        state_mgr = StateManager(db)
+
+        # PM에 포지션 세팅 후 저장
+        config = _make_config()
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.05,
+            avg_entry_price=60000.0,
+            last_price=62000.0,
+        )
+        pm._cash = 7000.0
+        pm._order_counter = 10
+
+        from src.eda.risk_manager import EDARiskManager
+
+        rm = EDARiskManager(config=config, portfolio_manager=pm)
+        rm._peak_equity = 11000.0
+
+        await state_mgr.save_all(pm, rm)
+        await db.close()
+
+        # 2차 run — 상태 복구 확인
+        # LiveRunner.run()이 상태를 복구하고 DB에 다시 저장하므로, 재로드 후 값 확인
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            db_path=db_path,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start2(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start2)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.15)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+
+        # DB에서 최종 저장된 PM 상태 확인
+        db2 = Database(db_path)
+        await db2.connect()
+        state_mgr2 = StateManager(db2)
+        pm_state = await state_mgr2.load_pm_state()
+        assert pm_state is not None
+
+        # 복구된 상태가 반영되어 있어야 함
+        positions = pm_state["positions"]
+        assert isinstance(positions, dict)
+        assert "BTC/USDT" in positions
+        btc = positions["BTC/USDT"]
+        assert isinstance(btc, dict)
+        assert btc["direction"] == Direction.LONG.value
+        assert btc["size"] == 0.05
+        assert pm_state["cash"] == 7000.0
+        assert pm_state["order_counter"] == 10
+
+        rm_state = await state_mgr2.load_rm_state()
+        assert rm_state is not None
+        assert rm_state["peak_equity"] == 11000.0
+
+        await db2.close()

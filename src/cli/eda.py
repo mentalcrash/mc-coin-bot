@@ -311,6 +311,10 @@ def _generate_eda_report(
 def run_live(
     config_path: Annotated[str, typer.Argument(help="YAML config file path")],
     mode: Annotated[LiveRunMode, typer.Option(help="Execution mode")] = LiveRunMode.PAPER,
+    db_path: Annotated[
+        str | None,
+        typer.Option("--db-path", help="SQLite DB path for persistence (None=disabled)"),
+    ] = "data/trading.db",
     verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
     """Run EDA in live mode (WebSocket real-time data).
@@ -355,6 +359,7 @@ def run_live(
                 client=client,
                 initial_capital=cfg.backtest.capital,
                 asset_weights=asset_weights,
+                db_path=db_path,
             )
             await runner.run()
 

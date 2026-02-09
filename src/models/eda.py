@@ -48,3 +48,21 @@ class EDAConfig(BaseModel):
     event_log_path: str | None = None
     enable_heartbeat: bool = True
     heartbeat_interval_bars: int = Field(default=100, ge=1)
+
+
+class PersistenceConfig(BaseModel):
+    """데이터 영속화 설정.
+
+    SQLite 기반 거래 기록 및 상태 저장 설정입니다.
+
+    Attributes:
+        enabled: 영속화 활성화 여부
+        db_path: SQLite 파일 경로
+        save_state_interval_seconds: 상태 자동 저장 주기 (초)
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    db_path: str = "data/trading.db"
+    save_state_interval_seconds: float = Field(default=300.0, ge=10.0)

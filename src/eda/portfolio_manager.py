@@ -173,6 +173,65 @@ class EDAPortfolioManager:
         """오픈 포지션 수."""
         return sum(1 for p in self._positions.values() if p.is_open)
 
+    @property
+    def order_counter(self) -> int:
+        """주문 카운터 (StateManager 접근용)."""
+        return self._order_counter
+
+    @property
+    def last_target_weights(self) -> dict[str, float]:
+        """마지막 target weights (StateManager 접근용)."""
+        return self._last_target_weights
+
+    @property
+    def last_executed_targets(self) -> dict[str, float]:
+        """마지막 실행된 targets (StateManager 접근용)."""
+        return self._last_executed_targets
+
+    def restore_state(self, state: dict[str, object]) -> None:
+        """저장된 상태를 복원.
+
+        Args:
+            state: StateManager에서 로드한 상태 dict.
+                keys: positions, cash, order_counter,
+                      last_target_weights, last_executed_targets
+        """
+        # positions 복원
+        positions_data = state.get("positions", {})
+        assert isinstance(positions_data, dict)
+        self._positions.clear()
+        for symbol, pos_data in positions_data.items():
+            assert isinstance(pos_data, dict)
+            pos = Position(
+                symbol=symbol,
+                direction=Direction(pos_data["direction"]),
+                size=float(pos_data["size"]),
+                avg_entry_price=float(pos_data["avg_entry_price"]),
+                realized_pnl=float(pos_data.get("realized_pnl", 0.0)),
+                unrealized_pnl=float(pos_data.get("unrealized_pnl", 0.0)),
+                current_weight=float(pos_data.get("current_weight", 0.0)),
+                last_price=float(pos_data.get("last_price", 0.0)),
+                peak_price_since_entry=float(pos_data.get("peak_price_since_entry", 0.0)),
+                trough_price_since_entry=float(pos_data.get("trough_price_since_entry", 0.0)),
+                atr_values=[float(v) for v in pos_data.get("atr_values", [])],
+            )
+            self._positions[symbol] = pos
+
+        # cash, order_counter 복원
+        if "cash" in state:
+            self._cash = float(state["cash"])  # type: ignore[arg-type]
+        if "order_counter" in state:
+            self._order_counter = int(state["order_counter"])  # type: ignore[arg-type]
+
+        # target weights 복원
+        ltw = state.get("last_target_weights", {})
+        assert isinstance(ltw, dict)
+        self._last_target_weights = {k: float(v) for k, v in ltw.items()}
+
+        let = state.get("last_executed_targets", {})
+        assert isinstance(let, dict)
+        self._last_executed_targets = {k: float(v) for k, v in let.items()}
+
     # =========================================================================
     # Event Handlers
     # =========================================================================

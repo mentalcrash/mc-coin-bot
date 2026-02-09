@@ -91,6 +91,18 @@ class EDARiskManager:
         """서킷 브레이커 발동 여부."""
         return self._circuit_breaker_triggered
 
+    def restore_state(self, state: dict[str, object]) -> None:
+        """저장된 상태를 복원.
+
+        Args:
+            state: StateManager에서 로드한 상태 dict.
+                keys: peak_equity, circuit_breaker_triggered
+        """
+        if "peak_equity" in state:
+            self._peak_equity = float(state["peak_equity"])  # type: ignore[arg-type]
+        if "circuit_breaker_triggered" in state:
+            self._circuit_breaker_triggered = bool(state["circuit_breaker_triggered"])
+
     async def _on_order_request(self, event: AnyEvent) -> None:
         """OrderRequestEvent 검증."""
         assert isinstance(event, OrderRequestEvent)

@@ -34,10 +34,14 @@ from src.eda.risk_manager import EDARiskManager
 from src.eda.strategy_engine import StrategyEngine
 
 if TYPE_CHECKING:
+    from src.eda.persistence.state_manager import StateManager
     from src.eda.ports import ExecutorPort
     from src.exchange.binance_client import BinanceClient
     from src.portfolio.config import PortfolioManagerConfig
     from src.strategy.base import BaseStrategy
+
+# 기본 상태 저장 주기 (초)
+_DEFAULT_SAVE_INTERVAL = 300.0
 
 
 class LiveMode(StrEnum):
@@ -63,6 +67,7 @@ class LiveRunner:
         initial_capital: 초기 자본 (USD)
         asset_weights: 에셋별 가중치
         queue_size: EventBus 큐 크기
+        db_path: SQLite 경로 (None이면 영속화 비활성)
     """
 
     def __init__(
@@ -76,6 +81,7 @@ class LiveRunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
+        db_path: str | None = None,
     ) -> None:
         self._strategy = strategy
         self._feed = feed
@@ -87,6 +93,7 @@ class LiveRunner:
         self._asset_weights = asset_weights
         self._queue_size = queue_size
         self._shutdown_event = asyncio.Event()
+        self._db_path = db_path
 
     @classmethod
     def paper(
@@ -98,6 +105,7 @@ class LiveRunner:
         client: BinanceClient,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
+        db_path: str | None = None,
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -111,6 +119,7 @@ class LiveRunner:
             mode=LiveMode.PAPER,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
+            db_path=db_path,
         )
 
     @classmethod
@@ -123,6 +132,7 @@ class LiveRunner:
         client: BinanceClient,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
+        db_path: str | None = None,
     ) -> LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -136,71 +146,123 @@ class LiveRunner:
             mode=LiveMode.SHADOW,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
+            db_path=db_path,
         )
 
     async def run(self) -> None:
         """메인 루프. shutdown_event까지 실행."""
-        # 1. 컴포넌트 생성
-        bus = EventBus(queue_size=self._queue_size)
+        from src.eda.persistence.database import Database
+        from src.eda.persistence.state_manager import StateManager
+        from src.eda.persistence.trade_persistence import TradePersistence
 
-        strategy_engine = StrategyEngine(self._strategy, target_timeframe=self._target_timeframe)
-        pm = EDAPortfolioManager(
-            config=self._config,
-            initial_capital=self._initial_capital,
-            asset_weights=self._asset_weights,
-            target_timeframe=self._target_timeframe,
-        )
-        rm = EDARiskManager(
-            config=self._config,
-            portfolio_manager=pm,
-            max_order_size_usd=self._initial_capital * self._config.max_leverage_cap,
-            enable_circuit_breaker=True,  # Live는 CB 활성화
-        )
-        oms = OMS(executor=self._executor, portfolio_manager=pm)
-        analytics = AnalyticsEngine(initial_capital=self._initial_capital)
+        # 1. DB 초기화 (db_path가 있을 때만)
+        db: Database | None = None
+        if self._db_path:
+            db = Database(self._db_path)
+            await db.connect()
 
-        # BacktestExecutor인 경우 bar 핸들러 등록 (Paper 모드)
-        if isinstance(self._executor, BacktestExecutor):
-            bt_executor = self._executor
+        try:
+            # 2. 컴포넌트 생성
+            bus = EventBus(queue_size=self._queue_size)
 
-            async def executor_bar_handler(event: AnyEvent) -> None:
-                assert isinstance(event, BarEvent)
-                bt_executor.on_bar(event)
+            strategy_engine = StrategyEngine(
+                self._strategy, target_timeframe=self._target_timeframe
+            )
+            pm = EDAPortfolioManager(
+                config=self._config,
+                initial_capital=self._initial_capital,
+                asset_weights=self._asset_weights,
+                target_timeframe=self._target_timeframe,
+            )
+            rm = EDARiskManager(
+                config=self._config,
+                portfolio_manager=pm,
+                max_order_size_usd=self._initial_capital * self._config.max_leverage_cap,
+                enable_circuit_breaker=True,
+            )
+            oms = OMS(executor=self._executor, portfolio_manager=pm)
+            analytics = AnalyticsEngine(initial_capital=self._initial_capital)
 
-            bus.subscribe(EventType.BAR, executor_bar_handler)
+            # BacktestExecutor인 경우 bar 핸들러 등록 (Paper 모드)
+            if isinstance(self._executor, BacktestExecutor):
+                bt_executor = self._executor
 
-        # 2. 모든 컴포넌트 등록 (순서 중요)
-        await strategy_engine.register(bus)
-        await pm.register(bus)
-        await rm.register(bus)
-        await oms.register(bus)
-        await analytics.register(bus)
+                async def executor_bar_handler(event: AnyEvent) -> None:
+                    assert isinstance(event, BarEvent)
+                    bt_executor.on_bar(event)
 
-        # 3. Signal handler
-        self._setup_signal_handlers()
+                bus.subscribe(EventType.BAR, executor_bar_handler)
 
-        # 4. 실행
-        bus_task = asyncio.create_task(bus.start())
-        feed_task = asyncio.create_task(self._feed.start(bus))
+            # 3. 상태 복구 (DB 활성 시)
+            state_mgr: StateManager | None = None
+            if db:
+                state_mgr = StateManager(db)
+                pm_state = await state_mgr.load_pm_state()
+                if pm_state:
+                    pm.restore_state(pm_state)
+                    logger.info("PM state restored")
+                rm_state = await state_mgr.load_rm_state()
+                if rm_state:
+                    rm.restore_state(rm_state)
+                    logger.info("RM state restored")
 
-        logger.info("LiveRunner started (mode={})", self._mode.value)
+            # 4. 모든 컴포넌트 등록 (순서 중요)
+            await strategy_engine.register(bus)
+            await pm.register(bus)
+            await rm.register(bus)
+            await oms.register(bus)
+            await analytics.register(bus)
 
-        # 5. Shutdown 대기
-        await self._shutdown_event.wait()
+            # 5. TradePersistence 등록 (analytics 이후)
+            if db:
+                persistence = TradePersistence(db, strategy_name=self._strategy.name)
+                await persistence.register(bus)
 
-        # 6. Graceful shutdown
-        logger.warning("Initiating graceful shutdown...")
-        await self._feed.stop()
-        feed_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await feed_task
+            # 6. Signal handler
+            self._setup_signal_handlers()
 
-        await pm.flush_pending_signals()
-        await bus.flush()
-        await bus.stop()
-        await bus_task
+            # 7. 실행
+            bus_task = asyncio.create_task(bus.start())
+            feed_task = asyncio.create_task(self._feed.start(bus))
 
-        logger.info("LiveRunner stopped gracefully")
+            # 주기적 상태 저장 task
+            save_task: asyncio.Task[None] | None = None
+            if state_mgr:
+                save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm))
+
+            logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
+
+            # 8. Shutdown 대기
+            await self._shutdown_event.wait()
+
+            # 9. Graceful shutdown
+            logger.warning("Initiating graceful shutdown...")
+
+            # 주기적 저장 task 취소
+            if save_task:
+                save_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await save_task
+
+            await self._feed.stop()
+            feed_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await feed_task
+
+            await pm.flush_pending_signals()
+            await bus.flush()
+            await bus.stop()
+            await bus_task
+
+            # 최종 상태 저장
+            if state_mgr:
+                await state_mgr.save_all(pm, rm)
+                logger.info("Final state saved")
+
+            logger.info("LiveRunner stopped gracefully")
+        finally:
+            if db:
+                await db.close()
 
     def request_shutdown(self) -> None:
         """외부에서 shutdown 요청 (테스트용)."""
@@ -216,6 +278,21 @@ class LiveRunner:
         """시그널 수신 시 shutdown 이벤트 설정."""
         logger.warning("Received {}, initiating graceful shutdown...", sig.name)
         self._shutdown_event.set()
+
+    @staticmethod
+    async def _periodic_state_save(
+        state_mgr: StateManager,
+        pm: EDAPortfolioManager,
+        rm: EDARiskManager,
+        interval: float = _DEFAULT_SAVE_INTERVAL,
+    ) -> None:
+        """주기적으로 PM/RM 상태를 저장."""
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await state_mgr.save_all(pm, rm)
+            except Exception:
+                logger.exception("Periodic state save failed")
 
     @property
     def feed(self) -> LiveDataFeed:
