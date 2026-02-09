@@ -303,8 +303,76 @@ def _generate_eda_report(
 
 
 # ---------------------------------------------------------------------------
-# run-live command
+# run-live: shared launcher + CLI command
 # ---------------------------------------------------------------------------
+
+
+def launch_live(
+    config_path: str,
+    *,
+    mode: str = "paper",
+    initial_capital: float | None = None,
+    db_path: str | None = "data/trading.db",
+) -> None:
+    """LiveRunner 실행 공통 함수.
+
+    CLI ``run-live`` 커맨드와 Docker ENTRYPOINT(``src.live.main``) 모두
+    이 함수를 호출하여 중복을 제거합니다.
+
+    Args:
+        config_path: YAML config 파일 경로.
+        mode: 실행 모드 (``"paper"`` | ``"shadow"``).
+        initial_capital: 초기 자본 오버라이드. ``None``이면 YAML config 값 사용.
+        db_path: SQLite 경로. ``None``이면 영속화 비활성.
+    """
+    from src.eda.live_runner import LiveMode, LiveRunner
+    from src.exchange.binance_client import BinanceClient
+
+    cfg = load_config(config_path)
+    strategy = build_strategy(cfg)
+    symbol_list = cfg.backtest.symbols
+
+    tf = cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
+
+    is_multi = len(symbol_list) > 1
+    asset_weights: dict[str, float] | None = None
+    if is_multi:
+        asset_weights = {s: 1.0 / len(symbol_list) for s in symbol_list}
+
+    live_mode = LiveMode.SHADOW if mode == "shadow" else LiveMode.PAPER
+    capital = initial_capital if initial_capital is not None else cfg.backtest.capital
+    mode_label = "Shadow" if live_mode == LiveMode.SHADOW else "Paper"
+
+    header = f"[bold cyan]EDA Live {mode_label}: {cfg.strategy.name} / {len(symbol_list)} symbols (1m → {target_tf})[/bold cyan]"
+    console.print(header)
+    console.print(f"[dim]Symbols: {', '.join(symbol_list)}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop gracefully.[/dim]")
+
+    logger.info(
+        "Starting LiveRunner: mode={}, strategy={}, symbols={}, tf=1m→{}",
+        mode,
+        cfg.strategy.name,
+        len(symbol_list),
+        target_tf,
+    )
+
+    async def _run() -> None:
+        async with BinanceClient() as client:
+            factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
+            runner = factory(
+                strategy=strategy,
+                symbols=symbol_list,
+                target_timeframe=target_tf,
+                config=cfg.portfolio,
+                client=client,
+                initial_capital=capital,
+                asset_weights=asset_weights,
+                db_path=db_path,
+            )
+            await runner.run()
+
+    asyncio.run(_run())
 
 
 @app.command("run-live")
@@ -323,44 +391,5 @@ def run_live(
         - paper: 시뮬레이션 체결 (BacktestExecutor)
         - shadow: 시그널 로깅만 (ShadowExecutor, 체결 없음)
     """
-    from src.eda.live_runner import LiveMode, LiveRunner
-    from src.exchange.binance_client import BinanceClient
-
     setup_logger(console_level="DEBUG" if verbose else "INFO")
-
-    cfg = load_config(config_path)
-    strategy = build_strategy(cfg)
-    symbol_list = cfg.backtest.symbols
-
-    tf = cfg.backtest.timeframe
-    target_tf = tf.upper() if tf.lower() == "1d" else tf
-
-    is_multi = len(symbol_list) > 1
-    asset_weights: dict[str, float] | None = None
-    if is_multi:
-        asset_weights = {s: 1.0 / len(symbol_list) for s in symbol_list}
-
-    live_mode = LiveMode.SHADOW if mode == LiveRunMode.SHADOW else LiveMode.PAPER
-    mode_label = "Shadow" if live_mode == LiveMode.SHADOW else "Paper"
-
-    header = f"[bold cyan]EDA Live {mode_label}: {cfg.strategy.name} / {len(symbol_list)} symbols (1m → {target_tf})[/bold cyan]"
-    console.print(header)
-    console.print(f"[dim]Symbols: {', '.join(symbol_list)}[/dim]")
-    console.print("[dim]Press Ctrl+C to stop gracefully.[/dim]")
-
-    async def _run() -> None:
-        async with BinanceClient() as client:
-            factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
-            runner = factory(
-                strategy=strategy,
-                symbols=symbol_list,
-                target_timeframe=target_tf,
-                config=cfg.portfolio,
-                client=client,
-                initial_capital=cfg.backtest.capital,
-                asset_weights=asset_weights,
-                db_path=db_path,
-            )
-            await runner.run()
-
-    asyncio.run(_run())
+    launch_live(config_path, mode=mode.value, db_path=db_path)
