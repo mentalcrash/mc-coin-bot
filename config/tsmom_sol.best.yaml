@@ -1,18 +1,13 @@
-# MC Coin Bot - 8-Asset EW TSMOM (Best Configuration)
-# VBT 백테스트 최적 결과 기반 (2020-2025, 6년)
+# TSMOM SOL/USDT - Gate 6 EDA Final (Strategy Scorecard)
+# Base: Gate 5 optimal params + EDA SL/TS sweep (24 combos) + Lev/SL sweep (50 combos)
+# Optimized: TS 3.0→4.0, Rebal 10%→15%, Lev 2.0→1.0 (Sharpe 0.65→1.21→1.91)
+# Period: 2020-2025 (6 years, all regimes included)
 
 backtest:
   symbols:
-    - BTC/USDT
-    - ETH/USDT
-    - BNB/USDT
     - SOL/USDT
-    - DOGE/USDT
-    - LINK/USDT
-    - ADA/USDT
-    - AVAX/USDT
   timeframe: "1D"
-  start: "2022-01-01"
+  start: "2020-01-01"
   end: "2025-12-31"
   capital: 100000.0
 
@@ -28,11 +23,11 @@ strategy:
     hedge_strength_ratio: 0.3
 
 portfolio:
-  max_leverage_cap: 2.0
-  rebalance_threshold: 0.10
+  max_leverage_cap: 1.0
+  rebalance_threshold: 0.15
   system_stop_loss: 0.10
   use_trailing_stop: true
-  trailing_stop_atr_multiplier: 3.0
+  trailing_stop_atr_multiplier: 4.0
   cost_model:
     maker_fee: 0.0002
     taker_fee: 0.0004

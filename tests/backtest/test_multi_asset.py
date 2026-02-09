@@ -180,7 +180,7 @@ class TestMultiAssetResultModels:
             cagr=40.0,
             sharpe_ratio=2.0,
             sortino_ratio=3.0,
-            max_drawdown=-15.0,
+            max_drawdown=15.0,
             calmar_ratio=2.5,
             volatility=20.0,
             win_rate=55.0,

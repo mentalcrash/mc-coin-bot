@@ -466,14 +466,14 @@ class BacktestResult(BaseModel):
     def passed_minimum_criteria(
         self,
         min_sharpe: float = 1.0,
-        max_mdd: float = -40.0,
+        max_mdd: float = 40.0,
         min_win_rate: float = 40.0,
     ) -> bool:
         """최소 성과 기준 통과 여부.
 
         Args:
             min_sharpe: 최소 샤프 비율
-            max_mdd: 최대 허용 낙폭 (%) - 음수로 입력
+            max_mdd: 최대 허용 낙폭 (%) - 양수로 입력
             min_win_rate: 최소 승률 (%)
 
         Returns:
@@ -481,7 +481,7 @@ class BacktestResult(BaseModel):
         """
         return (
             self.metrics.sharpe_ratio >= min_sharpe
-            and self.metrics.max_drawdown >= max_mdd  # MDD는 음수
+            and self.metrics.max_drawdown <= max_mdd  # MDD는 양수
             and self.metrics.win_rate >= min_win_rate
         )
 

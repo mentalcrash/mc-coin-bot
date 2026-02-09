@@ -18,7 +18,7 @@ Rules Applied:
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
@@ -30,6 +30,9 @@ from src.models.backtest import (
     PerformanceMetrics,
     TradeRecord,
 )
+
+if TYPE_CHECKING:
+    from src.portfolio.cost_model import CostModel
 
 
 class PerformanceAnalyzer:
@@ -274,6 +277,8 @@ class PerformanceAnalyzer:
         vbt_portfolio: Any,
         benchmark_data: pd.DataFrame,
         symbol: str,
+        cost_model: "CostModel | None" = None,
+        freq: str = "1D",
     ) -> tuple[pd.Series, pd.Series]:  # type: ignore[type-arg]
         """QuantStats 리포트용 수익률 시리즈 생성.
 
@@ -281,12 +286,17 @@ class PerformanceAnalyzer:
             vbt_portfolio: VectorBT Portfolio
             benchmark_data: 벤치마크 OHLCV 데이터
             symbol: 심볼
+            cost_model: CostModel (펀딩비 적용용, None이면 RAW 수익률)
+            freq: 데이터 주기 (예: "1d", "4h")
 
         Returns:
             (strategy_returns, benchmark_returns) 튜플
         """
-        # 전략 수익률: VBT Portfolio에서 직접 추출
-        strategy_returns: pd.Series = vbt_portfolio.returns()  # type: ignore[type-arg]
+        # 전략 수익률: 펀딩비 보정 적용 (cost_model 제공 시)
+        if cost_model is not None and cost_model.funding_rate_8h != 0:
+            strategy_returns = self.get_funding_adjusted_returns(vbt_portfolio, cost_model, freq)
+        else:
+            strategy_returns = vbt_portfolio.returns()
         strategy_returns.name = "Strategy"
 
         # 벤치마크 수익률: Buy & Hold
@@ -311,6 +321,53 @@ class PerformanceAnalyzer:
         benchmark_returns = benchmark_returns.loc[common_idx]
 
         return strategy_returns, benchmark_returns
+
+    @staticmethod
+    def get_funding_adjusted_returns(
+        vbt_portfolio: Any,
+        cost_model: "CostModel",
+        freq: str,
+    ) -> pd.Series:  # type: ignore[type-arg]
+        """펀딩비 보정된 수익률 시리즈 생성.
+
+        VBT Portfolio의 RAW 수익률에서 펀딩 드래그를 차감합니다.
+        콘솔 메트릭과 QuantStats 리포트 양쪽에서 동일 수익률을 사용하기 위한
+        단일 진입점입니다.
+
+        Args:
+            vbt_portfolio: VectorBT Portfolio 객체
+            cost_model: CostModel (funding_rate_8h 포함)
+            freq: 데이터 주기 (예: "1d", "4h")
+
+        Returns:
+            펀딩비 보정된 수익률 시리즈
+        """
+        returns: pd.Series = vbt_portfolio.returns()  # type: ignore[type-arg]
+        if isinstance(returns, pd.DataFrame):
+            returns = returns.iloc[:, 0]
+
+        # 실효 포지션 비중 (|asset_value / total_value|)
+        try:
+            asset_value = vbt_portfolio.asset_value()
+            total_value = vbt_portfolio.value()
+            if isinstance(asset_value, pd.DataFrame):
+                asset_value = asset_value.sum(axis=1)
+            if isinstance(total_value, pd.DataFrame):
+                total_value = total_value.iloc[:, 0]
+            eff_weight: pd.Series = (asset_value / total_value).abs().fillna(0)  # type: ignore[type-arg]
+        except Exception:
+            eff_weight = pd.Series(0.5, index=returns.index)
+
+        # Lazy import to avoid circular dependency (engine imports analyzer)
+        from src.backtest.engine import freq_to_hours
+
+        hours_per_period = freq_to_hours(freq)
+        funding_per_period = cost_model.funding_rate_8h * (hours_per_period / 8.0)
+
+        # 기간별 펀딩 드래그 = |포지션 비중| * 펀딩 비율
+        funding_drag = eff_weight * funding_per_period
+        adjusted: pd.Series = returns - funding_drag  # type: ignore[type-arg]
+        return adjusted
 
     def analyze_beta_attribution(
         self,

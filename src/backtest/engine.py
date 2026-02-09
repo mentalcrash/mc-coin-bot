@@ -259,7 +259,7 @@ def apply_rebalance_threshold_numba(
     return result
 
 
-def _freq_to_hours(freq: str) -> float:
+def freq_to_hours(freq: str) -> float:
     """freq 문자열을 시간 단위로 변환.
 
     Args:
@@ -426,7 +426,11 @@ class BacktestEngine:
 
         analyzer = request.analyzer or PerformanceAnalyzer()
         strategy_returns, benchmark_returns = analyzer.get_returns_series(
-            vbt_portfolio, request.data.ohlcv, request.data.symbol
+            vbt_portfolio,
+            request.data.ohlcv,
+            request.data.symbol,
+            cost_model=request.portfolio.config.cost_model,
+            freq=request.data.freq,
         )
 
         return result, strategy_returns, benchmark_returns
@@ -745,8 +749,14 @@ class BacktestEngine:
         """
         result, vbt_portfolio = self._execute_multi(request)
 
-        # 포트폴리오 수익률 (grouped → 단일 시리즈)
-        portfolio_returns = vbt_portfolio.returns()
+        # 포트폴리오 수익률 (펀딩비 보정 적용)
+        cost_model = request.portfolio.config.cost_model
+        if cost_model.funding_rate_8h != 0:
+            portfolio_returns = PerformanceAnalyzer.get_funding_adjusted_returns(
+                vbt_portfolio, cost_model, request.data.freq
+            )
+        else:
+            portfolio_returns = vbt_portfolio.returns()
         if isinstance(portfolio_returns, pd.DataFrame):
             portfolio_returns = portfolio_returns.iloc[:, 0]
 
@@ -949,10 +959,10 @@ class BacktestEngine:
         cost_model: Any,
         freq: str,
     ) -> PerformanceMetrics:
-        """펀딩비 반영하여 성과 지표 보정.
+        """펀딩비 반영 및 365일 연환산으로 성과 지표 보정.
 
-        VBT는 거래 수수료와 슬리피지만 반영하므로, 선물 포지션 유지 비용인
-        펀딩비를 사후 보정합니다.
+        VBT는 거래 수수료와 슬리피지만 반영하며 252일 기반 연환산을 사용하므로,
+        (1) 선물 펀딩비 드래그 차감, (2) 365일 기반 연환산으로 재계산합니다.
 
         Args:
             vbt_portfolio: VBT Portfolio
@@ -961,48 +971,49 @@ class BacktestEngine:
             freq: 데이터 주기 (예: "1d", "1h")
 
         Returns:
-            펀딩비 보정된 PerformanceMetrics
+            보정된 PerformanceMetrics
         """
-        if cost_model.funding_rate_8h == 0:
-            return metrics
-
         returns = vbt_portfolio.returns()
         if isinstance(returns, pd.DataFrame):
             returns = returns.iloc[:, 0]
 
-        # 실효 포지션 비중 (|asset_value / total_value|)
-        try:
-            asset_value = vbt_portfolio.asset_value()
-            total_value = vbt_portfolio.value()
-            if isinstance(asset_value, pd.DataFrame):
-                asset_value = asset_value.sum(axis=1)
-            if isinstance(total_value, pd.DataFrame):
-                total_value = total_value.iloc[:, 0]
-            eff_weight = (asset_value / total_value).abs().fillna(0)
-        except Exception:
-            eff_weight = pd.Series(0.5, index=returns.index)
+        hours_per_period = freq_to_hours(freq)
+        periods_per_year = (365 * 24) / hours_per_period
 
-        hours_per_period = _freq_to_hours(freq)
-        funding_per_period = cost_model.funding_rate_8h * (hours_per_period / 8.0)
+        # 펀딩비 보정 (funding_rate_8h != 0인 경우만)
+        has_funding = cost_model.funding_rate_8h != 0
+        if has_funding:
+            try:
+                asset_value = vbt_portfolio.asset_value()
+                total_value = vbt_portfolio.value()
+                if isinstance(asset_value, pd.DataFrame):
+                    asset_value = asset_value.sum(axis=1)
+                if isinstance(total_value, pd.DataFrame):
+                    total_value = total_value.iloc[:, 0]
+                eff_weight = (asset_value / total_value).abs().fillna(0)
+            except Exception:
+                eff_weight = pd.Series(0.5, index=returns.index)
 
-        # 기간별 펀딩 드래그 = |포지션 비중| * 펀딩 비율
-        funding_drag = eff_weight * funding_per_period
-        adjusted_returns = returns - funding_drag
+            funding_per_period = cost_model.funding_rate_8h * (hours_per_period / 8.0)
+            funding_drag = eff_weight * funding_per_period
+            adjusted_returns = returns - funding_drag
+        else:
+            adjusted_returns = returns
+            funding_drag = pd.Series(0.0, index=returns.index)
 
-        # 보정 지표 재계산
+        # 보정 지표 재계산 (365일 연환산)
         cum = (1 + adjusted_returns).cumprod()
         n = len(cum)
         if n == 0:
             return metrics
 
         adj_total_return = float((cum.iloc[-1] - 1) * 100)
-        periods_per_year = (365.25 * 24) / hours_per_period
         years = n / periods_per_year
 
         growth = float(cum.iloc[-1])
         adj_cagr = float((growth ** (1.0 / years) - 1.0) * 100) if years > 0 and growth > 0 else 0.0
 
-        # Sharpe 재계산
+        # Sharpe 재계산 (365일 기반)
         mean_ret = float(adjusted_returns.mean())
         std_ret = float(adjusted_returns.std())
         adj_sharpe = float((mean_ret / std_ret) * np.sqrt(periods_per_year)) if std_ret > 0 else 0.0
@@ -1016,18 +1027,23 @@ class BacktestEngine:
             else None
         )
 
-        # MDD 재계산
+        # MDD 재계산 (양수 반환)
         running_max = cum.cummax()
         dd = (cum - running_max) / running_max
-        adj_mdd = float(dd.min() * 100)
+        adj_mdd = float(abs(dd.min()) * 100)
 
-        # Calmar 재계산
-        adj_calmar: float | None = abs(adj_cagr / adj_mdd) if adj_mdd < 0 else None
+        # Calmar 재계산 (MDD 양수 기준)
+        adj_calmar: float | None = abs(adj_cagr / adj_mdd) if adj_mdd > 0 else None
 
-        total_drag_pct = float(funding_drag.sum() * 100)
-        logger.info(
-            f"Funding Adjustment | Drag: {total_drag_pct:.2f}%, Sharpe: {metrics.sharpe_ratio:.2f} → {adj_sharpe:.2f}, CAGR: {metrics.cagr:.2f}% → {adj_cagr:.2f}%"
-        )
+        if has_funding:
+            total_drag_pct = float(funding_drag.sum() * 100)
+            logger.info(
+                f"Funding Adjustment | Drag: {total_drag_pct:.2f}%, Sharpe: {metrics.sharpe_ratio:.2f} → {adj_sharpe:.2f}, CAGR: {metrics.cagr:.2f}% → {adj_cagr:.2f}%"
+            )
+        else:
+            logger.debug(
+                f"365-day Annualization | Sharpe: {metrics.sharpe_ratio:.2f} → {adj_sharpe:.2f}"
+            )
 
         return PerformanceMetrics(
             total_return=adj_total_return,
@@ -1062,10 +1078,10 @@ class BacktestEngine:
         years = days / 365.0 if days > 0 else 1.0
         cagr = float((cum.iloc[-1] ** (1 / years) - 1) * 100) if years > 0 and len(cum) > 0 else 0.0
 
-        # MDD
+        # MDD (양수 반환)
         running_max = cum.cummax()
         drawdowns = (cum - running_max) / running_max
-        max_drawdown = float(drawdowns.min() * 100)
+        max_drawdown = float(abs(drawdowns.min()) * 100)
 
         # Sharpe
         ann_vol = float(returns.std() * np.sqrt(365) * 100) if len(returns) > 1 else 0.0
