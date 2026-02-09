@@ -10,6 +10,8 @@ Components:
     - RegimeDetector: 레짐 분류기 (vectorized + incremental)
     - RegimeState: 개별 bar 레짐 상태
     - add_regime_columns: 편의 API (DataFrame에 레짐 컬럼 추가)
+    - EnsembleRegimeDetector: 앙상블 레짐 분류기 (Rule + HMM + Vol)
+    - add_ensemble_regime_columns: 앙상블 편의 API
 
 Example:
     >>> from src.regime import add_regime_columns, RegimeDetectorConfig
@@ -17,13 +19,25 @@ Example:
     >>> df["regime_label"]  # "trending", "ranging", "volatile"
 """
 
-from src.regime.config import RegimeDetectorConfig, RegimeLabel
+from src.regime.config import (
+    EnsembleRegimeDetectorConfig,
+    HMMDetectorConfig,
+    RegimeDetectorConfig,
+    RegimeLabel,
+    VolStructureDetectorConfig,
+)
 from src.regime.detector import RegimeDetector, RegimeState, add_regime_columns
+from src.regime.ensemble import EnsembleRegimeDetector, add_ensemble_regime_columns
 
 __all__ = [
+    "EnsembleRegimeDetector",
+    "EnsembleRegimeDetectorConfig",
+    "HMMDetectorConfig",
     "RegimeDetector",
     "RegimeDetectorConfig",
     "RegimeLabel",
     "RegimeState",
+    "VolStructureDetectorConfig",
+    "add_ensemble_regime_columns",
     "add_regime_columns",
 ]

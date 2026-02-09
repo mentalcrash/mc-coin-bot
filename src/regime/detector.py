@@ -59,6 +59,64 @@ def _sigmoid(
     return 1.0 / (1.0 + np.exp(-scale * (arr - center)))
 
 
+def apply_hysteresis(
+    raw_labels: pd.Series,
+    min_hold_bars: int,
+) -> pd.Series:
+    """Hysteresis 적용: 최소 bar 수 이상 유지 후에만 레짐 전환.
+
+    Args:
+        raw_labels: 원시 레짐 라벨 시리즈
+        min_hold_bars: 최소 유지 bar 수
+
+    Returns:
+        Hysteresis가 적용된 레짐 라벨 시리즈
+    """
+    if min_hold_bars <= 1:
+        return raw_labels
+
+    result = raw_labels.copy()
+    values = result.to_numpy()
+    n = len(values)
+
+    # NaN이 아닌 첫 번째 인덱스 찾기
+    start_idx = 0
+    for i in range(n):
+        if pd.notna(values[i]):
+            start_idx = i
+            break
+
+    current_label = values[start_idx]
+    hold_count = 1
+    pending_label = None
+    pending_count = 0
+
+    for i in range(start_idx + 1, n):
+        if pd.isna(values[i]):
+            continue
+
+        if values[i] == current_label:
+            hold_count += 1
+            pending_label = None
+            pending_count = 0
+        elif values[i] == pending_label:
+            pending_count += 1
+            if pending_count >= min_hold_bars:
+                current_label = pending_label
+                hold_count = pending_count
+                pending_label = None
+                pending_count = 0
+            else:
+                values[i] = current_label
+        else:
+            pending_label = values[i]
+            pending_count = 1
+            values[i] = current_label
+
+    result = pd.Series(values, index=raw_labels.index)
+    return result
+
+
 class RegimeDetector:
     """시장 레짐 감지기.
 
@@ -110,15 +168,21 @@ class RegimeDetector:
         log_returns = np.log(closes / closes.shift(1))
 
         # RV (realized volatility) — rolling std of log returns
-        rv_short = log_returns.rolling(window=cfg.rv_short_window, min_periods=cfg.rv_short_window).std()
-        rv_long = log_returns.rolling(window=cfg.rv_long_window, min_periods=cfg.rv_long_window).std()
+        rv_short = log_returns.rolling(
+            window=cfg.rv_short_window, min_periods=cfg.rv_short_window
+        ).std()
+        rv_long = log_returns.rolling(
+            window=cfg.rv_long_window, min_periods=cfg.rv_long_window
+        ).std()
 
         # RV Ratio: 단기/장기 변동성 비율
         rv_ratio: pd.Series = rv_short / rv_long.replace(0, np.nan)  # type: ignore[assignment]
 
         # Efficiency Ratio: |net_change| / sum(|changes|)
         net_change = closes.diff(cfg.er_window).abs()
-        sum_changes = closes.diff().abs().rolling(window=cfg.er_window, min_periods=cfg.er_window).sum()
+        sum_changes = (
+            closes.diff().abs().rolling(window=cfg.er_window, min_periods=cfg.er_window).sum()
+        )
         er: pd.Series = net_change / sum_changes.replace(0, np.nan)  # type: ignore[assignment]
 
         # Soft probabilities
@@ -190,58 +254,8 @@ class RegimeDetector:
         raw_labels: pd.Series,
         min_hold_bars: int,
     ) -> pd.Series:
-        """Hysteresis 적용: 최소 bar 수 이상 유지 후에만 레짐 전환.
-
-        Args:
-            raw_labels: 원시 레짐 라벨 시리즈
-            min_hold_bars: 최소 유지 bar 수
-
-        Returns:
-            Hysteresis가 적용된 레짐 라벨 시리즈
-        """
-        if min_hold_bars <= 1:
-            return raw_labels
-
-        result = raw_labels.copy()
-        values = result.to_numpy()
-        n = len(values)
-
-        # NaN이 아닌 첫 번째 인덱스 찾기
-        start_idx = 0
-        for i in range(n):
-            if pd.notna(values[i]):
-                start_idx = i
-                break
-
-        current_label = values[start_idx]
-        hold_count = 1
-        pending_label = None
-        pending_count = 0
-
-        for i in range(start_idx + 1, n):
-            if pd.isna(values[i]):
-                continue
-
-            if values[i] == current_label:
-                hold_count += 1
-                pending_label = None
-                pending_count = 0
-            elif values[i] == pending_label:
-                pending_count += 1
-                if pending_count >= min_hold_bars:
-                    current_label = pending_label
-                    hold_count = pending_count
-                    pending_label = None
-                    pending_count = 0
-                else:
-                    values[i] = current_label
-            else:
-                pending_label = values[i]
-                pending_count = 1
-                values[i] = current_label
-
-        result = pd.Series(values, index=raw_labels.index)
-        return result
+        """Hysteresis 적용 (모듈 레벨 함수 위임)."""
+        return apply_hysteresis(raw_labels, min_hold_bars)
 
     # ── Incremental API (EDA / 라이브용) ──
 
