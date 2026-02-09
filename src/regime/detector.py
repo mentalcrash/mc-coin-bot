@@ -185,33 +185,38 @@ class RegimeDetector:
         )
         er: pd.Series = net_change / sum_changes.replace(0, np.nan)  # type: ignore[assignment]
 
-        # Soft probabilities
-        p_trending = pd.Series(
-            _sigmoid(er, cfg.er_trending_threshold, scale=10.0),
+        # Independent scores (각 레짐 독립 계산)
+        # 1. TRENDING: ER 기반 방향성 강도
+        s_trending = pd.Series(
+            _sigmoid(er, cfg.er_trending_threshold, scale=6.0),
             index=closes.index,
         )
 
-        # p_volatile: RV 높고 ER 낮으면 volatile
-        vol_input = (rv_ratio - 1.0) * (1.0 - er)
-        p_volatile = pd.Series(
-            _sigmoid(vol_input, 0.2, scale=10.0),
+        # 2. VOLATILE: RV ratio 기반 변동성 확장 (ER 결합 제거)
+        s_volatile = pd.Series(
+            _sigmoid(rv_ratio, cfg.rv_expansion_threshold, scale=8.0),
             index=closes.index,
         )
+
+        # 3. RANGING: 변동성 수축 * 저방향성 (독립 지표)
+        contraction = pd.Series(
+            1.0 - _sigmoid(rv_ratio, 1.0, scale=5.0),
+            index=closes.index,
+        )
+        s_ranging = contraction * (1.0 - s_trending)
 
         # NaN 마스크: warmup 기간 중 NaN 유지
         nan_mask = rv_ratio.isna() | er.isna()
-        p_trending = p_trending.where(~nan_mask, np.nan)
-        p_volatile = p_volatile.where(~nan_mask, np.nan)
+        s_trending = s_trending.where(~nan_mask, np.nan)
+        s_volatile = s_volatile.where(~nan_mask, np.nan)
+        s_ranging = s_ranging.where(~nan_mask, np.nan)
 
-        # Normalize: p_trending + p_volatile가 1을 넘지 않도록 조정
-        total_tv = p_trending + p_volatile
-        excess_mask = total_tv > 1.0
-        scale_factor = 1.0 / total_tv.where(excess_mask, 1.0)
-        p_trending = p_trending * scale_factor.where(excess_mask, 1.0)
-        p_volatile = p_volatile * scale_factor.where(excess_mask, 1.0)
-
-        # p_ranging = residual
-        p_ranging = (1.0 - p_trending - p_volatile).clip(lower=0.0)
+        # Normalize: 3개 독립 점수를 확률 분포로 정규화
+        total = s_trending + s_ranging + s_volatile
+        total = total.replace(0, np.nan)
+        p_trending = s_trending / total
+        p_ranging = s_ranging / total
+        p_volatile = s_volatile / total
 
         # Hard label (argmax) — NaN 행은 NaN 유지
         probs = pd.DataFrame(
@@ -301,17 +306,22 @@ class RegimeDetector:
         else:
             er = 0.0
 
-        # Soft probabilities
-        p_trending = float(_sigmoid(np.array([er]), cfg.er_trending_threshold, scale=10.0)[0])
-        vol_input = (rv_ratio - 1.0) * (1.0 - er)
-        p_volatile = float(_sigmoid(np.array([vol_input]), 0.2, scale=10.0)[0])
+        # Independent scores
+        s_trending = float(_sigmoid(np.array([er]), cfg.er_trending_threshold, scale=6.0)[0])
+        s_volatile = float(_sigmoid(np.array([rv_ratio]), cfg.rv_expansion_threshold, scale=8.0)[0])
+        contraction = 1.0 - float(_sigmoid(np.array([rv_ratio]), 1.0, scale=5.0)[0])
+        s_ranging = contraction * (1.0 - s_trending)
 
         # Normalize
-        total = p_trending + p_volatile
-        if total > 1.0:
-            p_trending /= total
-            p_volatile /= total
-        p_ranging = max(0.0, 1.0 - p_trending - p_volatile)
+        total = s_trending + s_ranging + s_volatile
+        if total > 0:
+            p_trending = s_trending / total
+            p_ranging = s_ranging / total
+            p_volatile = s_volatile / total
+        else:
+            p_trending = 0.0
+            p_ranging = 1.0
+            p_volatile = 0.0
 
         # Hard label (argmax)
         probs = {"trending": p_trending, "ranging": p_ranging, "volatile": p_volatile}

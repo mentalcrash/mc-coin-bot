@@ -10,8 +10,10 @@ Components:
     - RegimeDetector: 레짐 분류기 (vectorized + incremental)
     - RegimeState: 개별 bar 레짐 상태
     - add_regime_columns: 편의 API (DataFrame에 레짐 컬럼 추가)
-    - EnsembleRegimeDetector: 앙상블 레짐 분류기 (Rule + HMM + Vol)
+    - EnsembleRegimeDetector: 앙상블 레짐 분류기 (Rule + HMM + Vol + MSAR)
     - add_ensemble_regime_columns: 앙상블 편의 API
+    - MSARDetectorConfig: MSAR 감지기 설정
+    - MetaLearnerConfig: Meta-learner 앙상블 설정
 
 Example:
     >>> from src.regime import add_regime_columns, RegimeDetectorConfig
@@ -22,6 +24,8 @@ Example:
 from src.regime.config import (
     EnsembleRegimeDetectorConfig,
     HMMDetectorConfig,
+    MetaLearnerConfig,
+    MSARDetectorConfig,
     RegimeDetectorConfig,
     RegimeLabel,
     VolStructureDetectorConfig,
@@ -33,6 +37,8 @@ __all__ = [
     "EnsembleRegimeDetector",
     "EnsembleRegimeDetectorConfig",
     "HMMDetectorConfig",
+    "MSARDetectorConfig",
+    "MetaLearnerConfig",
     "RegimeDetector",
     "RegimeDetectorConfig",
     "RegimeLabel",

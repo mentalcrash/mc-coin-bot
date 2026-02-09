@@ -14,12 +14,19 @@ from pydantic import ValidationError
 from src.regime.config import (
     EnsembleRegimeDetectorConfig,
     HMMDetectorConfig,
+    MetaLearnerConfig,
+    MSARDetectorConfig,
     RegimeLabel,
     VolStructureDetectorConfig,
 )
 from src.regime.detector import RegimeDetector, RegimeState
-from src.regime.ensemble import EnsembleRegimeDetector, add_ensemble_regime_columns
+from src.regime.ensemble import (
+    SKLEARN_AVAILABLE,
+    EnsembleRegimeDetector,
+    add_ensemble_regime_columns,
+)
 from src.regime.hmm_detector import HMM_AVAILABLE
+from src.regime.msar_detector import MSAR_AVAILABLE
 
 # ── Helpers ──
 
@@ -401,3 +408,196 @@ class TestAddEnsembleRegimeColumns:
         df = pd.DataFrame({"volume": [100, 200, 300]})
         with pytest.raises(ValueError, match="close"):
             add_ensemble_regime_columns(df)
+
+
+# ── MSAR Ensemble Config Tests ──
+
+
+class TestMSAREnsembleConfig:
+    """MSAR 감지기를 포함한 앙상블 설정 테스트."""
+
+    @pytest.mark.skipif(not MSAR_AVAILABLE, reason="statsmodels not installed")
+    def test_four_detector_config(self) -> None:
+        """4-detector 앙상블 설정."""
+        cfg = EnsembleRegimeDetectorConfig(
+            hmm=HMMDetectorConfig(),
+            vol_structure=VolStructureDetectorConfig(),
+            msar=MSARDetectorConfig(),
+            weight_rule_based=0.30,
+            weight_hmm=0.25,
+            weight_vol_structure=0.20,
+            weight_msar=0.25,
+        )
+        assert cfg.msar is not None
+        assert cfg.weight_msar == 0.25
+
+    def test_msar_none_default(self) -> None:
+        """기본값: MSAR=None."""
+        cfg = EnsembleRegimeDetectorConfig()
+        assert cfg.msar is None
+        assert cfg.weight_msar == 0.0
+
+    def test_invalid_weights_with_msar(self) -> None:
+        """MSAR 포함 시 가중치 합 ≠ 1.0 거부."""
+        with pytest.raises(ValidationError, match="weights must sum"):
+            EnsembleRegimeDetectorConfig(
+                msar=MSARDetectorConfig(),
+                weight_rule_based=0.5,
+                weight_msar=0.6,
+            )
+
+
+# ── 4-Detector Ensemble Tests ──
+
+
+@pytest.mark.skipif(
+    not (HMM_AVAILABLE and MSAR_AVAILABLE),
+    reason="hmmlearn or statsmodels not installed",
+)
+class TestFourDetectorEnsemble:
+    """4-detector 앙상블 테스트 (HMM + MSAR 필요)."""
+
+    @pytest.fixture
+    def detector(self) -> EnsembleRegimeDetector:
+        config = EnsembleRegimeDetectorConfig(
+            hmm=HMMDetectorConfig(min_train_window=120, retrain_interval=50, n_iter=50),
+            vol_structure=VolStructureDetectorConfig(),
+            msar=MSARDetectorConfig(
+                k_regimes=2,
+                order=1,
+                min_train_window=120,
+                retrain_interval=50,
+                sliding_window=0,
+                switching_ar=False,
+            ),
+            weight_rule_based=0.30,
+            weight_hmm=0.25,
+            weight_vol_structure=0.20,
+            weight_msar=0.25,
+            min_hold_bars=3,
+        )
+        return EnsembleRegimeDetector(config)
+
+    def test_output_format(self, detector: EnsembleRegimeDetector) -> None:
+        """4-detector 출력 포맷 호환성."""
+        closes = _make_trending_series(300)
+        result = detector.classify_series(closes)
+        expected_cols = {
+            "regime_label",
+            "p_trending",
+            "p_ranging",
+            "p_volatile",
+            "rv_ratio",
+            "efficiency_ratio",
+        }
+        assert set(result.columns) == expected_cols
+
+    def test_probabilities_sum(self, detector: EnsembleRegimeDetector) -> None:
+        """확률 합 ≈ 1.0."""
+        closes = _make_trending_series(300)
+        result = detector.classify_series(closes)
+        valid = result.dropna()
+        if len(valid) > 0:
+            prob_sum = valid["p_trending"] + valid["p_ranging"] + valid["p_volatile"]
+            np.testing.assert_allclose(prob_sum.values, 1.0, atol=1e-10)
+
+
+# ── Meta-Learner Ensemble Tests ──
+
+
+class TestMetaLearnerConfig:
+    """MetaLearnerConfig 검증 테스트."""
+
+    def test_default_values(self) -> None:
+        cfg = MetaLearnerConfig()
+        assert cfg.regularization == 0.1
+        assert cfg.train_window == 504
+        assert cfg.retrain_interval == 63
+        assert cfg.forward_return_window == 20
+        assert cfg.trending_threshold == 0.03
+        assert cfg.volatile_threshold == 0.05
+
+    def test_frozen(self) -> None:
+        cfg = MetaLearnerConfig()
+        with pytest.raises(ValidationError):
+            cfg.regularization = 0.5  # type: ignore[misc]
+
+    def test_ensemble_method_meta_learner_requires_config(self) -> None:
+        """meta_learner 모드에서 config 누락 시 ValidationError."""
+        with pytest.raises(ValidationError, match="meta_learner config is required"):
+            EnsembleRegimeDetectorConfig(
+                ensemble_method="meta_learner",
+                meta_learner=None,
+            )
+
+    def test_ensemble_method_meta_learner_valid(self) -> None:
+        """meta_learner 모드에서 config 제공 시 성공."""
+        cfg = EnsembleRegimeDetectorConfig(
+            ensemble_method="meta_learner",
+            meta_learner=MetaLearnerConfig(),
+        )
+        assert cfg.ensemble_method == "meta_learner"
+        assert cfg.meta_learner is not None
+
+
+@pytest.mark.skipif(not SKLEARN_AVAILABLE, reason="sklearn not installed")
+class TestMetaLearnerEnsemble:
+    """Meta-learner stacking 앙상블 테스트."""
+
+    @pytest.fixture
+    def detector(self) -> EnsembleRegimeDetector:
+        config = EnsembleRegimeDetectorConfig(
+            vol_structure=VolStructureDetectorConfig(),
+            ensemble_method="meta_learner",
+            meta_learner=MetaLearnerConfig(
+                train_window=100,
+                retrain_interval=30,
+                forward_return_window=10,
+                trending_threshold=0.10,
+                volatile_threshold=0.11,
+            ),
+            min_hold_bars=1,
+        )
+        return EnsembleRegimeDetector(config)
+
+    def test_output_columns(self, detector: EnsembleRegimeDetector) -> None:
+        """meta-learner 출력 컬럼 호환."""
+        closes = _make_trending_series(300)
+        result = detector.classify_series(closes)
+        expected_cols = {
+            "regime_label",
+            "p_trending",
+            "p_ranging",
+            "p_volatile",
+            "rv_ratio",
+            "efficiency_ratio",
+        }
+        assert set(result.columns) == expected_cols
+
+    def test_produces_valid_probabilities(self, detector: EnsembleRegimeDetector) -> None:
+        """meta-learner 확률 유효."""
+        closes = _make_trending_series(300)
+        result = detector.classify_series(closes)
+        valid = result.dropna()
+
+        if len(valid) > 0:
+            prob_sum = valid["p_trending"] + valid["p_ranging"] + valid["p_volatile"]
+            np.testing.assert_allclose(prob_sum.values, 1.0, atol=1e-6)
+
+    def test_meta_learner_generates_results(self, detector: EnsembleRegimeDetector) -> None:
+        """meta-learner가 warmup 후 결과 생성."""
+        closes = _make_trending_series(300)
+        result = detector.classify_series(closes)
+        valid = result.dropna()
+        # train_window + fwd_window 이후 결과 존재
+        assert len(valid) > 0
+
+    def test_incremental_falls_back(self, detector: EnsembleRegimeDetector) -> None:
+        """incremental update에서 weighted_average 폴백."""
+        result = None
+        for i in range(detector.warmup_periods + 10):
+            result = detector.update("BTC/USDT", 100.0 + i * 0.5)
+
+        # 폴백 후에도 결과 반환
+        if result is not None:
+            assert isinstance(result, RegimeState)

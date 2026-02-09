@@ -133,15 +133,30 @@ class HMMDetector:
 
         last_model: Any = None
 
+        rng = np.random.default_rng(42)
+
         for i in range(cfg.min_train_window, n):
             # Retrain at intervals
             if (i - cfg.min_train_window) % cfg.retrain_interval == 0:
-                features = np.column_stack([returns_arr[:i], vol_arr[:i]])
+                # Sliding window: 최근 N bar만 사용
+                start_idx = max(0, i - cfg.sliding_window) if cfg.sliding_window > 0 else 0
+
+                features = np.column_stack([returns_arr[start_idx:i], vol_arr[start_idx:i]])
                 valid_mask = ~np.isnan(features).any(axis=1)
                 features_clean = features[valid_mask]
 
                 if len(features_clean) < cfg.n_states * 10:
                     continue
+
+                # Decay weighting via bootstrap resampling
+                if cfg.decay_half_life > 0 and len(features_clean) > 1:
+                    n_samples = len(features_clean)
+                    decay_weights = np.exp(
+                        -np.log(2.0) * np.arange(n_samples)[::-1] / cfg.decay_half_life
+                    )
+                    prob = decay_weights / decay_weights.sum()
+                    indices = rng.choice(n_samples, size=n_samples, p=prob)
+                    features_clean = features_clean[indices]
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -205,6 +220,48 @@ class HMMDetector:
 
     # ── Incremental API ──
 
+    def _retrain_incremental(
+        self,
+        symbol: str,
+        returns_arr: np.ndarray,  # type: ignore[type-arg]
+        vol_arr: np.ndarray,  # type: ignore[type-arg]
+    ) -> None:
+        """Incremental 학습 (sliding window + decay 적용)."""
+        cfg = self._config
+        arr_len = len(returns_arr) - 1  # exclude last (current bar)
+
+        start_idx = max(0, arr_len - cfg.sliding_window) if cfg.sliding_window > 0 else 0
+
+        features = np.column_stack([returns_arr[start_idx:arr_len], vol_arr[start_idx:arr_len]])
+        valid_mask = ~np.isnan(features).any(axis=1)
+        features_clean = features[valid_mask]
+
+        if len(features_clean) < cfg.n_states * 10:
+            return
+
+        # Decay weighting via bootstrap
+        if cfg.decay_half_life > 0 and len(features_clean) > 1:
+            rng = np.random.default_rng(42)
+            n_samples = len(features_clean)
+            decay_weights = np.exp(-np.log(2.0) * np.arange(n_samples)[::-1] / cfg.decay_half_life)
+            prob = decay_weights / decay_weights.sum()
+            indices = rng.choice(n_samples, size=n_samples, p=prob)
+            features_clean = features_clean[indices]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                model = self._hmm_cls(
+                    n_components=cfg.n_states,
+                    n_iter=cfg.n_iter,
+                    covariance_type="full",
+                    random_state=42,
+                )
+                model.fit(features_clean)
+                self._models[symbol] = model
+            except Exception:
+                logger.debug("HMM training failed for %s", symbol)
+
     def update(self, symbol: str, close: float) -> RegimeState | None:
         """Bar 단위 incremental 업데이트.
 
@@ -245,25 +302,7 @@ class HMMDetector:
             symbol not in self._models
             or (bar_count - cfg.min_train_window) % cfg.retrain_interval == 0
         ):
-            n = len(returns_arr) - 1  # exclude last (current bar)
-            features = np.column_stack([returns_arr[:n], vol_arr[:n]])
-            valid_mask = ~np.isnan(features).any(axis=1)
-            features_clean = features[valid_mask]
-
-            if len(features_clean) >= cfg.n_states * 10:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    try:
-                        model = self._hmm_cls(
-                            n_components=cfg.n_states,
-                            n_iter=cfg.n_iter,
-                            covariance_type="full",
-                            random_state=42,
-                        )
-                        model.fit(features_clean)
-                        self._models[symbol] = model
-                    except Exception:
-                        logger.debug("HMM training failed for %s", symbol)
+            self._retrain_incremental(symbol, returns_arr, vol_arr)
 
         model = self._models.get(symbol)
         if model is None:

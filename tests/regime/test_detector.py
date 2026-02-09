@@ -86,7 +86,9 @@ class TestRegimeDetectorConfig:
         assert cfg.rv_short_window == 5
         assert cfg.rv_long_window == 20
         assert cfg.er_window == 10
-        assert cfg.min_hold_bars == 3
+        assert cfg.er_trending_threshold == 0.40
+        assert cfg.rv_expansion_threshold == 1.3
+        assert cfg.min_hold_bars == 5
 
     def test_frozen(self) -> None:
         cfg = RegimeDetectorConfig()
@@ -145,7 +147,9 @@ class TestClassifySeries:
 
         # ranging이 지배적이거나 trending이 아님
         non_trending_ratio = (valid["regime_label"] != RegimeLabel.TRENDING).mean()
-        assert non_trending_ratio > 0.5, f"non-trending ratio {non_trending_ratio:.2f} should be > 0.5"
+        assert non_trending_ratio > 0.5, (
+            f"non-trending ratio {non_trending_ratio:.2f} should be > 0.5"
+        )
 
     def test_volatile_regime(self, detector: RegimeDetector, volatile_closes: pd.Series) -> None:
         """급격한 변동 → volatile 존재."""
@@ -157,7 +161,9 @@ class TestClassifySeries:
         non_trending_ratio = (valid["regime_label"] != RegimeLabel.TRENDING).mean()
         assert non_trending_ratio > 0.4
 
-    def test_probabilities_sum_to_one(self, detector: RegimeDetector, trending_closes: pd.Series) -> None:
+    def test_probabilities_sum_to_one(
+        self, detector: RegimeDetector, trending_closes: pd.Series
+    ) -> None:
         """모든 bar에서 probabilities 합 ≈ 1.0."""
         result = detector.classify_series(trending_closes)
         valid = result.dropna()
