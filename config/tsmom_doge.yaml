@@ -1,11 +1,10 @@
-# TSMOM SOL/USDT - Gate 6 EDA Final (Strategy Scorecard)
-# Base: Gate 5 optimal params + EDA SL/TS sweep (24 combos) + Lev/SL sweep (50 combos)
-# Optimized: TS 3.0→4.0, Rebal 10%→15%, Lev 2.0→1.0 (Sharpe 0.65→1.21→1.91)
+# TSMOM DOGE/USDT - Gate 6 EDA (Leverage/SL Sweep)
+# Base: tsmom_sol.yaml 파라미터 동일, 자산만 DOGE/USDT
 # Period: 2020-2025 (6 years, all regimes included)
 
 backtest:
   symbols:
-    - SOL/USDT
+    - DOGE/USDT
   timeframe: "1D"
   start: "2020-01-01"
   end: "2025-12-31"
@@ -23,7 +22,7 @@ strategy:
     hedge_strength_ratio: 0.3
 
 portfolio:
-  max_leverage_cap: 1.0
+  max_leverage_cap: 2.0
   rebalance_threshold: 0.15
   system_stop_loss: 0.10
   use_trailing_stop: true
