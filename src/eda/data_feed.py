@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from src.data.market_data import MarketDataSet, MultiSymbolData
 
 
-def _validate_bar(
+def validate_bar(
     o: float, h: float, lo: float, c: float, v: float, symbol: str, ts: object
 ) -> bool:
     """OHLCV bar 데이터 품질 검증 (M-004).
@@ -118,7 +118,7 @@ class HistoricalDataFeed:
                 float(row["close"]),
                 float(row["volume"]),
             )
-            if not _validate_bar(o, h, lo, c, v, symbol, ts):
+            if not validate_bar(o, h, lo, c, v, symbol, ts):
                 continue
 
             # 1. 1m BarEvent 발행
@@ -176,7 +176,7 @@ class HistoricalDataFeed:
                     float(row["close"]),
                     float(row["volume"]),
                 )
-                if not _validate_bar(o, h, lo, c, v, symbol, ts):
+                if not validate_bar(o, h, lo, c, v, symbol, ts):
                     continue
 
                 # 1. 1m BarEvent 발행

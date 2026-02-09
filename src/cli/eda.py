@@ -1,7 +1,8 @@
-"""Typer CLI for EDA (Event-Driven Architecture) backtesting.
+"""Typer CLI for EDA (Event-Driven Architecture) backtesting and live trading.
 
 Commands:
     - run: EDA 백테스트 실행 (config의 symbols 개수로 단일/멀티 자동 판별)
+    - run-live: 실시간 WebSocket 데이터로 EDA 실행 (shadow/paper 모드)
 
 Rules Applied:
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
@@ -36,9 +37,16 @@ if TYPE_CHECKING:
 
 
 class RunMode(str, enum.Enum):
-    """EDA 실행 모드."""
+    """EDA 백테스트 실행 모드."""
 
     BACKTEST = "backtest"
+    SHADOW = "shadow"
+
+
+class LiveRunMode(str, enum.Enum):
+    """EDA 라이브 실행 모드."""
+
+    PAPER = "paper"
     SHADOW = "shadow"
 
 
@@ -292,3 +300,62 @@ def _generate_eda_report(
         title=title,
     )
     console.print(f"[green]Report saved: {report_path}[/green]")
+
+
+# ---------------------------------------------------------------------------
+# run-live command
+# ---------------------------------------------------------------------------
+
+
+@app.command("run-live")
+def run_live(
+    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
+    mode: Annotated[LiveRunMode, typer.Option(help="Execution mode")] = LiveRunMode.PAPER,
+    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
+) -> None:
+    """Run EDA in live mode (WebSocket real-time data).
+
+    Modes:
+        - paper: 시뮬레이션 체결 (BacktestExecutor)
+        - shadow: 시그널 로깅만 (ShadowExecutor, 체결 없음)
+    """
+    from src.eda.live_runner import LiveMode, LiveRunner
+    from src.exchange.binance_client import BinanceClient
+
+    setup_logger(console_level="DEBUG" if verbose else "INFO")
+
+    cfg = load_config(config_path)
+    strategy = build_strategy(cfg)
+    symbol_list = cfg.backtest.symbols
+
+    tf = cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
+
+    is_multi = len(symbol_list) > 1
+    asset_weights: dict[str, float] | None = None
+    if is_multi:
+        asset_weights = {s: 1.0 / len(symbol_list) for s in symbol_list}
+
+    live_mode = LiveMode.SHADOW if mode == LiveRunMode.SHADOW else LiveMode.PAPER
+    mode_label = "Shadow" if live_mode == LiveMode.SHADOW else "Paper"
+
+    header = f"[bold cyan]EDA Live {mode_label}: {cfg.strategy.name} / {len(symbol_list)} symbols (1m → {target_tf})[/bold cyan]"
+    console.print(header)
+    console.print(f"[dim]Symbols: {', '.join(symbol_list)}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop gracefully.[/dim]")
+
+    async def _run() -> None:
+        async with BinanceClient() as client:
+            factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
+            runner = factory(
+                strategy=strategy,
+                symbols=symbol_list,
+                target_timeframe=target_tf,
+                config=cfg.portfolio,
+                client=client,
+                initial_capital=cfg.backtest.capital,
+                asset_weights=asset_weights,
+            )
+            await runner.run()
+
+    asyncio.run(_run())
