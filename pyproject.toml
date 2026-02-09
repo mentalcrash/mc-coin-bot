@@ -38,6 +38,7 @@ dependencies = [
     "tenacity>=8.2.0", # Exponential backoff retry
     "tqdm>=4.66.0", # Progress bar
     "ipykernel>=7.1.0",
+    "hmmlearn>=0.3.3",
 ]
 
 [project.scripts]
