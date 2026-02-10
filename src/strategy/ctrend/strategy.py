@@ -117,6 +117,23 @@ class CTRENDStrategy(BaseStrategy):
         """
         return generate_signals(df, self._config)
 
+    def run_incremental(self, df: pd.DataFrame) -> tuple[pd.DataFrame, StrategySignals]:
+        """Incremental 모드: 최신 시그널만 효율적으로 계산.
+
+        전체 ElasticNet 루프 대신 마지막 2 fits만 수행하여
+        EDA bar-by-bar 실행 시 O(n²) → O(n) 으로 최적화합니다.
+
+        Args:
+            df: 원본 OHLCV DataFrame
+
+        Returns:
+            (전처리된 DataFrame, 시그널) 튜플
+        """
+        self.validate_input(df)
+        processed_df = self.preprocess(df)
+        signals = generate_signals(processed_df, self._config, predict_last_only=True)
+        return processed_df, signals
+
     def warmup_periods(self) -> int:
         """필요한 워밍업 기간 (캔들 수).
 

@@ -32,13 +32,16 @@ _CONSECUTIVE_FAILURE_LIMIT = 3
 class StrategyEngine:
     """BaseStrategy를 이벤트 기반으로 래핑하는 Adapter.
 
-    1. BarEvent 수신 → 내부 버퍼에 OHLCV 누적
-    2. warmup 이상 데이터 → strategy.run() 호출
+    1. BarEvent 수신 -> 내부 버퍼에 OHLCV 누적
+    2. warmup 이상 데이터 -> strategy.run() 호출
     3. 매 bar마다 SignalEvent 발행 (PM의 should_rebalance가 불필요한 주문 필터링)
 
     Args:
         strategy: 벡터화 전략 인스턴스
         warmup_periods: 워밍업 기간 (None이면 자동 감지)
+        target_timeframe: 타겟 타임프레임
+        incremental: True면 strategy.run_incremental() 호출 (fast_mode용)
+        max_buffer_size: 버퍼 최대 크기. 초과 시 오래된 데이터 제거. None이면 무제한.
     """
 
     def __init__(
@@ -46,6 +49,9 @@ class StrategyEngine:
         strategy: BaseStrategy,
         warmup_periods: int | None = None,
         target_timeframe: str = "1D",
+        *,
+        incremental: bool = False,
+        max_buffer_size: int | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -54,6 +60,8 @@ class StrategyEngine:
         self._consecutive_failures: dict[str, int] = {}
         self._bus: EventBus | None = None
         self._target_timeframe = target_timeframe
+        self._incremental = incremental
+        self._max_buffer_size = max_buffer_size
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -99,19 +107,28 @@ class StrategyEngine:
         )
         self._timestamps[symbol].append(bar.bar_timestamp)
 
+        # 1b. 버퍼 크기 제한 (max_buffer_size 설정 시)
+        if self._max_buffer_size is not None and len(self._buffers[symbol]) > self._max_buffer_size:
+            trim = len(self._buffers[symbol]) - self._max_buffer_size
+            self._buffers[symbol] = self._buffers[symbol][trim:]
+            self._timestamps[symbol] = self._timestamps[symbol][trim:]
+
         # 2. warmup 체크
         buf_len = len(self._buffers[symbol])
         if buf_len < self._warmup:
             return
 
-        # 3. DataFrame 구성 + strategy.run()
+        # 3. DataFrame 구성 + strategy.run() / run_incremental()
         df = pd.DataFrame(
             self._buffers[symbol],
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
         )
 
         try:
-            _, signals = self._strategy.run(df)
+            if self._incremental:
+                _, signals = self._strategy.run_incremental(df)
+            else:
+                _, signals = self._strategy.run(df)
         except (ValueError, TypeError) as exc:
             count = self._consecutive_failures.get(symbol, 0) + 1
             self._consecutive_failures[symbol] = count

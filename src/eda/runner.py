@@ -46,6 +46,7 @@ class EDARunner:
         initial_capital: 초기 자본 (USD)
         asset_weights: 에셋별 가중치 (None이면 균등분배)
         queue_size: EventBus 큐 크기
+        fast_mode: True면 pre-aggregation + incremental 전략 (intrabar SL/TS 없음)
     """
 
     def __init__(
@@ -57,6 +58,8 @@ class EDARunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
+        *,
+        fast_mode: bool = False,
     ) -> None:
         self._strategy = strategy
         self._config = config
@@ -64,9 +67,12 @@ class EDARunner:
         self._asset_weights = asset_weights
         self._queue_size = queue_size
         self._target_timeframe = target_timeframe
+        self._fast_mode = fast_mode
 
         # feed/executor 생성
-        self._feed: DataFeedPort = HistoricalDataFeed(data, target_timeframe=target_timeframe)
+        self._feed: DataFeedPort = HistoricalDataFeed(
+            data, target_timeframe=target_timeframe, fast_mode=fast_mode
+        )
         self._executor: ExecutorPort = BacktestExecutor(cost_model=config.cost_model)
 
         # Components (run() 시 초기화)
@@ -85,6 +91,8 @@ class EDARunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
+        *,
+        fast_mode: bool = False,
     ) -> EDARunner:
         """어댑터를 직접 주입하여 Runner를 생성합니다 (내부용)."""
         instance = object.__new__(cls)
@@ -96,6 +104,7 @@ class EDARunner:
         instance._asset_weights = asset_weights
         instance._queue_size = queue_size
         instance._target_timeframe = target_timeframe
+        instance._fast_mode = fast_mode
         instance._bus = None
         instance._analytics = None
         instance._pm = None
@@ -111,20 +120,24 @@ class EDARunner:
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
+        *,
+        fast_mode: bool = False,
     ) -> EDARunner:
         """백테스트용 Runner 생성.
 
         HistoricalDataFeed(1m→target_tf) + BacktestExecutor 조합입니다.
+        fast_mode=True면 pre-aggregation + incremental 전략으로 고속 실행.
         """
         return cls._from_adapters(
             strategy=strategy,
-            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe),
+            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe, fast_mode=fast_mode),
             executor=BacktestExecutor(cost_model=config.cost_model),
             target_timeframe=target_timeframe,
             config=config,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
             queue_size=queue_size,
+            fast_mode=fast_mode,
         )
 
     @classmethod
@@ -164,7 +177,17 @@ class EDARunner:
         feed = self._feed
         executor = self._executor
 
-        strategy_engine = StrategyEngine(self._strategy, target_timeframe=self._target_timeframe)
+        # fast_mode: incremental + max_buffer_size 활성화
+        strategy_engine_kwargs: dict[str, object] = {
+            "target_timeframe": self._target_timeframe,
+        }
+        if self._fast_mode:
+            strategy_engine_kwargs["incremental"] = True
+            # warmup_periods + 50 여유분
+            warmup = self._detect_strategy_warmup()
+            strategy_engine_kwargs["max_buffer_size"] = warmup + 50
+
+        strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
             config=self._config,
             initial_capital=self._initial_capital,
@@ -201,7 +224,8 @@ class EDARunner:
         await analytics.register(bus)
 
         # 3. 실행
-        logger.info("EDA Runner starting...")
+        mode_label = " [fast]" if self._fast_mode else ""
+        logger.info("EDA Runner starting...{}", mode_label)
         bus_task = asyncio.create_task(bus.start())
 
         await feed.start(bus)
@@ -227,6 +251,22 @@ class EDARunner:
         )
 
         return metrics
+
+    def _detect_strategy_warmup(self) -> int:
+        """전략의 warmup 기간 감지."""
+        warmup_fn = getattr(self._strategy, "warmup_periods", None)
+        if warmup_fn is not None and callable(warmup_fn):
+            result = warmup_fn()
+            if isinstance(result, int):
+                return result
+        config = self._strategy.config
+        if config is not None:
+            config_dict = config.model_dump()
+            lookback = config_dict.get("lookback", 0)
+            vol_window = config_dict.get("vol_window", 0)
+            if lookback > 0:
+                return int(max(lookback, vol_window) + 10)
+        return 50
 
     @property
     def analytics(self) -> AnalyticsEngine | None:
