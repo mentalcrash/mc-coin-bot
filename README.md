@@ -2,8 +2,9 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-24개 전략을 체계적으로 평가하여 실전 운용 후보를 선별합니다.
+31개 전략을 체계적으로 평가하여 실전 운용 후보를 선별합니다.
 VectorBT + EDA 이중 백테스트와 4단계 과적합 검증(IS/OOS, 파라미터 안정성, WFA, CPCV)을 거쳐 실거래로 전환합니다.
+현재 **1개 전략 Gate 2 PASS** (CTREND), 2개 PENDING.
 
 ---
 
@@ -257,28 +258,35 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ---
 
-## 전략 스코어카드 (Gate 0-4 평가)
+## 전략 스코어카드 (Gate 0-2 평가)
 
-7개 활성 전략 (G0 PASS) + 24개 폐기 전략. 신규 전략은 학술 논문 기반으로 재설계하여 Gate 0 통과 후 백테스트 대기 중.
+1개 활성 전략 (G2 PASS) + 2개 PENDING (데이터 부재) + 28개 폐기 전략.
 
-### 활성 전략
+### 활성 전략 (Gate 2 완료)
 
-| # | 전략 | G0 점수 | 유형 | 핵심 alpha source | 우선순위 |
-|---|------|---------|------|-------------------|----------|
-| 1 | **Funding Carry** (`funding-carry`) | 25/30 | 캐리 | Funding rate premium | 1순위 |
-| 2 | **XSMOM** (`xsmom`) | 24/30 | 크로스섹셔널 | Behavioral herding | 1순위 |
-| 3 | **Multi-Factor** (`multi-factor`) | 23/30 | 멀티팩터 | 직교 alpha 결합 | 2순위 |
-| 4 | **CTREND** (`ctrend`) | 22/30 | ML 앙상블 | Technical aggregate | 2순위 |
-| 5 | **VW-TSMOM** (`vw-tsmom`) | 21/30 | 추세추종 | Volume + momentum | 3순위 |
-| 6 | **Copula Pairs** (`copula-pairs`) | 20/30 | 통계적 차익 | Cointegration MR | 3순위 |
-| 7 | **HAR Vol** (`har-vol`) | 19/30 | 변동성 오버레이 | Vol forecast error | 보조 |
+| # | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | 스코어카드 |
+|---|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|-----------|
+| 1 | **CTREND** (`ctrend`) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | **P** | **P** | [scorecard](docs/scorecard/ctrend.md) |
 
-> Gate 1 백테스트 미실행 상태. G0 PASS만 표시.
+> **CTREND**: G2 IS/OOS 검증 PASS (OOS Sharpe 1.78, Decay 33.7%). Gate 3 파라미터 안정성 검증 진행 권고.
+
+### PENDING 전략 (데이터 부재)
+
+| # | 전략 | G0 점수 | 차단 사유 | 스코어카드 |
+|---|------|---------|----------|-----------|
+| 5 | **Funding Carry** (`funding-carry`) | 25/30 | `funding_rate` 데이터 수집 필요 | [scorecard](docs/scorecard/funding-carry.md) |
+| 6 | **Copula Pairs** (`copula-pairs`) | 20/30 | `pair_close` 데이터 구성 필요 | [scorecard](docs/scorecard/copula-pairs.md) |
 
 ### 폐기된 전략 (Deprecated)
 
 아래 전략은 Gate 평가에서 구조적 문제 또는 성과 부족으로 폐기 처리되었습니다.
 동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
+
+#### Gate 1 실패 (구조적 결함)
+
+| 전략 | Sharpe | CAGR | MDD | 폐기 사유 | 스코어카드 |
+|------|--------|------|-----|----------|-----------|
+| HAR Vol | -0.23 | -12.1% | -78.4% | 전 에셋 Sharpe 음수, MDD 78~97%, 과다 거래(1200+) | [scorecard](docs/scorecard/fail/har-vol.md) |
 
 #### Gate 1 실패 (CAGR 미달)
 
@@ -304,6 +312,9 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 | 전략 | Sharpe | OOS Sharpe | Decay | 폐기 사유 | 스코어카드 |
 |------|--------|-----------|-------|----------|-----------|
+| XSMOM | 1.34 | 0.30 | 76.6% | OOS Sharpe borderline, Decay 76.6% (IS 성과 3/4 소멸) | [scorecard](docs/scorecard/fail/xsmom.md) |
+| Multi-Factor | 1.22 | 0.17 | 83.3% | OOS Sharpe 0.17 < 0.3, Decay 83.3%, Overfit Prob 90% | [scorecard](docs/scorecard/fail/multi-factor.md) |
+| VW-TSMOM | 0.91 | 0.12 | 92.1% | OOS Sharpe 0.12, Decay 92.1%, Overfit Prob 95.3% | [scorecard](docs/scorecard/fail/vw-tsmom.md) |
 | Vol Regime | 1.41 | 0.37 | 77.3% | IS 고성과가 OOS에서 유지 안됨 (Decay 77%) | [scorecard](docs/scorecard/fail/vol-regime.md) |
 | TSMOM | 1.33 | 0.19 | 87.2% | OOS Sharpe 0.19, Decay 87% (WFA/CPCV는 PASS) | [scorecard](docs/scorecard/fail/tsmom.md) |
 | Enhanced VW-TSMOM | 1.22 | 0.25 | 85.2% | OOS Sharpe 0.25, Decay 85% | [scorecard](docs/scorecard/fail/enhanced-tsmom.md) |
@@ -329,6 +340,15 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | Hurst/ER Regime | 0.24 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
 | Risk Momentum | 0.77 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
 
-> **교훈**: 24개 전략 중 Gate 4까지 통과한 전략은 4개였으나, CAGR > 20% 기준 추가로 전원 폐기.
+> **교훈 (1세대)**: 24개 전략 중 Gate 4까지 통과한 전략은 4개였으나, CAGR > 20% 기준 추가로 전원 폐기.
 > 안정적이지만 절대 수익이 낮은 전략(Donchian Ensemble CAGR +10.8%, BB-RSI +4.6%)은 운용 효율 부족.
-> **낮지만 안정적인 Sharpe는 검증에는 강하나, 절대 수익 기준에서 탈락** — 다음 전략은 CAGR > 20%를 구조적으로 달성할 수 있는 설계 필요.
+>
+> **교훈 (2세대 Gate 1)**: 7개 신규 전략 중 **CTREND가 압도적** (SOL Sharpe 2.05, CAGR +97.8%).
+> ML 앙상블(CTREND)과 횡단면 모멘텀(XSMOM)이 PASS — 단일 지표 전략 대비 앙상블/팩터 결합이 우위.
+> **SOL/USDT가 전 전략 Best Asset** — 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리.
+> HAR Vol은 전 에셋 Sharpe 음수로 즉시 폐기 — 변동성 예측 오차 단독은 alpha 부재.
+>
+> **교훈 (2세대 Gate 2)**: 4개 G1 통과 전략 중 **CTREND만 G2 PASS** (OOS Sharpe 1.78, Decay 33.7%).
+> XSMOM/Multi-Factor/VW-TSMOM은 Decay 76~92%로 전원 과적합 판정.
+> **IS Sharpe가 높아도 OOS에서 재현되지 않으면 무의미** — G1 PASS가 실전 성과를 보장하지 않음.
+> CTREND의 낮은 Decay(33.7%)는 ML 앙상블의 일반화 능력이 단일 팩터 전략보다 우수함을 시사.
