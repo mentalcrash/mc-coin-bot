@@ -10,20 +10,21 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:v2.54.0
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.prometheus
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:11.4.0
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.grafana
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     environment:
