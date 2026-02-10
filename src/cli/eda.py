@@ -48,6 +48,7 @@ class LiveRunMode(str, enum.Enum):
 
     PAPER = "paper"
     SHADOW = "shadow"
+    LIVE = "live"
 
 
 console = Console()
@@ -362,9 +363,15 @@ def launch_live(
     if is_multi:
         asset_weights = {s: 1.0 / len(symbol_list) for s in symbol_list}
 
-    live_mode = LiveMode.SHADOW if mode == "shadow" else LiveMode.PAPER
+    if mode == "shadow":
+        live_mode = LiveMode.SHADOW
+    elif mode == "live":
+        live_mode = LiveMode.LIVE
+    else:
+        live_mode = LiveMode.PAPER
     capital = initial_capital if initial_capital is not None else cfg.backtest.capital
-    mode_label = "Shadow" if live_mode == LiveMode.SHADOW else "Paper"
+    mode_labels = {LiveMode.SHADOW: "Shadow", LiveMode.PAPER: "Paper", LiveMode.LIVE: "LIVE"}
+    mode_label = mode_labels[live_mode]
 
     # Discord config 로드
     discord_config = None
@@ -393,20 +400,40 @@ def launch_live(
 
         deploy_cfg = get_deployment_config()
         async with BinanceClient() as client:
-            factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
-            runner = factory(
-                strategy=strategy,
-                symbols=symbol_list,
-                target_timeframe=target_tf,
-                config=cfg.portfolio,
-                client=client,
-                initial_capital=capital,
-                asset_weights=asset_weights,
-                db_path=db_path,
-                discord_config=discord_config,
-                metrics_port=deploy_cfg.metrics_port,
-            )
-            await runner.run()
+            if live_mode == LiveMode.LIVE:
+                from src.exchange.binance_futures_client import BinanceFuturesClient
+
+                async with BinanceFuturesClient() as futures_client:
+                    await futures_client.setup_account(symbol_list)
+                    runner = LiveRunner.live(
+                        strategy=strategy,
+                        symbols=symbol_list,
+                        target_timeframe=target_tf,
+                        config=cfg.portfolio,
+                        client=client,
+                        futures_client=futures_client,
+                        initial_capital=capital,
+                        asset_weights=asset_weights,
+                        db_path=db_path,
+                        discord_config=discord_config,
+                        metrics_port=deploy_cfg.metrics_port,
+                    )
+                    await runner.run()
+            else:
+                factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
+                runner = factory(
+                    strategy=strategy,
+                    symbols=symbol_list,
+                    target_timeframe=target_tf,
+                    config=cfg.portfolio,
+                    client=client,
+                    initial_capital=capital,
+                    asset_weights=asset_weights,
+                    db_path=db_path,
+                    discord_config=discord_config,
+                    metrics_port=deploy_cfg.metrics_port,
+                )
+                await runner.run()
 
     asyncio.run(_run())
 
@@ -426,6 +453,16 @@ def run_live(
     Modes:
         - paper: 시뮬레이션 체결 (BacktestExecutor)
         - shadow: 시그널 로깅만 (ShadowExecutor, 체결 없음)
+        - live: 실주문 (LiveExecutor → Binance Futures)
     """
     setup_logger(console_level="DEBUG" if verbose else "INFO")
+
+    if mode == LiveRunMode.LIVE:
+        confirm = typer.confirm(
+            "WARNING: LIVE mode trades with real funds on Binance Futures. Continue?"
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(code=0)
+
     launch_live(config_path, mode=mode.value, db_path=db_path)

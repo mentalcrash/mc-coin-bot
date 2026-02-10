@@ -6,6 +6,7 @@ Graceful shutdown (SIGTERM/SIGINT), signal handler, 무한 루프 지원.
 Modes:
     - paper: LiveDataFeed + BacktestExecutor (시뮬레이션 체결)
     - shadow: LiveDataFeed + ShadowExecutor (로깅만, 체결 없음)
+    - live: LiveDataFeed + LiveExecutor (Binance Futures 실주문)
 
 Rules Applied:
     - EDARunner와 동일한 컴포넌트 조립 패턴
@@ -27,7 +28,7 @@ from loguru import logger
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.eda.analytics import AnalyticsEngine
-from src.eda.executors import BacktestExecutor, ShadowExecutor
+from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
@@ -38,7 +39,9 @@ if TYPE_CHECKING:
     from src.eda.persistence.database import Database
     from src.eda.persistence.state_manager import StateManager
     from src.eda.ports import ExecutorPort
+    from src.eda.reconciler import PositionReconciler
     from src.exchange.binance_client import BinanceClient
+    from src.exchange.binance_futures_client import BinanceFuturesClient
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
@@ -72,6 +75,11 @@ class LiveMode(StrEnum):
 
     PAPER = "paper"
     SHADOW = "shadow"
+    LIVE = "live"
+
+
+# Reconciler 검증 주기 (초)
+_RECONCILER_INTERVAL = 60.0
 
 
 class LiveRunner:
@@ -122,6 +130,8 @@ class LiveRunner:
         self._discord_config = discord_config
         self._metrics_port = metrics_port
         self._client: BinanceClient | None = None
+        self._futures_client: BinanceFuturesClient | None = None
+        self._symbols: list[str] = []
 
     @classmethod
     def paper(
@@ -154,6 +164,7 @@ class LiveRunner:
             metrics_port=metrics_port,
         )
         runner._client = client
+        runner._symbols = symbols
         return runner
 
     @classmethod
@@ -187,6 +198,48 @@ class LiveRunner:
             metrics_port=metrics_port,
         )
         runner._client = client
+        runner._symbols = symbols
+        return runner
+
+    @classmethod
+    def live(
+        cls,
+        strategy: BaseStrategy,
+        symbols: list[str],
+        target_timeframe: str,
+        config: PortfolioManagerConfig,
+        client: BinanceClient,
+        futures_client: BinanceFuturesClient,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+        db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
+        metrics_port: int = 0,
+    ) -> LiveRunner:
+        """Live 모드: LiveDataFeed(Spot) + LiveExecutor(Futures).
+
+        Args:
+            client: Spot client (데이터 스트리밍용)
+            futures_client: Futures client (주문 실행용)
+        """
+        feed = LiveDataFeed(symbols, target_timeframe, client)
+        executor = LiveExecutor(futures_client)
+        runner = cls(
+            strategy=strategy,
+            feed=feed,
+            executor=executor,
+            target_timeframe=target_timeframe,
+            config=config,
+            mode=LiveMode.LIVE,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+            db_path=db_path,
+            discord_config=discord_config,
+            metrics_port=metrics_port,
+        )
+        runner._client = client
+        runner._futures_client = futures_client
+        runner._symbols = symbols
         return runner
 
     async def run(self) -> None:
@@ -232,6 +285,10 @@ class LiveRunner:
 
                 bus.subscribe(EventType.BAR, executor_bar_handler)
 
+            # LiveExecutor인 경우 PM 참조 설정
+            if isinstance(self._executor, LiveExecutor):
+                self._executor.set_pm(pm)
+
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm)
 
@@ -273,6 +330,19 @@ class LiveRunner:
             if metrics_exporter is not None:
                 uptime_task = asyncio.create_task(self._periodic_uptime_update(metrics_exporter))
 
+            # Live 모드: PositionReconciler 초기 + 주기적 검증
+            reconciler_task: asyncio.Task[None] | None = None
+            if self._mode == LiveMode.LIVE and self._futures_client is not None:
+                from src.eda.reconciler import PositionReconciler
+
+                reconciler = PositionReconciler()
+                await reconciler.initial_check(pm, self._futures_client, self._symbols)
+                reconciler_task = asyncio.create_task(
+                    self._periodic_reconciliation(
+                        reconciler, pm, self._futures_client, self._symbols
+                    )
+                )
+
             logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
 
             # 8. Shutdown 대기
@@ -282,7 +352,7 @@ class LiveRunner:
             logger.warning("Initiating graceful shutdown...")
 
             # 주기적 task 취소
-            for task in (save_task, uptime_task):
+            for task in (save_task, uptime_task, reconciler_task):
                 if task is not None:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -549,6 +619,19 @@ class LiveRunner:
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
+
+    @staticmethod
+    async def _periodic_reconciliation(
+        reconciler: PositionReconciler,
+        pm: EDAPortfolioManager,
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+        interval: float = _RECONCILER_INTERVAL,
+    ) -> None:
+        """주기적 포지션 교차 검증."""
+        while True:
+            await asyncio.sleep(interval)
+            await reconciler.periodic_check(pm, futures_client, symbols)
 
     @property
     def feed(self) -> LiveDataFeed:

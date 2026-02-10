@@ -123,6 +123,14 @@ class AuthenticationError(ExchangeError):
     """
 
 
+class InsufficientFundsError(ExchangeError):
+    """잔고 부족 — 재시도 불가, 알림 발송."""
+
+
+class OrderExecutionError(ExchangeError):
+    """주문 실행 실패 (InvalidOrder, unknown error 등)."""
+
+
 # =============================================================================
 # Data Validation Errors (Unrecoverable - Log and Skip)
 # =============================================================================
