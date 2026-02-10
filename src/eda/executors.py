@@ -1,10 +1,11 @@
 """EDA Executor 구현체.
 
-BacktestExecutor: 다음 Bar open 가격으로 체결 (look-ahead bias 방지)
+BacktestExecutor: Deferred execution — 일반 주문은 다음 Bar open 가격으로 체결
 ShadowExecutor: 로깅만 (Phase 5 dry-run용)
 
 Rules Applied:
-    - Look-Ahead Bias 방지: next-open 체결
+    - Look-Ahead Bias 방지: next-open deferred execution
+    - SL/TS 즉시 체결: PM이 설정한 가격으로 즉시 체결
     - CostModel 재사용: 기존 수수료 모델 적용
 """
 
@@ -27,10 +28,15 @@ if TYPE_CHECKING:
 
 
 class BacktestExecutor:
-    """백테스트 실행기.
+    """백테스트 실행기 (Deferred Execution).
 
-    다음 Bar의 open 가격으로 체결합니다 (look-ahead bias 방지).
-    주문이 들어오면 내부에 저장하고, 다음 BarEvent 수신 시 체결합니다.
+    일반 주문(signal 기반)은 다음 TF Bar의 open 가격으로 체결합니다.
+    SL/TS 주문(order.price 설정)은 즉시 체결합니다.
+
+    Flow:
+        1. Signal from Bar[N] → PM creates order (price=None) → execute() stores as pending
+        2. Bar[N+1] arrives → on_bar() updates prices → fill_pending() fills at open[N+1]
+        3. drain_fills() → Runner publishes FillEvents to bus
 
     Args:
         cost_model: 거래 비용 모델
@@ -38,45 +44,84 @@ class BacktestExecutor:
 
     def __init__(self, cost_model: CostModel) -> None:
         self._cost_model = cost_model
-        # 심볼별 마지막 bar open 가격 (next-open 체결용)
+        # 심볼별 마지막 bar 가격/타임스탬프
         self._last_open: dict[str, float] = {}
-        # 심볼별 마지막 bar close 가격 (fallback)
         self._last_close: dict[str, float] = {}
-        # 심볼별 마지막 bar timestamp (H-001: 체결 시각 정확성)
         self._last_bar_timestamp: dict[str, datetime] = {}
+        # Deferred execution: 대기 주문 + 체결 결과
+        self._pending_orders: list[OrderRequestEvent] = []
+        self._deferred_fills: list[FillEvent] = []
 
     def on_bar(self, bar: BarEvent) -> None:
-        """Bar 데이터 업데이트 (Runner가 호출)."""
+        """Bar 데이터 업데이트 (가격/타임스탬프)."""
         self._last_open[bar.symbol] = bar.open
         self._last_close[bar.symbol] = bar.close
         self._last_bar_timestamp[bar.symbol] = bar.bar_timestamp
 
-    async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
-        """주문 체결.
+    def fill_pending(self, bar: BarEvent) -> None:
+        """해당 심볼의 대기 주문을 새 bar의 open 가격으로 체결.
 
-        현재 bar의 open 가격으로 체결합니다.
-        (HistoricalDataFeed가 Bar를 발행 → StrategyEngine이 Signal 생성
-        → PM이 Order 생성 → RM 검증 → OMS → 여기서 체결)
-
-        실제로는 "다음 bar의 open"이 이상적이지만,
-        EDA에서는 현재 bar의 open을 사용합니다 (Bar 수신 후 체결이므로).
+        Args:
+            bar: 새로 도착한 TF bar (open 가격으로 체결)
         """
-        symbol = order.symbol
+        remaining: list[OrderRequestEvent] = []
+        for order in self._pending_orders:
+            if order.symbol == bar.symbol:
+                fill = self._create_fill(order, bar.open, bar.bar_timestamp)
+                if fill is not None:
+                    self._deferred_fills.append(fill)
+                else:
+                    logger.warning(
+                        "Deferred fill failed for {}: invalid price {}",
+                        order.client_order_id,
+                        bar.open,
+                    )
+            else:
+                remaining.append(order)
+        self._pending_orders = remaining
 
-        # SL/TS 체결: order.price 설정 시 해당 가격 사용 (close price)
-        # 일반 주문: _last_open 사용 (current bar's open = VBT의 next-open 동일)
-        fill_price: float | None = (
-            order.price if order.price is not None else self._last_open.get(symbol)
-        )
+    def drain_fills(self) -> list[FillEvent]:
+        """대기 체결 결과를 반환하고 비웁니다."""
+        fills = self._deferred_fills
+        self._deferred_fills = []
+        return fills
 
-        if fill_price is None:
-            # Fallback: close 가격 사용
-            fill_price = self._last_close.get(symbol)
-            if fill_price is None:
-                logger.warning("No price data for {}, cannot fill", symbol)
-                return None
+    @property
+    def pending_count(self) -> int:
+        """대기 주문 수."""
+        return len(self._pending_orders)
 
-        # 수량 계산 (notional / price)
+    async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
+        """주문 실행.
+
+        SL/TS 주문 (order.price 설정): 즉시 체결 (PM이 명시한 가격)
+        일반 주문 (order.price 없음): 다음 bar의 open에 체결하도록 대기
+        """
+        # SL/TS exit: 즉시 체결 (PM이 설정한 stop 가격)
+        if order.price is not None:
+            fill_ts = self._last_bar_timestamp.get(order.symbol, datetime.now(UTC))
+            return self._create_fill(order, order.price, fill_ts)
+
+        # 일반 주문: 다음 bar의 open에 체결하도록 대기
+        self._pending_orders.append(order)
+        return None
+
+    def _create_fill(
+        self,
+        order: OrderRequestEvent,
+        fill_price: float,
+        fill_ts: datetime,
+    ) -> FillEvent | None:
+        """FillEvent 생성 (공통 로직).
+
+        Args:
+            order: 주문 요청
+            fill_price: 체결 가격
+            fill_ts: 체결 시각
+
+        Returns:
+            FillEvent 또는 유효하지 않은 경우 None
+        """
         if fill_price <= 0 or not math.isfinite(fill_price):
             return None
 
@@ -85,16 +130,11 @@ class BacktestExecutor:
             return None
 
         fill_qty = notional / fill_price
-
-        # 수수료 계산
         fee = notional * self._cost_model.total_fee_rate
-
-        # 백테스트: bar_timestamp 사용, 없으면 현재 시각 (라이브 호환)
-        fill_ts = self._last_bar_timestamp.get(symbol, datetime.now(UTC))
 
         return FillEvent(
             client_order_id=order.client_order_id,
-            symbol=symbol,
+            symbol=order.symbol,
             side=order.side,
             fill_price=fill_price,
             fill_qty=fill_qty,

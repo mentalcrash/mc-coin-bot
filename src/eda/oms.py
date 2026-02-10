@@ -101,14 +101,11 @@ class OMS:
         )
         await bus.publish(ack)
 
-        # Executor 실행
+        # Executor 실행 (None = deferred or shadow, not rejection)
         fill = await self._executor.execute(order)
         if fill is not None:
             self._total_fills += 1
             await bus.publish(fill)
-        else:
-            self._total_rejected += 1
-            logger.warning("Executor returned None for: {}", order.client_order_id)
 
     async def _on_circuit_breaker(self, event: AnyEvent) -> None:
         """CircuitBreaker → 전량 청산."""
@@ -138,6 +135,7 @@ class OMS:
                 side=side,  # type: ignore[arg-type]
                 target_weight=0.0,
                 notional_usd=pos.notional,
+                price=pos.last_price if pos.last_price > 0 else None,
                 validated=True,
                 correlation_id=event.correlation_id,
                 source="OMS-CircuitBreaker",

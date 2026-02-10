@@ -205,13 +205,19 @@ class EDARunner:
         self._analytics = analytics
         self._pm = pm
 
-        # Executor에 bar 가격 업데이트를 위한 핸들러 등록 (BacktestExecutor만)
+        # Executor에 bar 가격 업데이트 + deferred fill 발행 핸들러 등록
         if isinstance(executor, BacktestExecutor):
             bt_executor = executor
+            target_tf = self._target_timeframe
 
             async def executor_bar_handler(event: AnyEvent) -> None:
                 assert isinstance(event, BarEvent)
                 bt_executor.on_bar(event)
+                # TF bar에서만 deferred fill 처리 (VBT shift(-1) 동일)
+                if event.timeframe == target_tf:
+                    bt_executor.fill_pending(event)
+                    for fill in bt_executor.drain_fills():
+                        await bus.publish(fill)
 
             bus.subscribe(EventType.BAR, executor_bar_handler)
 
@@ -232,6 +238,13 @@ class EDARunner:
         # 마지막 batch flush (데이터 종료 후 미처리 signal 처리)
         await pm.flush_pending_signals()
         await bus.flush()
+
+        # Deferred execution: 마지막 bar 이후 미체결 pending orders 로깅
+        if isinstance(executor, BacktestExecutor) and executor.pending_count > 0:
+            logger.info(
+                "Discarded {} pending orders at end of backtest (no next bar)",
+                executor.pending_count,
+            )
 
         await bus.stop()
         await bus_task
