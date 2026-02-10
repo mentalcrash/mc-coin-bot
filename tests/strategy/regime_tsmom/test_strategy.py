@@ -91,9 +91,7 @@ class TestPreprocess:
     ) -> None:
         """원본 OHLCV 데이터 보존."""
         result = preprocess(sample_ohlcv, default_config)
-        pd.testing.assert_series_equal(
-            result["close"], sample_ohlcv["close"], check_names=True
-        )
+        pd.testing.assert_series_equal(result["close"], sample_ohlcv["close"], check_names=True)
 
 
 # ── Signal Generation ──
@@ -150,9 +148,7 @@ class TestGenerateSignals:
             f"volatile avg strength ({avg_volatile:.4f})"
         )
 
-    def test_short_mode_disabled(
-        self, sample_ohlcv: pd.DataFrame
-    ) -> None:
+    def test_short_mode_disabled(self, sample_ohlcv: pd.DataFrame) -> None:
         """Short DISABLED → 음수 direction 없음."""
         config = RegimeTSMOMConfig(short_mode=ShortMode.DISABLED)
         processed = preprocess(sample_ohlcv, config)
@@ -167,9 +163,7 @@ class TestGenerateSignals:
         with pytest.raises(ValueError, match="Missing"):
             generate_signals(df, default_config)
 
-    def test_probability_weighted_vol_target(
-        self, sample_ohlcv: pd.DataFrame
-    ) -> None:
+    def test_probability_weighted_vol_target(self, sample_ohlcv: pd.DataFrame) -> None:
         """vol_target이 레짐 확률에 따라 가중 적용되는지 확인."""
         config = RegimeTSMOMConfig(
             trending_vol_target=1.0,

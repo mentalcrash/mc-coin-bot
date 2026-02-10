@@ -38,7 +38,11 @@ from src.strategy import get_strategy, list_strategies
 # Constants
 # =============================================================================
 
-EXCLUDE = {"tsmom", "funding-carry", "copula-pairs"}  # tsmom: 스코어카드 있음, 나머지: 특수 데이터 필요
+EXCLUDE = {
+    "tsmom",
+    "funding-carry",
+    "copula-pairs",
+}  # tsmom: 스코어카드 있음, 나머지: 특수 데이터 필요
 
 SYMBOLS = [
     "BTC/USDT",

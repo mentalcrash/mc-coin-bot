@@ -42,6 +42,8 @@ class StrategyEngine:
         target_timeframe: 타겟 타임프레임
         incremental: True면 strategy.run_incremental() 호출 (fast_mode용)
         max_buffer_size: 버퍼 최대 크기. 초과 시 오래된 데이터 제거. None이면 무제한.
+        precomputed_signals: 사전 계산된 시그널 {symbol: StrategySignals}.
+            설정 시 strategy.run() 호출 없이 timestamp lookup으로 시그널 발행.
     """
 
     def __init__(
@@ -52,6 +54,7 @@ class StrategyEngine:
         *,
         incremental: bool = False,
         max_buffer_size: int | None = None,
+        precomputed_signals: dict[str, object] | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -62,6 +65,7 @@ class StrategyEngine:
         self._target_timeframe = target_timeframe
         self._incremental = incremental
         self._max_buffer_size = max_buffer_size
+        self._precomputed_signals = precomputed_signals
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -77,7 +81,7 @@ class StrategyEngine:
 
         1. OHLCV 버퍼에 누적
         2. warmup 미달 시 스킵
-        3. strategy.run() 호출
+        3. strategy.run() 호출 (또는 precomputed lookup)
         4. 매 bar SignalEvent 발행
         """
         assert isinstance(event, BarEvent)
@@ -90,6 +94,11 @@ class StrategyEngine:
         symbol = bar.symbol
         bus = self._bus
         assert bus is not None
+
+        # precomputed_signals 모드: timestamp lookup만 수행
+        if self._precomputed_signals is not None:
+            await self._on_bar_precomputed(bar, bus)
+            return
 
         # 1. 버퍼에 누적
         if symbol not in self._buffers:
@@ -166,6 +175,37 @@ class StrategyEngine:
             direction=Direction(latest_direction),
             strength=latest_strength,
             bar_timestamp=bar.bar_timestamp,
+            correlation_id=bar.correlation_id,
+            source="StrategyEngine",
+        )
+        await bus.publish(signal_event)
+
+    async def _on_bar_precomputed(self, bar: BarEvent, bus: EventBus) -> None:
+        """Precomputed signals 모드: timestamp로 사전 계산된 시그널을 조회하여 발행."""
+        from src.strategy.types import StrategySignals
+
+        assert self._precomputed_signals is not None
+        symbol = bar.symbol
+        signals = self._precomputed_signals.get(symbol)
+        if signals is None:
+            return
+
+        assert isinstance(signals, StrategySignals)
+
+        # bar_timestamp로 시그널 lookup
+        ts = bar.bar_timestamp
+        if ts not in signals.direction.index:
+            return
+
+        direction_val = int(signals.direction.loc[ts])
+        strength_val = float(signals.strength.loc[ts])
+
+        signal_event = SignalEvent(
+            symbol=symbol,
+            strategy_name=self._strategy.name,
+            direction=Direction(direction_val),
+            strength=strength_val,
+            bar_timestamp=ts,
             correlation_id=bar.correlation_id,
             source="StrategyEngine",
         )

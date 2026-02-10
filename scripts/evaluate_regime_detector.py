@@ -71,7 +71,8 @@ def evaluate_forward_returns(
                     "std_return": float(regime_fwd.std()) * 100,
                     "hit_rate_positive": float((regime_fwd > 0).mean()) * 100,
                     "sharpe": (
-                        float(regime_fwd.mean() / regime_fwd.std()) * np.sqrt(ANNUALIZATION / window)
+                        float(regime_fwd.mean() / regime_fwd.std())
+                        * np.sqrt(ANNUALIZATION / window)
                         if regime_fwd.std() > 0
                         else 0.0
                     ),
@@ -305,9 +306,9 @@ def evaluate_probability_calibration(
 
 def print_section(title: str) -> None:
     """섹션 헤더 출력."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  {title}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
 
 def main() -> None:
@@ -331,9 +332,9 @@ def main() -> None:
     all_calibration: list[pd.DataFrame] = []
 
     for symbol in SYMBOLS:
-        print(f"\n{'─'*50}")
+        print(f"\n{'─' * 50}")
         print(f"  Processing: {symbol}")
-        print(f"{'─'*50}")
+        print(f"{'─' * 50}")
 
         try:
             df = load_data(symbol)
@@ -397,10 +398,14 @@ def main() -> None:
 
     print_section("2. Forward Volatility by Regime")
     vol_all = pd.concat(all_fwd_vol, ignore_index=True)
-    vol_summary = vol_all.groupby(["regime", "fwd_window"]).agg(
-        mean_vol=("mean_vol", "mean"),
-        median_vol=("median_vol", "mean"),
-    ).round(4)
+    vol_summary = (
+        vol_all.groupby(["regime", "fwd_window"])
+        .agg(
+            mean_vol=("mean_vol", "mean"),
+            median_vol=("median_vol", "mean"),
+        )
+        .round(4)
+    )
     print(vol_summary.to_string())
 
     print_section("3. Directional Accuracy (적중률)")
@@ -417,9 +422,15 @@ def main() -> None:
     print_section("4. Regime Stability")
     stab_df = pd.DataFrame(all_stability)
     cols_to_show = [
-        "symbol", "total_bars", "total_transitions", "transition_rate_per_bar",
-        "avg_regime_duration", "median_regime_duration",
-        "pct_trending", "pct_ranging", "pct_volatile",
+        "symbol",
+        "total_bars",
+        "total_transitions",
+        "transition_rate_per_bar",
+        "avg_regime_duration",
+        "median_regime_duration",
+        "pct_trending",
+        "pct_ranging",
+        "pct_volatile",
     ]
     print(stab_df[cols_to_show].to_string(index=False))
 
@@ -435,10 +446,14 @@ def main() -> None:
 
     print_section("6. Probability Calibration (확률 캘리브레이션)")
     cal_all = pd.concat(all_calibration, ignore_index=True)
-    cal_summary = cal_all.groupby(["metric", "prob_bin"]).agg(
-        actual_hit_pct=("actual_hit%", "mean"),
-        total_count=("count", "sum"),
-    ).round(1)
+    cal_summary = (
+        cal_all.groupby(["metric", "prob_bin"])
+        .agg(
+            actual_hit_pct=("actual_hit%", "mean"),
+            total_count=("count", "sum"),
+        )
+        .round(1)
+    )
     print(cal_summary.to_string())
 
     # ── 최종 요약 ──
@@ -447,9 +462,9 @@ def main() -> None:
     avg_trending_sharpe = fwd_all[
         (fwd_all["regime"] == "trending") & (fwd_all["fwd_window"] == 10)
     ]["sharpe"].mean()
-    avg_ranging_sharpe = fwd_all[
-        (fwd_all["regime"] == "ranging") & (fwd_all["fwd_window"] == 10)
-    ]["sharpe"].mean()
+    avg_ranging_sharpe = fwd_all[(fwd_all["regime"] == "ranging") & (fwd_all["fwd_window"] == 10)][
+        "sharpe"
+    ].mean()
     avg_volatile_sharpe = fwd_all[
         (fwd_all["regime"] == "volatile") & (fwd_all["fwd_window"] == 10)
     ]["sharpe"].mean()

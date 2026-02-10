@@ -11,6 +11,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -21,7 +22,7 @@ from loguru import logger
 from src.notification.models import ChannelRoute
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from src.eda.analytics import AnalyticsEngine
     from src.eda.portfolio_manager import EDAPortfolioManager
@@ -254,12 +255,18 @@ class DiscordBotService:
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)
 
-    async def send_embed(self, channel: ChannelRoute, embed_dict: dict[str, Any]) -> bool:
-        """Embed를 지정 채널에 전송.
+    async def send_embed(
+        self,
+        channel: ChannelRoute,
+        embed_dict: dict[str, Any],
+        files: Sequence[tuple[str, bytes]] = (),
+    ) -> bool:
+        """Embed를 지정 채널에 전송 (선택적 파일 첨부).
 
         Args:
             channel: 대상 채널 라우트
             embed_dict: Discord Embed dict
+            files: 첨부 파일 목록 ((filename, data) 튜플)
 
         Returns:
             True이면 전송 성공
@@ -271,7 +278,11 @@ class DiscordBotService:
 
         try:
             embed = discord.Embed.from_dict(embed_dict)
-            await ch.send(embed=embed)
+            discord_files = [discord.File(io.BytesIO(data), filename=name) for name, data in files]
+            await ch.send(
+                embed=embed,
+                files=discord_files if discord_files else discord.utils.MISSING,
+            )
         except discord.HTTPException:
             logger.exception("Failed to send embed to {}", channel.value)
             return False

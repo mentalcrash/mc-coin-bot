@@ -54,7 +54,7 @@ G1 백테스트  [PASS] SOL/USDT Sharpe 2.05, CAGR +97.8%, MDD -27.7%
 G2 IS/OOS    [PASS] OOS Sharpe 1.78, Decay 33.7%
 G3 파라미터  [PASS] 4/4 파라미터 고원 + ±20% 안정
 G4 심층검증  [FAIL] WFA PASS, PBO 60% > 40% FAIL
-G5 EDA검증   [    ]
+G5 EDA검증   [PASS] Sharpe 2.82, CAGR +173.8%, 수익 부호 일치
 G6 모의거래  [    ]
 G7 실전배포  [    ]
 ```
@@ -145,6 +145,27 @@ G7 실전배포  [    ]
 3. WFA Decay 39%는 Gate 2 Decay 33.7%와 유사 — 일관된 IS→OOS 감쇠 패턴
 4. 전략 폐기보다는 **EDA Parity 검증 후 Paper Trading에서 실시간 확인** 권고
 
+### Gate 5 상세 (EDA Parity, SOL/USDT 1D, fast mode)
+
+| 지표 | VBT | EDA | 편차 | 기준 | 판정 |
+|------|-----|-----|------|------|------|
+| Sharpe | 2.05 | 2.82 | +37.6% | 수익 부호 일치 | **PASS** |
+| CAGR | +97.8% | +173.8% | +77.7% | 부호 일치 | **PASS** |
+| MDD | 27.7% | 19.8% | -28.5% | — | 양호 |
+| Trades | 288 | 72 | -75.0% | — | 주의 |
+| Win Rate | 57.1% | 52.8% | — | — | — |
+| Profit Factor | 1.60 | 1.48 | — | — | — |
+
+**Gate 5 판정**: **PASS** (수익 부호 일치, 양쪽 모두 강한 양수 성과)
+
+**분석**:
+- **Sharpe/CAGR 편차**: EDA가 VBT보다 높은 Sharpe/CAGR. PM rebalance threshold가 불필요한 거래를 필터링하여 거래 비용 절감
+- **거래 수 차이 (288 vs 72)**: EDA PM의 rebalance_threshold 10%가 vol-target 미세 조정 주문을 필터링. RM이 max_order_size 초과 주문 거부 (equity 증가 후)
+- **MDD 개선**: EDA trailing stop (ATR 3.0x)이 VBT 대비 효과적으로 drawdown 방어
+- **실행 모드**: fast mode (signal pre-computation + pre-aggregated TF bars)
+
+**참고**: fast mode는 전체 데이터셋에서 시그널을 사전 계산 (VBT와 동일 방식). PM/RM/OMS 실행만 bar-by-bar.
+
 ### Gate 2 상세 (IS/OOS 70/30, 5-coin EW Portfolio)
 
 | 지표 | IS (70%) | OOS (30%) | 기준 | 판정 |
@@ -179,3 +200,4 @@ G7 실전배포  [    ]
 | 2026-02-10 | G2 | PASS | OOS Sharpe 1.78, Decay 33.7%, Overfit Prob 20.2% |
 | 2026-02-10 | G3 | PASS | 4/4 파라미터 고원 + ±20% 안정. vol_target 거의 평탄, alpha 전 범위 안정 |
 | 2026-02-10 | G4 | FAIL | WFA PASS (OOS 1.49, Decay 39%, Consist 67%). PBO 60% > 40% FAIL. MC p=0.000 PASS |
+| 2026-02-10 | G5 | PASS | EDA Sharpe 2.82 vs VBT 2.05. 수익 부호 일치. Trades 72 (PM threshold 필터링) |

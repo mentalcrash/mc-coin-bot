@@ -13,7 +13,7 @@ import pandas as pd
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType, SignalEvent
 from src.data.market_data import MarketDataSet, MultiSymbolData
-from src.eda.data_feed import HistoricalDataFeed, _resample_1m_to_tf
+from src.eda.data_feed import HistoricalDataFeed, resample_1m_to_tf
 from src.eda.strategy_engine import StrategyEngine
 from src.strategy.base import BaseStrategy
 from src.strategy.types import StrategySignals
@@ -118,17 +118,17 @@ def _make_multi_symbol_data(
 
 
 # =========================================================================
-# Test: _resample_1m_to_tf helper
+# Test: resample_1m_to_tf helper
 # =========================================================================
 class TestResample1mToTf:
-    """_resample_1m_to_tf 유틸리티 함수 테스트."""
+    """resample_1m_to_tf 유틸리티 함수 테스트."""
 
     def test_resample_to_1d(self) -> None:
         """1m → 1D resample: OHLCV 집계 정확성."""
         start = datetime(2024, 6, 15, 0, 0, tzinfo=UTC)
         df_1m = _make_1m_dataframe(start, periods=1440 * 2)  # 2일
 
-        result = _resample_1m_to_tf(df_1m, "1D")
+        result = resample_1m_to_tf(df_1m, "1D")
 
         assert len(result) == 2
         # 첫 번째 일봉: open = first 1m open, close = last 1m close
@@ -143,7 +143,7 @@ class TestResample1mToTf:
         start = datetime(2024, 6, 15, 0, 0, tzinfo=UTC)
         df_1m = _make_1m_dataframe(start, periods=1440)
         # 마지막 half day 제거해도 1D는 하나 유지
-        result = _resample_1m_to_tf(df_1m, "1D")
+        result = resample_1m_to_tf(df_1m, "1D")
         assert len(result) >= 1
         assert result["close"].isna().sum() == 0
 

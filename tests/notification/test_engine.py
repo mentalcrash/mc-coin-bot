@@ -65,9 +65,7 @@ class TestNotificationEngine:
         await bus.stop()
         await bus_task
 
-    async def test_risk_alert_warning(
-        self, sample_risk_alert_warning: RiskAlertEvent
-    ) -> None:
+    async def test_risk_alert_warning(self, sample_risk_alert_warning: RiskAlertEvent) -> None:
         """WARNING RiskAlertEvent가 spam_key와 함께 enqueue됨."""
         mock_queue = AsyncMock()
         engine = NotificationEngine(mock_queue)
@@ -87,9 +85,7 @@ class TestNotificationEngine:
         await bus.stop()
         await bus_task
 
-    async def test_risk_alert_critical(
-        self, sample_risk_alert_critical: RiskAlertEvent
-    ) -> None:
+    async def test_risk_alert_critical(self, sample_risk_alert_critical: RiskAlertEvent) -> None:
         """CRITICAL RiskAlertEvent의 severity가 CRITICAL."""
         mock_queue = AsyncMock()
         engine = NotificationEngine(mock_queue)

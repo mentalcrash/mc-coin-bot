@@ -434,8 +434,22 @@ GATE0_SCORES: dict[str, dict[str, int]] = {
         "capacity": 3,
         "regime": 3,
     },
-    "vw-tsmom": {"economic": 4, "novelty": 3, "data": 5, "complexity": 4, "capacity": 3, "regime": 2},
-    "har-vol": {"economic": 3, "novelty": 3, "data": 5, "complexity": 4, "capacity": 2, "regime": 2},
+    "vw-tsmom": {
+        "economic": 4,
+        "novelty": 3,
+        "data": 5,
+        "complexity": 4,
+        "capacity": 3,
+        "regime": 2,
+    },
+    "har-vol": {
+        "economic": 3,
+        "novelty": 3,
+        "data": 5,
+        "complexity": 4,
+        "capacity": 2,
+        "regime": 2,
+    },
 }
 
 # 폐기 사유 (코드 삭제된 전략)
@@ -530,9 +544,7 @@ def generate_scorecard(
     # Header
     a(f"# 전략 스코어카드: {display_name}")
     a("")
-    a(
-        "> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)"
-    )
+    a("> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)")
     a("")
 
     # 기본 정보

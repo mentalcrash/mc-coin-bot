@@ -14,7 +14,7 @@ import math
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import pandas as pd  # noqa: TC002 — runtime use in _resample_1m_to_tf
+import pandas as pd  # noqa: TC002 — runtime use in resample_1m_to_tf
 from loguru import logger
 
 from src.core.events import BarEvent
@@ -42,7 +42,7 @@ def validate_bar(
     return True
 
 
-def _resample_1m_to_tf(df_1m: pd.DataFrame, freq: str) -> pd.DataFrame:
+def resample_1m_to_tf(df_1m: pd.DataFrame, freq: str) -> pd.DataFrame:
     """1m OHLCV DataFrame을 target TF로 pandas resample.
 
     Args:
@@ -94,6 +94,11 @@ class HistoricalDataFeed:
             self._aggregator: CandleAggregator | None = CandleAggregator(target_timeframe)
         else:
             self._aggregator = None
+
+    @property
+    def data(self) -> MarketDataSet | MultiSymbolData:
+        """원본 데이터 참조."""
+        return self._data
 
     async def start(self, bus: EventBus) -> None:
         """1m bar 재생 + CandleAggregator 집계."""
@@ -156,7 +161,7 @@ class HistoricalDataFeed:
         assert isinstance(self._data, MarketDataSet)
 
         symbol = self._data.symbol
-        df_tf = _resample_1m_to_tf(self._data.ohlcv, self._resample_freq)
+        df_tf = resample_1m_to_tf(self._data.ohlcv, self._resample_freq)
 
         for ts, row in df_tf.iterrows():
             o, h, lo, c, v = (
@@ -198,7 +203,7 @@ class HistoricalDataFeed:
         # 각 심볼을 TF로 resample
         resampled: dict[str, pd.DataFrame] = {}
         for sym in symbols:
-            resampled[sym] = _resample_1m_to_tf(ohlcv_dict[sym], freq)
+            resampled[sym] = resample_1m_to_tf(ohlcv_dict[sym], freq)
 
         # common index 계산
         common_index = resampled[symbols[0]].index

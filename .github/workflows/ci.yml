@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Lint check
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run pyright src/
+
+      - name: Tests
+        run: uv run pytest --cov=src -x
+
+  build:
+    needs: quality
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t mc-coin-bot:${{ github.sha }} .
+
+      - name: Trigger deploy
+        if: ${{ secrets.COOLIFY_WEBHOOK_URL != '' }}
+        run: curl -s -X POST "${{ secrets.COOLIFY_WEBHOOK_URL }}"

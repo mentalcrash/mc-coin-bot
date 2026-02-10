@@ -40,6 +40,8 @@ dependencies = [
     "discord-py>=2.6.0",
     "statsmodels>=0.14.6",
     "scikit-learn>=1.8.0",
+    "prometheus-client>=0.24.1",
+    "matplotlib>=3.10.8",
 ]
 
 [project.scripts]
@@ -76,8 +78,7 @@ research = [
     "numba>=0.59.0",
     "optuna>=3.5.0",
     "jupyterlab>=4.1.0",
-    "matplotlib>=3.8.0",
-    "seaborn>=0.13.0",
+    "seaborn>=0.13.0",  # matplotlib는 메인 의존성으로 이동
     "plotly>=5.18.0",
     "quantstats>=0.0.81",
 ]

@@ -100,7 +100,14 @@ def _collect_detector_probs(
     p_volatile = np.full(n, np.nan)
 
     # Pre-extract numpy arrays per detector
-    det_arrays: list[tuple[npt.NDArray[floating[Any]], npt.NDArray[floating[Any]], npt.NDArray[floating[Any]], float]] = []
+    det_arrays: list[
+        tuple[
+            npt.NDArray[floating[Any]],
+            npt.NDArray[floating[Any]],
+            npt.NDArray[floating[Any]],
+            float,
+        ]
+    ] = []
     for _name, df, weight in detector_dfs:
         det_arrays.append(
             (

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         PositionUpdateEvent,
         RiskAlertEvent,
     )
+    from src.models.backtest import PerformanceMetrics, TradeRecord
 
 # Discord Embed 색상 코드 (decimal)
 _COLOR_GREEN = 0x57F287
@@ -167,5 +168,72 @@ def format_position_embed(event: PositionUpdateEvent) -> dict[str, Any]:
             },
         ],
         "timestamp": event.timestamp.isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_daily_report_embed(
+    metrics: PerformanceMetrics,
+    open_positions: int,
+    total_equity: float,
+    trades_today: list[TradeRecord],
+) -> dict[str, Any]:
+    """Daily report → Discord Embed dict.
+
+    Args:
+        metrics: 현재 성과 지표
+        open_positions: 오픈 포지션 수
+        total_equity: 현재 equity
+        trades_today: 오늘 거래 목록
+
+    Returns:
+        Discord Embed dict
+    """
+    total_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+
+    return {
+        "title": "Daily Report",
+        "color": _COLOR_BLUE,
+        "fields": [
+            {"name": "Today's Trades", "value": str(len(trades_today)), "inline": True},
+            {"name": "Today's PnL", "value": f"${total_pnl:+,.2f}", "inline": True},
+            {"name": "Total Equity", "value": f"${total_equity:,.2f}", "inline": True},
+            {"name": "Max Drawdown", "value": f"{metrics.max_drawdown:.2f}%", "inline": True},
+            {"name": "Open Positions", "value": str(open_positions), "inline": True},
+            {"name": "Sharpe Ratio", "value": f"{metrics.sharpe_ratio:.2f}", "inline": True},
+        ],
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_weekly_report_embed(
+    metrics: PerformanceMetrics,
+    trades_week: list[TradeRecord],
+) -> dict[str, Any]:
+    """Weekly report → Discord Embed dict.
+
+    Args:
+        metrics: 현재 성과 지표
+        trades_week: 이번 주 거래 목록
+
+    Returns:
+        Discord Embed dict
+    """
+    total_pnl = sum(float(t.pnl) for t in trades_week if t.pnl is not None)
+    pnls = [float(t.pnl) for t in trades_week if t.pnl is not None]
+    best = max(pnls) if pnls else 0.0
+    worst = min(pnls) if pnls else 0.0
+
+    return {
+        "title": "Weekly Report",
+        "color": _COLOR_BLUE,
+        "fields": [
+            {"name": "Weekly Trades", "value": str(len(trades_week)), "inline": True},
+            {"name": "Weekly PnL", "value": f"${total_pnl:+,.2f}", "inline": True},
+            {"name": "Sharpe Ratio", "value": f"{metrics.sharpe_ratio:.2f}", "inline": True},
+            {"name": "Max Drawdown", "value": f"{metrics.max_drawdown:.2f}%", "inline": True},
+            {"name": "Best Trade", "value": f"${best:+,.2f}", "inline": True},
+            {"name": "Worst Trade", "value": f"${worst:+,.2f}", "inline": True},
+        ],
         "footer": {"text": _FOOTER_TEXT},
     }

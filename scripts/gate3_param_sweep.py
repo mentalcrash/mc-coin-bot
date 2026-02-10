@@ -245,15 +245,17 @@ def run_one_at_a_time_sweep(
             results.append({"value": value, **metrics, "error": None})
         except Exception as e:
             logger.warning(f"  {param_name}={value}: {e}")
-            results.append({
-                "value": value,
-                "sharpe_ratio": float("nan"),
-                "total_return": float("nan"),
-                "max_drawdown": float("nan"),
-                "cagr": float("nan"),
-                "total_trades": 0,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "value": value,
+                    "sharpe_ratio": float("nan"),
+                    "total_return": float("nan"),
+                    "max_drawdown": float("nan"),
+                    "cagr": float("nan"),
+                    "total_trades": 0,
+                    "error": str(e),
+                }
+            )
 
     return results
 
@@ -294,9 +296,7 @@ def analyze_sweep(
     if isinstance(baseline_value, (int, float)):
         low = baseline_value * 0.8
         high = baseline_value * 1.2
-        pm20_results = [
-            r for r in valid if low <= r["value"] <= high
-        ]
+        pm20_results = [r for r in valid if low <= r["value"] <= high]
         if pm20_results:
             pm20_sharpes = [r["sharpe_ratio"] for r in pm20_results]
             pm20_stable = all(s > 0 for s in pm20_sharpes)
@@ -336,9 +336,7 @@ def analyze_sweep(
     }
 
 
-def print_sweep_table(
-    strategy_name: str, analyses: list[dict[str, Any]]
-) -> None:
+def print_sweep_table(strategy_name: str, analyses: list[dict[str, Any]]) -> None:
     """스윕 결과 콘솔 출력."""
     table = Table(title=f"Gate 3: {strategy_name}")
     table.add_column("Param", style="cyan")
@@ -383,9 +381,7 @@ def print_sweep_table(
     console.print(table)
 
 
-def print_detail_table(
-    param_name: str, results: list[dict[str, Any]], baseline_value: Any
-) -> None:
+def print_detail_table(param_name: str, results: list[dict[str, Any]], baseline_value: Any) -> None:
     """파라미터별 상세 Sharpe 테이블."""
     table = Table(title=f"  {param_name} Sweep Detail", show_lines=False)
     table.add_column("Value", justify="right")
@@ -428,8 +424,7 @@ def main() -> None:
     # CLI 인수로 특정 전략만 실행 가능
     filter_strategies = sys.argv[1:] if len(sys.argv) > 1 else None
     strategies_to_run = {
-        k: v for k, v in STRATEGIES.items()
-        if filter_strategies is None or k in filter_strategies
+        k: v for k, v in STRATEGIES.items() if filter_strategies is None or k in filter_strategies
     }
     if not strategies_to_run:
         console.print(f"[red]No matching strategies. Available: {list(STRATEGIES.keys())}[/]")
@@ -505,13 +500,15 @@ def main() -> None:
             console.print(f"  Failed params: {', '.join(fail_params)}")
         console.print()
 
-        summary.append({
-            "strategy": strategy_name,
-            "best_asset": config["best_asset"],
-            "verdict": overall,
-            "fail_params": fail_params,
-            "param_verdicts": {a["param"]: a["verdict"] for a in analyses},
-        })
+        summary.append(
+            {
+                "strategy": strategy_name,
+                "best_asset": config["best_asset"],
+                "verdict": overall,
+                "fail_params": fail_params,
+                "param_verdicts": {a["param"]: a["verdict"] for a in analyses},
+            }
+        )
 
     elapsed = time.perf_counter() - t0
 
@@ -558,9 +555,7 @@ def main() -> None:
         "summary": summary,
         "details": all_results,
     }
-    output_path.write_text(
-        json.dumps(output, indent=2, default=json_default), encoding="utf-8"
-    )
+    output_path.write_text(json.dumps(output, indent=2, default=json_default), encoding="utf-8")
     logger.info(f"Results saved to {output_path}")
 
 

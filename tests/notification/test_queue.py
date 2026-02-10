@@ -61,7 +61,7 @@ class TestNotificationQueue:
         await queue.stop()
         await worker
 
-        sender.send_embed.assert_called_once_with(ChannelRoute.TRADE_LOG, item.embed)
+        sender.send_embed.assert_called_once_with(ChannelRoute.TRADE_LOG, item.embed, ())
 
     async def test_spam_key_throttled(self) -> None:
         sender = AsyncMock()
@@ -116,9 +116,7 @@ class TestNotificationQueue:
     async def test_retry_on_failure(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(side_effect=[False, False, True])
-        queue = NotificationQueue(
-            sender, max_retries=3, queue_size=10, base_backoff=_FAST_BACKOFF
-        )
+        queue = NotificationQueue(sender, max_retries=3, queue_size=10, base_backoff=_FAST_BACKOFF)
 
         await queue.enqueue(_make_item())
 
@@ -132,9 +130,7 @@ class TestNotificationQueue:
     async def test_retry_exhausted(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=False)
-        queue = NotificationQueue(
-            sender, max_retries=2, queue_size=10, base_backoff=_FAST_BACKOFF
-        )
+        queue = NotificationQueue(sender, max_retries=2, queue_size=10, base_backoff=_FAST_BACKOFF)
 
         await queue.enqueue(_make_item())
 

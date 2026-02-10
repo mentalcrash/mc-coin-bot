@@ -52,7 +52,10 @@ RUN mkdir -p /app/data /app/logs && chown -R bot:bot /app/data /app/logs
 # PATH에 .venv 추가
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    MPLBACKEND=agg
+
+EXPOSE 8000
 
 USER bot
 

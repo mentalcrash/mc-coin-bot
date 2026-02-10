@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 35개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
+> 39개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,30 +36,28 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (35개)
+## 현재 전략 현황 (39개)
 
-### 활성 전략 (1개, Gate 4 완료)
+### 활성 전략 (1개, Gate 5 완료)
 
-| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | 비고 |
-|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|------|
-| [**CTREND**](scorecard/ctrend.md) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | P | P | P | **F** | PBO 60% > 40% |
+| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | G5 | 비고 |
+|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|:--:|------|
+| [**CTREND**](scorecard/ctrend.md) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | P | P | P | **F** | P | PBO 60% > 40% |
 
-> WFA PASS (OOS Sharpe 1.49, Decay 39%), MC p=0.000 PASS.
-> PBO 60%로 G4 FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79).
-> **다음 단계**: EDA Parity + Paper Trading에서 실시간 검증 권고.
+> G5 EDA Parity PASS: EDA Sharpe 2.82 vs VBT 2.05, 수익 부호 일치.
+> G4 PBO 60% FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79). MC p=0.000 PASS.
+> **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-### 검증중 전략 (4개, G0B PASS → G1 대기)
+### 검증중 전략 (3개, G0A PASS → G0B 대기)
 
-| 전략 | 유형 | G0A | G0B | G1 | 다음 단계 |
-|------|------|:---:|:---:|:--:|----------|
-| [**AC-Regime**](../scorecard/ac-regime.md) | 레짐전환 | 27/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
-| [**Range-Squeeze**](../scorecard/range-squeeze.md) | 변동성/돌파 | 24/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
-| [**VR-Regime**](../scorecard/vr-regime.md) | 레짐전환 | 24/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
-| [**VPIN-Flow**](../scorecard/vpin-flow.md) | 마이크로스트럭처 | 22/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
+| 전략 | 유형 | TF | G0A | G0B | 다음 단계 |
+|------|------|-----|:---:|:---:|----------|
+| [**Entropy-Switch**](../scorecard/entropy-switch.md) | 정보이론 | 4H | 26/30 | — | G0B 코드 감사 |
+| [**Kalman-Trend**](../scorecard/kalman-trend.md) | 통계필터링 | 4H | 24/30 | — | G0B 코드 감사 |
+| [**VWAP-Disposition**](../scorecard/vwap-disposition.md) | 행동재무학 | 4H | 23/30 | — | G0B 코드 감사 |
 
-> G0B 감사 완료 (2026-02-10). 4개 전략 모두 Critical 0개. HIGH 이슈 전수 수정 완료.
-> 수정 내역: AC formula (sqrt 분모), NR detection (isclose), warmup periods (chained rolling), drawdown shift(1) (전 전략), heteroscedastic 주석 정정.
-> **다음 단계**: G1 단일에셋 백테스트 (5코인 x 6년).
+> 3개 전략 신규 구현 완료 (2026-02-10). 모두 4H 타임프레임, 기존 전략과 겹치지 않는 새 카테고리.
+> **다음 단계**: G0B 코드 감사 (`/verify-strategy`).
 
 ### PENDING 전략 (2개, 데이터 부재)
 
@@ -68,7 +66,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [**Funding Carry**](scorecard/funding-carry.md) | 25/30 | `funding_rate` 데이터 수집 필요 |
 | [**Copula Pairs**](scorecard/copula-pairs.md) | 20/30 | `pair_close` 데이터 구성 필요 |
 
-### 폐기 전략 (28개)
+### 폐기 전략 (33개)
 
 #### Gate 4 실패 — WFA 심층검증
 
@@ -103,6 +101,15 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [Donchian Ensemble](scorecard/fail/donchian-ensemble.md) | 0.99 | +10.8% | CAGR < 20% |
 | [BB-RSI](scorecard/fail/bb-rsi.md) | 0.59 | +4.6% | CAGR < 20% |
 
+#### Gate 1 실패 — 전 에셋 Sharpe 음수/0 근접
+
+| 전략 | Sharpe | CAGR | 사유 |
+|------|--------|------|------|
+| [Range-Squeeze](scorecard/fail/range-squeeze.md) | 0.33 | +3.8% | 전 에셋 Sharpe < 1.0, 3/5 에셋 음수, squeeze-breakout edge 부재 |
+| [AC-Regime](scorecard/fail/ac-regime.md) | 0.08 | +0.3% | 4/5 에셋 Sharpe 음수, AC 시그널 무효 |
+| [VR-Regime](scorecard/fail/vr-regime.md) | 0.17 | +0.8% | 전 에셋 Sharpe < 1.0, 극소 거래 (2~30건), significance_z 과도 → 시그널 부재 |
+| [VPIN-Flow](scorecard/fail/vpin-flow.md) | 0.00 | 0.0% | 전 에셋 거래 0건, VPIN threshold 0.7이 1D 데이터에서 도달 불가 (max 0.45) |
+
 #### Gate 1 실패 — 구조적 결함 / 코드 삭제
 
 | 전략 | Sharpe | 사유 |
@@ -127,3 +134,4 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | 4 | **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 (Donchian +10.8%, BB-RSI +4.6%) 조기 제거 |
 | 5 | **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증이 합리적 다음 단계 |
 | 6 | **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블 |
+| 7 | **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수. 1D OHLCV에서 BVC 근사는 정보 손실 심각 |

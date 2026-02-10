@@ -32,10 +32,12 @@ import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
 import src.strategy.donchian_ensemble  # 전략 등록 side effect
 import src.strategy.enhanced_tsmom  # 전략 등록 side effect
+import src.strategy.entropy_switch  # 전략 등록 side effect
 import src.strategy.funding_carry  # 전략 등록 side effect
 import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
+import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
@@ -52,6 +54,7 @@ import src.strategy.vol_structure  # 전략 등록 side effect
 import src.strategy.vpin_flow  # 전략 등록 side effect
 import src.strategy.vr_regime  # 전략 등록 side effect
 import src.strategy.vw_tsmom  # 전략 등록 side effect
+import src.strategy.vwap_disposition  # 전략 등록 side effect
 import src.strategy.xsmom  # 전략 등록 side effect
 from src.strategy.base import BaseStrategy
 from src.strategy.registry import (

@@ -389,6 +389,9 @@ def launch_live(
     )
 
     async def _run() -> None:
+        from src.config.settings import get_deployment_config
+
+        deploy_cfg = get_deployment_config()
         async with BinanceClient() as client:
             factory = LiveRunner.shadow if live_mode == LiveMode.SHADOW else LiveRunner.paper
             runner = factory(
@@ -401,6 +404,7 @@ def launch_live(
                 asset_weights=asset_weights,
                 db_path=db_path,
                 discord_config=discord_config,
+                metrics_port=deploy_cfg.metrics_port,
             )
             await runner.run()
 

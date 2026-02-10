@@ -244,6 +244,11 @@ class DeploymentConfig(BaseSettings):
         default=True,
         description="상태 영속화 on/off",
     )
+    metrics_port: int = Field(
+        default=8000,
+        ge=0,
+        description="Prometheus metrics 포트 (0=비활성)",
+    )
 
     @field_validator("execution_mode")
     @classmethod

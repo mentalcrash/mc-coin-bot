@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Protocol
 from loguru import logger
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from src.notification.models import ChannelRoute, NotificationItem
 
 # 큐 기본 크기
@@ -32,7 +34,12 @@ _BASE_BACKOFF = 1.0
 class NotificationSender(Protocol):
     """알림 전송 프로토콜 (DiscordBotService가 구현)."""
 
-    async def send_embed(self, channel: ChannelRoute, embed_dict: dict[str, object]) -> bool: ...
+    async def send_embed(
+        self,
+        channel: ChannelRoute,
+        embed_dict: dict[str, object],
+        files: Sequence[tuple[str, bytes]] = (),
+    ) -> bool: ...
 
 
 class SpamGuard:
@@ -141,7 +148,7 @@ class NotificationQueue:
         """
         for attempt in range(self._max_retries):
             try:
-                success = await self._sender.send_embed(item.channel, item.embed)
+                success = await self._sender.send_embed(item.channel, item.embed, item.files)
                 if success:
                     return
                 logger.warning(

@@ -74,6 +74,24 @@ class TestDiscordBotService:
         assert result is True
         mock_channel.send.assert_called_once()
 
+    async def test_send_embed_with_files(self) -> None:
+        config = _make_config()
+        bot = DiscordBotService(config)
+
+        mock_channel = AsyncMock()
+        bot._channels[ChannelRoute.DAILY_REPORT] = mock_channel
+
+        files = [("chart.png", b"\x89PNG_fake_data")]
+        result = await bot.send_embed(
+            ChannelRoute.DAILY_REPORT,
+            {"title": "Report", "type": "rich"},
+            files=files,
+        )
+        assert result is True
+        call_kwargs = mock_channel.send.call_args.kwargs
+        assert "files" in call_kwargs
+        assert len(call_kwargs["files"]) == 1
+
     async def test_close_idempotent(self) -> None:
         config = _make_config()
         bot = DiscordBotService(config)
@@ -120,9 +138,7 @@ class TestSlashCommandHandlers:
         rm.current_drawdown = 3.5
         rm.is_circuit_breaker_active = False
 
-        ctx = TradingContext(
-            pm=pm, rm=rm, analytics=MagicMock(), runner_shutdown=MagicMock()
-        )
+        ctx = TradingContext(pm=pm, rm=rm, analytics=MagicMock(), runner_shutdown=MagicMock())
         bot.set_trading_context(ctx)
         return bot
 
@@ -136,9 +152,7 @@ class TestSlashCommandHandlers:
         call_kwargs = interaction.response.send_message.call_args
         assert "not available" in str(call_kwargs)
 
-    async def test_handle_status_with_context(
-        self, bot_with_context: DiscordBotService
-    ) -> None:
+    async def test_handle_status_with_context(self, bot_with_context: DiscordBotService) -> None:
         interaction = AsyncMock()
         await bot_with_context._handle_status(interaction)
         interaction.response.send_message.assert_called_once()
@@ -146,18 +160,14 @@ class TestSlashCommandHandlers:
         call_kwargs = interaction.response.send_message.call_args
         assert "embed" in call_kwargs.kwargs
 
-    async def test_handle_balance(
-        self, bot_with_context: DiscordBotService
-    ) -> None:
+    async def test_handle_balance(self, bot_with_context: DiscordBotService) -> None:
         interaction = AsyncMock()
         await bot_with_context._handle_balance(interaction)
         interaction.response.send_message.assert_called_once()
         call_kwargs = interaction.response.send_message.call_args
         assert "embed" in call_kwargs.kwargs
 
-    async def test_handle_kill(
-        self, bot_with_context: DiscordBotService
-    ) -> None:
+    async def test_handle_kill(self, bot_with_context: DiscordBotService) -> None:
         interaction = AsyncMock()
         await bot_with_context._handle_kill(interaction)
         interaction.response.send_message.assert_called_once()

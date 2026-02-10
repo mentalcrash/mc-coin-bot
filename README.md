@@ -32,7 +32,11 @@ WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
 | Backtesting | VectorBT + Numba |
 | EDA Backtesting | EventBus + CandleAggregator |
 | Data | Parquet (Medallion Architecture) |
+| Monitoring | Prometheus + Grafana |
+| Notification | Discord.py (Bot + Slash Commands) |
+| Charts | matplotlib (Agg headless) |
 | Logging | Loguru |
+| CI/CD | GitHub Actions + Coolify |
 
 ---
 
@@ -205,19 +209,46 @@ uv run python scripts/bulk_backtest.py
 uv run python scripts/generate_scorecards.py
 ```
 
-### 배포 (DigitalOcean + Coolify)
+### 배포 (Docker Compose + Coolify)
+
+3개 서비스(트레이딩 봇, Prometheus, Grafana)를 `docker-compose.yml`로 한 번에 실행합니다.
+
+#### 서비스 구성
+
+| 서비스 | 이미지 | 포트 | 설명 |
+|--------|--------|------|------|
+| `mc-bot` | 로컬 빌드 | `8000` | 트레이딩 봇 + Prometheus metrics endpoint (`/metrics`) |
+| `prometheus` | `prom/prometheus:v2.54.0` | `9090` | 메트릭 수집 + 저장 (10초 간격 스크래핑) |
+| `grafana` | `grafana/grafana:11.4.0` | `3000` | 대시보드 시각화 (자동 프로비저닝) |
+
+#### 실행
+
+```bash
+# 전체 스택 실행 (빌드 포함)
+docker compose up --build -d
+
+# 로그 확인
+docker compose logs -f mc-bot
+
+# 중지
+docker compose down
+```
+
+#### 개별 Docker 실행 (모니터링 없이)
 
 ```bash
 # Docker 빌드 (multi-stage, uv 기반)
 docker build -t mc-coin-bot:latest .
 
-# 로컬 실행 (환경 변수로 모드 제어)
+# 단독 실행
 docker run --env-file .env \
   -e MC_EXECUTION_MODE=paper \
   -e MC_CONFIG_PATH=config/paper.yaml \
   -e MC_INITIAL_CAPITAL=10000 \
   mc-coin-bot:latest
 ```
+
+#### 환경 변수
 
 DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실행 모드를 제어합니다.
 
@@ -228,6 +259,28 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 (USD) |
 | `MC_DB_PATH` | `data/trading.db` | SQLite 경로 |
 | `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
+| `MC_METRICS_PORT` | `8000` | Prometheus metrics 포트 (`0`이면 비활성) |
+| `GRAFANA_PASSWORD` | `admin` | Grafana 관리자 비밀번호 |
+
+#### 모니터링
+
+**Prometheus** (`http://localhost:9090`)
+- `mcbot_equity_usdt` — 현재 자산 (USD)
+- `mcbot_drawdown_pct` — 현재 drawdown (%)
+- `mcbot_fills_total` — 체결 수 (symbol, side별)
+- `mcbot_open_positions` — 오픈 포지션 수
+- `mcbot_uptime_seconds` — 봇 가동 시간
+
+**Grafana** (`http://localhost:3000`, 초기 비밀번호: `admin`)
+- `monitoring/grafana/dashboards/trading.json`에 프로비저닝된 10-패널 대시보드 포함
+- Equity curve, Drawdown gauge, Position sizes, Fills rate 등 실시간 모니터링
+- Grafana Alert Rules로 Discord webhook 알림 설정 가능 (MDD > 15%, Bot down 등)
+
+**Discord 알림**
+- 체결, Circuit Breaker, 리스크 알림을 실시간으로 Discord 채널에 전송
+- `/status`, `/kill`, `/balance` Slash Commands 지원
+- Daily Report (매일 00:00 UTC): equity curve 차트 + 당일 요약
+- Weekly Report (매주 월요일 00:00 UTC): drawdown, 월간 히트맵, PnL 분포 차트 포함
 
 ---
 

@@ -18,7 +18,7 @@ from loguru import logger
 from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType
 from src.eda.analytics import AnalyticsEngine
-from src.eda.data_feed import HistoricalDataFeed
+from src.eda.data_feed import HistoricalDataFeed, resample_1m_to_tf
 from src.eda.executors import BacktestExecutor, ShadowExecutor
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
@@ -177,15 +177,14 @@ class EDARunner:
         feed = self._feed
         executor = self._executor
 
-        # fast_mode: incremental + max_buffer_size 활성화
+        # fast_mode: signal pre-computation (전체 데이터로 한번에 시그널 계산)
         strategy_engine_kwargs: dict[str, object] = {
             "target_timeframe": self._target_timeframe,
         }
         if self._fast_mode:
-            strategy_engine_kwargs["incremental"] = True
-            # warmup_periods + 50 여유분
-            warmup = self._detect_strategy_warmup()
-            strategy_engine_kwargs["max_buffer_size"] = warmup + 50
+            precomputed = self._precompute_signals()
+            if precomputed:
+                strategy_engine_kwargs["precomputed_signals"] = precomputed
 
         strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
@@ -252,21 +251,41 @@ class EDARunner:
 
         return metrics
 
-    def _detect_strategy_warmup(self) -> int:
-        """전략의 warmup 기간 감지."""
-        warmup_fn = getattr(self._strategy, "warmup_periods", None)
-        if warmup_fn is not None and callable(warmup_fn):
-            result = warmup_fn()
-            if isinstance(result, int):
-                return result
-        config = self._strategy.config
-        if config is not None:
-            config_dict = config.model_dump()
-            lookback = config_dict.get("lookback", 0)
-            vol_window = config_dict.get("vol_window", 0)
-            if lookback > 0:
-                return int(max(lookback, vol_window) + 10)
-        return 50
+    def _precompute_signals(self) -> dict[str, object] | None:
+        """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.
+
+        forward_return 등 미래 참조 feature를 사용하는 전략(CTREND)에서
+        bar-by-bar 증분 실행 시 발생하는 edge effect를 방지합니다.
+        VBT와 동일하게 전체 데이터셋에서 한번에 시그널을 계산합니다.
+
+        Returns:
+            {symbol: StrategySignals} 또는 실패 시 None
+        """
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+        result: dict[str, object] = {}
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            _, signals = self._strategy.run(df_tf)
+            result[data.symbol] = signals
+            logger.info("Pre-computed signals for {} ({} bars)", data.symbol, len(df_tf))
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                _, signals = self._strategy.run(df_tf)
+                result[sym] = signals
+                logger.info("Pre-computed signals for {} ({} bars)", sym, len(df_tf))
+
+        return result if result else None
 
     @property
     def analytics(self) -> AnalyticsEngine | None:

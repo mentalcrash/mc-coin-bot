@@ -40,6 +40,7 @@ class NotificationItem(BaseModel):
         channel: 전송 대상 채널
         embed: Discord Embed dict
         spam_key: SpamGuard 키 (None이면 항상 전송)
+        files: 첨부 파일 목록 ((filename, data) 튜플)
     """
 
     model_config = ConfigDict(frozen=True)
@@ -48,3 +49,4 @@ class NotificationItem(BaseModel):
     channel: ChannelRoute
     embed: dict[str, Any]
     spam_key: str | None = None
+    files: tuple[tuple[str, bytes], ...] = ()
