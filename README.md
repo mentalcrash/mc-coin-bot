@@ -87,45 +87,18 @@ portfolio:
 
 ## 전략 평가 체계
 
-전략은 Gate 0 → Gate 7 순서로 평가되며, 각 단계를 통과해야 다음 단계로 진행합니다.
-상세 기준은 [전략 평가 표준](docs/strategy-evaluation-standard.md), 개별 결과는 [스코어카드](docs/scorecard/)를 참조하세요.
+전략은 Gate 0(아이디어) → Gate 7(실전 배포) 순서로 평가됩니다.
+상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md)을 참조하세요.
 
-### Gate 0: Idea Viability (아이디어 검증)
-
-구현 전 6가지 기준으로 아이디어를 평가합니다 (각 1~5점, 총 30점).
-
-| 기준 | 설명 |
-|------|------|
-| Economic Rationale | 경제적 논거 강도 (왜 alpha가 존재하는가?) |
-| Novelty | 기존 전략 대비 참신성 |
-| Data Availability | 필요한 데이터 확보 용이성 |
-| Complexity | 구현 복잡도 (낮을수록 좋음) |
-| Capacity | 운용 수용량 (슬리피지, 유동성) |
-| Regime Dependency | 레짐 의존성 (낮을수록 좋음) |
-
-> **18/30점 이상**: PASS (구현 진행)
-
-### Gate 1: Single-Asset Backtest (단일에셋 백테스트)
-
-5개 자산(BTC, ETH, BNB, SOL, DOGE) x 6년(2020-2025) 백테스트 후 Best Asset 기준 판정.
-
-| 판정 | 기준 |
-|------|------|
-| **PASS** | Sharpe > 1.0 + CAGR > 20% + MDD < 40% + 거래 50건 이상 |
-| **WATCH** | 0.5 <= Sharpe <= 1.0, 또는 25% <= MDD <= 40% |
-| **FAIL** | 총수익 음수 + 거래 20건 미만, 또는 MDD > 50% |
-
-> PASS 전략은 멀티에셋 포트폴리오 편입 후보. FAIL 전략은 코드 삭제.
-
-### 이후 검증 단계
-
-| Gate | 검증 내용 | CLI |
-|------|----------|-----|
-| Gate 2 | IS/OOS Split (70/30) | `validate -m quick` |
-| Gate 3 | Walk-Forward Analysis (5-fold) | `validate -m milestone` |
-| Gate 4 | CPCV + DSR + PBO | `validate -m final` |
-| Gate 5 | EDA Parity (VBT vs EDA 수익 부호 일치) | `eda run` |
-| Gate 6 | Paper Trading | - |
+| Gate | 검증 | 핵심 기준 | CLI |
+|:----:|------|----------|-----|
+| 0 | 아이디어 | >= 18/30점 | — |
+| 1 | 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40% | `run {config}` |
+| 2 | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |
+| 3 | 파라미터 안정성 | 고원 존재, ±20% 안정 | `sweep {config}` |
+| 4 | WFA + CPCV + PBO | WFA OOS >= 0.5, PBO < 40% | `validate -m milestone/final` |
+| 5 | EDA Parity | VBT vs EDA 수익 부호 일치 | `eda run` |
+| 6 | Paper Trading (2주+) | 시그널 일치 > 90% | `eda run-live` |
 
 ---
 
@@ -258,105 +231,11 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ---
 
-## 전략 스코어카드 (Gate 0-4 평가)
+## 전략 현황
 
-1개 활성 전략 (G4 FAIL, 재평가 중) + 2개 PENDING (데이터 부재) + 28개 폐기 전략.
+31개 전략 평가 완료: 1개 활성 (CTREND) + 2개 PENDING + 28개 폐기.
+상세 현황과 폐기 전략 목록은 **[전략 상황판](docs/strategy/dashboard.md)** 참조.
 
-### 활성 전략 (Gate 4 완료)
-
-| # | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | 스코어카드 |
-|---|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|-----------|
-| 1 | **CTREND** (`ctrend`) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | **P** | **P** | **P** | **F** | [scorecard](docs/scorecard/ctrend.md) |
-
-> **CTREND**: G4 심층검증 결과 — WFA PASS (OOS Sharpe 1.49, Decay 39%, Consistency 67%), MC p-value 0.000 PASS.
-> 단, **PBO 60% > 40%로 FAIL** (IS/OOS 순위 역전 경향). 전 CPCV fold OOS Sharpe 양수 (0.49~2.79).
-> 전략 폐기보다는 EDA Parity + Paper Trading에서 실시간 검증 권고.
-
-### PENDING 전략 (데이터 부재)
-
-| # | 전략 | G0 점수 | 차단 사유 | 스코어카드 |
-|---|------|---------|----------|-----------|
-| 5 | **Funding Carry** (`funding-carry`) | 25/30 | `funding_rate` 데이터 수집 필요 | [scorecard](docs/scorecard/funding-carry.md) |
-| 6 | **Copula Pairs** (`copula-pairs`) | 20/30 | `pair_close` 데이터 구성 필요 | [scorecard](docs/scorecard/copula-pairs.md) |
-
-### 폐기된 전략 (Deprecated)
-
-아래 전략은 Gate 평가에서 구조적 문제 또는 성과 부족으로 폐기 처리되었습니다.
-동일 아이디어의 재구현을 방지하기 위해 실패 사유를 기록합니다.
-
-#### Gate 1 실패 (구조적 결함)
-
-| 전략 | Sharpe | CAGR | MDD | 폐기 사유 | 스코어카드 |
-|------|--------|------|-----|----------|-----------|
-| HAR Vol | -0.23 | -12.1% | -78.4% | 전 에셋 Sharpe 음수, MDD 78~97%, 과다 거래(1200+) | [scorecard](docs/scorecard/fail/har-vol.md) |
-
-#### Gate 1 실패 (CAGR 미달)
-
-| 전략 | Sharpe | CAGR | MDD | 폐기 사유 | 스코어카드 |
-|------|--------|------|-----|----------|-----------|
-| Donchian Ensemble | 0.99 | +10.8% | -9.7% | CAGR +10.8% < 20% 최소 기준 | [scorecard](docs/scorecard/fail/donchian-ensemble.md) |
-| BB-RSI | 0.59 | +4.6% | -14.0% | CAGR +4.6% < 20% 최소 기준 | [scorecard](docs/scorecard/fail/bb-rsi.md) |
-
-#### Gate 4 실패 (WFA 심층검증)
-
-| 전략 | Sharpe | WFA OOS | WFA Decay | 폐기 사유 | 스코어카드 |
-|------|--------|---------|-----------|----------|-----------|
-| KAMA | 1.14 | 0.56 | 56.3% | WFA Decay 56% (>40%), Fold 2 OOS -0.06 (최근 기간 성과 급락) | [scorecard](docs/scorecard/fail/kama.md) |
-| MAX-MIN | 0.82 | 0.47 | 38.4% | WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34 (최근 기간 음수 전환) | [scorecard](docs/scorecard/fail/max-min.md) |
-
-#### Gate 3 실패 (파라미터 불안정)
-
-| 전략 | Sharpe | 폐기 사유 | 스코어카드 |
-|------|--------|----------|-----------|
-| TTM Squeeze | 0.94 | bb_period, kc_mult 고원 부재 — bb_period ±2에서 Sharpe 급락, kc_mult 1.0에서 거래 0건 | [scorecard](docs/scorecard/fail/ttm-squeeze.md) |
-
-#### Gate 2 실패 (IS/OOS 과적합)
-
-| 전략 | Sharpe | OOS Sharpe | Decay | 폐기 사유 | 스코어카드 |
-|------|--------|-----------|-------|----------|-----------|
-| XSMOM | 1.34 | 0.30 | 76.6% | OOS Sharpe borderline, Decay 76.6% (IS 성과 3/4 소멸) | [scorecard](docs/scorecard/fail/xsmom.md) |
-| Multi-Factor | 1.22 | 0.17 | 83.3% | OOS Sharpe 0.17 < 0.3, Decay 83.3%, Overfit Prob 90% | [scorecard](docs/scorecard/fail/multi-factor.md) |
-| VW-TSMOM | 0.91 | 0.12 | 92.1% | OOS Sharpe 0.12, Decay 92.1%, Overfit Prob 95.3% | [scorecard](docs/scorecard/fail/vw-tsmom.md) |
-| Vol Regime | 1.41 | 0.37 | 77.3% | IS 고성과가 OOS에서 유지 안됨 (Decay 77%) | [scorecard](docs/scorecard/fail/vol-regime.md) |
-| TSMOM | 1.33 | 0.19 | 87.2% | OOS Sharpe 0.19, Decay 87% (WFA/CPCV는 PASS) | [scorecard](docs/scorecard/fail/tsmom.md) |
-| Enhanced VW-TSMOM | 1.22 | 0.25 | 85.2% | OOS Sharpe 0.25, Decay 85% | [scorecard](docs/scorecard/fail/enhanced-tsmom.md) |
-| Vol Structure | 1.18 | 0.59 | 57.2% | OOS Sharpe 양호하나 Decay 57% | [scorecard](docs/scorecard/fail/vol-structure.md) |
-| Vol-Adaptive | 1.08 | -0.97 | 155.9% | OOS Sharpe 음수, 완전 과적합 | [scorecard](docs/scorecard/fail/vol-adaptive.md) |
-| Donchian Channel | 1.01 | 0.12 | 91.1% | OOS Sharpe 0.12, OOS Return -0.6% | [scorecard](docs/scorecard/fail/donchian.md) |
-| ADX Regime | 0.94 | -0.68 | 146.3% | OOS Sharpe 음수, OOS Return -26.8% | [scorecard](docs/scorecard/fail/adx-regime.md) |
-| Stochastic Momentum | 0.94 | -0.34 | 124.9% | OOS Sharpe 음수, 포트폴리오 분산 효과 부재 | [scorecard](docs/scorecard/fail/stoch-mom.md) |
-| GK Breakout | 0.77 | 0.39 | 59.0% | Decay 59%, OOS Sharpe borderline | [scorecard](docs/scorecard/fail/gk-breakout.md) |
-| MTF-MACD | 0.76 | 0.21 | 78.1% | OOS Sharpe 0.21, 신호 빈도 부족 | [scorecard](docs/scorecard/fail/mtf-macd.md) |
-| HMM Regime | 0.75 | -0.66 | 162.9% | OOS Sharpe 음수, HMM 수렴 불안정 | [scorecard](docs/scorecard/fail/hmm-regime.md) |
-| Adaptive Breakout | 0.54 | -0.68 | 201.1% | OOS Sharpe 음수, Decay 201% (최악) | [scorecard](docs/scorecard/fail/adaptive-breakout.md) |
-| Mom-MR Blend | 0.48 | -0.10 | 109.1% | OOS Sharpe 음수, Mom+MR alpha 상쇄 | [scorecard](docs/scorecard/fail/mom-mr-blend.md) |
-
-#### Gate 1 실패 (코드 삭제)
-
-| 전략 | Sharpe | 폐기 사유 | 스코어카드 |
-|------|--------|----------|-----------|
-| Larry VB | 0.15 | 1-bar hold 비용 구조적 문제 (연 125건 x 0.1% = 12.5% drag) | [scorecard](docs/scorecard/fail/larry-vb.md) |
-| Overnight | 0.00 | 1H TF 데이터 부족 + 계절성 불안정 | [scorecard](docs/scorecard/fail/overnight.md) |
-| Z-Score MR | -0.02 | 단일 z-score 평균회귀, 낮은 Sharpe | [scorecard](docs/scorecard/fail/zscore-mr.md) |
-| RSI Crossover | -0.16 | RSI 단순 크로스오버, 통계적 무의미 | [scorecard](docs/scorecard/fail/rsi-crossover.md) |
-| Hurst/ER Regime | 0.24 | Hurst exponent 추정 노이즈, 실용성 부족 | [scorecard](docs/scorecard/fail/hurst-regime.md) |
-| Risk Momentum | 0.77 | TSMOM과 높은 상관, 차별화 부족 | [scorecard](docs/scorecard/fail/risk-mom.md) |
-
-> **교훈 (1세대)**: 24개 전략 중 Gate 4까지 통과한 전략은 4개였으나, CAGR > 20% 기준 추가로 전원 폐기.
-> 안정적이지만 절대 수익이 낮은 전략(Donchian Ensemble CAGR +10.8%, BB-RSI +4.6%)은 운용 효율 부족.
->
-> **교훈 (2세대 Gate 1)**: 7개 신규 전략 중 **CTREND가 압도적** (SOL Sharpe 2.05, CAGR +97.8%).
-> ML 앙상블(CTREND)과 횡단면 모멘텀(XSMOM)이 PASS — 단일 지표 전략 대비 앙상블/팩터 결합이 우위.
-> **SOL/USDT가 전 전략 Best Asset** — 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리.
-> HAR Vol은 전 에셋 Sharpe 음수로 즉시 폐기 — 변동성 예측 오차 단독은 alpha 부재.
->
-> **교훈 (2세대 Gate 2)**: 4개 G1 통과 전략 중 **CTREND만 G2 PASS** (OOS Sharpe 1.78, Decay 33.7%).
-> XSMOM/Multi-Factor/VW-TSMOM은 Decay 76~92%로 전원 과적합 판정.
-> **IS Sharpe가 높아도 OOS에서 재현되지 않으면 무의미** — G1 PASS가 실전 성과를 보장하지 않음.
-> CTREND의 낮은 Decay(33.7%)는 ML 앙상블의 일반화 능력이 단일 팩터 전략보다 우수함을 시사.
->
-> **교훈 (Gate 4 심층검증)**: CTREND WFA PASS이나 **PBO 60%로 FAIL**.
-> 10개 CPCV fold 모두 OOS Sharpe 양수(0.49~2.79)이므로 전략 자체는 수익성 유지.
-> 그러나 IS 고성과 fold가 OOS에서 저성과 경향 — **파라미터 고정 전략도 시계열 분할에 따라 순위가 불안정**.
-> DSR은 n_trials에 극도로 민감 (n=7 → 1.0, n=31 → 0.16) — 다중 테스트 보정 범위 설정이 핵심.
-> **PBO FAIL ≠ 폐기**: 전 fold 양수 + MC p=0.000이므로 EDA/Paper에서 실시간 검증이 합리적 다음 단계.
+| 전략 | Best Asset | Sharpe | CAGR | G0 | G1 | G2 | G3 | G4 | 상태 |
+|------|-----------|--------|------|:--:|:--:|:--:|:--:|:--:|------|
+| **CTREND** | SOL/USDT | 2.05 | +97.8% | P | P | P | P | F | PBO 60%, EDA/Paper 검증 권고 |
