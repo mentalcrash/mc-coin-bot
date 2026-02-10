@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 # 2) 소스 레이어
+COPY README.md ./
 COPY src/ src/
 COPY main.py ./
 RUN --mount=type=cache,target=/root/.cache/uv \
