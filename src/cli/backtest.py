@@ -4,7 +4,7 @@
 Strategy Registry Pattern을 사용하여 전략 독립적으로 설계되었습니다.
 
 Commands:
-    - run: 단일 백테스트 실행
+    - run: 백테스트 실행 (단일/멀티에셋 자동 판별)
     - optimize: 파라미터 최적화 실행
     - strategies: 사용 가능한 전략 목록
     - info: 전략 정보 출력
@@ -49,8 +49,83 @@ console = Console()
 HIT_RATE_GOOD = 55
 HIT_RATE_AVERAGE = 50
 
+# Multi-Asset Display
+MAX_SYMBOLS_DISPLAY = 4
+
 # Breakout Diagnosis Thresholds
 BREAKOUT_LOW_EXPOSURE_THRESHOLD = 0.95
+
+
+def _print_multi_startup_panel(
+    strategy_name: str,
+    symbol_list: list[str],
+    years: list[int],
+    capital: float,
+) -> None:
+    """멀티에셋 백테스트 시작 정보 패널 출력."""
+    n_assets = len(symbol_list)
+    symbols_display = ", ".join(symbol_list[:MAX_SYMBOLS_DISPLAY])
+    if n_assets > MAX_SYMBOLS_DISPLAY:
+        symbols_display += "..."
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]{strategy_name} Multi-Asset Backtest[/bold]\n"
+                f"Assets: {n_assets} ({symbols_display})\n"
+                f"Years: {', '.join(map(str, years))}\n"
+                f"Capital: ${capital:,.0f}\n"
+                f"Weighting: Equal Weight (1/{n_assets})"
+            ),
+            border_style="blue",
+        )
+    )
+
+
+def _print_multi_performance(result: object) -> None:
+    """멀티에셋 백테스트 결과 출력.
+
+    Args:
+        result: MultiAssetBacktestResult 객체
+    """
+    from src.models.backtest import MultiAssetBacktestResult
+
+    if not isinstance(result, MultiAssetBacktestResult):
+        return
+
+    metrics = result.portfolio_metrics
+    metrics_table = Table(title="Portfolio Performance")
+    metrics_table.add_column("Metric", style="cyan")
+    metrics_table.add_column("Value", justify="right")
+
+    metrics_table.add_row("Total Return", f"{metrics.total_return:+.1f}%")
+    metrics_table.add_row("CAGR", f"{metrics.cagr:+.1f}%")
+    metrics_table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
+    metrics_table.add_row(
+        "Sortino Ratio",
+        f"{metrics.sortino_ratio:.2f}" if metrics.sortino_ratio is not None else "N/A",
+    )
+    metrics_table.add_row("Max Drawdown", f"{metrics.max_drawdown:.1f}%")
+    metrics_table.add_row(
+        "Calmar Ratio",
+        f"{metrics.calmar_ratio:.2f}" if metrics.calmar_ratio is not None else "N/A",
+    )
+    metrics_table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
+    metrics_table.add_row(
+        "Profit Factor",
+        f"{metrics.profit_factor:.2f}" if metrics.profit_factor is not None else "N/A",
+    )
+    console.print(metrics_table)
+
+    # 심볼별 기여도
+    if result.contribution:
+        contrib_table = Table(title="Symbol Contribution")
+        contrib_table.add_column("Symbol", style="cyan")
+        contrib_table.add_column("Contribution", justify="right")
+
+        for sym, contrib in sorted(result.contribution.items(), key=lambda x: x[1], reverse=True):
+            color = "green" if contrib > 0 else "red"
+            contrib_table.add_row(sym, f"[{color}]{contrib:+.2f}%[/]")
+        console.print(contrib_table)
 
 
 def _print_startup_panel(
@@ -280,7 +355,7 @@ app = typer.Typer(
 
 
 @app.command()
-def run(  # noqa: PLR0912
+def run(
     config_path: Annotated[
         str,
         typer.Argument(help="YAML config file path"),
@@ -310,38 +385,84 @@ def run(  # noqa: PLR0912
 ) -> None:
     """Run strategy backtest on historical data from config file.
 
+    config의 symbols 개수로 단일/멀티에셋을 자동 판별합니다.
+
     Example:
         uv run python -m src.cli.backtest run config/default.yaml
         uv run python -m src.cli.backtest run config/default.yaml --report --verbose
     """
     from src.config.config_loader import build_strategy, load_config
 
-    # 로깅 설정: verbose 모드에서 DEBUG 레벨, 아니면 WARNING 레벨
     console_level = "DEBUG" if verbose else "WARNING"
     setup_logger(console_level=console_level)
 
     cfg = load_config(config_path)
     strategy_instance = build_strategy(cfg)
-    symbol = cfg.backtest.symbols[0]
+    symbol_list = cfg.backtest.symbols
     capital = cfg.backtest.capital
+    is_multi = len(symbol_list) > 1
 
-    ctx_logger = get_strategy_logger(strategy=strategy_instance.name, symbol=symbol)
+    start_date = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_date = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
+    years = list(range(start_date.year, end_date.year + 1))
 
-    if verbose:
-        ctx_logger.info("Debug mode enabled - detailed logs will be shown")
-
-    # 포트폴리오 생성 (YAML config의 portfolio 섹션 사용)
     portfolio = Portfolio.create(
         initial_capital=Decimal(str(capital)),
         config=cfg.portfolio,
     )
 
-    # 연도 범위 계산
-    start_date = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_date = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
-    years = list(range(start_date.year, end_date.year + 1))
+    if is_multi:
+        _run_multi(
+            cfg=cfg,
+            strategy_instance=strategy_instance,
+            symbol_list=symbol_list,
+            capital=capital,
+            portfolio=portfolio,
+            start_date=start_date,
+            end_date=end_date,
+            years=years,
+            report=report,
+            verbose=verbose,
+            validation=validation,
+        )
+    else:
+        _run_single(
+            cfg=cfg,
+            strategy_instance=strategy_instance,
+            symbol=symbol_list[0],
+            capital=capital,
+            portfolio=portfolio,
+            start_date=start_date,
+            end_date=end_date,
+            years=years,
+            report=report,
+            verbose=verbose,
+            validation=validation,
+            advisor=advisor,
+        )
 
-    # 시작 정보 패널 (실제 설정값 표시)
+
+def _run_single(  # noqa: PLR0912
+    *,
+    cfg: object,
+    strategy_instance: BaseStrategy,
+    symbol: str,
+    capital: float,
+    portfolio: Portfolio,
+    start_date: datetime,
+    end_date: datetime,
+    years: list[int],
+    report: bool,
+    verbose: bool,
+    validation: str,
+    advisor: bool,
+) -> None:
+    """단일에셋 백테스트 실행."""
+    ctx_logger = get_strategy_logger(strategy=strategy_instance.name, symbol=symbol)
+
+    if verbose:
+        ctx_logger.info("Debug mode enabled - detailed logs will be shown")
+
     _print_startup_panel(
         symbol=symbol,
         years=years,
@@ -350,29 +471,34 @@ def run(  # noqa: PLR0912
         portfolio=portfolio,
     )
 
-    # Step 1: 데이터 로드 (MarketDataService 사용)
+    # 데이터 로드
     logger.info("Step 1: Loading data...")
     try:
         settings = get_settings()
         data_service = MarketDataService(settings)
 
+        # cfg is RunConfig from config_loader
+        from src.config.config_loader import RunConfig
+
+        assert isinstance(cfg, RunConfig)
+
         data_request = MarketDataRequest(
             symbol=symbol,
-            timeframe="1D",
+            timeframe=cfg.backtest.timeframe,
             start=start_date,
             end=end_date,
         )
 
         data = data_service.get(data_request)
         logger.success(
-            f"Loaded {data.symbol}: {data.periods:,} daily candles ({data.start.date()} ~ {data.end.date()})"
+            f"Loaded {data.symbol}: {data.periods:,} {cfg.backtest.timeframe} candles ({data.start.date()} ~ {data.end.date()})"
         )
 
     except DataNotFoundError as e:
         logger.error(f"Data load failed: {e}")
         raise typer.Exit(code=1) from e
 
-    # Step 2: 전략 설정 확인
+    # 전략 설정 확인
     logger.info("Step 2: Configuring strategy...")
     strategy_info = strategy_instance.get_startup_info()
     logger.success(f"Using {strategy_instance.name} strategy")
@@ -385,7 +511,7 @@ def run(  # noqa: PLR0912
             config_table.add_row(key, str(value))
         console.print(config_table)
 
-    # Step 3: 포트폴리오 설정 확인
+    # 포트폴리오 설정 확인
     logger.info("Step 3: Configuring portfolio...")
     logger.success(f"Portfolio ready: {portfolio}")
 
@@ -397,14 +523,13 @@ def run(  # noqa: PLR0912
             pm_table.add_row(key, str(value))
         console.print(pm_table)
 
-    # Step 4: 백테스트 실행
+    # 백테스트 실행
     logger.info("Step 4: Running backtest...")
     ctx_logger.info("Starting backtest engine")
 
     try:
         engine = BacktestEngine()
 
-        # 백테스트 요청 생성
         request = BacktestRequest(
             data=data,
             strategy=strategy_instance,
@@ -412,11 +537,9 @@ def run(  # noqa: PLR0912
             analyzer=PerformanceAnalyzer() if report else None,
         )
 
-        # Validation 레벨 파싱
         validation_level = validation.lower()
         validation_result = None
 
-        # 백테스트 실행 (validation 적용 여부)
         if validation_level != "none":
             ctx_logger.info(f"Running with {validation_level} validation")
             result, validation_result = engine.run_validated(request, level=validation_level)
@@ -433,7 +556,6 @@ def run(  # noqa: PLR0912
             strategy_returns = None
             benchmark_returns = None
 
-        # 결과 출력
         print_performance_summary(result)
         ctx_logger.info(
             "Backtest completed",
@@ -441,11 +563,9 @@ def run(  # noqa: PLR0912
             sharpe=result.metrics.sharpe_ratio,
         )
 
-        # Validation 결과 출력
         if validation_result is not None:
             _print_validation_result(validation_result, validation_level)
 
-        # Advisor 분석 실행
         if advisor and strategy_returns is not None and benchmark_returns is not None:
             logger.info("Running Strategy Advisor analysis...")
             _run_advisor_analysis(
@@ -455,7 +575,6 @@ def run(  # noqa: PLR0912
                 validation_result=validation_result,
             )
 
-        # HTML 리포트 생성
         if report and strategy_returns is not None and benchmark_returns is not None:
             logger.info("Generating QuantStats report...")
             report_path = generate_quantstats_report(
@@ -470,6 +589,96 @@ def run(  # noqa: PLR0912
         ctx_logger.exception("VectorBT import failed")
         logger.warning(f"VectorBT import failed: {e}")
         logger.info("Install VectorBT with: uv add vectorbt")
+        raise typer.Exit(code=1) from e
+
+
+def _run_multi(
+    *,
+    cfg: object,
+    strategy_instance: BaseStrategy,
+    symbol_list: list[str],
+    capital: float,
+    portfolio: Portfolio,
+    start_date: datetime,
+    end_date: datetime,
+    years: list[int],
+    report: bool,
+    verbose: bool,
+    validation: str,
+) -> None:
+    """멀티에셋 백테스트 실행."""
+    from src.backtest.request import MultiAssetBacktestRequest
+    from src.config.config_loader import RunConfig
+
+    assert isinstance(cfg, RunConfig)
+
+    n_assets = len(symbol_list)
+
+    _print_multi_startup_panel(
+        strategy_name=strategy_instance.name,
+        symbol_list=symbol_list,
+        years=years,
+        capital=capital,
+    )
+
+    # 데이터 로드
+    logger.info("Loading multi-asset data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        multi_data = data_service.get_multi(
+            symbols=symbol_list,
+            timeframe=cfg.backtest.timeframe,
+            start=start_date,
+            end=end_date,
+        )
+        logger.success(
+            f"Loaded {n_assets} assets, {multi_data.periods:,} {cfg.backtest.timeframe} periods each"
+        )
+    except DataNotFoundError as e:
+        logger.error(f"Data load failed: {e}")
+        raise typer.Exit(code=1) from e
+
+    # 백테스트 실행
+    logger.info("Running multi-asset backtest...")
+    try:
+        engine = BacktestEngine()
+        request = MultiAssetBacktestRequest(
+            data=multi_data,
+            strategy=strategy_instance,
+            portfolio=portfolio,
+            analyzer=PerformanceAnalyzer() if report else None,
+        )
+
+        validation_level = validation.lower()
+        strategy_returns = None
+        benchmark_returns = None
+        validation_result = None
+
+        if validation_level != "none":
+            result, validation_result = engine.run_multi_validated(request, level=validation_level)
+        elif report:
+            result, strategy_returns, benchmark_returns = engine.run_multi_with_returns(request)
+        else:
+            result = engine.run_multi(request)
+
+        _print_multi_performance(result)
+
+        if validation_result is not None:
+            _print_validation_result(validation_result, validation_level)
+
+        if report and strategy_returns is not None and benchmark_returns is not None:
+            logger.info("Generating QuantStats report...")
+            report_path = generate_quantstats_report(
+                returns=strategy_returns,
+                benchmark_returns=benchmark_returns,
+                title=f"{strategy_instance.name} Multi-Asset - {n_assets} assets",
+            )
+            logger.success(f"Report saved: {report_path}")
+
+    except ImportError as e:
+        logger.warning(f"VectorBT import failed: {e}")
         raise typer.Exit(code=1) from e
 
 
@@ -1339,166 +1548,6 @@ VW-TSMOM combines volume-weighted returns with volatility scaling:
     presets_table.add_row("Portfolio", "Portfolio.paper_trading()", "Zero costs, for research only")
 
     console.print(presets_table)
-
-
-@app.command(name="run-multi")
-def run_multi(
-    config_path: Annotated[
-        str,
-        typer.Argument(help="YAML config file path"),
-    ],
-    report: Annotated[
-        bool,
-        typer.Option("--report/--no-report", help="Generate QuantStats report"),
-    ] = False,
-    verbose: Annotated[
-        bool,
-        typer.Option("--verbose", "-V", help="Enable verbose output"),
-    ] = False,
-    validation: Annotated[
-        str,
-        typer.Option("--validation", help="Validation: none, quick, milestone, final"),
-    ] = "none",
-) -> None:
-    """Run multi-asset portfolio backtest from config file.
-
-    8-asset Equal Weight portfolio with VectorBT cash_sharing.
-
-    Example:
-        uv run python -m src.cli.backtest run-multi config/default.yaml
-        uv run python -m src.cli.backtest run-multi config/default.yaml --report
-    """
-    from src.backtest.request import MultiAssetBacktestRequest
-    from src.config.config_loader import build_strategy, load_config
-
-    console_level = "DEBUG" if verbose else "WARNING"
-    setup_logger(console_level=console_level)
-
-    cfg = load_config(config_path)
-    symbol_list = cfg.backtest.symbols
-    n_assets = len(symbol_list)
-    capital = cfg.backtest.capital
-
-    strategy_instance = build_strategy(cfg)
-
-    # 포트폴리오 (YAML config의 portfolio 섹션 사용)
-    portfolio = Portfolio.create(
-        initial_capital=Decimal(str(capital)),
-        config=cfg.portfolio,
-    )
-
-    start_date = datetime.strptime(cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
-    end_date = datetime.strptime(cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
-    years = list(range(start_date.year, end_date.year + 1))
-
-    console.print(
-        Panel.fit(
-            (
-                f"[bold]{strategy_instance.name} Multi-Asset Backtest[/bold]\n"
-                f"Assets: {n_assets} ({', '.join(symbol_list[:4])}...)\n"
-                f"Years: {', '.join(map(str, years))}\n"
-                f"Capital: ${capital:,.0f}\n"
-                f"Weighting: Equal Weight (1/{n_assets})"
-            ),
-            border_style="blue",
-        )
-    )
-
-    # 데이터 로드
-    logger.info("Loading multi-asset data...")
-    try:
-        settings = get_settings()
-        data_service = MarketDataService(settings)
-
-        multi_data = data_service.get_multi(
-            symbols=symbol_list,
-            timeframe="1D",
-            start=start_date,
-            end=end_date,
-        )
-        logger.success(f"Loaded {n_assets} assets, {multi_data.periods:,} periods each")
-    except DataNotFoundError as e:
-        logger.error(f"Data load failed: {e}")
-        raise typer.Exit(code=1) from e
-
-    # 백테스트 실행
-    logger.info("Running multi-asset backtest...")
-    try:
-        engine = BacktestEngine()
-        request = MultiAssetBacktestRequest(
-            data=multi_data,
-            strategy=strategy_instance,
-            portfolio=portfolio,
-            analyzer=PerformanceAnalyzer() if report else None,
-        )
-
-        validation_level = validation.lower()
-        strategy_returns = None
-        benchmark_returns = None
-        validation_result = None
-
-        if validation_level != "none":
-            result, validation_result = engine.run_multi_validated(request, level=validation_level)
-        elif report:
-            result, strategy_returns, benchmark_returns = engine.run_multi_with_returns(request)
-        else:
-            result = engine.run_multi(request)
-
-        # 결과 출력
-        metrics = result.portfolio_metrics
-        metrics_table = Table(title="Portfolio Performance")
-        metrics_table.add_column("Metric", style="cyan")
-        metrics_table.add_column("Value", justify="right")
-
-        metrics_table.add_row("Total Return", f"{metrics.total_return:+.1f}%")
-        metrics_table.add_row("CAGR", f"{metrics.cagr:+.1f}%")
-        metrics_table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
-        metrics_table.add_row(
-            "Sortino Ratio",
-            f"{metrics.sortino_ratio:.2f}" if metrics.sortino_ratio is not None else "N/A",
-        )
-        metrics_table.add_row("Max Drawdown", f"{metrics.max_drawdown:.1f}%")
-        metrics_table.add_row(
-            "Calmar Ratio",
-            f"{metrics.calmar_ratio:.2f}" if metrics.calmar_ratio is not None else "N/A",
-        )
-        metrics_table.add_row("Win Rate", f"{metrics.win_rate:.1f}%")
-        metrics_table.add_row(
-            "Profit Factor",
-            f"{metrics.profit_factor:.2f}" if metrics.profit_factor is not None else "N/A",
-        )
-        console.print(metrics_table)
-
-        # 심볼별 기여도
-        if result.contribution:
-            contrib_table = Table(title="Symbol Contribution")
-            contrib_table.add_column("Symbol", style="cyan")
-            contrib_table.add_column("Contribution", justify="right")
-
-            for sym, contrib in sorted(
-                result.contribution.items(), key=lambda x: x[1], reverse=True
-            ):
-                color = "green" if contrib > 0 else "red"
-                contrib_table.add_row(sym, f"[{color}]{contrib:+.2f}%[/]")
-            console.print(contrib_table)
-
-        # Validation 결과
-        if validation_result is not None:
-            _print_validation_result(validation_result, validation_level)
-
-        # HTML 리포트
-        if report and strategy_returns is not None and benchmark_returns is not None:
-            logger.info("Generating QuantStats report...")
-            report_path = generate_quantstats_report(
-                returns=strategy_returns,
-                benchmark_returns=benchmark_returns,
-                title=f"{strategy_instance.name} Multi-Asset - {n_assets} assets",
-            )
-            logger.success(f"Report saved: {report_path}")
-
-    except ImportError as e:
-        logger.warning(f"VectorBT import failed: {e}")
-        raise typer.Exit(code=1) from e
 
 
 @app.command()

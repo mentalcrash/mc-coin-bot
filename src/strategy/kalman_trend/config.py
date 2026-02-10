@@ -181,8 +181,7 @@ class KalmanTrendConfig(BaseModel):
 
         if self.vol_target < self.min_volatility:
             msg = (
-                f"vol_target ({self.vol_target}) must be "
-                f">= min_volatility ({self.min_volatility})"
+                f"vol_target ({self.vol_target}) must be >= min_volatility ({self.min_volatility})"
             )
             raise ValueError(msg)
 

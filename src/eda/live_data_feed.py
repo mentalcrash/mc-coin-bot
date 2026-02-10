@@ -107,7 +107,9 @@ class LiveDataFeed:
         """발행된 총 BarEvent 수."""
         return self._bars_emitted
 
-    async def _stream_symbol(self, symbol: str, bus: EventBus, *, stagger_delay: float = 0.0) -> None:
+    async def _stream_symbol(
+        self, symbol: str, bus: EventBus, *, stagger_delay: float = 0.0
+    ) -> None:
         """단일 심볼 WebSocket 스트림.
 
         CCXT Pro watch_ohlcv()는 현재 형성 중인 캔들을 반환합니다.
