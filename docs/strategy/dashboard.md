@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 44개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
+> 46개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,7 +36,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (46개)
+## 현재 전략 현황 (46개 = 활성 1 + 폐기 45)
 
 ### 활성 전략 (1개, Gate 5 완료)
 
@@ -52,14 +52,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 > 검증 대기 전략 없음. 새 전략 발굴 필요 (`/strategy-discovery`).
 
-### PENDING 전략 (2개, 데이터 부재)
-
-| 전략 | G0 점수 | 차단 사유 |
-|------|---------|----------|
-| [**Funding Carry**](scorecard/funding-carry.md) | 25/30 | `funding_rate` 데이터 수집 필요 |
-| [**Copula Pairs**](scorecard/copula-pairs.md) | 20/30 | `pair_close` 데이터 구성 필요 |
-
-### 폐기 전략 (38개)
+### 폐기 전략 (45개)
 
 #### Gate 4 실패 — WFA 심층검증
 
@@ -109,6 +102,13 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [Liq-Momentum](scorecard/fail/liq-momentum.md) | -3.07 | -75.5% | 전 에셋 Sharpe 음수 (-3.07~-6.48), MDD ~100%. 1H Amihud + 12H momentum = noise-dominated + 과다거래 |
 | [Flow-Imbalance](scorecard/fail/flow-imbalance.md) | -0.12 | -2.0% | 전 에셋 Sharpe 음수 (-0.12~-1.63), BNB MDD -54.2%. BVC 근사의 1H에서도 flow 방향성 예측력 부재 |
 | [Hour-Season](scorecard/fail/hour-season.md) | -1.01 | -12.8% | 전 에셋 Sharpe 음수 (-1.01~-4.46), MDD 45~78%. 크립토 intraday 계절성(hour-of-day t-stat) edge 부재 |
+
+#### Gate 1 실패 — 데이터 부재 / 인프라 미구축
+
+| 전략 | G0 점수 | 사유 |
+|------|---------|------|
+| [Funding Carry](scorecard/fail/funding-carry.md) | 25/30 | `funding_rate` 데이터 부재, 펀딩비 수집 인프라 미구축 → 검증 불가 폐기 |
+| [Copula Pairs](scorecard/fail/copula-pairs.md) | 20/30 | `pair_close` 데이터 부재, 페어 데이터 병합 로직 미구축 → 검증 불가 폐기 |
 
 #### Gate 1 실패 — 구조적 결함 / 코드 삭제
 

@@ -194,3 +194,202 @@
 - 레짐 독립성: 2/5
 
 ---
+
+## 2026-02-10 — Strategy Discovery Session (4H Timeframe)
+
+### 후보 #5: Permutation Entropy Momentum (`perm-entropy-mom`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Information Theory + Momentum |
+| **타임프레임** | 4H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 24/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: Permutation Entropy(PE)가 낮을 때 시장 구조가 질서적(추세 지속) → 모멘텀 conviction 강화. PE가 높을 때 noise → 포지션 축소.
+
+**경제적 논거**: 낮은 PE = 가격 수열의 순서 패턴이 예측 가능 = 추세 지속. 높은 PE = 완전 랜덤(Brownian) = 추세 소멸. Bandt-Pompe(2002) 이론. arXiv:2502.09079에서 크립토는 대부분 고PE이나, 강한 추세기에 PE 하락 관찰 → 이 변동 자체가 시그널. Entropy-Switch(FAIL)와 핵심 차별: binary on/off가 아닌 연속 conviction scaling.
+
+**사용 지표**: PE_30bar (5일), PE_60bar (10일), 4H TSMOM return, Realized Vol
+
+**시그널 생성 로직**:
+```
+1. Permutation Entropy 계산 (order m=3~5, 4H returns)
+   PE = -sum(p_i * log(p_i)) / log(m!)  → [0, 1]
+2. Conviction scaler = 1 - PE_normalized  (low PE → high conviction)
+3. Momentum direction = sign(rolling_return(lookback))
+4. Raw weight = direction * vol_target / realized_vol
+5. Final weight = raw_weight * conviction_scaler (shift(1) 적용)
+6. Minimum conviction gate: PE > 0.95 → weight = 0 (pure noise 구간)
+```
+
+**CTREND 상관 예측**: 낮음 (구조적 복잡도 메트릭 vs 28 기술적 가격 지표)
+
+**예상 거래 빈도**: 60~100건/년
+
+**차별화 포인트**: Information Theory 카테고리 완전 미탐색. Entropy-Switch는 ApEn binary filter → alpha 제거. 이 전략은 PE를 continuous conviction multiplier로 사용 + momentum이 alpha source. PE는 ordinal pattern 기반이므로 ApEn보다 스케일 독립적이고 로버스트. 4H에서 30bar=5일 → 안정적 PE 추정 가능.
+
+**출처**: Bandt-Pompe(2002 PRL), arXiv:2502.09079(크립토 복잡도 실증), arXiv:2504.01974(BiCEP 효율성 분석)
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 4/5
+- 참신성: 5/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 3/5
+- 용량 수용: 3/5
+- 레짐 독립성: 4/5
+
+---
+
+### 후보 #6: Candlestick Rejection Momentum (`candle-reject`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Price Action / Behavioral Finance |
+| **타임프레임** | 4H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 24/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 4H 캔들의 긴 꼬리(rejection wick)는 가격 거부를 나타냄. 거부 방향의 반대가 시장의 true direction → directional signal.
+
+**경제적 논거**: 긴 lower wick = 매도 시도 실패(institutional absorption) → 가격 지지 → 상방 기대. Stop-hunt 패턴: key level 위/아래 유동성 sweep 후 즉시 반전. 크립토 시장에서 stop-hunting은 구조적으로 빈번 (레버리지 거래 비중 높음). 4H가 최적 TF: 1H은 noise 과다, 1D는 intrabar reversal 놓침.
+
+**사용 지표**: Rejection Ratio (wick_length / range), Body Position ((close-low)/(high-low)), Volume Z-score, Consecutive Rejection Count
+
+**시그널 생성 로직**:
+```
+1. Bar anatomy 계산:
+   upper_wick = high - max(open, close)
+   lower_wick = min(open, close) - low
+   body = abs(close - open)
+   range = high - low
+2. Rejection ratio:
+   bull_reject = lower_wick / range  (긴 lower wick → 매수 신호)
+   bear_reject = upper_wick / range  (긴 upper wick → 매도 신호)
+3. Entry (shift(1) 적용):
+   - bull_reject > 0.6 AND volume_zscore > 1.0: long
+   - bear_reject > 0.6 AND volume_zscore > 1.0: short
+4. Conviction enhancement: 2+ consecutive rejections → weight * 1.5
+5. Vol-target sizing: weight * vol_target / realized_vol
+6. Exit: body_position 반전 OR 12-bar (2일) timeout
+```
+
+**CTREND 상관 예측**: 낮음 (raw price action anatomy vs derived technical indicators)
+
+**예상 거래 빈도**: 60~100건/년
+
+**차별화 포인트**: 46개 전략 중 candlestick/price action 기반 전략 0개. 완전 새 카테고리. 기존 전략은 모두 기술적 지표(MA, RSI, MACD 등) 기반. Wick analysis는 market microstructure의 proxy로 L2 data 없이도 의미 있는 rejection signal 제공.
+
+**출처**: Nison(1991) Japanese Candlestick, Goo et al.(2007), Al-Yahyaee(2020) crypto candlestick, arXiv:2601.06084(4H institutional positioning)
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 4/5
+- 참신성: 5/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 4/5
+- 용량 수용: 3/5
+- 레짐 독립성: 3/5
+
+---
+
+### 후보 #7: Volume Climax Reversal (`vol-climax`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Volume Analysis / Behavioral Finance |
+| **타임프레임** | 4H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 22/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 극단적 거래량 급증(climax)은 집단적 항복(capitulation) 또는 환희(euphoria) → 추가 에너지 고갈 → 단기 반전.
+
+**경제적 논거**: Volume climax = 시장 참여자 대거 동시 행동 → 매수/매도 에너지 소진 → 자연 반전. Panic selling → capitulation bottom. Euphoric buying → blow-off top. 크립토 retail 지배 시장에서 감정적 거래 빈번. Wyckoff Volume Analysis 이론의 크립토 적용.
+
+**사용 지표**: Volume Z-score (30bar), OBV Trend vs Price Trend (divergence), Close Position in Climax Bar, Momentum Direction
+
+**시그널 생성 로직**:
+```
+1. Volume Z-score = (vol - rolling_mean(vol, 30)) / rolling_std(vol, 30)
+2. Climax detection: vol_zscore > 2.5
+3. Price-volume divergence:
+   obv_direction = sign(OBV.diff(6))
+   price_direction = sign(close.diff(6))
+   divergence = obv_direction != price_direction
+4. Entry (shift(1) 적용):
+   - Climax + price_down + close_near_low: bullish reversal (capitulation)
+   - Climax + price_up + close_near_high: bearish reversal (euphoria)
+   - Divergence confirmation 시 conviction * 1.3
+5. Vol-target sizing
+6. Exit: vol_zscore < 1.0 OR 18-bar (3일) timeout
+```
+
+**CTREND 상관 예측**: 낮음 (reversal vs trend-following)
+
+**예상 거래 빈도**: 40~80건/년
+
+**차별화 포인트**: Volume climax 감지 전략 미시도. VW-TSMOM은 volume으로 momentum 가중(같은 방향). 이 전략은 volume spike를 반전 시그널로 사용(반대 방향). OBV divergence 추가로 2개 독립 시그널 소스.
+
+**출처**: Wyckoff(1930s) Volume Analysis, Elder(1993) Trading for a Living, Rompotis(2024) crypto volume patterns
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 4/5
+- 참신성: 4/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 4/5
+- 용량 수용: 2/5
+- 레짐 독립성: 3/5
+
+---
+
+### 후보 #8: OU Mean Reversion (`ou-meanrev`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Statistical Mean Reversion |
+| **타임프레임** | 4H |
+| **ShortMode** | FULL |
+| **Gate 0 점수** | 22/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 4H 가격이 Ornstein-Uhlenbeck 과정을 따를 때, half-life가 짧은 구간에서만 mean reversion 거래. Half-life가 길면 자동으로 거래 안 함 → 추세 레짐 자동 회피.
+
+**경제적 논거**: OU 과정은 균형 가격으로의 회귀를 수학적으로 모델링. Half-life = ln(2)/θ → 회귀 속도가 빠를수록 비용 차감 후 수익 가능. 4H에서 intraday 과잉반응은 1~3일 내 회귀. 크립토 retail 과잉반응은 OU 모델 적합. Z-Score MR(FAIL)과 핵심 차별: 회귀 속도(θ) 추정 + 동적 threshold.
+
+**사용 지표**: OU theta (mean reversion speed), OU mu (long-run mean), Price Z-score, Half-life, Realized Vol
+
+**시그널 생성 로직**:
+```
+1. Rolling window (120 bars = 20일)로 OU 파라미터 추정:
+   delta_price = a + b * price_lag → OLS
+   θ = -log(1 + b) / dt
+   half_life = ln(2) / θ
+   mu = -a / b
+2. Z-score = (price - mu) / rolling_std(price, 120)
+3. Entry (shift(1) 적용):
+   - z < -2.0 AND half_life < 30 bars (5일): long (oversold + fast reversion)
+   - z > +2.0 AND half_life < 30 bars: short (overbought + fast reversion)
+   - half_life >= 30: no trade (추세 레짐 → MR 부적합)
+4. Vol-target sizing
+5. Exit: |z| < 0.5 OR half_life > 30 OR 30-bar timeout
+```
+
+**CTREND 상관 예측**: 낮음 (mean reversion vs trend-following)
+
+**예상 거래 빈도**: 50~80건/년
+
+**차별화 포인트**: OU 과정 + half-life 필터 전략 미시도. Z-Score MR(FAIL)은 단순 z-score → 추세 구간에서 역추세 손실. OU는 half-life로 "회귀가 빠른 구간만" 자동 필터링. FULL ShortMode지만 half-life 필터가 추세 구간 거래 방지 → MDD 제한.
+
+**출처**: Uhlenbeck-Ornstein(1930), Chan(2013) Algorithmic Trading, 2025 crypto OU research
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 4/5
+- 참신성: 4/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 3/5
+- 용량 수용: 3/5
+- 레짐 독립성: 3/5
+
+---
