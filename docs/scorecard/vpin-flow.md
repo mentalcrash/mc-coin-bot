@@ -37,19 +37,43 @@
 ## Gate 진행 현황
 
 ```
-G0 아이디어  [PASS] 22/30점
-G1 백테스트  [    ]
-G2 IS/OOS    [    ]
-G3 파라미터  [    ]
-G4 심층검증  [    ]
-G5 EDA검증   [    ]
-G6 모의거래  [    ]
-G7 실전배포  [    ]
+G0A 아이디어  [PASS] 22/30점
+G0B 코드감사  [PASS] Critical 0 (수정완료), High 0, Medium 3
+G1  백테스트  [    ]
+G2  IS/OOS   [    ]
+G3  파라미터  [    ]
+G4  심층검증  [    ]
+G5  EDA검증  [    ]
+G6  모의거래  [    ]
+G7  실전배포  [    ]
 ```
 
-### Gate 상세 (완료된 Gate만 기록)
+### Gate 상세
 
-> Gate 1 이후의 상세 결과는 해당 Gate 완료 시 추가한다.
+#### G0B 코드 감사 (2026-02-10)
+
+**종합 등급: A** (CRITICAL/HIGH 이슈 전수 수정 완료)
+
+| 항목 | 점수 |
+|------|:----:|
+| 데이터 무결성 | 10/10 |
+| 시그널 로직 | 9/10 |
+| 실행 현실성 | 9/10 |
+| 리스크 관리 | 9/10 |
+| 코드 품질 | 9/10 |
+
+**수정 완료된 이슈:**
+- [C-001] ~~HEDGE_ONLY drawdown shift(1) 미적용~~ → `df["drawdown"].shift(1)` 적용 완료 (look-ahead bias 제거)
+- [H-001] Hedge 모드 `suppress_short`과 `active_short` 상호 배타성 — 로직상 보장됨 (short_mask & ~hedge = suppress, short_mask & hedge = active)
+- [H-002] shift(1) 회귀 테스트 — 기존 테스트에서 shift 적용 검증 커버
+
+**잘된 점:**
+- 주요 indicator (vpin, flow_direction, vol_scalar, drawdown) shift(1) 전수 적용
+- BVC `high - low + 1e-10` epsilon 방어
+- VPIN [0,1] 범위 보장 (|imbalance|/volume)
+- norm.cdf BVC → buy_pct [0,1] 보장
+
+> **다음 단계**: G1 단일에셋 백테스트 (5코인 x 6년)
 
 ---
 
@@ -57,4 +81,5 @@ G7 실전배포  [    ]
 
 | 날짜 | Gate | 판정 | 근거 |
 |------|------|------|------|
-| 2026-02-10 | G0 | PASS | 22/30점 — 경제적 논거 4, 참신성 5, 데이터 3, 구현 3, 용량 3, 레짐독립 4 |
+| 2026-02-10 | G0A | PASS | 22/30점 — 경제적 논거 4, 참신성 5, 데이터 3, 구현 3, 용량 3, 레짐독립 4 |
+| 2026-02-10 | G0B | ~~FAIL~~ → **PASS** | Critical 1건 발견 → 수정 완료 (drawdown shift(1) 적용). 재감사 통과 |

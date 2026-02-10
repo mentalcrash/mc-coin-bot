@@ -59,10 +59,9 @@ def _rolling_variance_ratio(
 
     # z-stat 계산
     if use_heteroscedastic:
-        # Lo-MacKinlay heteroscedastic-robust z-stat
-        # delta_j = sum((r_t - mu)^2 * (r_{t-j} - mu)^2) / (sum((r_t - mu)^2))^2
-        # 간소화 근사: theta = 2(2k-1)(k-1) / (3k*n) for homoscedastic case
-        # heteroscedastic: rolling 기반 근사
+        # Lo-MacKinlay (1988) refined IID asymptotic variance
+        # theta = 2(2k-1)(k-1) / (3k*n) — Eq.5 simplified form
+        # Note: NOT the full heteroscedastic delta_j correction (Eq.10)
         n = window
         # Asymptotic variance under heteroscedasticity (simplified)
         theta = 2.0 * (2.0 * k - 1.0) * (k - 1.0) / (3.0 * k * n)

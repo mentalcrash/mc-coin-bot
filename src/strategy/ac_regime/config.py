@@ -158,4 +158,4 @@ class ACRegimeConfig(BaseModel):
 
     def warmup_periods(self) -> int:
         """필요한 워밍업 기간 (캔들 수)."""
-        return max(self.ac_window, self.mom_lookback, self.atr_period) + 1
+        return max(self.ac_window + self.ac_lag, self.mom_lookback, self.atr_period) + 1

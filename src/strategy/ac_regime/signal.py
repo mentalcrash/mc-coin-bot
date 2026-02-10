@@ -102,7 +102,7 @@ def generate_signals(
         strength = strength.where(~short_mask, 0.0)
 
     elif config.short_mode == ShortMode.HEDGE_ONLY:
-        drawdown_series: pd.Series = df["drawdown"]  # type: ignore[assignment]
+        drawdown_series: pd.Series = df["drawdown"].shift(1)  # type: ignore[assignment]
         hedge_active = drawdown_series < config.hedge_threshold
 
         short_mask = direction == Direction.SHORT

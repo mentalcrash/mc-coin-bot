@@ -48,17 +48,18 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 > PBO 60%로 G4 FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79).
 > **다음 단계**: EDA Parity + Paper Trading에서 실시간 검증 권고.
 
-### 검증중 전략 (4개, G0A PASS → G0B 대기)
+### 검증중 전략 (4개, G0B PASS → G1 대기)
 
-| 전략 | 유형 | G0A 점수 | G0B | G1 | 다음 단계 |
-|------|------|:--------:|:---:|:--:|----------|
-| [**AC-Regime**](../scorecard/ac-regime.md) | 레짐전환 | 27/30 | — | — | `/quant-code-audit` → 백테스트 |
-| [**Range-Squeeze**](../scorecard/range-squeeze.md) | 변동성/돌파 | 24/30 | — | — | `/quant-code-audit` → 백테스트 |
-| [**VR-Regime**](../scorecard/vr-regime.md) | 레짐전환 | 24/30 | — | — | `/quant-code-audit` → 백테스트 |
-| [**VPIN-Flow**](../scorecard/vpin-flow.md) | 마이크로스트럭처 | 22/30 | — | — | `/quant-code-audit` → 백테스트 |
+| 전략 | 유형 | G0A | G0B | G1 | 다음 단계 |
+|------|------|:---:|:---:|:--:|----------|
+| [**AC-Regime**](../scorecard/ac-regime.md) | 레짐전환 | 27/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
+| [**Range-Squeeze**](../scorecard/range-squeeze.md) | 변동성/돌파 | 24/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
+| [**VR-Regime**](../scorecard/vr-regime.md) | 레짐전환 | 24/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
+| [**VPIN-Flow**](../scorecard/vpin-flow.md) | 마이크로스트럭처 | 22/30 | **P** | — | G1 백테스트 (5코인 x 6년) |
 
-> 4개 전략 코드 구현 완료 (2026-02-10). 182 tests PASS, pyright 0 errors.
-> **다음 단계**: G0B 코드 감사 → G1 단일에셋 백테스트 (5코인 x 6년).
+> G0B 감사 완료 (2026-02-10). 4개 전략 모두 Critical 0개. HIGH 이슈 전수 수정 완료.
+> 수정 내역: AC formula (sqrt 분모), NR detection (isclose), warmup periods (chained rolling), drawdown shift(1) (전 전략), heteroscedastic 주석 정정.
+> **다음 단계**: G1 단일에셋 백테스트 (5코인 x 6년).
 
 ### PENDING 전략 (2개, 데이터 부재)
 

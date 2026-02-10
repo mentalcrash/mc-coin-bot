@@ -163,4 +163,4 @@ class VRRegimeConfig(BaseModel):
 
     def warmup_periods(self) -> int:
         """필요한 워밍업 기간 (캔들 수)."""
-        return max(self.vr_window, self.mom_lookback, self.atr_period) + 1
+        return max(self.vr_window + self.vr_k, self.mom_lookback, self.atr_period) + 1

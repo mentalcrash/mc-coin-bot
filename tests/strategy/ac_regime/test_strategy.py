@@ -120,8 +120,8 @@ class TestACRegimeStrategy:
 
     def test_warmup_periods(self):
         strategy = ACRegimeStrategy()
-        # max(60, 20, 14) + 1 = 61
-        assert strategy.warmup_periods() == 61
+        # max(60 + 1, 20, 14) + 1 = 62
+        assert strategy.warmup_periods() == 62
 
     def test_custom_config(self):
         config = ACRegimeConfig(ac_window=100, mom_lookback=40)

@@ -110,8 +110,8 @@ class TestVRRegimeConfig:
             mom_lookback=20,
             atr_period=14,
         )
-        # max(120, 20, 14) + 1 = 121
-        assert config.warmup_periods() == 121
+        # max(120 + 5, 20, 14) + 1 = 126
+        assert config.warmup_periods() == 126
 
     def test_warmup_periods_custom(self):
         config = VRRegimeConfig(
@@ -119,5 +119,5 @@ class TestVRRegimeConfig:
             mom_lookback=60,
             atr_period=50,
         )
-        # max(200, 60, 50) + 1 = 201
-        assert config.warmup_periods() == 201
+        # max(200 + 5, 60, 50) + 1 = 206
+        assert config.warmup_periods() == 206

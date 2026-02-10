@@ -121,8 +121,8 @@ class TestACRegimeConfig:
             mom_lookback=20,
             atr_period=14,
         )
-        # max(60, 20, 14) + 1 = 61
-        assert config.warmup_periods() == 61
+        # max(60 + 1, 20, 14) + 1 = 62
+        assert config.warmup_periods() == 62
 
     def test_warmup_periods_custom(self):
         config = ACRegimeConfig(
@@ -130,5 +130,5 @@ class TestACRegimeConfig:
             mom_lookback=60,
             atr_period=50,
         )
-        # max(100, 60, 50) + 1 = 101
-        assert config.warmup_periods() == 101
+        # max(100 + 1, 60, 50) + 1 = 102
+        assert config.warmup_periods() == 102

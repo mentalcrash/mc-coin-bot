@@ -34,9 +34,10 @@ def calculate_rolling_autocorrelation(
     rolling().apply() 대신 수동 벡터화로 성능 최적화.
 
     Formula:
-        rho = cov(x, x_lag) / var(x)
+        rho = cov(x, x_lag) / sqrt(var(x) * var(x_lag))
         cov = mean((x - mean_x) * (x_lag - mean_x_lag))
-        var = mean((x - mean_x)^2)
+        var_x = mean((x - mean_x)^2)
+        var_x_lag = mean((x_lag - mean_x_lag)^2)
 
     Args:
         returns: 수익률 시리즈
@@ -54,10 +55,12 @@ def calculate_rolling_autocorrelation(
 
     cov = ((x - mean_x) * (x_lag - mean_x_lag)).rolling(window=window, min_periods=window).mean()
 
-    var = ((x - mean_x) ** 2).rolling(window=window, min_periods=window).mean()
+    var_x = ((x - mean_x) ** 2).rolling(window=window, min_periods=window).mean()
+    var_x_lag = ((x_lag - mean_x_lag) ** 2).rolling(window=window, min_periods=window).mean()
 
-    var_safe = var.replace(0, np.nan)
-    rho: pd.Series = cov / var_safe  # type: ignore[assignment]
+    denom = np.sqrt(var_x * var_x_lag)
+    denom_safe = denom.replace(0, np.nan)
+    rho: pd.Series = (cov / denom_safe).clip(-1.0, 1.0)  # type: ignore[assignment]
     return rho
 
 

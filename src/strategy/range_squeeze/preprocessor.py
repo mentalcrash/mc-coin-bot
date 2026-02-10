@@ -76,8 +76,8 @@ def preprocess(
     )
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
-    # 2. Daily range
-    daily_range = high_series - low_series
+    # 2. Daily range (dirty data guard: high < low → 0)
+    daily_range = (high_series - low_series).clip(lower=0)
     result["daily_range"] = daily_range
 
     # 3. Average range (rolling mean)
@@ -96,7 +96,7 @@ def preprocess(
         window=config.nr_period,
         min_periods=config.nr_period,
     ).min()
-    result["is_nr"] = daily_range == rolling_min_range
+    result["is_nr"] = np.isclose(daily_range, rolling_min_range, rtol=1e-9, equal_nan=False)
 
     # 6. 실현 변동성
     realized_vol = calculate_realized_volatility(

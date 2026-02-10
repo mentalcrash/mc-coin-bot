@@ -116,8 +116,8 @@ class TestVRRegimeStrategy:
 
     def test_warmup_periods(self):
         strategy = VRRegimeStrategy()
-        # max(120, 20, 14) + 1 = 121
-        assert strategy.warmup_periods() == 121
+        # max(120 + 5, 20, 14) + 1 = 126
+        assert strategy.warmup_periods() == 126
 
     def test_custom_config(self):
         config = VRRegimeConfig(vr_window=200, vr_k=8, mom_lookback=30)
