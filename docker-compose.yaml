@@ -2,8 +2,6 @@ services:
   mc-bot:
     build: .
     env_file: .env
-    ports:
-      - "8000:8000"
     volumes:
       - bot-data:/app/data
       - bot-logs:/app/logs
@@ -15,8 +13,6 @@ services:
       dockerfile: Dockerfile.prometheus
     volumes:
       - prometheus-data:/prometheus
-    ports:
-      - "9090:9090"
     restart: unless-stopped
 
   grafana:

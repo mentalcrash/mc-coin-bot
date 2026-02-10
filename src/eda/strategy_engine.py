@@ -211,19 +211,53 @@ class StrategyEngine:
         )
         await bus.publish(signal_event)
 
+    def inject_warmup(
+        self,
+        symbol: str,
+        bars: list[dict[str, float]],
+        timestamps: list[datetime],
+    ) -> None:
+        """REST API에서 가져온 과거 데이터를 버퍼에 주입 (라이브 warmup용).
+
+        Args:
+            symbol: 거래 심볼
+            bars: OHLCV dict 리스트 (open, high, low, close, volume)
+            timestamps: bar별 타임스탬프 리스트
+
+        Raises:
+            ValueError: bars/timestamps 길이 불일치 또는 이미 데이터가 있는 경우
+        """
+        if len(bars) != len(timestamps):
+            msg = f"bars ({len(bars)}) and timestamps ({len(timestamps)}) length mismatch"
+            raise ValueError(msg)
+
+        if symbol in self._buffers and len(self._buffers[symbol]) > 0:
+            msg = f"Buffer for {symbol} is not empty, cannot inject warmup"
+            raise ValueError(msg)
+
+        self._buffers[symbol] = list(bars)
+        self._timestamps[symbol] = list(timestamps)
+        logger.info(
+            "Injected {} warmup bars for {} (warmup_needed={})",
+            len(bars),
+            symbol,
+            self._warmup,
+        )
+
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지.
+
+        config.warmup_periods()가 있으면 우선 사용 (가장 정확).
+        없으면 안전한 기본값 50 반환.
 
         Returns:
             감지된 warmup 기간
         """
         config = self._strategy.config
         if config is not None:
-            config_dict = config.model_dump()
-            lookback = config_dict.get("lookback", 0)
-            vol_window = config_dict.get("vol_window", 0)
-            if lookback > 0:
-                return int(max(lookback, vol_window) + 10)
+            warmup_fn = getattr(config, "warmup_periods", None)
+            if warmup_fn is not None:
+                return int(warmup_fn())
         return 50  # 안전한 기본값
 
     @property

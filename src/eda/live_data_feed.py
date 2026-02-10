@@ -95,6 +95,11 @@ class LiveDataFeed:
         self._shutdown_event.set()
 
     @property
+    def symbols(self) -> list[str]:
+        """스트리밍 대상 심볼 리스트."""
+        return self._symbols
+
+    @property
     def bars_emitted(self) -> int:
         """발행된 총 BarEvent 수."""
         return self._bars_emitted

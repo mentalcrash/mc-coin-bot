@@ -66,6 +66,22 @@ def _make_mock_client(exchange: MockExchange) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+class TestSymbolsProperty:
+    """symbols property 테스트."""
+
+    def test_symbols_returns_list(self) -> None:
+        """symbols 프로퍼티가 심볼 리스트를 반환."""
+        client = _make_mock_client(MockExchange([]))
+        feed = LiveDataFeed(["BTC/USDT", "ETH/USDT"], "1D", client)
+        assert feed.symbols == ["BTC/USDT", "ETH/USDT"]
+
+    def test_symbols_single(self) -> None:
+        """단일 심볼."""
+        client = _make_mock_client(MockExchange([]))
+        feed = LiveDataFeed(["SOL/USDT"], "1h", client)
+        assert feed.symbols == ["SOL/USDT"]
+
+
 class TestSingleSymbolStream:
     """단일 심볼 스트림 테스트."""
 

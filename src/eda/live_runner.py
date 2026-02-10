@@ -18,8 +18,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -50,6 +51,9 @@ from dataclasses import dataclass
 
 # 기본 상태 저장 주기 (초)
 _DEFAULT_SAVE_INTERVAL = 300.0
+
+# warmup 시 최소 필요 캔들 수 (마지막 1개 제거 후 1개 이상)
+_MIN_WARMUP_CANDLES = 2
 
 
 @dataclass
@@ -117,6 +121,7 @@ class LiveRunner:
         self._db_path = db_path
         self._discord_config = discord_config
         self._metrics_port = metrics_port
+        self._client: BinanceClient | None = None
 
     @classmethod
     def paper(
@@ -135,7 +140,7 @@ class LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
         executor = BacktestExecutor(cost_model=config.cost_model)
-        return cls(
+        runner = cls(
             strategy=strategy,
             feed=feed,
             executor=executor,
@@ -148,6 +153,8 @@ class LiveRunner:
             discord_config=discord_config,
             metrics_port=metrics_port,
         )
+        runner._client = client
+        return runner
 
     @classmethod
     def shadow(
@@ -166,7 +173,7 @@ class LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
         executor = ShadowExecutor()
-        return cls(
+        runner = cls(
             strategy=strategy,
             feed=feed,
             executor=executor,
@@ -179,6 +186,8 @@ class LiveRunner:
             discord_config=discord_config,
             metrics_port=metrics_port,
         )
+        runner._client = client
+        return runner
 
     async def run(self) -> None:
         """메인 루프. shutdown_event까지 실행."""
@@ -232,6 +241,9 @@ class LiveRunner:
             await rm.register(bus)
             await oms.register(bus)
             await analytics.register(bus)
+
+            # 4.5. REST API warmup — WebSocket 시작 전 버퍼 사전 채움
+            await self._warmup_strategy(strategy_engine)
 
             # 5. TradePersistence 등록 (analytics 이후)
             if db:
@@ -403,6 +415,88 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await tasks.bot_task
         logger.info("Discord Bot stopped")
+
+    async def _warmup_strategy(self, strategy_engine: StrategyEngine) -> None:
+        """REST API로 과거 데이터를 가져와 StrategyEngine 버퍼에 주입.
+
+        _client가 None이면 스킵. 심볼별 독립 실행으로 1개 실패해도 나머지 진행.
+        """
+        if self._client is None:
+            logger.warning("No client available, skipping REST API warmup")
+            return
+
+        warmup_needed = strategy_engine.warmup_periods + 10  # 여유분
+        symbols = self._feed.symbols
+
+        logger.info(
+            "Starting REST API warmup: {} symbols, {} bars each",
+            len(symbols),
+            warmup_needed,
+        )
+
+        for symbol in symbols:
+            try:
+                bars, timestamps = await self._fetch_warmup_bars(
+                    symbol, self._target_timeframe, warmup_needed
+                )
+                if bars:
+                    strategy_engine.inject_warmup(symbol, bars, timestamps)
+                else:
+                    logger.warning("No warmup data fetched for {}", symbol)
+            except Exception:
+                logger.exception("Warmup failed for {}, continuing without warmup", symbol)
+
+    async def _fetch_warmup_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int,
+    ) -> tuple[list[dict[str, float]], list[datetime]]:
+        """REST API로 과거 OHLCV 데이터를 가져와 StrategyEngine 버퍼 포맷으로 변환.
+
+        마지막 캔들은 미완성 가능성이 있으므로 제거합니다.
+
+        Args:
+            symbol: 거래 심볼
+            timeframe: 타임프레임 (e.g. "1D", "4h")
+            limit: 가져올 캔들 수
+
+        Returns:
+            (bars, timestamps) 튜플
+        """
+        assert self._client is not None
+
+        # CCXT TF 변환: Binance는 소문자 사용 (1D → 1d)
+        ccxt_tf = timeframe.lower() if timeframe.endswith("D") else timeframe
+
+        raw: list[list[Any]] = await self._client.fetch_ohlcv_raw(
+            symbol, ccxt_tf, limit=min(limit, 1000)
+        )
+
+        if len(raw) < _MIN_WARMUP_CANDLES:
+            return [], []
+
+        # 마지막 캔들 제거 (미완성 가능성)
+        raw = raw[:-1]
+
+        bars: list[dict[str, float]] = []
+        timestamps: list[datetime] = []
+
+        for candle in raw:
+            ts_ms = int(candle[0])
+            bars.append(
+                {
+                    "open": float(candle[1]),
+                    "high": float(candle[2]),
+                    "low": float(candle[3]),
+                    "close": float(candle[4]),
+                    "volume": float(candle[5]),
+                }
+            )
+            timestamps.append(datetime.fromtimestamp(ts_ms / 1000, tz=UTC))
+
+        logger.info("Fetched {} warmup bars for {} (requested {})", len(bars), symbol, limit)
+        return bars, timestamps
 
     def _setup_signal_handlers(self) -> None:
         """SIGTERM/SIGINT 핸들러 등록."""

@@ -33,6 +33,9 @@ END = datetime(2025, 12, 31, tzinfo=UTC)
 INITIAL_CAPITAL = Decimal(100_000)
 RESULTS_DIR = ROOT / "results"
 
+# 1H timeframe 전략 목록 (1m → 1H resample 필요)
+HOURLY_STRATEGIES = {"session-breakout", "liq-momentum", "flow-imbalance", "hour-season"}
+
 
 def create_portfolio(strategy_name: str) -> Portfolio:
     strategy_cls = get_strategy(strategy_name)
@@ -52,8 +55,9 @@ def run_single(
     symbol: str,
 ) -> dict[str, Any] | None:
     try:
+        timeframe = "1h" if strategy_name in HOURLY_STRATEGIES else "1D"
         data = service.get(
-            MarketDataRequest(symbol=symbol, timeframe="1D", start=START, end=END)
+            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=START, end=END)
         )
         strategy_cls = get_strategy(strategy_name)
         strategy = strategy_cls()

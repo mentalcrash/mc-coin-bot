@@ -376,3 +376,112 @@ class TestStrategyEngineWarmupDetection:
         strategy = SimpleTestStrategy()
         engine = StrategyEngine(strategy)
         assert engine.warmup_periods == 50  # 기본값
+
+    def test_detect_warmup_uses_config(self) -> None:
+        """config.warmup_periods()가 있으면 해당 값 사용."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        strategy = SimpleTestStrategy()
+        mock_config = MagicMock()
+        mock_config.warmup_periods.return_value = 302
+
+        # strategy.config을 mock으로 교체
+        type(strategy).config = PropertyMock(return_value=mock_config)
+        engine = StrategyEngine(strategy)
+        assert engine.warmup_periods == 302
+
+        # cleanup
+        del type(strategy).config
+
+
+class TestInjectWarmup:
+    """inject_warmup 메서드 테스트."""
+
+    def test_inject_warmup_fills_buffers(self) -> None:
+        """warmup 데이터가 버퍼에 정상 주입."""
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=5)
+
+        bars = [
+            {"open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0, "volume": 1000.0}
+            for _ in range(10)
+        ]
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        timestamps = [base + timedelta(days=i) for i in range(10)]
+
+        engine.inject_warmup("BTC/USDT", bars, timestamps)
+
+        assert len(engine._buffers["BTC/USDT"]) == 10
+        assert len(engine._timestamps["BTC/USDT"]) == 10
+
+    def test_inject_warmup_length_mismatch(self) -> None:
+        """bars/timestamps 길이 불일치 시 ValueError."""
+        import pytest
+
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=5)
+
+        bars = [{"open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0, "volume": 1000.0}]
+        timestamps = [
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 2, tzinfo=UTC),
+        ]
+
+        with pytest.raises(ValueError, match="length mismatch"):
+            engine.inject_warmup("BTC/USDT", bars, timestamps)
+
+    def test_inject_warmup_non_empty_buffer(self) -> None:
+        """이미 데이터가 있는 버퍼에 주입 시 ValueError."""
+        import pytest
+
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=5)
+
+        bars = [{"open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0, "volume": 1000.0}]
+        timestamps = [datetime(2024, 1, 1, tzinfo=UTC)]
+
+        engine.inject_warmup("BTC/USDT", bars, timestamps)
+
+        with pytest.raises(ValueError, match="not empty"):
+            engine.inject_warmup("BTC/USDT", bars, timestamps)
+
+    async def test_signal_after_warmup_injection(self) -> None:
+        """warmup 주입 후 첫 bar에서 즉시 SignalEvent 발행."""
+        strategy = SimpleTestStrategy()
+        engine = StrategyEngine(strategy, warmup_periods=5)
+        bus = EventBus(queue_size=100)
+        signals: list[SignalEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            assert isinstance(event, SignalEvent)
+            signals.append(event)
+
+        bus.subscribe(EventType.SIGNAL, handler)
+        await engine.register(bus)
+
+        # warmup 데이터 5개 주입
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        bars = [
+            {
+                "open": 50000.0,
+                "high": 50100.0,
+                "low": 49900.0,
+                "close": 50000.0 + (i * 10),
+                "volume": 1000.0,
+            }
+            for i in range(5)
+        ]
+        timestamps = [base + timedelta(days=i) for i in range(5)]
+        engine.inject_warmup("BTC/USDT", bars, timestamps)
+
+        task = asyncio.create_task(bus.start())
+
+        # 1개 bar 추가 → warmup 5 + 1 = 6 >= 5 → 즉시 시그널
+        bar = _make_bar("BTC/USDT", 50000.0, 50200.0, base + timedelta(days=5))
+        await bus.publish(bar)
+
+        await bus.stop()
+        await task
+
+        assert len(signals) == 1
+        assert signals[0].symbol == "BTC/USDT"

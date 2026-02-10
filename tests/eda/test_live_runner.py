@@ -278,6 +278,159 @@ class TestDbPathParameter:
         assert runner._db_path is None
 
 
+class TestClientStorage:
+    """_client 저장 테스트."""
+
+    def test_paper_stores_client(self) -> None:
+        """paper() factory에서 _client가 저장되는지 확인."""
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+        assert runner._client is client
+
+    def test_shadow_stores_client(self) -> None:
+        """shadow() factory에서 _client가 저장되는지 확인."""
+        client = _make_mock_client()
+        runner = LiveRunner.shadow(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+        assert runner._client is client
+
+    def test_manual_init_client_none(self) -> None:
+        """수동 __init__ 시 _client는 None."""
+        feed = MagicMock(spec=LiveDataFeed)
+        runner = LiveRunner(
+            strategy=AlwaysLongStrategy(),
+            feed=feed,
+            executor=ShadowExecutor(),
+            target_timeframe="1D",
+            config=_make_config(),
+            mode=LiveMode.SHADOW,
+        )
+        assert runner._client is None
+
+
+class TestWarmup:
+    """REST API warmup 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_warmup_called_during_run(self) -> None:
+        """run() 시 fetch_ohlcv_raw가 호출되는지 확인."""
+        client = _make_mock_client()
+        # fetch_ohlcv_raw mock 설정
+        client.fetch_ohlcv_raw = AsyncMock(
+            return_value=[
+                [1704067200000, 42000.0, 42500.0, 41500.0, 42200.0, 100.0],
+                [1704153600000, 42200.0, 42800.0, 42000.0, 42600.0, 120.0],
+                [1704240000000, 42600.0, 43000.0, 42400.0, 42900.0, 110.0],
+            ]
+        )
+
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+        runner._feed.symbols = ["BTC/USDT"]
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.2)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+
+        client.fetch_ohlcv_raw.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warmup_failure_graceful(self) -> None:
+        """API 실패 시 예외 없이 계속 진행."""
+        client = _make_mock_client()
+        client.fetch_ohlcv_raw = AsyncMock(side_effect=Exception("API down"))
+
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+        runner._feed.symbols = ["BTC/USDT"]
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.2)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        # 예외 없이 정상 종료되면 성공
+        await runner.run()
+        await shutdown_task
+
+    @pytest.mark.asyncio
+    async def test_warmup_skipped_when_no_client(self) -> None:
+        """_client가 None이면 warmup 스킵."""
+        feed = MagicMock(spec=LiveDataFeed)
+        runner = LiveRunner(
+            strategy=AlwaysLongStrategy(),
+            feed=feed,
+            executor=ShadowExecutor(),
+            target_timeframe="1D",
+            config=_make_config(),
+            mode=LiveMode.SHADOW,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.2)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        # 예외 없이 정상 종료 — _client=None이므로 warmup 스킵
+        await runner.run()
+        await shutdown_task
+
+
 class TestRunWithDb:
     """LiveRunner.run()에서 DB 통합 테스트."""
 

@@ -14,7 +14,7 @@
 | **타임프레임** | 1H |
 | **ShortMode** | FULL |
 | **Gate 0 점수** | 27/30 |
-| **상태** | :large_blue_circle: 후보 |
+| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, MDD 88~97%) |
 
 **핵심 가설**: Asian session(00-08 UTC)의 low-vol range를 EU/US 세션 open 시 breakout하는 패턴을 포착.
 
@@ -60,7 +60,7 @@
 | **타임프레임** | 1H |
 | **ShortMode** | HEDGE_ONLY |
 | **Gate 0 점수** | 25/30 |
-| **상태** | :large_blue_circle: 후보 |
+| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, MDD ~100%) |
 
 **핵심 가설**: Momentum 시그널의 유효성은 liquidity 상태에 따라 극적으로 변화. Low-liquidity 환경에서 price discovery 지연 → momentum 지속 시간 증가.
 
@@ -108,7 +108,7 @@
 | **타임프레임** | 1H |
 | **ShortMode** | FULL |
 | **Gate 0 점수** | 23/30 |
-| **상태** | :large_blue_circle: 후보 |
+| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, BVC 방향 예측 불가) |
 
 **핵심 가설**: 1H bar 내 close 위치(bar position)로 buying/selling pressure를 추정하고, 누적 OFI(Order Flow Imbalance) divergence로 방향을 예측.
 
@@ -155,7 +155,7 @@
 | **타임프레임** | 1H |
 | **ShortMode** | HEDGE_ONLY |
 | **Gate 0 점수** | 22/30 |
-| **상태** | :large_blue_circle: 후보 |
+| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, 계절성 비정상) |
 
 **핵심 가설**: 22:00-23:00 UTC에 통계적으로 유의한 positive return anomaly 존재. 시간대별 return 패턴을 기존 전략의 conviction overlay로 활용.
 
