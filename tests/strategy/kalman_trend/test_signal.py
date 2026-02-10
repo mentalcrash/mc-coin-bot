@@ -141,12 +141,8 @@ class TestEntryExitLogic:
         prev_direction = direction.shift(1).fillna(0)
 
         # entry: direction이 LONG/SHORT로 새로 진입할 때
-        expected_long_entry = (direction == Direction.LONG) & (
-            prev_direction != Direction.LONG
-        )
-        expected_short_entry = (direction == Direction.SHORT) & (
-            prev_direction != Direction.SHORT
-        )
+        expected_long_entry = (direction == Direction.LONG) & (prev_direction != Direction.LONG)
+        expected_short_entry = (direction == Direction.SHORT) & (prev_direction != Direction.SHORT)
         expected_entries = expected_long_entry | expected_short_entry
 
         pd.testing.assert_series_equal(
@@ -164,9 +160,7 @@ class TestEntryExitLogic:
         direction = signals.direction
         prev_direction = direction.shift(1).fillna(0)
 
-        to_neutral = (direction == Direction.NEUTRAL) & (
-            prev_direction != Direction.NEUTRAL
-        )
+        to_neutral = (direction == Direction.NEUTRAL) & (prev_direction != Direction.NEUTRAL)
         reversal = direction * prev_direction < 0
 
         expected_exits = to_neutral | reversal

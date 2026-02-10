@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pandas as pd
 import pytest
 
-from src.eda.executors import BacktestExecutor, ShadowExecutor
+from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
 from src.eda.live_runner import LiveMode, LiveRunner
 from src.portfolio.config import PortfolioManagerConfig
@@ -610,3 +610,137 @@ class TestRunWithDb:
         assert rm_state["peak_equity"] == 11000.0
 
         await db2.close()
+
+
+# ---------------------------------------------------------------------------
+# Live Factory
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_futures_client() -> MagicMock:
+    """Mock BinanceFuturesClient."""
+    client = MagicMock()
+    client.setup_account = AsyncMock()
+    client.fetch_positions = AsyncMock(return_value=[])
+    client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10000.0}})
+    return client
+
+
+class TestLiveFactory:
+    """LiveRunner.live() factory 테스트."""
+
+    def test_creates_live_runner(self) -> None:
+        """live() factory로 Live 모드 LiveRunner 생성."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        assert runner.mode == LiveMode.LIVE
+        assert isinstance(runner.feed, LiveDataFeed)
+
+    def test_live_uses_live_executor(self) -> None:
+        """Live 모드는 LiveExecutor를 사용."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        assert isinstance(runner._executor, LiveExecutor)
+
+    def test_live_stores_futures_client(self) -> None:
+        """live() factory에서 _futures_client가 저장되는지 확인."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        assert runner._futures_client is futures_client
+
+    def test_live_stores_symbols(self) -> None:
+        """live() factory에서 _symbols가 저장되는지 확인."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT", "ETH/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        assert runner._symbols == ["BTC/USDT", "ETH/USDT"]
+
+    def test_live_with_asset_weights(self) -> None:
+        """asset_weights가 전달되는지 확인."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        weights = {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT", "ETH/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+            asset_weights=weights,
+        )
+        assert runner._asset_weights == weights
+
+
+class TestLiveRunIntegration:
+    """Live 모드 run() 통합 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_live_run_sets_pm_and_reconciles(self) -> None:
+        """Live run() 시 LiveExecutor.set_pm + reconciler 실행 확인."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+        runner._feed.symbols = ["BTC/USDT"]
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.2)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+
+        # LiveExecutor에 PM이 설정되어야 함
+        assert runner._executor._pm is not None
+        # Reconciler가 fetch_positions를 호출했어야 함
+        futures_client.fetch_positions.assert_called()

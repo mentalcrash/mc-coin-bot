@@ -756,9 +756,9 @@ class EDAPortfolioManager:
         trailing_distance = atr * mult
 
         if pos.direction == Direction.LONG:
-            return bar.close < pos.peak_price_since_entry - trailing_distance
+            return bar.low < pos.peak_price_since_entry - trailing_distance
         if pos.direction == Direction.SHORT:
-            return bar.close > pos.trough_price_since_entry + trailing_distance
+            return bar.high > pos.trough_price_since_entry + trailing_distance
         return False
 
     async def _emit_close_order(

@@ -28,8 +28,9 @@ class TestHourSeasonConfig:
         """기본값으로 생성 테스트."""
         config = HourSeasonConfig()
 
-        assert config.season_window_days == 30
+        assert config.season_window_days == 45
         assert config.t_stat_threshold == 2.0
+        assert config.t_stat_exit_threshold == 1.0
         assert config.vol_confirm_window == 168
         assert config.vol_confirm_threshold == 1.0
         assert config.vol_target == 0.30
@@ -59,14 +60,14 @@ class TestHourSeasonConfig:
 
     def test_t_stat_threshold_range(self):
         """t_stat_threshold 범위 검증."""
-        config = HourSeasonConfig(t_stat_threshold=1.0)
+        config = HourSeasonConfig(t_stat_threshold=1.0, t_stat_exit_threshold=0.5)
         assert config.t_stat_threshold == 1.0
 
         config = HourSeasonConfig(t_stat_threshold=4.0)
         assert config.t_stat_threshold == 4.0
 
         with pytest.raises(ValidationError):
-            HourSeasonConfig(t_stat_threshold=0.9)
+            HourSeasonConfig(t_stat_threshold=0.9, t_stat_exit_threshold=0.5)
 
         with pytest.raises(ValidationError):
             HourSeasonConfig(t_stat_threshold=4.1)
@@ -86,15 +87,23 @@ class TestHourSeasonConfig:
 
     def test_warmup_periods(self):
         """warmup_periods() 테스트."""
-        config = HourSeasonConfig(season_window_days=30)
-        # 30 * 24 + 1 = 721
-        assert config.warmup_periods() == 721
+        config = HourSeasonConfig(season_window_days=45)
+        # 45 * 24 + 1 = 1081
+        assert config.warmup_periods() == 1081
 
     def test_warmup_periods_custom(self):
         """커스텀 파라미터로 warmup_periods() 테스트."""
         config = HourSeasonConfig(season_window_days=60)
         # 60 * 24 + 1 = 1441
         assert config.warmup_periods() == 1441
+
+    def test_t_stat_exit_threshold_must_be_less_than_entry(self):
+        """t_stat_exit_threshold < t_stat_threshold 검증."""
+        with pytest.raises(ValidationError):
+            HourSeasonConfig(t_stat_threshold=2.0, t_stat_exit_threshold=2.0)
+
+        with pytest.raises(ValidationError):
+            HourSeasonConfig(t_stat_threshold=2.0, t_stat_exit_threshold=2.5)
 
     def test_vol_confirm_threshold_range(self):
         """vol_confirm_threshold 범위 검증."""

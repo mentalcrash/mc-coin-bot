@@ -24,9 +24,13 @@ Example:
 # 전략 자동 등록 (import 시 @register 데코레이터 실행)
 # NOTE: 각 전략 모듈이 임포트될 때 Registry에 등록됨
 import src.strategy.ac_regime  # 전략 등록 side effect
+import src.strategy.accel_conv  # 전략 등록 side effect
+import src.strategy.accel_skew  # 전략 등록 side effect
 import src.strategy.adx_regime  # 전략 등록 side effect
+import src.strategy.anchor_mom  # 전략 등록 side effect
 import src.strategy.bb_rsi  # 전략 등록 side effect
 import src.strategy.breakout  # 전략 등록 side effect
+import src.strategy.candle_reject  # 전략 등록 side effect
 import src.strategy.copula_pairs  # 전략 등록 side effect
 import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
@@ -46,6 +50,9 @@ import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
 import src.strategy.multi_factor  # 전략 등록 side effect
+import src.strategy.ou_meanrev  # 전략 등록 side effect
+import src.strategy.perm_entropy_mom  # 전략 등록 side effect
+import src.strategy.qd_mom  # 전략 등록 side effect
 import src.strategy.range_squeeze  # 전략 등록 side effect
 import src.strategy.regime_tsmom  # 전략 등록 side effect
 import src.strategy.session_breakout  # 전략 등록 side effect
@@ -53,6 +60,7 @@ import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
 import src.strategy.vol_adaptive  # 전략 등록 side effect
+import src.strategy.vol_climax  # 전략 등록 side effect
 import src.strategy.vol_regime  # 전략 등록 side effect
 import src.strategy.vol_structure  # 전략 등록 side effect
 import src.strategy.vpin_flow  # 전략 등록 side effect

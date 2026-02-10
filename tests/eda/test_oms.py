@@ -45,7 +45,7 @@ class TestOMSBasics:
     """OMS 기본 동작 테스트."""
 
     async def test_validated_order_produces_fill(self) -> None:
-        """validated 주문 → Executor 실행 → FillEvent 발행."""
+        """validated 주문(price 설정) → Executor 즉시 실행 → FillEvent 발행."""
         cost_model = CostModel.zero()
         executor = BacktestExecutor(cost_model=cost_model)
         # 가격 데이터 설정
@@ -82,14 +82,64 @@ class TestOMSBasics:
         await oms.register(bus)
 
         task = asyncio.create_task(bus.start())
-        await bus.publish(_make_validated_order())
+        # SL/TS 스타일 주문 (price 설정 → 즉시 체결)
+        order = OrderRequestEvent(
+            client_order_id="test-sl-1",
+            symbol="BTC/USDT",
+            side="BUY",
+            target_weight=0.5,
+            notional_usd=5000.0,
+            price=50000.0,
+            validated=True,
+            correlation_id=uuid4(),
+            source="test",
+        )
+        await bus.publish(order)
         await bus.stop()
         await task
 
         assert len(acks) == 1
         assert len(fills) == 1
-        assert fills[0].fill_price == 50000.0  # open price
+        assert fills[0].fill_price == 50000.0
         assert oms.total_fills == 1
+
+    async def test_deferred_order_no_immediate_fill(self) -> None:
+        """일반 주문(price=None) → deferred, 즉시 FillEvent 없음."""
+        cost_model = CostModel.zero()
+        executor = BacktestExecutor(cost_model=cost_model)
+        from src.core.events import BarEvent
+
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+        )
+
+        oms = OMS(executor=executor)
+        bus = EventBus(queue_size=100)
+        fills: list[FillEvent] = []
+
+        async def fill_handler(event: AnyEvent) -> None:
+            if isinstance(event, FillEvent):
+                fills.append(event)
+
+        bus.subscribe(EventType.FILL, fill_handler)
+        await oms.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_validated_order())
+        await bus.stop()
+        await task
+
+        assert len(fills) == 0  # deferred, no immediate fill
+        assert executor.pending_count == 1  # order stored as pending
 
     async def test_unvalidated_order_ignored(self) -> None:
         """validated=False인 주문은 무시."""
@@ -153,8 +203,18 @@ class TestOMSBasics:
         await oms.register(bus)
 
         task = asyncio.create_task(bus.start())
-        # 같은 ID로 2번 발행
-        order = _make_validated_order(client_order_id="dup-order-1")
+        # 같은 ID로 SL 스타일 주문 2번 발행
+        order = OrderRequestEvent(
+            client_order_id="dup-order-1",
+            symbol="BTC/USDT",
+            side="BUY",
+            target_weight=0.5,
+            notional_usd=5000.0,
+            price=50000.0,
+            validated=True,
+            correlation_id=uuid4(),
+            source="test",
+        )
         await bus.publish(order)
         await bus.publish(order)
         await bus.stop()
@@ -189,7 +249,6 @@ class TestShadowExecutor:
 
         assert len(fills) == 0
         assert len(executor.order_log) == 1
-        assert oms.total_rejected == 1  # no fill = rejected
 
 
 class TestCircuitBreakerClose:

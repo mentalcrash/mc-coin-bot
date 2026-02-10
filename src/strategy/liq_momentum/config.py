@@ -11,7 +11,7 @@ Rules Applied:
 from enum import IntEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class ShortMode(IntEnum):
@@ -49,11 +49,11 @@ class LiqMomentumConfig(BaseModel):
         rel_vol_low: 저유동성 relative volume 임계값
         rel_vol_high: 고유동성 relative volume 임계값
         amihud_pctl_high: 저유동성 Amihud percentile 임계값
-        amihud_pctl_low: 고유동성 Amihud percentile 임계값
-        mom_lookback: Momentum lookback (1H bars)
+        mom_lookback: Momentum lookback (1H bars, 24 = 1일)
         low_liq_multiplier: 저유동성 conviction 배수
-        high_liq_multiplier: 고유동성 conviction 배수
         weekend_multiplier: 주말 conviction 배수
+        amihud_pctl_low: (derived) 1 - amihud_pctl_high
+        high_liq_multiplier: (derived) 2 - low_liq_multiplier
     """
 
     model_config = ConfigDict(frozen=True)
@@ -97,21 +97,14 @@ class LiqMomentumConfig(BaseModel):
         le=0.99,
         description="저유동성 Amihud percentile 임계값 (높을수록 illiquid)",
     )
-    amihud_pctl_low: float = Field(
-        default=0.25,
-        ge=0.01,
-        le=0.5,
-        description="고유동성 Amihud percentile 임계값 (낮을수록 liquid)",
-    )
-
     # =========================================================================
     # Momentum 파라미터
     # =========================================================================
     mom_lookback: int = Field(
-        default=12,
+        default=24,
         ge=3,
         le=168,
-        description="Momentum lookback (1H bars)",
+        description="Momentum lookback (1H bars, 24 = 1일)",
     )
 
     # =========================================================================
@@ -122,12 +115,6 @@ class LiqMomentumConfig(BaseModel):
         ge=1.0,
         le=3.0,
         description="저유동성 conviction 배수 (>1 = 확대)",
-    )
-    high_liq_multiplier: float = Field(
-        default=0.5,
-        ge=0.1,
-        le=1.0,
-        description="고유동성 conviction 배수 (<1 = 축소)",
     )
     weekend_multiplier: float = Field(
         default=1.2,
@@ -191,6 +178,21 @@ class LiqMomentumConfig(BaseModel):
         description="헤지 숏 강도 비율 (롱 대비, 예: 0.8 = 80%)",
     )
 
+    # =========================================================================
+    # Derived (computed) fields — 핵심 파라미터에서 자동 도출
+    # =========================================================================
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def amihud_pctl_low(self) -> float:
+        """고유동성 Amihud percentile 임계값 (1 - amihud_pctl_high)."""
+        return 1.0 - self.amihud_pctl_high
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def high_liq_multiplier(self) -> float:
+        """고유동성 conviction 배수 (2 - low_liq_multiplier, 대칭 스케일링)."""
+        return 2.0 - self.low_liq_multiplier
+
     @model_validator(mode="after")
     def validate_config(self) -> Self:
         """설정 일관성 검증."""
@@ -201,12 +203,6 @@ class LiqMomentumConfig(BaseModel):
             raise ValueError(msg)
         if self.rel_vol_low >= self.rel_vol_high:
             msg = f"rel_vol_low ({self.rel_vol_low}) must be < rel_vol_high ({self.rel_vol_high})"
-            raise ValueError(msg)
-        if self.amihud_pctl_low >= self.amihud_pctl_high:
-            msg = (
-                f"amihud_pctl_low ({self.amihud_pctl_low}) must be < "
-                f"amihud_pctl_high ({self.amihud_pctl_high})"
-            )
             raise ValueError(msg)
         return self
 

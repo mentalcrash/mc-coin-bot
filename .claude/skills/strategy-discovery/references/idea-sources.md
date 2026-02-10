@@ -9,7 +9,7 @@
 
 OHLCV에서 파생 가능한 미시구조 시그널. 외부 데이터 불필요.
 
-### 1-A. Order Flow Imbalance (주문 흐름 불균형)
+### 1-A. Order Flow Imbalance (주문 흐름 불균형) — OHLCV 접근 실패 확인
 
 ```
 경제적 논거: 대규모 매수/매도 압력은 가격에 선행한다.
@@ -24,6 +24,12 @@ OHLCV에서 파생 가능한 미시구조 시그널. 외부 데이터 불필요.
   - "Explainable Patterns in Cryptocurrency Microstructure" (arXiv:2602.00776)
 구현 난이도: 중간 (OHLCV에서 volume 분류 필요)
 TF 적합: 4H, 1D
+
+⚠️ 실패 기록 (2026-02-10):
+  - VPIN-Flow (1D): 전 에셋 거래 0건. VPIN threshold 도달 불가.
+  - Flow-Imbalance (1H): 전 에셋 Sharpe 음수. BVC 방향 예측 불가.
+  → OHLCV 기반 BVC 근사는 TF에 관계없이 microstructure alpha 불충분.
+  → 이 카테고리는 L2 order book 또는 tick data 확보 시에만 재시도 가능.
 ```
 
 ### 1-B. Roll Measure (Bid-Ask Spread 추정)
@@ -38,7 +44,7 @@ TF 적합: 4H, 1D
 TF 적합: 1D
 ```
 
-### 1-C. Amihud Illiquidity
+### 1-C. Amihud Illiquidity — 1H 크립토 실패 확인
 
 ```
 경제적 논거: 비유동성 프리미엄 — 유동성이 낮을수록 기대 수익률 높음.
@@ -47,7 +53,12 @@ TF 적합: 1D
   - Amihud = |return| / volume (일별)
   - 이동 평균으로 smoothing
 구현 난이도: 낮음 (OHLCV 직접)
-TF 적합: 1D
+TF 적합: 1D (1H에서 실패 확인)
+
+⚠️ 실패 기록 (2026-02-10):
+  - Liq-Momentum (1H): Sharpe -3.07~-6.48, MDD ~100%, 연 ~1,700건 과다거래.
+  - 1H Amihud 유동성 상태 전환이 과빈번 → conviction 확대가 whipsaw 증폭.
+  → 1D에서 재시도 가능하나, momentum+liquidity 조합 자체의 효과성 의문.
 ```
 
 ---
@@ -83,7 +94,7 @@ TF 적합: 1D, 4H
 TF 적합: 1D
 ```
 
-### 2-C. Intraday Volatility Pattern
+### 2-C. Intraday Volatility Pattern — Session/Seasonality 실패 확인
 
 ```
 경제적 논거: 크립토는 24/7 거래. 시간대별 유동성 차이 → 변동성 U-shape.
@@ -93,13 +104,20 @@ TF 적합: 1D
   - 연속 n일 range 축소 후 확대 (squeeze → expansion)
 구현 난이도: 낮음
 TF 적합: 4H, 1H
+
+⚠️ 실패 기록 (2026-02-10):
+  - Session-Breakout (1H): Sharpe -1.67~-3.49. Asian session range breakout은
+    크립토 24/7 시장에서 구조적 edge 부재. FX session 분리 ≠ 크립토.
+  - Hour-Season (1H): Sharpe -1.01~-4.46. Hour-of-day t-stat이 noise 과적합.
+    BTC(-4.46) 최악 = 효율적 시장에서 계절성 즉시 차익거래.
+  → Intraday session/seasonality 접근은 크립토에서 재시도 비권장.
 ```
 
 ---
 
 ## 3. Carry / Yield (캐리)
 
-### 3-A. Funding Rate Carry
+### 3-A. Funding Rate Carry — 폐기 (데이터 부재)
 
 ```
 경제적 논거: 영구선물 funding rate는 레버리지 수요를 반영.
@@ -108,7 +126,7 @@ TF 적합: 4H, 1H
 지표:
   - Funding rate 8h 이동 평균
   - Funding rate z-score
-상태: PENDING (funding_rate 데이터 미확보)
+상태: 폐기 (funding_rate 데이터 미확보, 인프라 투자 미진행)
 TF 적합: 8H, 1D
 ```
 
@@ -281,12 +299,38 @@ GitHub: shep-analytics/gt_score
 
 ---
 
-## 미탐색 영역 우선순위 (2026-02-10 기준)
+## 미탐색 영역 우선순위 (2026-02-10 갱신)
+
+> 46개 전략 시도, 45개 폐기 경험을 반영한 우선순위.
+> Microstructure/Session/Seasonality/Liquidity 영역은 실패 확인됨.
 
 ```
-1순위: Microstructure (VPIN, Order Flow) — 학술 근거 풍부, OHLCV 파생 가능
-2순위: Vol Term Structure — Realized Vol 기반, 외부 데이터 불필요
-3순위: Behavioral (Disposition Effect) — 경제적 논거 강함, 구현 직관적
-4순위: Information Theory (Entropy) — 참신성 높음, 구현 복잡도 중간
-5순위: Carry (Funding Rate) — 데이터 확보 시 즉시 활용 가능
+1순위: Behavioral Finance (Disposition Effect, Anchoring)
+       — 경제적 논거 강함, 미시도, OHLCV 직접 구현 가능
+       — 처분 효과: 크립토 retail 지배 시장에서 효과 극대화 가능성
+
+2순위: ML 앙상블 변형 (CTREND 외 다른 모델/피처셋)
+       — 유일한 성공 패턴(CTREND) 확장
+       — Random Forest, XGBoost, 다른 feature 조합 탐색
+       — 주의: CTREND와 높은 상관 시 포트폴리오 가치 제한
+
+3순위: Information Theory (Transfer Entropy, Sample Entropy)
+       — 참신성 최고, 완전 미시도 영역
+       — 구현 복잡도 중~높, numba 최적화 필요
+
+4순위: Cross-Asset Signal (BTC Dominance → 단일에셋 변환)
+       — BTC regime으로 ALT 포지션 조절
+       — 보조 입력 인프라 필요
+
+5순위: Vol Term Structure (RV_short/RV_long ratio)
+       — 외부 데이터 불필요, 구현 쉬움
+       — 단, Vol Structure/GK Breakout 실패 경험 → 단순 vol 비율 전략은 부족.
+         추가 시그널 소스 결합 필수
+
+⛔ 재시도 비권장 영역:
+   - OHLCV 기반 Microstructure (BVC/OFI/VPIN) — L2 data 없이 불가
+   - FX Session Decomposition — 크립토 24/7 비적합
+   - Hour-of-day Seasonality — noise 과적합
+   - Amihud 1H Liquidity Regime — 과빈번 전환
+   - Carry/Pairs — 데이터 인프라 부재
 ```

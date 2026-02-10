@@ -71,7 +71,10 @@ class LiveDataFeed:
 
     async def start(self, bus: EventBus) -> None:
         """심볼별 WebSocket 스트림 시작. stop() 호출까지 실행."""
-        stream_tasks = [asyncio.create_task(self._stream_symbol(sym, bus)) for sym in self._symbols]
+        stream_tasks = [
+            asyncio.create_task(self._stream_symbol(sym, bus, stagger_delay=i * 0.5))
+            for i, sym in enumerate(self._symbols)
+        ]
 
         # shutdown_event 대기 task — stop() 호출 시 stream tasks를 cancel
         async def _wait_shutdown() -> None:
@@ -104,7 +107,9 @@ class LiveDataFeed:
         """발행된 총 BarEvent 수."""
         return self._bars_emitted
 
-    async def _stream_symbol(self, symbol: str, bus: EventBus) -> None:
+    async def _stream_symbol(
+        self, symbol: str, bus: EventBus, *, stagger_delay: float = 0.0
+    ) -> None:
         """단일 심볼 WebSocket 스트림.
 
         CCXT Pro watch_ohlcv()는 현재 형성 중인 캔들을 반환합니다.
@@ -113,18 +118,26 @@ class LiveDataFeed:
         Args:
             symbol: 거래 심볼
             bus: EventBus 인스턴스
+            stagger_delay: 초기 연결 지연 (동시 연결 1008 방지)
         """
         import ccxt as ccxt_sync
+
+        if stagger_delay > 0:
+            await asyncio.sleep(stagger_delay)
 
         exchange = self._client.exchange
         last_candle_ts: int | None = None
         prev_candle: list[float] | None = None
         reconnect_delay = _INITIAL_RECONNECT_DELAY
+        was_disconnected = False
 
         while not self._shutdown_event.is_set():
             try:
                 ohlcvs: list[list[float]] = await exchange.watch_ohlcv(symbol, "1m")
                 reconnect_delay = _INITIAL_RECONNECT_DELAY  # 성공 시 리셋
+                if was_disconnected:
+                    logger.info("{} WebSocket reconnected", symbol)
+                    was_disconnected = False
 
                 if not ohlcvs:
                     continue
@@ -144,6 +157,7 @@ class LiveDataFeed:
                 last_candle_ts = current_ts
 
             except (ccxt_sync.NetworkError, OSError) as exc:
+                was_disconnected = True
                 logger.warning(
                     "{} WebSocket disconnected ({}), reconnecting in {:.0f}s",
                     symbol,

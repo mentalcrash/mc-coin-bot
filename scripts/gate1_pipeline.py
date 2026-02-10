@@ -134,23 +134,28 @@ def main() -> None:
 
     # Print summary
     for sname, results in all_results.items():
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  {sname}")
-        print(f"{'='*60}")
-        print(f"  {'Symbol':<12} {'Sharpe':>8} {'CAGR':>8} {'MDD':>8} {'Trades':>8} {'PF':>8} {'Alpha':>10} {'Beta':>6}")
-        print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*10} {'-'*6}")
+        print(f"{'=' * 60}")
+        print(
+            f"  {'Symbol':<12} {'Sharpe':>8} {'CAGR':>8} {'MDD':>8} {'Trades':>8} {'PF':>8} {'Alpha':>10} {'Beta':>6}"
+        )
+        print(
+            f"  {'-' * 12} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 6}"
+        )
         for r in sorted(results, key=lambda x: x.get("sharpe_ratio") or 0, reverse=True):
+
             def fmt(val: Any, spec: str = ".2f") -> str:
                 return f"{val:{spec}}" if val is not None else "N/A"
 
-            alpha_val = r.get('alpha')
-            beta_val = r.get('beta')
+            alpha_val = r.get("alpha")
+            beta_val = r.get("beta")
             alpha = f"{alpha_val:.1f}%" if alpha_val is not None else "N/A"
             beta = fmt(beta_val)
-            pf = fmt(r.get('profit_factor'))
-            sharpe = fmt(r.get('sharpe_ratio'))
-            cagr = fmt(r.get('cagr'), '.1f')
-            mdd = fmt(-r['max_drawdown'] if r.get('max_drawdown') is not None else None, '.1f')
+            pf = fmt(r.get("profit_factor"))
+            sharpe = fmt(r.get("sharpe_ratio"))
+            cagr = fmt(r.get("cagr"), ".1f")
+            mdd = fmt(-r["max_drawdown"] if r.get("max_drawdown") is not None else None, ".1f")
             print(
                 f"  {r['symbol']:<12} {sharpe:>8} "
                 f"{cagr:>7}% {mdd:>7}% "

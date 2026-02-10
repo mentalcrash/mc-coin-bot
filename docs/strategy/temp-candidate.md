@@ -1,196 +1,183 @@
-# Strategy Candidates (Temp)
+# Strategy Candidates — Temp Staging
 
-> Gate 0A PASS 아이디어 임시 후보 목록. 구현 전 사용자 리뷰 + 우선순위 결정용.
+> Gate 0 PASS 아이디어의 임시 후보 목록. 구현 전 사용자 리뷰와 우선순위 결정용.
 
 ---
 
-## 2026-02-10 — Strategy Discovery Session (1H Timeframe)
+## 2026-02-10 — Strategy Discovery Session (6H/12H TF)
 
-### 후보 #1: Session Breakout (`session-breakout`)
+### 후보 #1: Acceleration-Conviction Momentum (`accel-conv`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Structural / Session Decomposition |
-| **타임프레임** | 1H |
-| **ShortMode** | FULL |
+| **카테고리** | Momentum (2nd derivative) + Candle Anatomy |
+| **타임프레임** | 6H |
+| **ShortMode** | HEDGE_ONLY |
 | **Gate 0 점수** | 27/30 |
-| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, MDD 88~97%) |
+| **상태** | ✅ 구현 완료 (2026-02-11) |
 
-**핵심 가설**: Asian session(00-08 UTC)의 low-vol range를 EU/US 세션 open 시 breakout하는 패턴을 포착.
+**핵심 가설**: 가격 가속도(2차 미분)와 캔들 body conviction이 동시에 양(+)이면 추세 지속 확률이 극대화된다.
 
-**경제적 논거**: Asian 세션은 institutional 참여 부족으로 accumulation zone 형성. London/US open에서 fresh liquidity 유입 시 range breakout 발생. Stop-hunting: Asian H/L에 집중된 stop order sweep 후 방향 결정. FX 시장에서 수십 년간 검증된 구조적 edge.
+**경제적 논거**: Acceleration은 positive feedback loop가 강화되고 있음을 의미 (Ardila et al. 2021, Physica A). Body/range ratio는 세션 내 방향적 확신을 직접 측정하며, 두 독립 시그널의 결합이 단일 지표 전략의 Decay 문제를 완화한다. Gamma factor가 momentum factor를 2/3의 파라미터 조합에서 outperform.
 
-**사용 지표**: Session High/Low (00-08 UTC), Range Width Percentile (30d rolling), ADX (regime filter)
+**사용 지표**: `acceleration = returns.diff()`, `conviction = abs(close - open) / (high - low)`
 
 **시그널 생성 로직**:
 ```
-1. Asian range: 00:00-08:00 UTC 1H bar의 max(high), min(low)
-2. Range width percentile: 30일 rolling (narrow < 50th → squeeze)
-3. 08:00-20:00 UTC에서:
-   - close > Asian_high → long (shift(1) 적용)
-   - close < Asian_low → short (shift(1) 적용)
-4. Stop-loss: Asian range 반대쪽
-5. Exit: 22:00 UTC 또는 1.5x range width TP
-6. Narrow range filter: range_pctl < 50 시에만 진입 (squeeze 효과)
+acc = rolling_mean(ret.diff(), N)          # smoothed acceleration
+conv = rolling_mean(abs(C-O)/(H-L), N)    # smoothed body conviction
+signal = sign(acc) * conv                  # direction × strength
+→ signal > threshold: LONG
+→ signal < -threshold: SHORT (HEDGE_ONLY)
+→ otherwise: FLAT
 ```
 
-**CTREND 상관 예측**: 낮음 (intraday session structure vs daily ML ensemble)
+**CTREND 상관 예측**: 낮음 (CTREND feature set에 acceleration/body ratio 미포함)
 
-**예상 거래 빈도**: 100~200건/년
+**예상 거래 빈도**: 150~300건/년
 
-**차별화 포인트**: 기존 range-squeeze(NR7, daily)는 1D squeeze. 이 전략은 intraday session decomposition + time-of-day feature가 핵심. 프로젝트 내 session 기반 전략 없음.
+**차별화 포인트**: 2차 미분(acceleration)과 body conviction은 46개 전략 중 어느 것도 사용하지 않은 완전 새 카테고리. 가장 유사한 폐기 전략 없음.
 
-**출처**: Shen/Urquhart/Wang(2022) Financial Review, FMZ Quant Asian Breakout, Herman Trading (17yr NQ backtest)
+**출처**: Ardila, Forro, Sornette (Physica A, 2021) "The acceleration effect and Gamma factor in asset pricing" + Bulkowski (2008) candle pattern statistics
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 4/5
-- 참신성: 5/5
-- 데이터 확보: 5/5
-- 구현 복잡도: 5/5
-- 용량 수용: 4/5
-- 레짐 독립성: 4/5
+- 경제적 논거: 4/5 (학술 실증 + 이론적 기반)
+- 참신성: 5/5 (완전 새 카테고리)
+- 데이터 확보: 5/5 (OHLCV only)
+- 구현 복잡도: 5/5 (ret.diff() + body ratio = 극간단)
+- 용량 수용: 4/5 (6H → 1460 bars/year, 충분한 빈도)
+- 레짐 독립성: 4/5 (추세장 강함, conviction 필터가 횡보장 보정)
 
 ---
 
-### 후보 #2: Liquidity-Adjusted Momentum (`liq-momentum`)
+### 후보 #2: Anchored Momentum (`anchor-mom`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Trend-Following / Liquidity Regime |
-| **타임프레임** | 1H |
+| **카테고리** | Behavioral Finance (Psychological Anchoring) |
+| **타임프레임** | 12H |
 | **ShortMode** | HEDGE_ONLY |
 | **Gate 0 점수** | 25/30 |
-| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, MDD ~100%) |
+| **상태** | ✅ 구현 완료 (2026-02-11) |
 
-**핵심 가설**: Momentum 시그널의 유효성은 liquidity 상태에 따라 극적으로 변화. Low-liquidity 환경에서 price discovery 지연 → momentum 지속 시간 증가.
+**핵심 가설**: Rolling N-period high 대비 근접도(nearness)가 높을수록 상승 지속(under-reaction), 낮을수록 하락 압력(loss aversion 매도).
 
-**경제적 논거**: Kyle(1985) model — liquidity가 낮으면 informed trader의 정보가 가격에 느리게 반영되어 momentum 지속. Amihud illiquidity measure와 momentum return 간 양의 상관 실증. 주말/야간 thin market에서 momentum amplification 확인.
+**경제적 논거**: 투자자가 최근 고점을 심리적 앵커로 사용. 고점 근처에서 과도한 매도 압력 → under-reaction → 이후 추가 상승. Jia et al. 2024-2026: cANCHOR factor ~130bp/week. 크립토 retail 지배 시장에서 behavioral bias가 극대화된다.
 
-**사용 지표**: Relative Volume (168H median), Amihud Illiquidity Ratio, 12H TSMOM, Realized Volatility
-
-**시그널 생성 로직**:
-```
-1. Relative Volume = vol_1h / rolling_median(vol, 168H)
-2. Amihud = |return_1h| / volume_1h (rolling 24H mean)
-3. Liquidity state:
-   - LOW: rel_vol < 0.5 OR Amihud > 75th percentile
-   - HIGH: rel_vol > 1.5 AND Amihud < 25th percentile
-4. TSMOM signal: sign(rolling_return_12H) * vol_target / realized_vol
-5. Conviction scaling:
-   - LOW liquidity: weight * 1.5 (momentum amplification)
-   - HIGH liquidity: weight * 0.5 (MR risk)
-6. Weekend flag: SAT/SUN → additional 1.2x multiplier
-```
-
-**CTREND 상관 예측**: 낮음 (1H liquidity regime vs 1D ML ensemble)
-
-**예상 거래 빈도**: 50~120건/년
-
-**차별화 포인트**: 기존 tsmom/enhanced-tsmom/vw-tsmom은 fixed lookback + vol-target. 이 전략은 liquidity regime에 따라 momentum conviction을 dynamic하게 조절. Amihud ratio + relative volume 조합은 프로젝트 미탐색 영역.
-
-**출처**: Kyle(1985), Chu et al.(2020) RIBAF, Tzouvanas et al.(2020), Weekend Effect in Crypto(ACR 2023)
-
-**Gate 0 상세 점수**:
-- 경제적 논거: 5/5
-- 참신성: 4/5
-- 데이터 확보: 5/5
-- 구현 복잡도: 4/5
-- 용량 수용: 3/5
-- 레짐 독립성: 4/5
-
----
-
-### 후보 #3: Flow Imbalance (`flow-imbalance`)
-
-| 항목 | 내용 |
-|------|------|
-| **카테고리** | Microstructure / Order Flow Proxy |
-| **타임프레임** | 1H |
-| **ShortMode** | FULL |
-| **Gate 0 점수** | 23/30 |
-| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, BVC 방향 예측 불가) |
-
-**핵심 가설**: 1H bar 내 close 위치(bar position)로 buying/selling pressure를 추정하고, 누적 OFI(Order Flow Imbalance) divergence로 방향을 예측.
-
-**경제적 논거**: Informed trader 진입 시 order flow가 편향됨. Bar 내 close position이 buying/selling pressure의 proxy (BVC 이론). VPIN 상승은 informed trading 증가를 의미하며 큰 가격 변동 임박 신호. 1H 해상도는 1D 대비 24x 정밀한 flow 추정 가능.
-
-**사용 지표**: Bar Position (close-low)/(high-low), OFI (6H rolling), VPIN proxy (24H rolling std of buy_ratio), Volume
+**사용 지표**: `nearness = close / rolling_max(close, N)`, `momentum = sign(close / close.shift(M) - 1)`
 
 **시그널 생성 로직**:
 ```
-1. Buy ratio = (close - low) / (high - low)  → [0, 1]
-2. Buy_vol = volume * buy_ratio
-3. Sell_vol = volume * (1 - buy_ratio)
-4. OFI = rolling_sum(buy_vol - sell_vol, 6H) / rolling_sum(volume, 6H)
-5. VPIN proxy = rolling_std(buy_ratio, 24H)
-6. Entry (shift(1) 적용):
-   - OFI > 0.6 AND VPIN > threshold: long (strong buy pressure)
-   - OFI < -0.6 AND VPIN > threshold: short (strong sell pressure)
-7. Exit: |OFI| < 0.2 또는 24H timeout
+nearness = close / rolling_max(close, lookback)
+mom_sign = sign(close / close.shift(mom_lookback) - 1)
+
+→ nearness > 0.95 AND mom_sign > 0: STRONG LONG
+→ nearness > 0.85 AND mom_sign > 0: LONG
+→ nearness < 0.80 AND mom_sign < 0: SHORT (HEDGE_ONLY)
+→ otherwise: FLAT or reduced position
 ```
 
-**CTREND 상관 예측**: 낮음 (microstructure flow vs ML trend features)
+**CTREND 상관 예측**: 낮음~중간 (rolling high 정보 일부 공유 가능)
 
-**예상 거래 빈도**: 80~150건/년
+**예상 거래 빈도**: 80~200건/년
 
-**차별화 포인트**: vpin-flow(FAIL)는 1D OHLCV에서 BVC → VPIN threshold 0.7이 max 0.45로 도달 불가. 1H에서는 24x 데이터로 BVC 정밀도 대폭 향상. OFI 방향성 시그널 추가 (기존은 toxicity 감지만). Flow direction + activity gate 이중 필터.
+**차별화 포인트**: VWAP-Disposition(폐기, Sharpe 0.96)은 disposition effect + VWAP anchor. 이 전략은 anchoring bias + rolling high-water mark. 다른 behavioral mechanism. HEDGE_ONLY로 DOGE MDD -622% 방지.
 
-**출처**: Al-Carrion(2020) BVC, Anastasopoulos(2024) Crypto Order Flow, ScienceDirect(2025) Bitcoin Order Flow Toxicity
+**출처**: Jia, Simkins, Yan et al. (SSRN 5386180, 2024-2026) "Psychological Anchoring Effect and Cross Section of Cryptocurrency Returns"
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 4/5
-- 참신성: 4/5
-- 데이터 확보: 5/5
-- 구현 복잡도: 3/5
-- 용량 수용: 3/5
-- 레짐 독립성: 4/5
+- 경제적 논거: 5/5 (최강 학술 근거, ~130bp/week 실증)
+- 참신성: 4/5 (anchoring 미시도, VWAP-Disposition과 다른 메커니즘)
+- 데이터 확보: 5/5 (OHLCV only)
+- 구현 복잡도: 5/5 (rolling_max + nearness ratio = 극간단)
+- 용량 수용: 3/5 (12H → 730 bars/year, 느린 신호)
+- 레짐 독립성: 3/5 (장기 하락장에서 약화 가능)
 
 ---
 
-### 후보 #4: Hour Seasonality Overlay (`hour-season`)
+### 후보 #3: Quarter-Day TSMOM (`qd-mom`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Structural / Seasonality |
-| **타임프레임** | 1H |
+| **카테고리** | Intraday Time-Series Momentum |
+| **타임프레임** | 6H |
 | **ShortMode** | HEDGE_ONLY |
-| **Gate 0 점수** | 22/30 |
-| **상태** | :red_circle: G1 FAIL — 폐기 (전 에셋 Sharpe 음수, 계절성 비정상) |
+| **Gate 0 점수** | 25/30 |
+| **상태** | ✅ 구현 완료 (2026-02-11) |
 
-**핵심 가설**: 22:00-23:00 UTC에 통계적으로 유의한 positive return anomaly 존재. 시간대별 return 패턴을 기존 전략의 conviction overlay로 활용.
+**핵심 가설**: 이전 6H session return이 다음 session return을 양(+)으로 예측. Late-informed trader의 정보 흡수 지연 메커니즘.
 
-**경제적 논거**: 주요 시장 closed 시간대에 retail flow가 지배하며 systematic buying pressure 발생. EU-US overlap(16-17 UTC)에서 가장 효율적 가격 발견. NYSE 운영 여부가 crypto intraday return 구조에 영향 (coupling effect).
+**경제적 논거**: Shen 2022: BTC에서 Sharpe 1.15, 연 수익 13.95%. 정보가 느린 투자자들이 세션 후반에 진입하며 모멘텀을 지속시킨다. 24시간을 4개 session으로 자연 분할하면 Asia/Europe/US/Late 각 세션 간 정보 흐름 포착 가능.
 
-**사용 지표**: Hour-of-Day Return t-stat (30d rolling), Relative Volume, NYSE Open/Closed flag
+**사용 지표**: `prev_ret = close / close.shift(1) - 1`, `vol_filter = volume > rolling_median(volume, N)`
 
 **시그널 생성 로직**:
 ```
-1. Rolling 30일 window로 hour-of-day별 평균 return 계산
-2. Hour score = mean_return / stderr → t-stat
-3. Entry (단독 모드):
-   - Current hour score > +2.0: long bias
-   - Current hour score < -2.0: short bias
-4. Overlay 모드 (기존 전략과 결합):
-   - favorable hour: position size * 1.2
-   - unfavorable hour: position size * 0.8
-5. NYSE open/closed binary feature로 regime 구분
-6. Volume confirmation: high-volume hour의 signal만 신뢰
+prev_ret = close / close.shift(1) - 1
+vol_ok = volume > rolling_median(volume, lookback)
+
+→ prev_ret > 0 AND vol_ok: LONG
+→ prev_ret < 0 AND vol_ok: SHORT (HEDGE_ONLY)
+→ NOT vol_ok: FLAT (low conviction)
 ```
 
-**CTREND 상관 예측**: 낮음 (time structure vs price features)
+**CTREND 상관 예측**: 낮음 (daily vs sub-daily 메커니즘 완전 다름)
 
-**예상 거래 빈도**: 단독 150~250건/년, overlay 시 추가 비용 없음
+**예상 거래 빈도**: 200~400건/년
 
-**차별화 포인트**: 프로젝트 내 time-of-day를 feature로 사용하는 전략이 전무. 단독 alpha보다 기존 전략의 overlay/filter로 사용 시 포트폴리오 수준 Sharpe 개선 기대. Vojtko(2023)의 simple 21-23 UTC strategy: 연 33%, MDD -22%.
+**차별화 포인트**: Session-Breakout(폐기, 1H range breakout)과 근본적으로 다름: range breakout ≠ return direction prediction. Shen 2022가 crypto에서 직접 검증한 intraday momentum.
 
-**출처**: Vojtko/Javorska(2023 SSRN #4581124), Seo/Chai(2024 IRFE), QuantPedia Seasonal Anomalies, Mesicek/Vojtko(2025 SSRN #5748642)
+**출처**: Shen (2022) "Bitcoin intraday time series momentum" (Financial Review)
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 3/5
-- 참신성: 5/5
-- 데이터 확보: 5/5
-- 구현 복잡도: 5/5
-- 용량 수용: 2/5
-- 레짐 독립성: 2/5
+- 경제적 논거: 4/5 (Shen 2022 BTC Sharpe 1.15)
+- 참신성: 4/5 (sub-daily TSMOM 미시도, session echo 우려)
+- 데이터 확보: 5/5 (OHLCV only)
+- 구현 복잡도: 5/5 (prev return + volume filter = 극간단)
+- 용량 수용: 4/5 (6H → 4 signals/day, 충분)
+- 레짐 독립성: 3/5 (횡보장에서 autocorrelation 감소)
 
 ---
+
+### 후보 #4: Acceleration-Skewness Signal (`accel-skew`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Momentum (2nd derivative) + Higher Moments |
+| **타임프레임** | 12H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 24/30 |
+| **상태** | ✅ 구현 완료 (2026-02-11) |
+
+**핵심 가설**: 가격 가속도가 양(+)이고 rolling skewness도 양(+)이면, 우상향 테일이 reward로 전환. Skewness가 음(-)이면 crash risk → 거래 중단.
+
+**경제적 논거**: Acceleration은 positive feedback 강화 (Ardila et al.). 양의 skewness = 상승 잠재력 > 하락 리스크 (QuantPedia 2024: skewness lottery Sharpe 1.25). Return distribution의 형태 자체가 regime 정보를 담고 있어, skewness는 momentum의 quality filter로 작용.
+
+**사용 지표**: `acceleration = returns.diff()`, `rolling_skew = returns.rolling(N).skew()`
+
+**시그널 생성 로직**:
+```
+acc = rolling_mean(ret.diff(), N)
+skew = returns.rolling(skew_window).skew()
+
+→ acc > 0 AND skew > skew_threshold: LONG
+→ acc < 0 AND skew < -skew_threshold: SHORT (HEDGE_ONLY)
+→ skew 중립: position 유지 (no action)
+→ skew 반대 부호: FLAT (crash risk 회피)
+```
+
+**CTREND 상관 예측**: 낮음
+
+**예상 거래 빈도**: 60~150건/년
+
+**차별화 포인트**: Acceleration + skewness 조합은 완전 미시도. Entropy-Switch(폐기)는 entropy=filter만, alpha 부재. 여기서는 acceleration이 primary alpha, skewness는 quality filter.
+
+**출처**: Ardila et al. (2021) + QuantPedia "Skewness/Lottery Trading Strategy in Cryptocurrencies" (2024)
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 4/5 (두 시그널 모두 학술 근거)
+- 참신성: 5/5 (acceleration + skewness 조합 미사용)
+- 데이터 확보: 5/5 (OHLCV only)
+- 구현 복잡도: 4/5 (skewness rolling 계산 약간 복잡)
+- 용량 수용: 3/5 (12H + skewness filter → 거래 감소)
+- 레짐 독립성: 3/5 (강한 횡보에서 약화)

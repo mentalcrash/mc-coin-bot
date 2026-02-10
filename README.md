@@ -157,6 +157,23 @@ uv run python main.py eda run config/default.yaml --report
 uv run python main.py eda run config/default.yaml --mode shadow
 ```
 
+### Live Trading
+
+```bash
+# Paper 모드 — WebSocket 실시간 데이터 + 시뮬레이션 체결
+uv run python main.py eda run-live config/paper.yaml --mode paper
+
+# Shadow 모드 — 시그널 로깅만, 체결 없음
+uv run python main.py eda run-live config/paper.yaml --mode shadow
+
+# Live 모드 — Binance USDT-M Futures 실주문 (Hedge Mode)
+# ⚠️ 실자금 거래! 확인 프롬프트가 표시됩니다.
+uv run python main.py eda run-live config/paper.yaml --mode live
+```
+
+Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage)로 실행됩니다.
+60초마다 거래소 포지션과 PM 상태를 교차 검증(PositionReconciler)하며, 불일치 시 경고만 발행합니다(자동 수정 없음).
+
 ### 과적합 검증
 
 ```bash

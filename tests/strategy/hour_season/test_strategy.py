@@ -150,7 +150,7 @@ class TestHourSeasonStrategy:
         strategy = HourSeasonStrategy()
         warmup = strategy.warmup_periods()
 
-        assert warmup == 721
+        assert warmup == 1081  # 45 * 24 + 1
 
     def test_custom_config(self):
         """커스텀 설정으로 전략 생성."""

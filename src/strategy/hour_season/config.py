@@ -54,16 +54,22 @@ class HourSeasonConfig(BaseModel):
     # Seasonality 파라미터
     # =========================================================================
     season_window_days: int = Field(
-        default=30,
+        default=45,
         ge=7,
         le=90,
-        description="Same-hour 수익률 윈도우 (일 단위, 30 = 30일)",
+        description="Same-hour 수익률 윈도우 (일 단위, 45 = 45일, n=45 관측치)",
     )
     t_stat_threshold: float = Field(
         default=2.0,
         ge=1.0,
         le=4.0,
         description="t-stat 진입 임계값 (절대값)",
+    )
+    t_stat_exit_threshold: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=3.0,
+        description="t-stat 청산 임계값 (hysteresis: entry > exit 방지 과빈번 전환)",
     )
 
     # =========================================================================
@@ -143,6 +149,12 @@ class HourSeasonConfig(BaseModel):
         if self.vol_target < self.min_volatility:
             msg = (
                 f"vol_target ({self.vol_target}) must be >= min_volatility ({self.min_volatility})"
+            )
+            raise ValueError(msg)
+        if self.t_stat_exit_threshold >= self.t_stat_threshold:
+            msg = (
+                f"t_stat_exit_threshold ({self.t_stat_exit_threshold}) must be < "
+                f"t_stat_threshold ({self.t_stat_threshold})"
             )
             raise ValueError(msg)
         return self

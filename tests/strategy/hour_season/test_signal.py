@@ -101,6 +101,7 @@ class TestSeasonalLogic:
             season_window_days=7,
             vol_confirm_window=48,
             t_stat_threshold=1.0,
+            t_stat_exit_threshold=0.5,
             vol_confirm_threshold=0.3,
             short_mode=ShortMode.FULL,
         )
