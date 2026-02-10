@@ -53,7 +53,7 @@ G0 아이디어  [PASS] 22/30점
 G1 백테스트  [PASS] SOL/USDT Sharpe 2.05, CAGR +97.8%, MDD -27.7%
 G2 IS/OOS    [PASS] OOS Sharpe 1.78, Decay 33.7%
 G3 파라미터  [PASS] 4/4 파라미터 고원 + ±20% 안정
-G4 심층검증  [    ]
+G4 심층검증  [FAIL] WFA PASS, PBO 60% > 40% FAIL
 G5 EDA검증   [    ]
 G6 모의거래  [    ]
 G7 실전배포  [    ]
@@ -81,6 +81,69 @@ G7 실전배포  [    ]
 2. alpha(ElasticNet 정규화)가 전 범위에서 안정 — 28개 feature 앙상블의 일반화 능력 확인
 3. prediction_horizon 1~2일은 명확히 열등 — 일봉 전략에서 5일+ 예측이 적합
 4. 40회 백테스트, 207.5초 소요
+
+### Gate 4 상세 (심층검증, SOL/USDT 1D)
+
+#### WFA (Walk-Forward Analysis, 3 folds, expanding window)
+
+| Fold | Train | Test | IS Sharpe | OOS Sharpe | Decay | Consistent |
+|------|-------|------|-----------|------------|-------|:----------:|
+| 0 | 1096d | 365d | — | — | — | — |
+| 1 | 1461d | 365d | — | — | — | — |
+| 2 | 1826d | 365d | — | — | — | — |
+| **평균** | — | — | **2.46** | **1.49** | **39%** | **67%** |
+
+| 지표 | 결과 | 기준 | 판정 |
+|------|------|------|------|
+| OOS Sharpe | 1.49 | >= 0.5 | PASS |
+| Sharpe Decay | 39% | < 40% | PASS |
+| Consistency | 67% | >= 60% | PASS |
+
+**WFA 판정**: **PASS** (3/3 기준 충족, Decay는 기준 경계)
+
+#### CPCV (Combinatorial Purged CV, C(5,2) = 10 folds)
+
+| Fold | IS Sharpe | OOS Sharpe | Decay | Consistent |
+|------|-----------|------------|-------|:----------:|
+| 0 | 1.60 | 2.79 | -74.6% | Yes |
+| 1 | 1.81 | 1.33 | 26.8% | Yes |
+| 2 | 0.61 | 2.33 | -281.9% | Yes |
+| 3 | 1.89 | 0.77 | 59.5% | No |
+| 4 | 1.59 | 1.20 | 24.6% | Yes |
+| 5 | 0.69 | 1.34 | -95.3% | Yes |
+| 6 | 1.55 | 0.49 | 68.7% | No |
+| 7 | 1.55 | 2.11 | -35.6% | Yes |
+| 8 | 2.72 | 0.65 | 76.2% | No |
+| 9 | 2.35 | 0.92 | 60.8% | No |
+| **평균** | **1.64** | **1.39** | **15%** | **60%** |
+
+**특이사항**: 10개 fold 모두 OOS Sharpe **양수** (0.49~2.79). 음수 전환 없음.
+
+#### PBO / DSR / Monte Carlo
+
+| 지표 | 결과 | 기준 | 판정 |
+|------|------|------|------|
+| **PBO** | **60%** | < 40% | **FAIL** |
+| DSR (n=7, batch) | 1.00 | > 0.95 | PASS |
+| DSR (n=31, all) | 0.16 | > 0.95 | FAIL |
+| MC p-value | 0.000 | < 0.05 | PASS |
+| MC 95% CI | [0.97, 1.87] | — | — |
+| Sharpe Stability | 0.773 | — | 참고 |
+
+**Gate 4 종합 판정**: **FAIL** (PBO 60% > 40%)
+
+**분석**:
+- **WFA PASS**: 3-fold expanding window에서 OOS Sharpe 1.49, Decay 39%로 기준 충족
+- **CPCV 양호**: 10-fold 평균 OOS Sharpe 1.39, Decay 15%로 낮음. 전 fold 양수
+- **PBO FAIL**: IS에서 고성과인 fold가 OOS에서 저성과 경향 (순위 역전). 60% > 40% 기준
+- **MC PASS**: p-value 0.000, 95% CI 하한 0.97 > 0 (통계적 유의)
+- **DSR 해석**: n_trials에 민감. 동일 배치(7개) 기준 PASS, 전 전략(31개) 기준 FAIL
+
+**핵심 관찰**:
+1. PBO 60%는 IS/OOS 순위 상관이 낮다는 의미이나, 모든 OOS가 양수라 실질 위험은 제한적
+2. Fold 6 (OOS 0.49)과 Fold 8 (OOS 0.65)이 약점 — 특정 기간 조합에서 성과 저하
+3. WFA Decay 39%는 Gate 2 Decay 33.7%와 유사 — 일관된 IS→OOS 감쇠 패턴
+4. 전략 폐기보다는 **EDA Parity 검증 후 Paper Trading에서 실시간 확인** 권고
 
 ### Gate 2 상세 (IS/OOS 70/30, 5-coin EW Portfolio)
 
@@ -115,3 +178,4 @@ G7 실전배포  [    ]
 | 2026-02-10 | G1 | PASS | SOL/USDT Sharpe 2.05, CAGR +97.8%, MDD -27.7%, 288 trades |
 | 2026-02-10 | G2 | PASS | OOS Sharpe 1.78, Decay 33.7%, Overfit Prob 20.2% |
 | 2026-02-10 | G3 | PASS | 4/4 파라미터 고원 + ±20% 안정. vol_target 거의 평탄, alpha 전 범위 안정 |
+| 2026-02-10 | G4 | FAIL | WFA PASS (OOS 1.49, Decay 39%, Consist 67%). PBO 60% > 40% FAIL. MC p=0.000 PASS |

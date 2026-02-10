@@ -258,17 +258,19 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ---
 
-## 전략 스코어카드 (Gate 0-2 평가)
+## 전략 스코어카드 (Gate 0-4 평가)
 
-1개 활성 전략 (G3 PASS) + 2개 PENDING (데이터 부재) + 28개 폐기 전략.
+1개 활성 전략 (G4 FAIL, 재평가 중) + 2개 PENDING (데이터 부재) + 28개 폐기 전략.
 
-### 활성 전략 (Gate 3 완료)
+### 활성 전략 (Gate 4 완료)
 
-| # | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | 스코어카드 |
-|---|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|-----------|
-| 1 | **CTREND** (`ctrend`) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | **P** | **P** | **P** | [scorecard](docs/scorecard/ctrend.md) |
+| # | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | 스코어카드 |
+|---|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|-----------|
+| 1 | **CTREND** (`ctrend`) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | **P** | **P** | **P** | **F** | [scorecard](docs/scorecard/ctrend.md) |
 
-> **CTREND**: G3 파라미터 안정성 PASS (4/4 파라미터 고원 존재, vol_target 완전 평탄). Gate 4 심층검증(WFA+CPCV) 진행 권고.
+> **CTREND**: G4 심층검증 결과 — WFA PASS (OOS Sharpe 1.49, Decay 39%, Consistency 67%), MC p-value 0.000 PASS.
+> 단, **PBO 60% > 40%로 FAIL** (IS/OOS 순위 역전 경향). 전 CPCV fold OOS Sharpe 양수 (0.49~2.79).
+> 전략 폐기보다는 EDA Parity + Paper Trading에서 실시간 검증 권고.
 
 ### PENDING 전략 (데이터 부재)
 
@@ -352,3 +354,9 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 > XSMOM/Multi-Factor/VW-TSMOM은 Decay 76~92%로 전원 과적합 판정.
 > **IS Sharpe가 높아도 OOS에서 재현되지 않으면 무의미** — G1 PASS가 실전 성과를 보장하지 않음.
 > CTREND의 낮은 Decay(33.7%)는 ML 앙상블의 일반화 능력이 단일 팩터 전략보다 우수함을 시사.
+>
+> **교훈 (Gate 4 심층검증)**: CTREND WFA PASS이나 **PBO 60%로 FAIL**.
+> 10개 CPCV fold 모두 OOS Sharpe 양수(0.49~2.79)이므로 전략 자체는 수익성 유지.
+> 그러나 IS 고성과 fold가 OOS에서 저성과 경향 — **파라미터 고정 전략도 시계열 분할에 따라 순위가 불안정**.
+> DSR은 n_trials에 극도로 민감 (n=7 → 1.0, n=31 → 0.16) — 다중 테스트 보정 범위 설정이 핵심.
+> **PBO FAIL ≠ 폐기**: 전 fold 양수 + MC p=0.000이므로 EDA/Paper에서 실시간 검증이 합리적 다음 단계.
