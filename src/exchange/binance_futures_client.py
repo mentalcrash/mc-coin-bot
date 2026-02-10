@@ -137,13 +137,14 @@ class BinanceFuturesClient:
             raise RuntimeError(msg)
         return self._exchange
 
-    async def setup_account(self, symbols: list[str]) -> None:
-        """계정 설정: Hedge Mode + Cross Margin + 1x Leverage.
+    async def setup_account(self, symbols: list[str], *, leverage: int = 1) -> None:
+        """계정 설정: Hedge Mode + Cross Margin + 지정 Leverage.
 
         이미 설정된 경우 무시합니다 (idempotent).
 
         Args:
             symbols: 거래할 심볼 리스트 (예: ["BTC/USDT:USDT"])
+            leverage: 심볼별 레버리지 배수 (기본 1x)
         """
         # Hedge Mode 설정
         try:
@@ -162,7 +163,8 @@ class BinanceFuturesClient:
         for symbol in symbols:
             futures_symbol = self.to_futures_symbol(symbol)
             try:
-                await self.exchange.set_leverage(1, futures_symbol)  # type: ignore[arg-type]
+                await self.exchange.set_leverage(leverage, futures_symbol)  # type: ignore[arg-type]
+                logger.info("Leverage set to {}x for {}", leverage, futures_symbol)
             except ccxt.ExchangeError as e:
                 if "No need to change" in str(e):
                     pass

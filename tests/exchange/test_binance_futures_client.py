@@ -169,6 +169,18 @@ class TestSetupAccount:
         mock_exchange.set_margin_mode.assert_called_once_with("cross", "BTC/USDT:USDT")
 
     @pytest.mark.asyncio
+    async def test_setup_account_custom_leverage(self) -> None:
+        """커스텀 leverage 파라미터 전달."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                await client.setup_account(["BTC/USDT"], leverage=3)
+
+        mock_exchange.set_leverage.assert_called_once_with(3, "BTC/USDT:USDT")
+
+    @pytest.mark.asyncio
     async def test_setup_account_already_set(self) -> None:
         """이미 설정된 경우 무시 (idempotent)."""
         import ccxt as ccxt_sync

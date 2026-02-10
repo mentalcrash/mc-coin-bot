@@ -404,7 +404,9 @@ def launch_live(
                 from src.exchange.binance_futures_client import BinanceFuturesClient
 
                 async with BinanceFuturesClient() as futures_client:
-                    await futures_client.setup_account(symbol_list)
+                    await futures_client.setup_account(
+                        symbol_list, leverage=int(cfg.portfolio.max_leverage_cap)
+                    )
                     runner = LiveRunner.live(
                         strategy=strategy,
                         symbols=symbol_list,
