@@ -1,0 +1,160 @@
+"""Tests for VPIN Flow Signal Generator."""
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.strategy.types import Direction
+from src.strategy.vpin_flow.config import ShortMode, VPINFlowConfig
+from src.strategy.vpin_flow.preprocessor import preprocess
+from src.strategy.vpin_flow.signal import generate_signals
+
+
+@pytest.fixture
+def sample_ohlcv_df() -> pd.DataFrame:
+    np.random.seed(42)
+    n = 200
+    close = 100 + np.cumsum(np.random.randn(n) * 2)
+    high = close + np.abs(np.random.randn(n) * 1.5)
+    low = close - np.abs(np.random.randn(n) * 1.5)
+    open_ = close + np.random.randn(n) * 0.5
+    return pd.DataFrame(
+        {
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": np.random.randint(1000, 10000, n).astype(float),
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="D"),
+    )
+
+
+class TestSignalStructure:
+    def test_output_structure(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig()
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+
+        assert hasattr(signals, "entries")
+        assert hasattr(signals, "exits")
+        assert hasattr(signals, "direction")
+        assert hasattr(signals, "strength")
+
+    def test_entries_exits_bool(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig()
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+
+        assert signals.entries.dtype == bool
+        assert signals.exits.dtype == bool
+
+    def test_direction_values(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig(short_mode=ShortMode.FULL)
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+
+        assert set(signals.direction.unique()).issubset(
+            {Direction.SHORT, Direction.NEUTRAL, Direction.LONG}
+        )
+
+    def test_same_length(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig()
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+
+        assert len(signals.entries) == len(sample_ohlcv_df)
+
+
+class TestShift1Rule:
+    def test_first_bar_no_signal(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig()
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+
+        assert signals.direction.iloc[0] == 0
+        assert signals.strength.iloc[0] == 0.0
+
+
+class TestHighToxicity:
+    """High toxicity 시 flow 추종 테스트."""
+
+    def test_high_vpin_generates_signal(self):
+        """높은 VPIN에서 시그널 생성."""
+        n = 100
+        # 강한 매수 편향 → high VPIN
+        close = np.linspace(100, 200, n)
+        open_ = close - 5.0  # 강한 양봉
+        high = close + 1.0
+        low = open_ - 1.0
+
+        df = pd.DataFrame(
+            {
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.full(n, 10000.0),
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="D"),
+        )
+
+        config = VPINFlowConfig(
+            n_buckets=20,
+            threshold_high=0.5,
+            flow_direction_period=10,
+            short_mode=ShortMode.FULL,
+        )
+        processed = preprocess(df, config)
+        signals = generate_signals(processed, config)
+
+        # 강한 매수 편향으로 시그널 존재
+        assert signals.strength.abs().sum() > 0
+
+
+class TestShortMode:
+    def test_disabled_no_shorts(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig(short_mode=ShortMode.DISABLED)
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+        assert (signals.direction != Direction.SHORT).all()
+
+    def test_full_allows_shorts(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig(short_mode=ShortMode.FULL)
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed, config)
+        assert signals.direction.dtype == int
+
+    def test_hedge_only_suppresses_without_drawdown(self):
+        n = 100
+        close = np.linspace(100, 200, n)
+        high = close + 2.0
+        low = close - 2.0
+
+        df = pd.DataFrame(
+            {
+                "open": close - 0.5,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.full(n, 5000.0),
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="D"),
+        )
+
+        config = VPINFlowConfig(short_mode=ShortMode.HEDGE_ONLY)
+        processed = preprocess(df, config)
+        signals = generate_signals(processed, config)
+        assert (signals.direction != Direction.SHORT).all()
+
+    def test_missing_columns_raises(self):
+        df = pd.DataFrame({"close": [100, 101, 102]})
+        config = VPINFlowConfig()
+        with pytest.raises(ValueError, match="Missing required columns"):
+            generate_signals(df, config)
+
+    def test_default_config(self, sample_ohlcv_df: pd.DataFrame):
+        config = VPINFlowConfig()
+        processed = preprocess(sample_ohlcv_df, config)
+        signals = generate_signals(processed)
+        assert len(signals.entries) == len(sample_ohlcv_df)

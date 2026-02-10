@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 31개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
+> 35개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,7 +36,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (31개)
+## 현재 전략 현황 (35개)
 
 ### 활성 전략 (1개, Gate 4 완료)
 
@@ -47,6 +47,18 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 > WFA PASS (OOS Sharpe 1.49, Decay 39%), MC p=0.000 PASS.
 > PBO 60%로 G4 FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79).
 > **다음 단계**: EDA Parity + Paper Trading에서 실시간 검증 권고.
+
+### 검증중 전략 (4개, G0A PASS → G0B 대기)
+
+| 전략 | 유형 | G0A 점수 | G0B | G1 | 다음 단계 |
+|------|------|:--------:|:---:|:--:|----------|
+| [**AC-Regime**](../scorecard/ac-regime.md) | 레짐전환 | 27/30 | — | — | `/quant-code-audit` → 백테스트 |
+| [**Range-Squeeze**](../scorecard/range-squeeze.md) | 변동성/돌파 | 24/30 | — | — | `/quant-code-audit` → 백테스트 |
+| [**VR-Regime**](../scorecard/vr-regime.md) | 레짐전환 | 24/30 | — | — | `/quant-code-audit` → 백테스트 |
+| [**VPIN-Flow**](../scorecard/vpin-flow.md) | 마이크로스트럭처 | 22/30 | — | — | `/quant-code-audit` → 백테스트 |
+
+> 4개 전략 코드 구현 완료 (2026-02-10). 182 tests PASS, pyright 0 errors.
+> **다음 단계**: G0B 코드 감사 → G1 단일에셋 백테스트 (5코인 x 6년).
 
 ### PENDING 전략 (2개, 데이터 부재)
 

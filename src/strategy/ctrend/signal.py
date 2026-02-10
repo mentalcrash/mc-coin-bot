@@ -37,6 +37,8 @@ _MIN_TRAIN_SAMPLES = 30
 def generate_signals(
     df: pd.DataFrame,
     config: CTRENDConfig | None = None,
+    *,
+    predict_last_only: bool = False,
 ) -> StrategySignals:
     """CTREND 시그널 생성 (Rolling Elastic Net).
 
@@ -97,7 +99,10 @@ def generate_signals(
     predictions = np.full(n, np.nan)
 
     # NOTE: Rolling ML training requires loop -- cannot vectorize
-    for t in range(training_window, n):
+    # predict_last_only=True: 마지막 시그널에 필요한 fits만 수행 (EDA incremental 최적화)
+    # shift(1)로 인해 마지막 시그널은 n-2 인덱스의 prediction을 사용
+    loop_start = max(training_window, n - 2) if predict_last_only else training_window
+    for t in range(loop_start, n):
         # Training window: [t - training_window, t)
         start_idx = t - training_window
 

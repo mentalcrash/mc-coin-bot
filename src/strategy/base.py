@@ -199,6 +199,20 @@ class BaseStrategy(ABC):
         signals = self.generate_signals(processed_df)
         return processed_df, signals
 
+    def run_incremental(self, df: pd.DataFrame) -> tuple[pd.DataFrame, StrategySignals]:
+        """Incremental 모드 전략 실행 (최신 시그널만 효율적으로 계산).
+
+        기본 구현은 run()에 위임합니다. 전략별 최적화가 필요한 경우
+        (예: CTREND의 Rolling ElasticNet) 서브클래스에서 오버라이드합니다.
+
+        Args:
+            df: 원본 OHLCV DataFrame
+
+        Returns:
+            (전처리된 DataFrame, 시그널) 튜플
+        """
+        return self.run(df)
+
     @classmethod
     def recommended_config(cls) -> dict[str, Any]:
         """이 전략에 권장되는 PortfolioManagerConfig 설정을 반환합니다.
