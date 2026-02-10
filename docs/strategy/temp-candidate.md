@@ -1,149 +1,196 @@
-# Strategy Discovery — Temp Candidates
+# Strategy Candidates (Temp)
 
-> Gate 0 PASS 아이디어의 임시 후보 목록. 구현 전 사용자 리뷰와 우선순위 결정을 위한 staging 문서.
+> Gate 0A PASS 아이디어 임시 후보 목록. 구현 전 사용자 리뷰 + 우선순위 결정용.
 
 ---
 
-## 2026-02-10 — Strategy Discovery Session (4H Timeframe)
+## 2026-02-10 — Strategy Discovery Session (1H Timeframe)
 
-### 후보 #1: Entropy Regime Switch (`entropy-switch`)
+### 후보 #1: Session Breakout (`session-breakout`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Information Theory |
-| **타임프레임** | 4H |
-| **ShortMode** | HEDGE_ONLY |
-| **Gate 0 점수** | 26/30 |
-| **상태** | 🔵 후보 |
+| **카테고리** | Structural / Session Decomposition |
+| **타임프레임** | 1H |
+| **ShortMode** | FULL |
+| **Gate 0 점수** | 27/30 |
+| **상태** | :large_blue_circle: 후보 |
 
-**핵심 가설**: Shannon Entropy로 시장 예측가능성을 측정하여, 낮은 엔트로피(규칙적 패턴)에서만 추세추종 진입하고 높은 엔트로피(무작위)에서는 거래를 중단한다.
+**핵심 가설**: Asian session(00-08 UTC)의 low-vol range를 EU/US 세션 open 시 breakout하는 패턴을 포착.
 
-**경제적 논거**: 엔트로피가 낮으면 가격 패턴이 반복적이므로 추세가 지속될 가능성이 높다. 높은 엔트로피는 무작위 변동을 의미하며 추세추종 전략이 손실을 보는 구간이다. Entropy+ADX 조합 레짐 분류에서 87% 정확도가 학술적으로 검증되었다. Permutation Entropy로 BTC 변동성의 예측가능성이 8년간 실증되었다.
+**경제적 논거**: Asian 세션은 institutional 참여 부족으로 accumulation zone 형성. London/US open에서 fresh liquidity 유입 시 range breakout 발생. Stop-hunting: Asian H/L에 집중된 stop order sweep 후 방향 결정. FX 시장에서 수십 년간 검증된 구조적 edge.
 
-**사용 지표**: Shannon Entropy (returns, window=120, bins=10), Momentum (close, 20), ADX (14) 보조
+**사용 지표**: Session High/Low (00-08 UTC), Range Width Percentile (30d rolling), ADX (regime filter)
 
 **시그널 생성 로직**:
 ```
-1. entropy = scipy.stats.entropy(histogram(returns[-window:], bins))
-2. IF entropy < low_threshold AND momentum > 0 → LONG
-3. IF entropy < low_threshold AND momentum < 0 → SHORT (HEDGE_ONLY)
-4. IF entropy > high_threshold → FLAT (no signal)
-5. 중간 구간 → 기존 포지션 유지 (신규 진입 없음)
+1. Asian range: 00:00-08:00 UTC 1H bar의 max(high), min(low)
+2. Range width percentile: 30일 rolling (narrow < 50th → squeeze)
+3. 08:00-20:00 UTC에서:
+   - close > Asian_high → long (shift(1) 적용)
+   - close < Asian_low → short (shift(1) 적용)
+4. Stop-loss: Asian range 반대쪽
+5. Exit: 22:00 UTC 또는 1.5x range width TP
+6. Narrow range filter: range_pctl < 50 시에만 진입 (squeeze 효과)
 ```
 
-**CTREND 상관 예측**: 낮음 (정보이론 vs ML 기술적 앙상블)
+**CTREND 상관 예측**: 낮음 (intraday session structure vs daily ML ensemble)
 
-**예상 거래 빈도**: ~100건/년
+**예상 거래 빈도**: 100~200건/년
 
-**차별화 포인트**: 레짐 감지 전략 5개 전멸과 근본적 차이. 기존 전략들은 "시장 상태(bull/bear/sideways)" 분류를 시도했으나, entropy-switch는 "예측가능성 수준"을 측정한다. 시장이 예측가능할 때만 거래하는 메타 전략. ADX Regime(FAIL)은 ADX가 주 시그널이었으나, 여기서는 Entropy가 주이고 ADX는 보조 확인용.
+**차별화 포인트**: 기존 range-squeeze(NR7, daily)는 1D squeeze. 이 전략은 intraday session decomposition + time-of-day feature가 핵심. 프로젝트 내 session 기반 전략 없음.
 
-**출처**:
-- Optimizing Trading with ML and Entropy (Preprints 202502.1717) — Entropy+ADX 87% 정확도
-- Permutation Entropy Analysis of Bitcoin Volatility (Physica A, 2024) — 8년 BTC 검증
-- Shannon Entropy Cryptocurrency Portfolios (Entropy, 2022) — 포트폴리오 최적화
-- Trading with Less Surprise: Shannon Entropy (Medium/Codex) — 브레이크아웃 필터 실증
+**출처**: Shen/Urquhart/Wang(2022) Financial Review, FMZ Quant Asian Breakout, Herman Trading (17yr NQ backtest)
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 4/5 (학술 검증 다수, 87% regime 정확도)
-- 참신성: 5/5 (완전히 새 카테고리 — Information Theory)
-- 데이터 확보: 5/5 (OHLCV only, scipy.stats.entropy)
-- 구현 복잡도: 4/5 (entropy + momentum, 직관적)
-- 용량 수용: 4/5 (4H에서 ~100건/년)
-- 레짐 독립성: 4/5 (entropy 자체가 레짐 적응)
+- 경제적 논거: 4/5
+- 참신성: 5/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 5/5
+- 용량 수용: 4/5
+- 레짐 독립성: 4/5
 
 ---
 
-### 후보 #2: Adaptive Kalman Trend (`kalman-trend`)
+### 후보 #2: Liquidity-Adjusted Momentum (`liq-momentum`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Statistical Filtering / Trend Following |
-| **타임프레임** | 4H |
+| **카테고리** | Trend-Following / Liquidity Regime |
+| **타임프레임** | 1H |
 | **ShortMode** | HEDGE_ONLY |
-| **Gate 0 점수** | 24/30 |
-| **상태** | 🔵 후보 |
+| **Gate 0 점수** | 25/30 |
+| **상태** | :large_blue_circle: 후보 |
 
-**핵심 가설**: 칼만 필터로 가격에서 노이즈를 베이지안 최적으로 분리하여, smoothed price와 velocity 시그널로 추세 방향을 감지한다. Realized volatility 기반 adaptive Q 파라미터로 변동성 레짐에 자동 적응한다.
+**핵심 가설**: Momentum 시그널의 유효성은 liquidity 상태에 따라 극적으로 변화. Low-liquidity 환경에서 price discovery 지연 → momentum 지속 시간 증가.
 
-**경제적 논거**: 칼만 필터는 베이지안 최적 추정기로, 고정 lookback MA와 달리 자동으로 노이즈 레벨에 적응한다. Velocity (1st derivative) > 0이면 상승 추세, < 0이면 하락 추세. MA 대비 lag 감소, false signal 60% 필터링, profit factor 개선이 학술적으로 확인되었다. arXiv 2601.06084에서 4H가 크립토의 "equilibrium zone"임을 실증했다.
+**경제적 논거**: Kyle(1985) model — liquidity가 낮으면 informed trader의 정보가 가격에 느리게 반영되어 momentum 지속. Amihud illiquidity measure와 momentum return 간 양의 상관 실증. 주말/야간 thin market에서 momentum amplification 확인.
 
-**사용 지표**: Kalman state (smoothed price), Kalman velocity, Realized Volatility (20 bars) for adaptive Q
+**사용 지표**: Relative Volume (168H median), Amihud Illiquidity Ratio, 12H TSMOM, Realized Volatility
 
 **시그널 생성 로직**:
 ```
-1. state, velocity = kalman_update(price, Q_adaptive, R)
-   where Q_adaptive = base_Q * (realized_vol / long_term_vol)
-2. IF velocity > threshold → LONG
-3. IF velocity < -threshold → SHORT (HEDGE_ONLY)
-4. IF |velocity| < threshold → FLAT
-5. Position sizing: ATR-based vol targeting
+1. Relative Volume = vol_1h / rolling_median(vol, 168H)
+2. Amihud = |return_1h| / volume_1h (rolling 24H mean)
+3. Liquidity state:
+   - LOW: rel_vol < 0.5 OR Amihud > 75th percentile
+   - HIGH: rel_vol > 1.5 AND Amihud < 25th percentile
+4. TSMOM signal: sign(rolling_return_12H) * vol_target / realized_vol
+5. Conviction scaling:
+   - LOW liquidity: weight * 1.5 (momentum amplification)
+   - HIGH liquidity: weight * 0.5 (MR risk)
+6. Weekend flag: SAT/SUN → additional 1.2x multiplier
 ```
 
-**CTREND 상관 예측**: 중간 (둘 다 추세추종이나 메커니즘이 다름)
+**CTREND 상관 예측**: 낮음 (1H liquidity regime vs 1D ML ensemble)
 
-**예상 거래 빈도**: ~60-100건/년
+**예상 거래 빈도**: 50~120건/년
 
-**차별화 포인트**: TSMOM/Enhanced TSMOM(FAIL, Decay 85-87%)은 고정 MA lookback에 의존. 칼만 필터는 lookback window 파라미터가 없어 과적합 여지가 적다. Q/R ratio 하나로 responsiveness가 결정되며, adaptive Q는 실시간 변동성에 자동 조절.
+**차별화 포인트**: 기존 tsmom/enhanced-tsmom/vw-tsmom은 fixed lookback + vol-target. 이 전략은 liquidity regime에 따라 momentum conviction을 dynamic하게 조절. Amihud ratio + relative volume 조합은 프로젝트 미탐색 영역.
 
-**출처**:
-- Adaptive Kalman Filter vs EMA (PyQuantLab, 2025) — Sharpe/drawdown 우수
-- Abstract Trend Without Hiccups (arXiv:1808.03297) — smooth trend extraction
-- Who sets the range? (arXiv:2601.06084) — 4H equilibrium zone 실증
-- Kalman beats MAs in Trading (Coding Nexus, Dec 2025) — lag/profit factor 비교
+**출처**: Kyle(1985), Chu et al.(2020) RIBAF, Tzouvanas et al.(2020), Weekend Effect in Crypto(ACR 2023)
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 4/5 (베이지안 최적 필터링, 학술/실전 검증)
-- 참신성: 4/5 (프로젝트 내 칼만 필터 미사용)
-- 데이터 확보: 5/5 (OHLCV only)
-- 구현 복잡도: 3/5 (matrix operations, Q/R tuning)
-- 용량 수용: 4/5 (~60-100건/년)
-- 레짐 독립성: 4/5 (adaptive 설계)
+- 경제적 논거: 5/5
+- 참신성: 4/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 4/5
+- 용량 수용: 3/5
+- 레짐 독립성: 4/5
 
 ---
 
-### 후보 #3: VWAP Disposition Momentum (`vwap-disposition`)
+### 후보 #3: Flow Imbalance (`flow-imbalance`)
 
 | 항목 | 내용 |
 |------|------|
-| **카테고리** | Behavioral Finance |
-| **타임프레임** | 4H |
+| **카테고리** | Microstructure / Order Flow Proxy |
+| **타임프레임** | 1H |
 | **ShortMode** | FULL |
 | **Gate 0 점수** | 23/30 |
-| **상태** | 🔵 후보 |
+| **상태** | :large_blue_circle: 후보 |
 
-**핵심 가설**: Rolling VWAP를 시장 참여자의 평균 취득가(cost basis)로 사용하여, 미실현 이익/손실 수준(Capital Gains Overhang)에 따른 매도/매수 압력을 예측한다.
+**핵심 가설**: 1H bar 내 close 위치(bar position)로 buying/selling pressure를 추정하고, 누적 OFI(Order Flow Imbalance) divergence로 방향을 예측.
 
-**경제적 논거**: Disposition effect — 투자자는 이익은 빨리, 손실은 늦게 실현한다. Bitcoin에서 2017년 이후 disposition effect 유의미하게 증가 확인 (Schatzmann 2023). 미실현 이익 과다(CGO↑) → 차익실현 매도 압력 → 단기 약세. 미실현 손실 과다(CGO↓) → 항복 매도 후 반등. On-chain MVRV>3.5=고점, <1.0=저점으로 검증된 패턴을 VWAP proxy로 OHLCV 구현.
+**경제적 논거**: Informed trader 진입 시 order flow가 편향됨. Bar 내 close position이 buying/selling pressure의 proxy (BVC 이론). VPIN 상승은 informed trading 증가를 의미하며 큰 가격 변동 임박 신호. 1H 해상도는 1D 대비 24x 정밀한 flow 추정 가능.
 
-**사용 지표**: Rolling VWAP (720 bars = 120일), Price-to-VWAP ratio (CGO proxy), Volume ratio confirmation
+**사용 지표**: Bar Position (close-low)/(high-low), OFI (6H rolling), VPIN proxy (24H rolling std of buy_ratio), Volume
 
 **시그널 생성 로직**:
 ```
-1. vwap_120d = rolling_vwap(price, volume, window=720)
-2. cgo = (close - vwap_120d) / vwap_120d
-3. IF cgo < -overhang_low AND volume_spike → LONG (항복 매도 후 반등)
-4. IF cgo > +overhang_high AND volume_decline → SHORT (차익 실현 압력)
-5. IF -overhang_low < cgo < +overhang_high → momentum direction follow
+1. Buy ratio = (close - low) / (high - low)  → [0, 1]
+2. Buy_vol = volume * buy_ratio
+3. Sell_vol = volume * (1 - buy_ratio)
+4. OFI = rolling_sum(buy_vol - sell_vol, 6H) / rolling_sum(volume, 6H)
+5. VPIN proxy = rolling_std(buy_ratio, 24H)
+6. Entry (shift(1) 적용):
+   - OFI > 0.6 AND VPIN > threshold: long (strong buy pressure)
+   - OFI < -0.6 AND VPIN > threshold: short (strong sell pressure)
+7. Exit: |OFI| < 0.2 또는 24H timeout
 ```
 
-**CTREND 상관 예측**: 낮음 (행동재무학 vs ML 기술적)
+**CTREND 상관 예측**: 낮음 (microstructure flow vs ML trend features)
 
-**예상 거래 빈도**: ~60-80건/년
+**예상 거래 빈도**: 80~150건/년
 
-**차별화 포인트**: 행동재무학 카테고리 완전 미탐색. VW-TSMOM(FAIL, Decay 92%)은 volume-weighted momentum이 핵심이나, vwap-disposition은 VWAP를 cost basis proxy로 사용하여 투자자 심리를 측정. 방향이 근본적으로 다르다.
+**차별화 포인트**: vpin-flow(FAIL)는 1D OHLCV에서 BVC → VPIN threshold 0.7이 max 0.45로 도달 불가. 1H에서는 24x 데이터로 BVC 정밀도 대폭 향상. OFI 방향성 시그널 추가 (기존은 toxicity 감지만). Flow direction + activity gate 이중 필터.
 
-**출처**:
-- Exploring investor behavior in Bitcoin (arXiv:2010.12415, Digital Finance 2023)
-- On-Chain Cashflows and Cryptocurrency Returns (SSRN 4540433)
-- Cryptocurrency Volume-Weighted TSMOM (SSRN 4825389) — Sharpe 2.17
-- Behavioral biases of crypto investors (Emerald, 2024) — Prospect Theory
+**출처**: Al-Carrion(2020) BVC, Anastasopoulos(2024) Crypto Order Flow, ScienceDirect(2025) Bitcoin Order Flow Toxicity
 
 **Gate 0 상세 점수**:
-- 경제적 논거: 4/5 (Bitcoin disposition effect 실증, 행동재무학 이론)
-- 참신성: 5/5 (완전히 새 카테고리)
-- 데이터 확보: 4/5 (OHLCV rolling VWAP, on-chain 없이 proxy)
-- 구현 복잡도: 4/5 (rolling VWAP + deviation zones)
-- 용량 수용: 3/5 (~60-80건/년, deviation threshold 제한적)
-- 레짐 독립성: 3/5 (강세장에서 disposition effect 더 강함)
+- 경제적 논거: 4/5
+- 참신성: 4/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 3/5
+- 용량 수용: 3/5
+- 레짐 독립성: 4/5
+
+---
+
+### 후보 #4: Hour Seasonality Overlay (`hour-season`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Structural / Seasonality |
+| **타임프레임** | 1H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 22/30 |
+| **상태** | :large_blue_circle: 후보 |
+
+**핵심 가설**: 22:00-23:00 UTC에 통계적으로 유의한 positive return anomaly 존재. 시간대별 return 패턴을 기존 전략의 conviction overlay로 활용.
+
+**경제적 논거**: 주요 시장 closed 시간대에 retail flow가 지배하며 systematic buying pressure 발생. EU-US overlap(16-17 UTC)에서 가장 효율적 가격 발견. NYSE 운영 여부가 crypto intraday return 구조에 영향 (coupling effect).
+
+**사용 지표**: Hour-of-Day Return t-stat (30d rolling), Relative Volume, NYSE Open/Closed flag
+
+**시그널 생성 로직**:
+```
+1. Rolling 30일 window로 hour-of-day별 평균 return 계산
+2. Hour score = mean_return / stderr → t-stat
+3. Entry (단독 모드):
+   - Current hour score > +2.0: long bias
+   - Current hour score < -2.0: short bias
+4. Overlay 모드 (기존 전략과 결합):
+   - favorable hour: position size * 1.2
+   - unfavorable hour: position size * 0.8
+5. NYSE open/closed binary feature로 regime 구분
+6. Volume confirmation: high-volume hour의 signal만 신뢰
+```
+
+**CTREND 상관 예측**: 낮음 (time structure vs price features)
+
+**예상 거래 빈도**: 단독 150~250건/년, overlay 시 추가 비용 없음
+
+**차별화 포인트**: 프로젝트 내 time-of-day를 feature로 사용하는 전략이 전무. 단독 alpha보다 기존 전략의 overlay/filter로 사용 시 포트폴리오 수준 Sharpe 개선 기대. Vojtko(2023)의 simple 21-23 UTC strategy: 연 33%, MDD -22%.
+
+**출처**: Vojtko/Javorska(2023 SSRN #4581124), Seo/Chai(2024 IRFE), QuantPedia Seasonal Anomalies, Mesicek/Vojtko(2025 SSRN #5748642)
+
+**Gate 0 상세 점수**:
+- 경제적 논거: 3/5
+- 참신성: 5/5
+- 데이터 확보: 5/5
+- 구현 복잡도: 5/5
+- 용량 수용: 2/5
+- 레짐 독립성: 2/5
 
 ---

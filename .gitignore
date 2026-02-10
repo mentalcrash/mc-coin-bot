@@ -246,6 +246,8 @@ config.local.yml
 
 # Trading bot specific
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 backtest_results/
 reports/

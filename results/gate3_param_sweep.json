@@ -1,10 +1,10 @@
 {
   "meta": {
-    "run_date": "2026-02-10T02:10:13.781599+00:00",
+    "run_date": "2026-02-10T11:43:00.096297+00:00",
     "period": "2020-01-01 ~ 2025-12-31",
     "initial_capital": "100000",
     "total_runs": 40,
-    "elapsed_seconds": 207.5
+    "elapsed_seconds": 206.5
   },
   "summary": [
     {

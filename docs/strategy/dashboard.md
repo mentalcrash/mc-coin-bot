@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 39개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
+> 42개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서.
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,7 +36,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (39개)
+## 현재 전략 현황 (42개)
 
 ### 활성 전략 (1개, Gate 5 완료)
 
@@ -48,16 +48,9 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 > G4 PBO 60% FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79). MC p=0.000 PASS.
 > **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-### 검증중 전략 (3개, G0A PASS → G0B 대기)
+### 검증중 전략 (0개)
 
-| 전략 | 유형 | TF | G0A | G0B | 다음 단계 |
-|------|------|-----|:---:|:---:|----------|
-| [**Entropy-Switch**](../scorecard/entropy-switch.md) | 정보이론 | 4H | 26/30 | — | G0B 코드 감사 |
-| [**Kalman-Trend**](../scorecard/kalman-trend.md) | 통계필터링 | 4H | 24/30 | — | G0B 코드 감사 |
-| [**VWAP-Disposition**](../scorecard/vwap-disposition.md) | 행동재무학 | 4H | 23/30 | — | G0B 코드 감사 |
-
-> 3개 전략 신규 구현 완료 (2026-02-10). 모두 4H 타임프레임, 기존 전략과 겹치지 않는 새 카테고리.
-> **다음 단계**: G0B 코드 감사 (`/verify-strategy`).
+> 검증 대기 전략 없음. 새 전략 발굴 필요 (`/strategy-discovery`).
 
 ### PENDING 전략 (2개, 데이터 부재)
 
@@ -66,7 +59,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [**Funding Carry**](scorecard/funding-carry.md) | 25/30 | `funding_rate` 데이터 수집 필요 |
 | [**Copula Pairs**](scorecard/copula-pairs.md) | 20/30 | `pair_close` 데이터 구성 필요 |
 
-### 폐기 전략 (33개)
+### 폐기 전략 (36개)
 
 #### Gate 4 실패 — WFA 심층검증
 
@@ -94,12 +87,15 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [MTF-MACD](scorecard/fail/mtf-macd.md) | 0.76 | 0.21 | 78.1% | [HMM Regime](scorecard/fail/hmm-regime.md) | 0.75 | -0.66 | 162.9% |
 | [Adaptive Breakout](scorecard/fail/adaptive-breakout.md) | 0.54 | -0.68 | 201.1% | [Mom-MR Blend](scorecard/fail/mom-mr-blend.md) | 0.48 | -0.10 | 109.1% |
 
-#### Gate 1 실패 — CAGR 미달
+#### Gate 1 실패 — Sharpe/CAGR 미달
 
 | 전략 | Sharpe | CAGR | 사유 |
 |------|--------|------|------|
+| [VWAP-Disposition](scorecard/fail/vwap-disposition.md) | 0.96 | +30.4% | Sharpe 0.96 < 1.0 (0.04 미달). DOGE MDD -622% (FULL short 파산) |
 | [Donchian Ensemble](scorecard/fail/donchian-ensemble.md) | 0.99 | +10.8% | CAGR < 20% |
+| [Kalman-Trend](scorecard/fail/kalman-trend.md) | 0.78 | +19.4% | Sharpe < 1.0, CAGR -0.6%p 미달. DOGE 거래 0건 |
 | [BB-RSI](scorecard/fail/bb-rsi.md) | 0.59 | +4.6% | CAGR < 20% |
+| [Entropy-Switch](scorecard/fail/entropy-switch.md) | 0.52 | +11.1% | 전 에셋 Sharpe < 1.0, MDD -47.9%. Alpha 부재 |
 
 #### Gate 1 실패 — 전 에셋 Sharpe 음수/0 근접
 
@@ -135,3 +131,8 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | 5 | **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증이 합리적 다음 단계 |
 | 6 | **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블 |
 | 7 | **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수. 1D OHLCV에서 BVC 근사는 정보 손실 심각 |
+| 8 | **G0A 이론 ≠ G1 실전**: AC-Regime(27/30), VR-Regime(24/30) 등 G0A 고득점이 G1 백테스트 성과를 보장하지 않음. 39개 전략 중 G5 도달 1개(2.6%) |
+| 9 | **통계적 검정 전략의 한계**: significance threshold (z=1.96)가 일봉 데이터에서 거래 빈도를 극단 제한 (BTC 6년간 2건). 학술적 엄밀성 ≠ 실용성 |
+| 10 | **밈코인 FULL Short = 구조적 자살**: VWAP-Disposition DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적. DOGE 제외 시 SOL Sharpe 0.96 |
+| 11 | **칼만 필터 ≠ 알파**: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음. vel_threshold가 에셋 변동성에 미적응 (DOGE 거래 0건) |
+| 12 | **레짐 필터의 양면성**: Entropy 필터가 거래 중단→리스크 감소에는 기여하나, alpha 생성 메커니즘 없으면 수익도 함께 감소. 42개 전략 중 G5 도달 여전히 1개(2.4%) |

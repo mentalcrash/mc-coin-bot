@@ -138,10 +138,11 @@ class LiveDataFeed:
                 prev_candle = latest
                 last_candle_ts = current_ts
 
-            except (ccxt_sync.NetworkError, OSError):
+            except (ccxt_sync.NetworkError, OSError) as exc:
                 logger.warning(
-                    "{} WebSocket disconnected, reconnecting in {:.0f}s",
+                    "{} WebSocket disconnected ({}), reconnecting in {:.0f}s",
                     symbol,
+                    exc,
                     reconnect_delay,
                 )
                 await asyncio.sleep(reconnect_delay)
