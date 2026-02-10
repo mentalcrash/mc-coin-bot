@@ -126,7 +126,7 @@ class PortfolioManagerConfig(BaseModel):
         description="Trailing Stop ATR 배수 (예: 2.0 = 2 ATR)",
     )
     use_intrabar_stop: bool = Field(
-        default=False,
+        default=True,
         description="Intrabar 가격(High/Low)으로 손절 체크 (False: Close 기준)",
     )
 

@@ -208,10 +208,10 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
             trailing_distance = current_atr * atr_multiplier
 
             if position_direction == 1:  # 롱 포지션
-                # 현재 가격이 최고가 - trailing_distance 아래로 하락
-                stop_triggered = close[i] < highest_since_entry - trailing_distance
-            elif close[i] > lowest_since_entry + trailing_distance:  # 숏 포지션
-                # 현재 가격이 최저가 + trailing_distance 위로 상승
+                # 장중 최저가가 최고가 - trailing_distance 아래로 하락
+                stop_triggered = low[i] < highest_since_entry - trailing_distance
+            elif high[i] > lowest_since_entry + trailing_distance:  # 숏 포지션
+                # 장중 최고가가 최저가 + trailing_distance 위로 상승
                 stop_triggered = True
 
             if stop_triggered:
