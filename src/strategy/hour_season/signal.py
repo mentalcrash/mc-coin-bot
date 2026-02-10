@@ -56,14 +56,21 @@ def generate_signals(
     vol_confirm_prev = df["vol_confirm"].shift(1).fillna(False).astype(bool)
     vol_scalar_prev: pd.Series = df["vol_scalar"].shift(1)  # type: ignore[assignment]
 
-    # 2. Direction based on t-stat + volume confirm
-    long_cond = (t_stat_prev > config.t_stat_threshold) & vol_confirm_prev
-    short_cond = (t_stat_prev < -config.t_stat_threshold) & vol_confirm_prev
+    # 2. Hysteresis: entry at threshold, exit at exit_threshold, hold in between
+    long_entry = (t_stat_prev > config.t_stat_threshold) & vol_confirm_prev
+    short_entry = (t_stat_prev < -config.t_stat_threshold) & vol_confirm_prev
+    exit_cond = t_stat_prev.abs() < config.t_stat_exit_threshold
 
-    direction_raw = pd.Series(
-        np.where(long_cond, 1, np.where(short_cond, -1, 0)),
+    # Entry → direction, exit → 0, hold zone → NaN (ffill maintains position)
+    raw_direction = pd.Series(
+        np.where(
+            exit_cond,
+            0,
+            np.where(long_entry, 1, np.where(short_entry, -1, np.nan)),
+        ),
         index=df.index,
     )
+    direction_raw = raw_direction.ffill().fillna(0).astype(int)
 
     # 3. Strength = direction * vol_scalar
     strength_raw = direction_raw * vol_scalar_prev

@@ -34,10 +34,10 @@ class TestLiqMomentumConfig:
         assert config.rel_vol_low == 0.5
         assert config.rel_vol_high == 1.5
         assert config.amihud_pctl_high == 0.75
-        assert config.amihud_pctl_low == 0.25
-        assert config.mom_lookback == 12
+        assert config.amihud_pctl_low == 0.25  # derived: 1 - 0.75
+        assert config.mom_lookback == 24
         assert config.low_liq_multiplier == 1.5
-        assert config.high_liq_multiplier == 0.5
+        assert config.high_liq_multiplier == 0.5  # derived: 2 - 1.5
         assert config.weekend_multiplier == 1.2
         assert config.vol_target == 0.30
         assert config.annualization_factor == 8760.0
@@ -69,10 +69,15 @@ class TestLiqMomentumConfig:
         with pytest.raises(ValidationError):
             LiqMomentumConfig(rel_vol_low=2.0, rel_vol_high=1.5)
 
-    def test_amihud_pctl_low_must_be_less_than_high(self):
-        """amihud_pctl_low < amihud_pctl_high 검증."""
-        with pytest.raises(ValidationError):
-            LiqMomentumConfig(amihud_pctl_low=0.75, amihud_pctl_high=0.75)
+    def test_amihud_pctl_low_derived(self):
+        """amihud_pctl_low는 1 - amihud_pctl_high로 자동 도출."""
+        config = LiqMomentumConfig(amihud_pctl_high=0.80)
+        assert config.amihud_pctl_low == pytest.approx(0.20)
+
+    def test_high_liq_multiplier_derived(self):
+        """high_liq_multiplier는 2 - low_liq_multiplier로 자동 도출."""
+        config = LiqMomentumConfig(low_liq_multiplier=1.8)
+        assert config.high_liq_multiplier == pytest.approx(0.2)
 
     def test_vol_target_gte_min_volatility(self):
         """vol_target >= min_volatility 검증."""
