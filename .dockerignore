@@ -29,8 +29,8 @@ research/
 # Documentation
 docs/
 
-# Scripts (dev/research only)
-scripts/
+# Scripts — healthcheck.py 등 런타임에 필요하므로 포함
+# scripts/
 
 # Data files (mounted as volumes in production)
 *.parquet
