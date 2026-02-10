@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Gate 3: Parameter Stability Validation.
 
-G2 통과 전략 5개에 대해 핵심 파라미터를 ±20% 및 넓은 범위로 스윕하여
+G2 통과 전략에 대해 핵심 파라미터를 ±20% 및 넓은 범위로 스윕하여
 파라미터 안정성(고원 존재 + ±20% Sharpe 부호 유지)을 검증한다.
 
 Usage:
-    uv run python scripts/gate3_param_sweep.py
+    uv run python scripts/gate3_param_sweep.py                # 전체 전략
+    uv run python scripts/gate3_param_sweep.py ctrend         # 특정 전략만
+    uv run python scripts/gate3_param_sweep.py ctrend kama    # 복수 전략
 
 Output:
     results/gate3_param_sweep.json  -- 전략별 파라미터 스윕 결과
@@ -131,6 +133,27 @@ STRATEGIES: dict[str, dict[str, Any]] = {
             "vol_target": [0.10, 0.15, 0.16, 0.18, 0.20, 0.22, 0.24, 0.25, 0.30],
             # bb_weight는 별도 처리 (rsi_weight = 1 - bb_weight)
             "bb_weight": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        },
+    },
+    "ctrend": {
+        "best_asset": "SOL/USDT",
+        "baseline": {
+            "training_window": 252,
+            "prediction_horizon": 5,
+            "alpha": 0.5,
+            "vol_window": 30,
+            "vol_target": 0.35,
+            "short_mode": 2,
+        },
+        "sweeps": {
+            # ML 핵심: training window (±20% = 202~302, 넓은 범위 126~400)
+            "training_window": [126, 150, 175, 200, 225, 252, 280, 315, 350, 400],
+            # 예측 기간 (±20% = 4~6, 넓은 범위 1~21)
+            "prediction_horizon": [1, 2, 3, 4, 5, 6, 7, 10, 14, 21],
+            # ElasticNet L1 ratio (±20% = 0.4~0.6, 전체 범위)
+            "alpha": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+            # 변동성 타겟 (±20% = 0.28~0.42, 넓은 범위)
+            "vol_target": [0.15, 0.20, 0.25, 0.28, 0.32, 0.35, 0.38, 0.42, 0.50, 0.60],
         },
     },
 }
@@ -402,6 +425,16 @@ def print_detail_table(
 def main() -> None:
     RESULTS_DIR.mkdir(exist_ok=True)
 
+    # CLI 인수로 특정 전략만 실행 가능
+    filter_strategies = sys.argv[1:] if len(sys.argv) > 1 else None
+    strategies_to_run = {
+        k: v for k, v in STRATEGIES.items()
+        if filter_strategies is None or k in filter_strategies
+    }
+    if not strategies_to_run:
+        console.print(f"[red]No matching strategies. Available: {list(STRATEGIES.keys())}[/]")
+        sys.exit(1)
+
     engine = BacktestEngine()
     service = MarketDataService()
     t0 = time.perf_counter()
@@ -410,7 +443,7 @@ def main() -> None:
     summary: list[dict[str, Any]] = []
     total_runs = 0
 
-    for strategy_name, config in STRATEGIES.items():
+    for strategy_name, config in strategies_to_run.items():
         console.rule(f"[bold]{strategy_name}[/] ({config['best_asset']})")
 
         # Load data
