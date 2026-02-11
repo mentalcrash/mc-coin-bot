@@ -135,7 +135,7 @@
 - [ ] **모든 feature에 `.shift(1)`** 적용
 - [ ] ShortMode 3-way 분기 (DISABLED / HEDGE_ONLY / FULL)
 - [ ] HEDGE_ONLY: drawdown + hedge_threshold + hedge_strength_ratio
-- [ ] strength = direction * vol_scalar (* conviction)
+- [ ] strength = direction *vol_scalar (* conviction)
 - [ ] strength NaN → 0 처리
 - [ ] entries/exits 생성 (direction 변경 기반)
 - [ ] `StrategySignals` 반환

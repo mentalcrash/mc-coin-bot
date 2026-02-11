@@ -1,6 +1,6 @@
 # 전략 스코어카드: Kalman-Trend
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,6 +74,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 | **합계** | **24/30** |
 
 **핵심 근거:**
+
 - 베이지안 최적 추정기 — 고정 lookback MA와 달리 자동 노이즈 적응
 - Velocity > 0이면 상승 추세, < 0이면 하락 추세 — 직관적 해석
 - MA 대비 lag 감소, profit factor 개선 학술 확인 (PyQuantLab, 2025)
@@ -90,12 +91,14 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 **판정**: **FAIL** — 전 에셋 Sharpe < 1.0, Best CAGR +19.4% < 20%
 
 **FAIL 사유**:
+
 1. **Sharpe 전 에셋 미달**: Best 0.78 (SOL), 전 에셋 0.00~0.78 범위. 기준 1.0 미달
 2. **CAGR 경계 미달**: Best +19.4% (SOL) — 20% 기준에 0.6%p 미달. 근소하나 규정상 FAIL
 3. **DOGE 거래 0건**: vel_threshold 0.5가 DOGE의 1D 데이터에서 도달 불가 — 완전한 신호 부재
 4. **BTC MDD -64.5%**: 기준(40%) 대폭 초과, 칼만 필터의 lag가 급락에 무방비
 
 **퀀트 해석**:
+
 - SOL에서 MDD -30.0%은 양호하나, Sharpe 0.78은 CTREND 2.05 대비 38% 수준
 - SOL/BNB에서 부분적 edge 존재 (높은 변동성 에셋에서 Kalman smoothing 효과)
 - BTC/ETH에서 edge 미약 — 추세가 약하거나 whipsaw 구간에서 velocity 신호 반복 역전
@@ -104,6 +107,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 - 교훈: 칼만 필터의 학술적 최적성이 크립토 1D 백테스트에서 MA 대비 뚜렷한 우위 없음. velocity 신호의 threshold 설정이 에셋 변동성에 민감
 
 **CTREND 비교**:
+
 | 지표 | CTREND Best (SOL) | Kalman-Trend Best (SOL) |
 |------|-------------------|------------------------|
 | Sharpe | 2.05 | 0.78 |

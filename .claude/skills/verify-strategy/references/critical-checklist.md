@@ -28,6 +28,7 @@ for i in range(len(df)):
 ```
 
 **grep 탐지:**
+
 ```bash
 grep -rn 'shift(-' src/strategy/{name}/
 grep -rn 'pct_change(-' src/strategy/{name}/
@@ -47,6 +48,7 @@ df["z"] = (df["close"] - df["close"].expanding().mean()) / df["close"].expanding
 ```
 
 **grep 탐지:**
+
 ```bash
 # rolling/expanding 없는 .mean()/.std()/.min()/.max() 탐지
 grep -n '\.mean()\|\.std()\|\.min()\|\.max()' src/strategy/{name}/ | grep -v 'rolling\|expanding\|axis'
@@ -111,6 +113,7 @@ for i in range(min_train, len(df)):
 ```
 
 **grep 탐지:**
+
 ```bash
 grep -n '\.fit(' src/strategy/{name}/
 grep -n '\.fit_transform(' src/strategy/{name}/
@@ -185,6 +188,7 @@ df["signal"] = np.where(df["close"] > df["sma"], 1, 0)
 ```
 
 **grep 탐지:**
+
 ```bash
 grep -n 'for.*range.*len' src/strategy/{name}/
 grep -n 'iterrows\|itertuples' src/strategy/{name}/
@@ -245,6 +249,7 @@ vol_scalar = config.vol_target / realized_vol
 ```
 
 **grep 탐지:**
+
 ```bash
 grep -n 'vol_target.*/' src/strategy/{name}/
 grep -n 'target_vol.*/' src/strategy/{name}/

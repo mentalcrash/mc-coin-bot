@@ -1,0 +1,431 @@
+{
+  "meta": {
+    "run_date": "2026-02-11T14:30:01.515628+00:00",
+    "period": "2020-01-01 ~ 2025-12-31",
+    "initial_capital": "100000",
+    "symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "DOGE/USDT"
+    ],
+    "strategies": {
+      "accel-conv": "6h",
+      "anchor-mom": "12h",
+      "qd-mom": "6h",
+      "accel-skew": "12h"
+    },
+    "elapsed_seconds": 103.3
+  },
+  "results": {
+    "accel-conv": [
+      {
+        "strategy": "accel-conv",
+        "symbol": "BTC/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -99.40609203571385,
+          "cagr": -57.42400017452418,
+          "sharpe_ratio": -2.423707555888533,
+          "sortino_ratio": -3.215178443923859,
+          "calmar_ratio": 0.5775429625322667,
+          "max_drawdown": 99.4281012840079,
+          "win_rate": 41.46981627296588,
+          "profit_factor": 0.8479586775613895,
+          "total_trades": 4192
+        },
+        "benchmark": {
+          "alpha": -1223.408535508272,
+          "beta": 0.08864626861475843
+        }
+      },
+      {
+        "strategy": "accel-conv",
+        "symbol": "ETH/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -97.55707186554,
+          "cagr": -46.114524679270716,
+          "sharpe_ratio": -1.6149025434405948,
+          "sortino_ratio": -2.2414697073014507,
+          "calmar_ratio": 0.4670799959694881,
+          "max_drawdown": 98.72939341697506,
+          "win_rate": 43.76712328767123,
+          "profit_factor": 0.9191368978050687,
+          "total_trades": 4381
+        },
+        "benchmark": {
+          "alpha": -2276.699312823925,
+          "beta": 0.05874863988323339
+        }
+      },
+      {
+        "strategy": "accel-conv",
+        "symbol": "BNB/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -97.9130524840209,
+          "cagr": -47.50978392922842,
+          "sharpe_ratio": -1.6831812019380965,
+          "sortino_ratio": -2.346438520956992,
+          "calmar_ratio": 0.48036965849525654,
+          "max_drawdown": 98.90254950333745,
+          "win_rate": 43.92201834862385,
+          "profit_factor": 0.908091056837857,
+          "total_trades": 4361
+        },
+        "benchmark": {
+          "alpha": -6245.13211218301,
+          "beta": 0.0609126419786188
+        }
+      },
+      {
+        "strategy": "accel-conv",
+        "symbol": "SOL/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -96.57172329291726,
+          "cagr": -42.985508432142595,
+          "sharpe_ratio": -1.504957532223666,
+          "sortino_ratio": -2.0217205140484076,
+          "calmar_ratio": 0.44470436860566553,
+          "max_drawdown": 96.66086386090645,
+          "win_rate": 45.06030279702335,
+          "profit_factor": 0.8360990925203399,
+          "total_trades": 3898
+        },
+        "benchmark": {
+          "alpha": -4373.670031399407,
+          "beta": 0.03231851822013647
+        }
+      },
+      {
+        "strategy": "accel-conv",
+        "symbol": "DOGE/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -95.93616666088465,
+          "cagr": -41.347269212364125,
+          "sharpe_ratio": -1.0477941534709898,
+          "sortino_ratio": -1.4360286177889097,
+          "calmar_ratio": 0.42724961629515146,
+          "max_drawdown": 96.77543907681526,
+          "win_rate": 44.117000219925224,
+          "profit_factor": 0.8796461927963419,
+          "total_trades": 4548
+        },
+        "benchmark": {
+          "alpha": -6110.346839947215,
+          "beta": 0.07055746116547704
+        }
+      }
+    ],
+    "anchor-mom": [
+      {
+        "strategy": "anchor-mom",
+        "symbol": "BTC/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 106.29236326872942,
+          "cagr": 12.817892652007213,
+          "sharpe_ratio": 0.5773232997150242,
+          "sortino_ratio": 0.6888064255224791,
+          "calmar_ratio": 0.2451107928529931,
+          "max_drawdown": 52.294280895639034,
+          "win_rate": 46.70487106017192,
+          "profit_factor": 1.2422107665456035,
+          "total_trades": 349
+        },
+        "benchmark": {
+          "alpha": -963.5118909869742,
+          "beta": 0.17645379059353994
+        }
+      },
+      {
+        "strategy": "anchor-mom",
+        "symbol": "ETH/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 238.86722705137308,
+          "cagr": 22.53997777514012,
+          "sharpe_ratio": 0.8396695446123984,
+          "sortino_ratio": 1.0686204698081367,
+          "calmar_ratio": 0.5592128335205676,
+          "max_drawdown": 40.30661748808222,
+          "win_rate": 52.139037433155075,
+          "profit_factor": 1.3226520649415578,
+          "total_trades": 374
+        },
+        "benchmark": {
+          "alpha": -1859.3579403197268,
+          "beta": 0.11453530837231271
+        }
+      },
+      {
+        "strategy": "anchor-mom",
+        "symbol": "BNB/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 303.3211151572237,
+          "cagr": 26.145782657759774,
+          "sharpe_ratio": 0.902862795178989,
+          "sortino_ratio": 1.0912566929676144,
+          "calmar_ratio": 0.7841956505190987,
+          "max_drawdown": 33.34089221287132,
+          "win_rate": 51.88172043010753,
+          "profit_factor": 1.5424667984409828,
+          "total_trades": 372
+        },
+        "benchmark": {
+          "alpha": -5784.447913152341,
+          "beta": 0.1654119305094268
+        }
+      },
+      {
+        "strategy": "anchor-mom",
+        "symbol": "SOL/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 327.77989838831354,
+          "cagr": 27.388841391025622,
+          "sharpe_ratio": 1.0081453253945407,
+          "sortino_ratio": 1.3039813011335046,
+          "calmar_ratio": 0.8429782283429323,
+          "max_drawdown": 32.49056792945257,
+          "win_rate": 48.76543209876543,
+          "profit_factor": 1.4956705148458151,
+          "total_trades": 324
+        },
+        "benchmark": {
+          "alpha": -3892.7590434203416,
+          "beta": 0.0400464761422477
+        }
+      },
+      {
+        "strategy": "anchor-mom",
+        "symbol": "DOGE/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 1032.2314463403256,
+          "cagr": 49.808218300716845,
+          "sharpe_ratio": 1.3550978634395145,
+          "sortino_ratio": 1.8451504240035244,
+          "calmar_ratio": 1.6084079937148634,
+          "max_drawdown": 30.96740285757793,
+          "win_rate": 52.02156334231805,
+          "profit_factor": 1.9515008332487498,
+          "total_trades": 371
+        },
+        "benchmark": {
+          "alpha": -4802.777116958724,
+          "beta": 0.0464544158592785
+        }
+      }
+    ],
+    "qd-mom": [
+      {
+        "strategy": "qd-mom",
+        "symbol": "BTC/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -96.64615395129509,
+          "cagr": -43.1935864189528,
+          "sharpe_ratio": -2.0983923689076156,
+          "sortino_ratio": -2.304335265371985,
+          "calmar_ratio": 0.44584815245643067,
+          "max_drawdown": 96.87959046364732,
+          "win_rate": 40.155728587319246,
+          "profit_factor": 0.7684364777727025,
+          "total_trades": 2698
+        },
+        "benchmark": {
+          "alpha": -1220.1749681143692,
+          "beta": 0.04645270542564901
+        }
+      },
+      {
+        "strategy": "qd-mom",
+        "symbol": "ETH/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -87.26580202302185,
+          "cagr": -29.056322939456404,
+          "sharpe_ratio": -1.1814166561417645,
+          "sortino_ratio": -1.357665405433411,
+          "calmar_ratio": 0.3271772282476537,
+          "max_drawdown": 88.80912371279854,
+          "win_rate": 43.11762602788703,
+          "profit_factor": 0.867782315114956,
+          "total_trades": 2798
+        },
+        "benchmark": {
+          "alpha": -2265.02240537391,
+          "beta": 0.01892125325418998
+        }
+      },
+      {
+        "strategy": "qd-mom",
+        "symbol": "BNB/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -93.02486833238687,
+          "cagr": -35.82458520527514,
+          "sharpe_ratio": -1.5280940543658688,
+          "sortino_ratio": -1.730588224121616,
+          "calmar_ratio": 0.37819794289118064,
+          "max_drawdown": 94.72443168624794,
+          "win_rate": 44.04890327220424,
+          "profit_factor": 0.8658008516150076,
+          "total_trades": 2782
+        },
+        "benchmark": {
+          "alpha": -6239.762912238883,
+          "beta": 0.03331683397544049
+        }
+      },
+      {
+        "strategy": "qd-mom",
+        "symbol": "SOL/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -91.9595855603354,
+          "cagr": -34.28712224882565,
+          "sharpe_ratio": -1.5556771230806505,
+          "sortino_ratio": -1.726948755196579,
+          "calmar_ratio": 0.369634952271912,
+          "max_drawdown": 92.75941584551035,
+          "win_rate": 42.73504273504273,
+          "profit_factor": 0.8003577591156078,
+          "total_trades": 2458
+        },
+        "benchmark": {
+          "alpha": -4368.97509569334,
+          "beta": 0.02130778359493471
+        }
+      },
+      {
+        "strategy": "qd-mom",
+        "symbol": "DOGE/USDT",
+        "timeframe": "6h",
+        "metrics": {
+          "total_return": -76.78524501138044,
+          "cagr": -21.593093843020274,
+          "sharpe_ratio": -0.5051626748534644,
+          "sortino_ratio": -0.5789709147067101,
+          "calmar_ratio": 0.2606788520170335,
+          "max_drawdown": 82.8340836855048,
+          "win_rate": 43.95259672359707,
+          "profit_factor": 0.9178873667111466,
+          "total_trades": 2870
+        },
+        "benchmark": {
+          "alpha": -6089.001220398579,
+          "beta": 0.050190185081109895
+        }
+      }
+    ],
+    "accel-skew": [
+      {
+        "strategy": "accel-skew",
+        "symbol": "BTC/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": -16.1565621580678,
+          "cagr": -2.8923204135488545,
+          "sharpe_ratio": -0.03156980799381936,
+          "sortino_ratio": -0.03560102249682234,
+          "calmar_ratio": 0.07953313847797583,
+          "max_drawdown": 36.366230088478034,
+          "win_rate": 44.07643312101911,
+          "profit_factor": 0.9930684752803589,
+          "total_trades": 785
+        },
+        "benchmark": {
+          "alpha": -1132.408453165801,
+          "beta": 0.006282385157200106
+        }
+      },
+      {
+        "strategy": "accel-skew",
+        "symbol": "ETH/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 1.5106221053938995,
+          "cagr": 0.25002865120884454,
+          "sharpe_ratio": 0.11595430189972396,
+          "sortino_ratio": 0.1318664410357896,
+          "calmar_ratio": 0.006489631774821157,
+          "max_drawdown": 38.52740184411078,
+          "win_rate": 45.09803921568628,
+          "profit_factor": 1.0246818218175031,
+          "total_trades": 816
+        },
+        "benchmark": {
+          "alpha": -2158.9125243990347,
+          "beta": -0.009095392955621126
+        }
+      },
+      {
+        "strategy": "accel-skew",
+        "symbol": "BNB/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": -47.57356806155602,
+          "cagr": -10.19709691823023,
+          "sharpe_ratio": -0.4060488579602006,
+          "sortino_ratio": -0.4450359902023636,
+          "calmar_ratio": 0.1850826094224576,
+          "max_drawdown": 55.09484089320891,
+          "win_rate": 43.57682619647355,
+          "profit_factor": 0.8960686036987248,
+          "total_trades": 794
+        },
+        "benchmark": {
+          "alpha": -6226.038241644489,
+          "beta": -0.002310465965042598
+        }
+      },
+      {
+        "strategy": "accel-skew",
+        "symbol": "SOL/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": -31.216201264874954,
+          "cagr": -6.042187172585855,
+          "sharpe_ratio": -0.20773177731297995,
+          "sortino_ratio": -0.20193436624161187,
+          "calmar_ratio": 0.1298664172009332,
+          "max_drawdown": 46.52617129829033,
+          "win_rate": 46.07703281027104,
+          "profit_factor": 0.9270563720758217,
+          "total_trades": 702
+        },
+        "benchmark": {
+          "alpha": -4304.420325927612,
+          "beta": 0.024727469584093158
+        }
+      },
+      {
+        "strategy": "accel-skew",
+        "symbol": "DOGE/USDT",
+        "timeframe": "12h",
+        "metrics": {
+          "total_return": 77.22208025174366,
+          "cagr": 9.999646158620855,
+          "sharpe_ratio": 0.465972978237818,
+          "sortino_ratio": 0.632148146038651,
+          "calmar_ratio": 0.3653689171371312,
+          "max_drawdown": 27.36862850012981,
+          "win_rate": 43.3849821215733,
+          "profit_factor": 1.1100272353059133,
+          "total_trades": 839
+        },
+        "benchmark": {
+          "alpha": -5927.371962997148,
+          "beta": 0.05094416007147648
+        }
+      }
+    ]
+  }
+}

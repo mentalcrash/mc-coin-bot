@@ -1,640 +1,635 @@
 {
   "meta": {
-    "run_date": "2026-02-10T11:43:00.096297+00:00",
+    "run_date": "2026-02-11T14:33:30.339086+00:00",
     "period": "2020-01-01 ~ 2025-12-31",
     "initial_capital": "100000",
     "total_runs": 40,
-    "elapsed_seconds": 206.5
+    "elapsed_seconds": 11.2
   },
   "summary": [
     {
-      "strategy": "ctrend",
-      "best_asset": "SOL/USDT",
+      "strategy": "anchor-mom",
+      "best_asset": "DOGE/USDT",
       "verdict": "PASS",
       "fail_params": [],
       "param_verdicts": {
-        "training_window": "PASS",
-        "prediction_horizon": "PASS",
-        "alpha": "PASS",
+        "nearness_lookback": "PASS",
+        "mom_lookback": "PASS",
+        "strong_nearness": "PASS",
         "vol_target": "PASS"
       }
     }
   ],
   "details": {
-    "ctrend": {
-      "best_asset": "SOL/USDT",
+    "anchor-mom": {
+      "best_asset": "DOGE/USDT",
       "baseline": {
-        "training_window": 252,
-        "prediction_horizon": 5,
-        "alpha": 0.5,
-        "vol_window": 30,
+        "nearness_lookback": 60,
+        "mom_lookback": 30,
+        "strong_nearness": 0.95,
         "vol_target": 0.35,
-        "short_mode": 2
+        "short_mode": 1
       },
       "analyses": {
-        "training_window": {
-          "param": "training_window",
-          "baseline_value": 252,
-          "baseline_sharpe": 2.0498280564201203,
-          "best_sharpe": 2.0972752847978398,
+        "nearness_lookback": {
+          "param": "nearness_lookback",
+          "baseline_value": 60,
+          "baseline_sharpe": 1.3550978634395145,
+          "best_sharpe": 1.4315797437156992,
           "plateau_exists": true,
-          "plateau_count": 9,
-          "plateau_threshold": 1.6778,
+          "plateau_count": 6,
+          "plateau_threshold": 1.1453,
           "plateau_range": [
-            126,
-            350
+            48,
+            90
           ],
           "pm20_stable": true,
-          "pm20_min_sharpe": 1.929888791794637,
-          "pm20_max_sharpe": 2.0498280564201203,
+          "pm20_min_sharpe": 1.3175307806077705,
+          "pm20_max_sharpe": 1.4315797437156992,
           "verdict": "PASS",
           "all_sharpes": [
             [
-              126,
-              2.0972752847978398
+              20,
+              0.7132945069158687
             ],
             [
-              150,
-              2.0670830944489262
+              30,
+              0.7822500795134019
             ],
             [
-              175,
-              1.9016285094885264
+              40,
+              1.0757119993956499
             ],
             [
-              200,
-              1.7545970639645296
+              48,
+              1.3175307806077705
             ],
             [
-              225,
-              1.929888791794637
+              54,
+              1.3805115623771878
             ],
             [
-              252,
-              2.0498280564201203
+              60,
+              1.3550978634395145
             ],
             [
-              280,
-              2.0088499024982127
+              66,
+              1.4315797437156992
             ],
             [
-              315,
-              1.779865271998905
+              72,
+              1.3669887445702018
             ],
             [
-              350,
-              1.8520959261147443
+              90,
+              1.2847839630769515
             ],
             [
-              400,
-              1.5112865906488044
+              120,
+              1.0967987831953325
             ]
           ]
         },
-        "prediction_horizon": {
-          "param": "prediction_horizon",
-          "baseline_value": 5,
-          "baseline_sharpe": 2.0498280564201203,
-          "best_sharpe": 2.6028450849705314,
+        "mom_lookback": {
+          "param": "mom_lookback",
+          "baseline_value": 30,
+          "baseline_sharpe": 1.3550978634395145,
+          "best_sharpe": 1.3550978634395145,
           "plateau_exists": true,
-          "plateau_count": 3,
-          "plateau_threshold": 2.0823,
+          "plateau_count": 8,
+          "plateau_threshold": 1.0841,
           "plateau_range": [
-            7,
-            14
+            24,
+            80
           ],
           "pm20_stable": true,
-          "pm20_min_sharpe": 1.7791275426969815,
-          "pm20_max_sharpe": 2.068025426036947,
+          "pm20_min_sharpe": 1.1724729927049795,
+          "pm20_max_sharpe": 1.3550978634395145,
           "verdict": "PASS",
           "all_sharpes": [
-            [
-              1,
-              0.5337212864659262
-            ],
-            [
-              2,
-              0.5311733602371244
-            ],
-            [
-              3,
-              1.758751397882531
-            ],
-            [
-              4,
-              1.7791275426969815
-            ],
-            [
-              5,
-              2.0498280564201203
-            ],
-            [
-              6,
-              2.068025426036947
-            ],
-            [
-              7,
-              2.232389270397805
-            ],
             [
               10,
-              2.462877327695118
+              0.9286440468942527
             ],
             [
-              14,
-              2.6028450849705314
+              18,
+              0.9433370986508834
             ],
             [
-              21,
-              1.9569292966386165
+              24,
+              1.1724729927049795
+            ],
+            [
+              27,
+              1.2099063804729755
+            ],
+            [
+              30,
+              1.3550978634395145
+            ],
+            [
+              33,
+              1.2713333110656186
+            ],
+            [
+              36,
+              1.2779747661712624
+            ],
+            [
+              45,
+              1.1174659836714307
+            ],
+            [
+              60,
+              1.2980859909651334
+            ],
+            [
+              80,
+              1.1360441550581764
             ]
           ]
         },
-        "alpha": {
-          "param": "alpha",
-          "baseline_value": 0.5,
-          "baseline_sharpe": 2.0498280564201203,
-          "best_sharpe": 2.3163500240685266,
+        "strong_nearness": {
+          "param": "strong_nearness",
+          "baseline_value": 0.95,
+          "baseline_sharpe": 1.3550978634395145,
+          "best_sharpe": 1.3878720698613458,
           "plateau_exists": true,
           "plateau_count": 9,
-          "plateau_threshold": 1.8531,
+          "plateau_threshold": 1.1103,
           "plateau_range": [
-            0.1,
-            1.0
+            0.88,
+            0.99
           ],
           "pm20_stable": true,
-          "pm20_min_sharpe": 1.7730894121338296,
-          "pm20_max_sharpe": 2.0498280564201203,
+          "pm20_min_sharpe": 1.240344387012258,
+          "pm20_max_sharpe": 1.3878720698613458,
           "verdict": "PASS",
           "all_sharpes": [
             [
-              0.1,
-              2.3163500240685266
-            ],
-            [
-              0.2,
-              2.1293698608086715
-            ],
-            [
-              0.3,
-              1.9711965537012182
-            ],
-            [
-              0.4,
-              1.7730894121338296
-            ],
-            [
-              0.5,
-              2.0498280564201203
-            ],
-            [
-              0.6,
-              2.026323257928791
-            ],
-            [
-              0.7,
-              2.0100640272346513
-            ],
-            [
-              0.8,
-              1.9039351112924165
+              0.88,
+              1.3360466587787188
             ],
             [
               0.9,
-              1.9106460908963376
+              1.3828722220123064
             ],
             [
-              1.0,
-              1.923035684517089
+              0.92,
+              1.3878720698613458
+            ],
+            [
+              0.94,
+              1.364764760474071
+            ],
+            [
+              0.95,
+              1.3550978634395145
+            ],
+            [
+              0.96,
+              1.29436576039513
+            ],
+            [
+              0.97,
+              1.240344387012258
+            ],
+            [
+              0.98,
+              1.2780796899485938
+            ],
+            [
+              0.99,
+              1.2949358958522275
             ]
           ]
         },
         "vol_target": {
           "param": "vol_target",
           "baseline_value": 0.35,
-          "baseline_sharpe": 2.0498280564201203,
-          "best_sharpe": 2.0598324369761434,
+          "baseline_sharpe": 1.3550978634395145,
+          "best_sharpe": 1.3885533391258715,
           "plateau_exists": true,
-          "plateau_count": 10,
-          "plateau_threshold": 1.6479,
+          "plateau_count": 9,
+          "plateau_threshold": 1.1108,
           "plateau_range": [
-            0.15,
+            0.2,
             0.6
           ],
           "pm20_stable": true,
-          "pm20_min_sharpe": 2.0498280564201203,
-          "pm20_max_sharpe": 2.0598324369761434,
+          "pm20_min_sharpe": 1.2851084102936712,
+          "pm20_max_sharpe": 1.3885533391258715,
           "verdict": "PASS",
           "all_sharpes": [
             [
               0.15,
-              2.059823155010316
+              0.9193355518743626
             ],
             [
               0.2,
-              2.0349793458236958
+              1.1260190210085506
             ],
             [
               0.25,
-              2.035564056936852
+              1.2055356898565819
             ],
             [
               0.28,
-              2.059609519672452
+              1.2851084102936712
             ],
             [
               0.32,
-              2.0598324369761434
+              1.3433361741676035
             ],
             [
               0.35,
-              2.0498280564201203
+              1.3550978634395145
             ],
             [
               0.38,
-              2.0550485365036515
+              1.3885533391258715
             ],
             [
               0.42,
-              2.0553568137341114
+              1.3439740767883415
             ],
             [
               0.5,
-              2.0516906223816083
+              1.2638267459958044
             ],
             [
               0.6,
-              2.026648894938045
+              1.2419036872152212
             ]
           ]
         }
       },
       "raw_sweeps": {
-        "training_window": [
+        "nearness_lookback": [
           {
-            "value": 126,
-            "sharpe_ratio": 2.0972752847978398,
-            "total_return": 6553.8797083414165,
-            "max_drawdown": 34.42371019972418,
-            "cagr": 101.1724905616088,
-            "total_trades": 357,
+            "value": 20,
+            "sharpe_ratio": 0.7132945069158687,
+            "total_return": 207.87377814092412,
+            "max_drawdown": 59.67776058280149,
+            "cagr": 20.59789796316407,
+            "total_trades": 376,
             "error": null
           },
           {
-            "value": 150,
-            "sharpe_ratio": 2.0670830944489262,
-            "total_return": 6076.177498844535,
-            "max_drawdown": 18.62202442615274,
-            "cagr": 98.69227545439449,
-            "total_trades": 324,
+            "value": 30,
+            "sharpe_ratio": 0.7822500795134019,
+            "total_return": 267.58169009052443,
+            "max_drawdown": 58.50489235059312,
+            "cagr": 24.21131257165632,
+            "total_trades": 388,
             "error": null
           },
           {
-            "value": 175,
-            "sharpe_ratio": 1.9016285094885264,
-            "total_return": 4300.447606481704,
-            "max_drawdown": 22.53919768890895,
-            "cagr": 87.78730052301339,
-            "total_trades": 328,
+            "value": 40,
+            "sharpe_ratio": 1.0757119993956499,
+            "total_return": 542.673197843761,
+            "max_drawdown": 32.11581043865184,
+            "cagr": 36.32416874837649,
+            "total_trades": 388,
             "error": null
           },
           {
-            "value": 200,
-            "sharpe_ratio": 1.7545970639645296,
-            "total_return": 3106.891661007355,
-            "max_drawdown": 34.25564077591567,
-            "cagr": 78.14966935478607,
-            "total_trades": 311,
+            "value": 48,
+            "sharpe_ratio": 1.3175307806077705,
+            "total_return": 959.7440259427502,
+            "max_drawdown": 30.9921915211619,
+            "cagr": 48.16645068972429,
+            "total_trades": 388,
             "error": null
           },
           {
-            "value": 225,
-            "sharpe_ratio": 1.929888791794637,
-            "total_return": 4555.766277881277,
-            "max_drawdown": 38.88063100321463,
-            "cagr": 89.55920564369812,
-            "total_trades": 300,
+            "value": 54,
+            "sharpe_ratio": 1.3805115623771878,
+            "total_return": 1088.7893825535607,
+            "max_drawdown": 24.933879619957565,
+            "cagr": 51.02940382757484,
+            "total_trades": 372,
             "error": null
           },
           {
-            "value": 252,
-            "sharpe_ratio": 2.0498280564201203,
-            "total_return": 5918.890739748047,
-            "max_drawdown": 27.705718696738863,
-            "cagr": 97.84062205865776,
-            "total_trades": 288,
+            "value": 60,
+            "sharpe_ratio": 1.3550978634395145,
+            "total_return": 1032.2314463403256,
+            "max_drawdown": 30.96740285757793,
+            "cagr": 49.808218300716845,
+            "total_trades": 371,
             "error": null
           },
           {
-            "value": 280,
-            "sharpe_ratio": 2.0088499024982127,
-            "total_return": 5531.404371832557,
-            "max_drawdown": 29.954166908108288,
-            "cagr": 95.66053616136216,
-            "total_trades": 295,
-            "error": null
-          },
-          {
-            "value": 315,
-            "sharpe_ratio": 1.779865271998905,
-            "total_return": 3237.616225866268,
-            "max_drawdown": 30.17696286474533,
-            "cagr": 79.3388581284235,
-            "total_trades": 316,
-            "error": null
-          },
-          {
-            "value": 350,
-            "sharpe_ratio": 1.8520959261147443,
-            "total_return": 3925.790836102477,
-            "max_drawdown": 32.75909368652076,
-            "cagr": 85.02531593121196,
-            "total_trades": 272,
-            "error": null
-          },
-          {
-            "value": 400,
-            "sharpe_ratio": 1.5112865906488044,
-            "total_return": 1693.665765030277,
-            "max_drawdown": 30.172235563126478,
-            "cagr": 61.720943245061434,
-            "total_trades": 274,
-            "error": null
-          }
-        ],
-        "prediction_horizon": [
-          {
-            "value": 1,
-            "sharpe_ratio": 0.5337212864659262,
-            "total_return": 118.53109036224545,
-            "max_drawdown": 63.493122237107634,
-            "cagr": 13.90267134087313,
+            "value": 66,
+            "sharpe_ratio": 1.4315797437156992,
+            "total_return": 1216.2273110193337,
+            "max_drawdown": 26.91061065925907,
+            "cagr": 53.61281917833911,
             "total_trades": 362,
             "error": null
           },
           {
-            "value": 2,
-            "sharpe_ratio": 0.5311733602371244,
-            "total_return": 116.43771014764343,
-            "max_drawdown": 50.45688614752933,
-            "cagr": 13.720255904234335,
-            "total_trades": 333,
+            "value": 72,
+            "sharpe_ratio": 1.3669887445702018,
+            "total_return": 1048.1198686452447,
+            "max_drawdown": 25.989656116835285,
+            "cagr": 50.1563208097155,
+            "total_trades": 362,
             "error": null
           },
           {
-            "value": 3,
-            "sharpe_ratio": 1.758751397882531,
-            "total_return": 3154.952851918664,
-            "max_drawdown": 37.149572192093295,
-            "cagr": 78.59149543852833,
-            "total_trades": 317,
+            "value": 90,
+            "sharpe_ratio": 1.2847839630769515,
+            "total_return": 836.4680492339542,
+            "max_drawdown": 22.089667803079927,
+            "cagr": 45.14586535598835,
+            "total_trades": 342,
             "error": null
           },
           {
-            "value": 4,
-            "sharpe_ratio": 1.7791275426969815,
-            "total_return": 3265.8543940417126,
-            "max_drawdown": 34.784363438407574,
-            "cagr": 79.59062626030347,
-            "total_trades": 293,
-            "error": null
-          },
-          {
-            "value": 5,
-            "sharpe_ratio": 2.0498280564201203,
-            "total_return": 5918.890739748047,
-            "max_drawdown": 27.705718696738863,
-            "cagr": 97.84062205865776,
-            "total_trades": 288,
-            "error": null
-          },
-          {
-            "value": 6,
-            "sharpe_ratio": 2.068025426036947,
-            "total_return": 6246.359348093787,
-            "max_drawdown": 35.46168156878699,
-            "cagr": 99.59362691465503,
-            "total_trades": 285,
-            "error": null
-          },
-          {
-            "value": 7,
-            "sharpe_ratio": 2.232389270397805,
-            "total_return": 9045.15559801919,
-            "max_drawdown": 32.653398714553255,
-            "cagr": 112.11283497296623,
-            "total_trades": 283,
-            "error": null
-          },
-          {
-            "value": 10,
-            "sharpe_ratio": 2.462877327695118,
-            "total_return": 16479.422545620317,
-            "max_drawdown": 31.367645455832623,
-            "cagr": 134.20205831342216,
-            "total_trades": 276,
-            "error": null
-          },
-          {
-            "value": 14,
-            "sharpe_ratio": 2.6028450849705314,
-            "total_return": 24682.83549901231,
-            "max_drawdown": 28.43894878032029,
-            "cagr": 150.4154335111195,
-            "total_trades": 237,
-            "error": null
-          },
-          {
-            "value": 21,
-            "sharpe_ratio": 1.9569292966386165,
-            "total_return": 5620.09683803197,
-            "max_drawdown": 31.41691970245295,
-            "cagr": 96.17032812014214,
-            "total_trades": 241,
+            "value": 120,
+            "sharpe_ratio": 1.0967987831953325,
+            "total_return": 528.2493838680501,
+            "max_drawdown": 25.46965868117742,
+            "cagr": 35.809754229230805,
+            "total_trades": 321,
             "error": null
           }
         ],
-        "alpha": [
+        "mom_lookback": [
           {
-            "value": 0.1,
-            "sharpe_ratio": 2.3163500240685266,
-            "total_return": 10656.962211608268,
-            "max_drawdown": 44.81781617784633,
-            "cagr": 117.92446338652067,
-            "total_trades": 321,
+            "value": 10,
+            "sharpe_ratio": 0.9286440468942527,
+            "total_return": 370.71627685494553,
+            "max_drawdown": 49.870489508877704,
+            "cagr": 29.434422267146388,
+            "total_trades": 496,
             "error": null
           },
           {
-            "value": 0.2,
-            "sharpe_ratio": 2.1293698608086715,
-            "total_return": 7161.2630442758245,
-            "max_drawdown": 43.59982598639193,
-            "cagr": 104.12006328557632,
-            "total_trades": 317,
+            "value": 18,
+            "sharpe_ratio": 0.9433370986508834,
+            "total_return": 387.29168960814366,
+            "max_drawdown": 34.12683024958057,
+            "cagr": 30.18262962441387,
+            "total_trades": 449,
             "error": null
           },
           {
-            "value": 0.3,
-            "sharpe_ratio": 1.9711965537012182,
-            "total_return": 5070.180027411021,
-            "max_drawdown": 43.76924809795174,
-            "cagr": 92.89621588266269,
-            "total_trades": 310,
+            "value": 24,
+            "sharpe_ratio": 1.1724729927049795,
+            "total_return": 691.2878733293104,
+            "max_drawdown": 29.682297926788582,
+            "cagr": 41.13019413646582,
+            "total_trades": 425,
             "error": null
           },
           {
-            "value": 0.4,
-            "sharpe_ratio": 1.7730894121338296,
-            "total_return": 3251.779640422722,
-            "max_drawdown": 39.72905092329467,
-            "cagr": 79.46535842775957,
-            "total_trades": 294,
+            "value": 27,
+            "sharpe_ratio": 1.2099063804729755,
+            "total_return": 758.0279410882728,
+            "max_drawdown": 28.18998245419993,
+            "cagr": 43.04644877227943,
+            "total_trades": 403,
             "error": null
           },
           {
-            "value": 0.5,
-            "sharpe_ratio": 2.0498280564201203,
-            "total_return": 5918.890739748047,
-            "max_drawdown": 27.705718696738863,
-            "cagr": 97.84062205865776,
-            "total_trades": 288,
+            "value": 30,
+            "sharpe_ratio": 1.3550978634395145,
+            "total_return": 1032.2314463403256,
+            "max_drawdown": 30.96740285757793,
+            "cagr": 49.808218300716845,
+            "total_trades": 371,
             "error": null
           },
           {
-            "value": 0.6,
-            "sharpe_ratio": 2.026323257928791,
-            "total_return": 5622.89813172146,
-            "max_drawdown": 27.705718696738874,
-            "cagr": 96.18632194282509,
-            "total_trades": 287,
+            "value": 33,
+            "sharpe_ratio": 1.2713333110656186,
+            "total_return": 883.5769230809074,
+            "max_drawdown": 33.653931445268945,
+            "cagr": 46.337219329624624,
+            "total_trades": 356,
             "error": null
           },
           {
-            "value": 0.7,
-            "sharpe_ratio": 2.0100640272346513,
-            "total_return": 5533.924966024514,
-            "max_drawdown": 27.705718696738835,
-            "cagr": 95.67511627054117,
-            "total_trades": 278,
+            "value": 36,
+            "sharpe_ratio": 1.2779747661712624,
+            "total_return": 876.5143015409201,
+            "max_drawdown": 34.518620968311815,
+            "cagr": 46.161682961816865,
+            "total_trades": 342,
             "error": null
           },
           {
-            "value": 0.8,
-            "sharpe_ratio": 1.9039351112924165,
-            "total_return": 4391.942117027145,
-            "max_drawdown": 31.39593339329179,
-            "cagr": 88.43189222922922,
-            "total_trades": 282,
+            "value": 45,
+            "sharpe_ratio": 1.1174659836714307,
+            "total_return": 607.6610268213599,
+            "max_drawdown": 38.75582972306776,
+            "cagr": 38.5289686040083,
+            "total_trades": 344,
+            "error": null
+          },
+          {
+            "value": 60,
+            "sharpe_ratio": 1.2980859909651334,
+            "total_return": 842.5592746862055,
+            "max_drawdown": 24.34489754680461,
+            "cagr": 45.302682542139294,
+            "total_trades": 326,
+            "error": null
+          },
+          {
+            "value": 80,
+            "sharpe_ratio": 1.1360441550581764,
+            "total_return": 536.8157044666615,
+            "max_drawdown": 31.084600327097693,
+            "cagr": 36.11643767724679,
+            "total_trades": 285,
+            "error": null
+          }
+        ],
+        "strong_nearness": [
+          {
+            "value": 0.85,
+            "sharpe_ratio": NaN,
+            "total_return": NaN,
+            "max_drawdown": NaN,
+            "cagr": NaN,
+            "total_trades": 0,
+            "error": "1 validation error for AnchorMomConfig\n  Value error, strong_nearness (0.85) must be > weak_nearness (0.85) [type=value_error, input_value={'nearness_lookback': 60,...: 0.35, 'short_mode': 1}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/value_error"
+          },
+          {
+            "value": 0.88,
+            "sharpe_ratio": 1.3360466587787188,
+            "total_return": 1084.4499293882513,
+            "max_drawdown": 29.32524105297269,
+            "cagr": 50.93744263484754,
+            "total_trades": 352,
             "error": null
           },
           {
             "value": 0.9,
-            "sharpe_ratio": 1.9106460908963376,
-            "total_return": 4457.088719879565,
-            "max_drawdown": 28.570452008916863,
-            "cagr": 88.88422147478995,
-            "total_trades": 278,
+            "sharpe_ratio": 1.3828722220123064,
+            "total_return": 1185.6775921801495,
+            "max_drawdown": 28.701869046758034,
+            "cagr": 53.013172326972516,
+            "total_trades": 361,
             "error": null
           },
           {
-            "value": 1.0,
-            "sharpe_ratio": 1.923035684517089,
-            "total_return": 4678.211343741242,
-            "max_drawdown": 28.57045200891687,
-            "cagr": 90.38038310861091,
-            "total_trades": 277,
+            "value": 0.92,
+            "sharpe_ratio": 1.3878720698613458,
+            "total_return": 1144.706898718818,
+            "max_drawdown": 26.978000300576436,
+            "cagr": 52.19005033395605,
+            "total_trades": 367,
+            "error": null
+          },
+          {
+            "value": 0.94,
+            "sharpe_ratio": 1.364764760474071,
+            "total_return": 1067.5498077024633,
+            "max_drawdown": 28.713456286187654,
+            "cagr": 50.57659923843634,
+            "total_trades": 369,
+            "error": null
+          },
+          {
+            "value": 0.95,
+            "sharpe_ratio": 1.3550978634395145,
+            "total_return": 1032.2314463403256,
+            "max_drawdown": 30.96740285757793,
+            "cagr": 49.808218300716845,
+            "total_trades": 371,
+            "error": null
+          },
+          {
+            "value": 0.96,
+            "sharpe_ratio": 1.29436576039513,
+            "total_return": 852.7503864938227,
+            "max_drawdown": 30.72473569434728,
+            "cagr": 45.563171662775346,
+            "total_trades": 376,
+            "error": null
+          },
+          {
+            "value": 0.97,
+            "sharpe_ratio": 1.240344387012258,
+            "total_return": 739.1834021556905,
+            "max_drawdown": 30.586905894125366,
+            "cagr": 42.518340476638,
+            "total_trades": 377,
+            "error": null
+          },
+          {
+            "value": 0.98,
+            "sharpe_ratio": 1.2780796899485938,
+            "total_return": 790.7880638873122,
+            "max_drawdown": 29.112421364088192,
+            "cagr": 43.941950714149016,
+            "total_trades": 373,
+            "error": null
+          },
+          {
+            "value": 0.99,
+            "sharpe_ratio": 1.2949358958522275,
+            "total_return": 805.0988930682067,
+            "max_drawdown": 28.197824166231072,
+            "cagr": 44.32454660373737,
+            "total_trades": 363,
             "error": null
           }
         ],
         "vol_target": [
           {
             "value": 0.15,
-            "sharpe_ratio": 2.059823155010316,
-            "total_return": 638.4164518496914,
-            "max_drawdown": 13.432785802202579,
-            "cagr": 39.50341947555833,
-            "total_trades": 268,
+            "sharpe_ratio": 0.9193355518743626,
+            "total_return": 221.38103151025055,
+            "max_drawdown": 31.129948835998878,
+            "cagr": 21.46342804279202,
+            "total_trades": 244,
             "error": null
           },
           {
             "value": 0.2,
-            "sharpe_ratio": 2.0349793458236958,
-            "total_return": 1163.775916051822,
-            "max_drawdown": 17.51042351385735,
-            "cagr": 52.561219015902985,
-            "total_trades": 276,
-            "error": null
-          },
-          {
-            "value": 0.25,
-            "sharpe_ratio": 2.035564056936852,
-            "total_return": 1935.4923664168118,
-            "max_drawdown": 20.198359272116658,
-            "cagr": 65.16292774565295,
-            "total_trades": 285,
-            "error": null
-          },
-          {
-            "value": 0.28,
-            "sharpe_ratio": 2.059609519672452,
-            "total_return": 2801.4653059355855,
-            "max_drawdown": 22.339633059890627,
-            "cagr": 75.20526233036303,
-            "total_trades": 286,
-            "error": null
-          },
-          {
-            "value": 0.32,
-            "sharpe_ratio": 2.0598324369761434,
-            "total_return": 4345.658287471755,
-            "max_drawdown": 25.653758282190104,
-            "cagr": 88.10719804472913,
-            "total_trades": 288,
-            "error": null
-          },
-          {
-            "value": 0.35,
-            "sharpe_ratio": 2.0498280564201203,
-            "total_return": 5918.890739748047,
-            "max_drawdown": 27.705718696738863,
-            "cagr": 97.84062205865776,
-            "total_trades": 288,
-            "error": null
-          },
-          {
-            "value": 0.38,
-            "sharpe_ratio": 2.0550485365036515,
-            "total_return": 8299.466110446145,
-            "max_drawdown": 29.704669481841123,
-            "cagr": 109.12983574270037,
+            "sharpe_ratio": 1.1260190210085506,
+            "total_return": 262.1294599092952,
+            "max_drawdown": 20.45706617666495,
+            "cagr": 23.902543731615644,
             "total_trades": 290,
             "error": null
           },
           {
+            "value": 0.25,
+            "sharpe_ratio": 1.2055356898565819,
+            "total_return": 432.49676605360054,
+            "max_drawdown": 22.176443236967234,
+            "cagr": 32.120428317735005,
+            "total_trades": 321,
+            "error": null
+          },
+          {
+            "value": 0.28,
+            "sharpe_ratio": 1.2851084102936712,
+            "total_return": 602.2051926332043,
+            "max_drawdown": 24.652278900117057,
+            "cagr": 38.35051409321941,
+            "total_trades": 334,
+            "error": null
+          },
+          {
+            "value": 0.32,
+            "sharpe_ratio": 1.3433361741676035,
+            "total_return": 848.0445721561115,
+            "max_drawdown": 28.639117881873617,
+            "cagr": 45.443179125633,
+            "total_trades": 364,
+            "error": null
+          },
+          {
+            "value": 0.35,
+            "sharpe_ratio": 1.3550978634395145,
+            "total_return": 1032.2314463403256,
+            "max_drawdown": 30.96740285757793,
+            "cagr": 49.808218300716845,
+            "total_trades": 371,
+            "error": null
+          },
+          {
+            "value": 0.38,
+            "sharpe_ratio": 1.3885533391258715,
+            "total_return": 1341.8239468060779,
+            "max_drawdown": 30.97737665647265,
+            "cagr": 55.96237272664561,
+            "total_trades": 382,
+            "error": null
+          },
+          {
             "value": 0.42,
-            "sharpe_ratio": 2.0553568137341114,
-            "total_return": 12544.104912867127,
-            "max_drawdown": 32.29011110008267,
-            "cagr": 123.8695630458285,
-            "total_trades": 292,
+            "sharpe_ratio": 1.3439740767883415,
+            "total_return": 1471.2481861113347,
+            "max_drawdown": 34.053122602129385,
+            "cagr": 58.2113613150961,
+            "total_trades": 395,
             "error": null
           },
           {
             "value": 0.5,
-            "sharpe_ratio": 2.0516906223816083,
-            "total_return": 24992.138211742003,
-            "max_drawdown": 36.636907536766344,
-            "cagr": 150.93315784281188,
-            "total_trades": 298,
+            "sharpe_ratio": 1.2638267459958044,
+            "total_return": 1678.2133315812657,
+            "max_drawdown": 39.37492219943054,
+            "cagr": 61.50577239008288,
+            "total_trades": 408,
             "error": null
           },
           {
             "value": 0.6,
-            "sharpe_ratio": 2.026648894938045,
-            "total_return": 55595.53738599111,
-            "max_drawdown": 42.344487423291035,
-            "cagr": 186.56238386564877,
-            "total_trades": 300,
+            "sharpe_ratio": 1.2419036872152212,
+            "total_return": 2307.6211391504307,
+            "max_drawdown": 45.505559381266956,
+            "cagr": 69.86624389358789,
+            "total_trades": 418,
             "error": null
           }
         ]

@@ -1,6 +1,6 @@
 # 전략 스코어카드: VR-Regime
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,11 +74,13 @@ G7  실전배포  [ -- ] G1 FAIL로 미실행
 | 코드 품질 | 9/10 |
 
 **수정 완료된 이슈:**
+
 - [H-001] ~~`warmup_periods()` chained rolling 미반영~~ → `vr_window + vr_k` 반영 완료
 - [H-002] ~~`use_heteroscedastic` 라벨 오해~~ → 주석 수정: "Lo-MacKinlay (1988) Eq.5 simplified form, NOT full Eq.10" 명시
 - [추가] HEDGE_ONLY drawdown shift(1) 미적용 → `df["drawdown"].shift(1)` 적용 완료
 
 **잘된 점:**
+
 - shift(1) 규칙 정확 (vr, z_stat, mom_direction, vol_scalar, drawdown 모두 shift)
 - theta_safe = `np.maximum(theta, 1e-10)` z-stat 0 나눗셈 방어
 - VR 계산 시 `var_1.replace(0, np.nan)` 0 나눗셈 방어

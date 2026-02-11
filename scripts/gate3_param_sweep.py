@@ -156,6 +156,27 @@ STRATEGIES: dict[str, dict[str, Any]] = {
             "vol_target": [0.15, 0.20, 0.25, 0.28, 0.32, 0.35, 0.38, 0.42, 0.50, 0.60],
         },
     },
+    "anchor-mom": {
+        "best_asset": "DOGE/USDT",
+        "timeframe": "12h",
+        "baseline": {
+            "nearness_lookback": 60,
+            "mom_lookback": 30,
+            "strong_nearness": 0.95,
+            "vol_target": 0.35,
+            "short_mode": 1,
+        },
+        "sweeps": {
+            # Rolling max lookback (±20% = 48~72, 넓은 범위 20~120)
+            "nearness_lookback": [20, 30, 40, 48, 54, 60, 66, 72, 90, 120],
+            # Momentum lookback (±20% = 24~36, 넓은 범위 10~80)
+            "mom_lookback": [10, 18, 24, 27, 30, 33, 36, 45, 60, 80],
+            # Strong nearness threshold (0.85~0.99)
+            "strong_nearness": [0.85, 0.88, 0.90, 0.92, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99],
+            # Vol target (공통)
+            "vol_target": [0.15, 0.20, 0.25, 0.28, 0.32, 0.35, 0.38, 0.42, 0.50, 0.60],
+        },
+    },
 }
 
 # 가중치 쌍 (한쪽을 스윕하면 다른 쪽은 1 - value)
@@ -170,12 +191,12 @@ WEIGHT_PAIRS: dict[str, dict[str, str]] = {
 # =============================================================================
 
 
-def load_data(service: MarketDataService, symbol: str) -> Any:
+def load_data(service: MarketDataService, symbol: str, timeframe: str = "1D") -> Any:
     """Best Asset 데이터 로드."""
     return service.get(
         MarketDataRequest(
             symbol=symbol,
-            timeframe="1D",
+            timeframe=timeframe,
             start=START,
             end=END,
         )
@@ -442,7 +463,8 @@ def main() -> None:
         console.rule(f"[bold]{strategy_name}[/] ({config['best_asset']})")
 
         # Load data
-        data = load_data(service, config["best_asset"])
+        timeframe = config.get("timeframe", "1D")
+        data = load_data(service, config["best_asset"], timeframe=timeframe)
         portfolio = create_portfolio(strategy_name)
         baseline = config["baseline"]
         sweeps = config["sweeps"]

@@ -1,6 +1,6 @@
 # 전략 평가표: TSMOM (Time-Series Momentum)
 
-> **템플릿 참조**: [template.md](template.md) | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
+> **템플릿 참조**: [template.md](../template.md) | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ---
 
@@ -321,6 +321,7 @@
 **스윕 범위**: TS ATR [3.0, 3.5, 4.0, 4.5, 5.0, 6.0] × SL [10%, 15%, 20%] × Rebal [10%, 12%, 15%, 18%, 20%, 25%, 30%]
 
 **핵심 발견**:
+
 1. **Rebalance Threshold 15%가 결정적** — 12%→15% 전환 시 Sharpe 0.19→1.21 (cliff effect)
 2. **TS ATR 4.0x가 최적** — 3.0→4.0 유의미, 4.0→6.0 수확체감
 3. **System Stop Loss는 둔감** — 10%/15%/20% 차이 < 0.01 Sharpe
@@ -348,6 +349,7 @@
 | **Volatility** | **26.63%** | — | |
 
 **VBT vs EDA 잔존 괴리 원인:**
+
 - CAGR 차이(-16.85pp): 1m intrabar stop이 장중 저점에서 청산 → 다음 1D bar에서 재진입 사이클. VBT는 일봉 종가만 확인하여 장중 회복 시 stop 미발동
 - 거래 수 차이(3.3x): 위 stop→재진입 사이클이 (602-181)/2 ≈ 210건의 추가 stop 유발
 - MDD/Win Rate EDA 우수: 1m intrabar 체크가 실제 급락 시 더 빠르게 청산 → 하방 방어 강화
@@ -382,6 +384,7 @@
 | 1.0x | 20% | 1.88 | +54.5% | -12.1% | 360 | 24.8% |
 
 **SOL/USDT 핵심 발견:**
+
 1. **Lev=1.0x가 결정적** — Sharpe 1.91 (전 조합 최고), 2.0x(1.21) 대비 +0.70 Sharpe
 2. **SL은 둔감** — Lev=1.0x에서 SL 5~20% 범위 Sharpe 1.88~1.91 (안정 고원)
 3. **MDD 반감** — 1.0x: MDD -12.2% vs 2.0x: -22.9% (10.7pp 개선)
@@ -397,6 +400,7 @@
 | 2.0x | 5% | 0.47 | +11.3% | -31.0% | 681 | 34.0% |
 
 **DOGE/USDT 핵심 발견:**
+
 1. **EDA vs VBT 괴리 심각** — 최고 Sharpe 0.67 vs VBT 1.25 (46% 손실)
 2. **파라미터 고원 부재** — SL/Lev에 따라 Sharpe -0.26~0.67로 불안정
 3. **1m intrabar stop 과민** — DOGE의 극단적 변동성(vol 28~34%)이 stop 빈발 유발

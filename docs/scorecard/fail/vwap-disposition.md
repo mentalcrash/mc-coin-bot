@@ -1,6 +1,6 @@
 # 전략 스코어카드: VWAP-Disposition
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,6 +74,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 | **합계** | **23/30** |
 
 **핵심 근거:**
+
 - 행동재무학 카테고리 완전 미탐색 — 기존 전략과 메커니즘 근본적 차이
 - BTC에서 disposition effect 유의미 실증 (Schatzmann 2023, Digital Finance)
 - On-chain MVRV > 3.5 = 고점, < 1.0 = 저점 패턴을 VWAP proxy로 OHLCV 구현
@@ -90,6 +91,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 **판정**: **FAIL** — Best Sharpe 0.96 < 1.0 (0.04 미달)
 
 **FAIL 사유**:
+
 1. **Sharpe 근소 미달**: Best 0.96 (SOL) — 기준 1.0에 0.04 부족. 경계 사례
 2. **ETH도 양호**: Sharpe 0.92, CAGR +27.1% — 2개 에셋에서 준 PASS 수준
 3. **DOGE 파산**: MDD -622.1%, CAGR -95.2% — FULL Short 모드에서 DOGE 급등에 무방비 (ShortMode.FULL + 밈코인 변동성 = 치명적)
@@ -97,6 +99,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 5. **에셋간 극심한 편차**: SOL Sharpe 0.96 vs DOGE -0.69 — 편차 1.65 (Yellow Flag)
 
 **퀀트 해석**:
+
 - SOL/ETH에서 부분적 edge 존재: CGO 기반 mean-reversion + FULL short이 효과적
 - BTC에서 실패하는 이유: BTC는 기관 주도 추세가 강해 disposition effect (개인 투자자 행동 편향) 약함
 - DOGE MDD -622%는 short squeeze + 밈코인 급등에서 ShortMode.FULL의 구조적 위험 노출
@@ -105,6 +108,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 - 교훈: 행동재무학 시그널은 에셋별 투자자 구성(개인 vs 기관)에 크게 의존. 밈코인 FULL Short은 구조적 자살행위
 
 **CTREND 비교**:
+
 | 지표 | CTREND Best (SOL) | VWAP-Disposition Best (SOL) |
 |------|-------------------|-----------------------------|
 | Sharpe | 2.05 | 0.96 |

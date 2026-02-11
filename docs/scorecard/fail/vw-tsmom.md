@@ -68,6 +68,7 @@ G7 실전배포  [    ]
 | Overfit Prob | — | 95.3% | — | Very High |
 
 **판정**: **FAIL**
+
 - OOS Sharpe 0.12 << 0.3 (기준 대비 60% 미달)
 - Decay 92.1% >> 50% (IS 성과의 92% 소멸)
 - Overfit Probability 95.3% (사실상 확정 과적합)

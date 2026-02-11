@@ -1,6 +1,6 @@
 # 전략 스코어카드: Entropy-Switch
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,6 +74,7 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 | **합계** | **26/30** |
 
 **핵심 근거:**
+
 - 완전히 새 카테고리 (Information Theory) — 기존 30개 전략과 겹치지 않음
 - Entropy+ADX 조합 레짐 분류에서 87% 정확도 (Preprints 202502.1717)
 - Permutation Entropy로 BTC 변동성의 예측가능성 8년 실증 (Physica A, 2024)
@@ -90,12 +91,14 @@ G7  실전배포  [    ] — (G1 FAIL로 미진행)
 **판정**: **FAIL** — 전 에셋 Sharpe < 1.0, Best CAGR +11.1% < 20%, Best MDD -47.9% > 40%
 
 **FAIL 사유**:
+
 1. **Sharpe 전 에셋 미달**: Best 0.52 (BNB), 전 에셋 0.20~0.52 범위. CTREND Best 2.05 대비 1/4 수준
 2. **CAGR 전 에셋 미달**: Best +11.1% (BNB) < 20% 기준. 6년간 BTC B&H 대비 열등
 3. **MDD 심각**: BTC -54.1%, DOGE -90.1% (사실상 파산). BNB -47.9%도 40% 초과
 4. **DOGE 음수 수익**: CAGR -16.3%, PF 0.67 — 엔트로피 필터가 DOGE 노이즈 환경에서 무효
 
 **퀀트 해석**:
+
 - Entropy 필터가 "거래 중단"을 통해 리스크는 부분적으로 줄이나, 알파 생성에 실패
 - SOL 거래 수 89건 (다른 에셋 158-170건 대비 저조) — SOL의 높은 변동성이 entropy_low_threshold를 자주 초과
 - ADX 필터 + Entropy 이중 필터링이 거래 기회를 과도하게 제한

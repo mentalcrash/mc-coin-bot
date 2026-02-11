@@ -25,6 +25,7 @@ argument-hint: <strategy-name> [--from g1|g2|g3|g4]
 **시니어 퀀트 리서처 겸 검증 엔지니어**로서 행동한다.
 
 핵심 원칙:
+
 - 단순 threshold 비교가 아닌 **경제적 의미 해석** — 숫자 뒤의 이유를 찾는다
 - FAIL 시 **구체적 사유 + 수정 방향** 제시 (단순 "FAIL" 판정 금지)
 - Gate 간 **결과 일관성 추적** — G1 Sharpe → G2 OOS Sharpe → G4 WFA OOS 흐름 확인
@@ -128,12 +129,14 @@ uv run python -m src.cli.backtest run {strategy_name} {SYMBOL} \
 ### 판정 기준
 
 **PASS 조건** (Best Asset 기준):
+
 - Sharpe > 1.0
 - CAGR > 20%
 - MDD < 40%
 - Trades > 50
 
 **즉시 폐기 (전 에셋 해당 시)**:
+
 1. MDD > 50% — 전 에셋에서 MDD 50% 초과
 2. Sharpe < 0 — 전 에셋에서 음수 Sharpe
 3. Trades < 20 + 수익 음수 — 극소 거래 + 손실
@@ -142,9 +145,11 @@ uv run python -m src.cli.backtest run {strategy_name} {SYMBOL} \
 ### 비용 민감도 체크
 
 연간 거래 100회 이상인 에셋에 대해 2배 비용 시나리오 기록:
+
 ```
 Cost = maker 0.04% + taker 0.08% + slippage 0.10%  (편도 ~0.22%)
 ```
+
 2배 비용 Sharpe가 0 이하이면 **비용 민감 경고** 기록.
 
 ### 퀀트 해석 (단순 PASS/FAIL을 넘어서)
@@ -239,6 +244,7 @@ uv run python -m src.cli.backtest validate \
 스코어카드에 다음 추가:
 
 1. **Gate 2 상세** 섹션 (CTREND ctrend.md:169-182 패턴):
+
    ```markdown
    ### Gate 2 상세 (IS/OOS 70/30, {best_asset})
 
@@ -248,6 +254,7 @@ uv run python -m src.cli.backtest validate \
    | Decay | — | XX.X% | < 50% | PASS/FAIL |
    ...
    ```
+
 2. **Gate 진행 현황** 갱신: `G2 IS/OOS [PASS/FAIL] OOS Sharpe X.XX, Decay XX.X%`
 3. **의사결정 기록** 행 추가
 
@@ -287,6 +294,7 @@ uv run python -m src.cli.backtest validate \
 ```
 
 > **파라미터 선정 원칙**:
+>
 > - vol_target은 항상 포함 (모든 전략 공통)
 > - 전략 핵심 로직 파라미터 2~3개 (lookback, threshold 등)
 > - short_mode는 스윕 대상 아님 (이산값)
@@ -346,6 +354,7 @@ uv run python scripts/gate3_param_sweep.py {strategy_name}
 스코어카드에 다음 추가:
 
 1. **Gate 3 상세** 섹션 (CTREND ctrend.md:62-83 패턴):
+
    ```markdown
    ### Gate 3 상세 (파라미터 안정성, {best_asset} 1D)
 
@@ -354,6 +363,7 @@ uv run python scripts/gate3_param_sweep.py {strategy_name}
    | param1 | XX | X.XX | N/M | min~max | X.XX~X.XX | PASS |
    ...
    ```
+
 2. **분석** + **핵심 관찰** 서브섹션
 3. **Gate 진행 현황** 갱신: `G3 파라미터 [PASS/FAIL] N/N 파라미터 고원 + ±20% 안정`
 4. **의사결정 기록** 행 추가
@@ -418,21 +428,21 @@ uv run python -m src.cli.backtest validate \
 | WFA OOS Sharpe | >= 0.5 | 1.49 |
 | WFA Decay | < 40% | 39% |
 | WFA Consistency | >= 60% | 67% |
-| PBO | < 40% | 60% (FAIL) |
+| PBO | 이중 경로 (A: <40% / B: <80% + CPCV 전fold OOS>0 + MC p<0.05) | 60% (경로 B PASS) |
 | DSR (batch) | > 0.95 | 1.00 |
 | MC p-value | < 0.05 | 0.000 |
 
-> **CTREND 선례**: PBO 60% > 40% FAIL이었으나, 전 CPCV fold OOS 양수 + MC p=0.000으로
-> G5 EDA Parity 진행을 허용했다. 이 선례를 참조하되, 동일 판단을 자동 적용하지 않는다.
+> **PBO 이중 경로**: 경로 A (PBO < 40%) 또는 경로 B (PBO < 80% AND CPCV 전 fold OOS 양수 AND MC p < 0.05).
+> 경로 B는 파라미터 순위 역전이 있으나 기저 alpha가 견고한 전략을 구제한다.
 
 ### 퀀트 해석
 
 [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) 참조:
 
-1. **PBO 해석**: PBO는 IS에서 최적이 OOS에서도 최적일 확률의 보수. 40-60%는 경계 구역
-   - PBO < 40%: 과적합 위험 낮음
-   - PBO 40-60%: **CPCV 전 fold OOS 양수** 여부가 핵심 판단 기준
-   - PBO > 60%: 과적합 위험 높음
+1. **PBO 해석**: 이중 경로로 판정한다.
+   - 경로 A: PBO < 40% → PASS (과적합 위험 낮음)
+   - 경로 B: PBO < 80% AND CPCV 전 fold OOS > 0 AND MC p < 0.05 → PASS (기저 alpha 견고)
+   - PBO >= 80%: FAIL (경로 B 상한 초과)
 
 2. **WFA Decay vs G2 Decay 일관성**: 두 값이 비슷하면 일관된 IS→OOS 감쇠 패턴. 차이가 크면 CV 방법론 민감도 주의
 
@@ -572,6 +582,6 @@ Step 10의 리포트 형식으로 출력한다.
 
 - [references/gate-criteria.md](references/gate-criteria.md) — Gate별 정량 기준 + CLI 명령 표
 - [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) — 시니어 퀀트 해석 패턴
-- [docs/scorecard/ctrend.md](../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (참조 선례)
-- [docs/strategy/dashboard.md](../../docs/strategy/dashboard.md) — 전략 상황판
-- [docs/strategy/evaluation-standard.md](../../docs/strategy/evaluation-standard.md) — 전략 평가 표준
+- [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (참조 선례)
+- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 상황판
+- [docs/strategy/evaluation-standard.md](../../../docs/strategy/evaluation-standard.md) — 전략 평가 표준

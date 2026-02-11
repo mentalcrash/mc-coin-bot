@@ -82,6 +82,7 @@ print(data.ohlcv.head())  # DataFrame
 ```
 
 **파일 위치:**
+
 - `src/data/market_data.py`: MarketDataRequest, MarketDataSet DTOs
 - `src/data/service.py`: MarketDataService
 
@@ -113,6 +114,7 @@ portfolio = Portfolio.create(
 ```
 
 **파일 위치:**
+
 - `src/portfolio/portfolio.py`: Portfolio 도메인 객체
 - `src/portfolio/config.py`: PortfolioManagerConfig
 
@@ -139,6 +141,7 @@ strat_ret, bench_ret = analyzer.get_returns_series(vbt_portfolio, data.ohlcv, "B
 ```
 
 **파일 위치:**
+
 - `src/backtest/analyzer.py`: PerformanceAnalyzer
 
 ### 2.4 BacktestRequest (Application Layer)
@@ -157,6 +160,7 @@ request = BacktestRequest(
 ```
 
 **파일 위치:**
+
 - `src/backtest/request.py`: BacktestRequest
 
 ### 2.5 BacktestEngine (Application Layer)
@@ -176,6 +180,7 @@ result, strat_ret, bench_ret = engine.run_with_returns(request)
 ```
 
 **파일 위치:**
+
 - `src/backtest/engine.py`: BacktestEngine, run_parameter_sweep
 
 ---
@@ -292,6 +297,7 @@ sliced = multi_data.slice_iloc(10, 50)
 ```
 
 **파일 위치:**
+
 - `src/data/market_data.py`: MultiSymbolData dataclass
 - `src/data/service.py`: MarketDataService.get_multi()
 
@@ -315,6 +321,7 @@ print(request.asset_weights)  # {"BTC/USDT": 0.5, "ETH/USDT": 0.5}
 ```
 
 **파일 위치:**
+
 - `src/backtest/request.py`: MultiAssetBacktestRequest
 
 ### 2.8 BacktestEngine 멀티에셋 API (Application Layer)
@@ -336,6 +343,7 @@ result, validation = engine.run_multi_validated(request, level="quick")
 ```
 
 **내부 처리 흐름:**
+
 1. 심볼별 독립 전략 실행 (`strategy.run(df)`)
 2. 자산 배분 비중 적용 (`strength × asset_weight`)
 3. PM 규칙 적용 (stop-loss, trailing-stop, rebalance)
@@ -343,6 +351,7 @@ result, validation = engine.run_multi_validated(request, level="quick")
 5. 포트폴리오 + 심볼별 성과 분석
 
 **파일 위치:**
+
 - `src/backtest/engine.py`: run_multi(), run_multi_with_returns(), run_multi_validated()
 
 ### 2.9 Validation System (Domain Layer)
@@ -373,6 +382,7 @@ print(report)
 ```
 
 **파일 위치:**
+
 - `src/backtest/validation/validator.py`: TieredValidator
 - `src/backtest/validation/splitters.py`: 데이터 분할 (IS/OOS, WF, CPCV)
 - `src/backtest/validation/deflated_sharpe.py`: Deflated Sharpe Ratio

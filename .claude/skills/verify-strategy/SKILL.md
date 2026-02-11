@@ -157,6 +157,7 @@ vol-target, leverage cap이 올바르게 적용되는가?
 | annualization_factor 오류 (크립토: 365, 주식: 252) | FAIL |
 
 **vol_scalar 정확성 공식 검증**:
+
 ```
 realized_vol = returns.rolling(vol_lookback).std() * sqrt(annualization_factor)
 realized_vol = max(realized_vol, min_volatility)

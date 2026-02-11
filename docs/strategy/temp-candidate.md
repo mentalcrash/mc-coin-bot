@@ -23,6 +23,7 @@
 **사용 지표**: `acceleration = returns.diff()`, `conviction = abs(close - open) / (high - low)`
 
 **시그널 생성 로직**:
+
 ```
 acc = rolling_mean(ret.diff(), N)          # smoothed acceleration
 conv = rolling_mean(abs(C-O)/(H-L), N)    # smoothed body conviction
@@ -41,6 +42,7 @@ signal = sign(acc) * conv                  # direction × strength
 **출처**: Ardila, Forro, Sornette (Physica A, 2021) "The acceleration effect and Gamma factor in asset pricing" + Bulkowski (2008) candle pattern statistics
 
 **Gate 0 상세 점수**:
+
 - 경제적 논거: 4/5 (학술 실증 + 이론적 기반)
 - 참신성: 5/5 (완전 새 카테고리)
 - 데이터 확보: 5/5 (OHLCV only)
@@ -67,6 +69,7 @@ signal = sign(acc) * conv                  # direction × strength
 **사용 지표**: `nearness = close / rolling_max(close, N)`, `momentum = sign(close / close.shift(M) - 1)`
 
 **시그널 생성 로직**:
+
 ```
 nearness = close / rolling_max(close, lookback)
 mom_sign = sign(close / close.shift(mom_lookback) - 1)
@@ -86,6 +89,7 @@ mom_sign = sign(close / close.shift(mom_lookback) - 1)
 **출처**: Jia, Simkins, Yan et al. (SSRN 5386180, 2024-2026) "Psychological Anchoring Effect and Cross Section of Cryptocurrency Returns"
 
 **Gate 0 상세 점수**:
+
 - 경제적 논거: 5/5 (최강 학술 근거, ~130bp/week 실증)
 - 참신성: 4/5 (anchoring 미시도, VWAP-Disposition과 다른 메커니즘)
 - 데이터 확보: 5/5 (OHLCV only)
@@ -112,6 +116,7 @@ mom_sign = sign(close / close.shift(mom_lookback) - 1)
 **사용 지표**: `prev_ret = close / close.shift(1) - 1`, `vol_filter = volume > rolling_median(volume, N)`
 
 **시그널 생성 로직**:
+
 ```
 prev_ret = close / close.shift(1) - 1
 vol_ok = volume > rolling_median(volume, lookback)
@@ -130,6 +135,7 @@ vol_ok = volume > rolling_median(volume, lookback)
 **출처**: Shen (2022) "Bitcoin intraday time series momentum" (Financial Review)
 
 **Gate 0 상세 점수**:
+
 - 경제적 논거: 4/5 (Shen 2022 BTC Sharpe 1.15)
 - 참신성: 4/5 (sub-daily TSMOM 미시도, session echo 우려)
 - 데이터 확보: 5/5 (OHLCV only)
@@ -156,6 +162,7 @@ vol_ok = volume > rolling_median(volume, lookback)
 **사용 지표**: `acceleration = returns.diff()`, `rolling_skew = returns.rolling(N).skew()`
 
 **시그널 생성 로직**:
+
 ```
 acc = rolling_mean(ret.diff(), N)
 skew = returns.rolling(skew_window).skew()
@@ -175,6 +182,7 @@ skew = returns.rolling(skew_window).skew()
 **출처**: Ardila et al. (2021) + QuantPedia "Skewness/Lottery Trading Strategy in Cryptocurrencies" (2024)
 
 **Gate 0 상세 점수**:
+
 - 경제적 논거: 4/5 (두 시그널 모두 학술 근거)
 - 참신성: 5/5 (acceleration + skewness 조합 미사용)
 - 데이터 확보: 5/5 (OHLCV only)

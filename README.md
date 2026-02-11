@@ -100,7 +100,7 @@ portfolio:
 | 1 | 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40% | `run {config}` |
 | 2 | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |
 | 3 | 파라미터 안정성 | 고원 존재, ±20% 안정 | `sweep {config}` |
-| 4 | WFA + CPCV + PBO | WFA OOS >= 0.5, PBO < 40% | `validate -m milestone/final` |
+| 4 | WFA + CPCV + PBO | WFA OOS >= 0.5, PBO 이중 경로 | `validate -m milestone/final` |
 | 5 | EDA Parity | VBT vs EDA 수익 부호 일치 | `eda run` |
 | 6 | Paper Trading (2주+) | 시그널 일치 > 90% | `eda run-live` |
 

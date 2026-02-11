@@ -27,6 +27,7 @@ argument-hint: <strategy-name> [--from temp-candidate]
 판단 기준: **"이 코드가 실제 돈을 운용하는 프로덕션 시스템에 배포되어도 안전한가?"**
 
 핵심 원칙:
+
 - **정확성 > 속도**: 한 줄의 shift(1) 누락이 수백만 원 차이를 만든다
 - **벡터화 필수**: 모든 연산은 pandas/numpy 벡터 연산 (루프 절대 금지)
 - **방어적 코딩**: NaN, 0 나눗셈, edge case를 사전 차단
@@ -649,6 +650,7 @@ uv run pyright src/strategy/{name_snake}/
 ```
 
 **0 error 필수**. 주의사항:
+
 - `from __future__ import annotations` 사용 시 runtime import와 TYPE_CHECKING 구분
 - pandas Series 타입 → `pd.Series` 어노테이션 또는 적절한 `# type: ignore[assignment]`
 - `100 * Series`는 `int`로 추론됨 → 변수에 `pd.Series` 타입 명시
@@ -777,7 +779,7 @@ Dashboard 상단의 전략 총 수를 갱신:
 |------|------|
 | [references/code-templates.md](references/code-templates.md) | 4-file 코드 템플릿 |
 | [references/implementation-checklist.md](references/implementation-checklist.md) | 구현 체크리스트 + 폐기 패턴 |
-| [docs/strategy/temp-candidate.md](../../docs/strategy/temp-candidate.md) | 후보 목록 |
-| [docs/strategy/dashboard.md](../../docs/strategy/dashboard.md) | 전략 상황판 |
-| [.claude/rules/strategy.md](../../.claude/rules/strategy.md) | 전략 개발 규칙 |
-| [src/strategy/base.py](../../src/strategy/base.py) | BaseStrategy ABC |
+| [docs/strategy/temp-candidate.md](../../../docs/strategy/temp-candidate.md) | 후보 목록 |
+| [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) | 전략 상황판 |
+| [.claude/rules/strategy.md](../../rules/strategy.md) | 전략 개발 규칙 |
+| [src/strategy/base.py](../../../src/strategy/base.py) | BaseStrategy ABC |

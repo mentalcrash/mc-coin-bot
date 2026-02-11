@@ -1,6 +1,6 @@
 # 전략 스코어카드: OU-MeanRev
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -58,6 +58,7 @@ G1 백테스트  [FAIL] 전 에셋 Sharpe ~0, 4/5 음수. DOGE MDD -19669%. 즉�
 - **FULL short mode 치명적**: DOGE/SOL 같은 고변동 에셋에서 OU z-score short 진입 → 추세 지속 시 파산
 
 **근본 원인**:
+
 1. **TF 불일치**: 4H 파라미터(ou_window=120 = 20일)가 1D에서 120일로 왜곡
 2. **FULL short + 밈코인**: OU z-score 기반 short이 DOGE/SOL 급등에 노출 → 치명적 MDD
 3. **MR edge 부재**: 크립토 1D는 추세 지속성이 강해 mean-reversion 전략이 구조적 불리

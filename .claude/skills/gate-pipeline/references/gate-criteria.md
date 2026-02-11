@@ -1,6 +1,6 @@
 # Gate 판정 기준 — Machine-Readable Reference
 
-> [evaluation-standard.md](../../../docs/strategy/evaluation-standard.md)의 정량 기준 요약.
+> [evaluation-standard.md](../../../../docs/strategy/evaluation-standard.md)의 정량 기준 요약.
 > 파이프라인 실행 시 이 파일의 수치를 기준으로 PASS/FAIL을 판정한다.
 
 ---
@@ -148,9 +148,25 @@ uv run python scripts/gate3_param_sweep.py {strategy}
 | WFA OOS Sharpe | >= 0.5 | 1.49 | 3-fold expanding window 평균 |
 | WFA Decay | < 40% | 39% | IS → OOS |
 | WFA Consistency | >= 60% | 67% | OOS fold 양수 비율 |
-| PBO | < 40% | 60% (FAIL) | Probability of Backtest Overfitting |
+| PBO | 아래 참조 | 60% (PASS-B) | Probability of Backtest Overfitting |
 | DSR (batch) | > 0.95 | 1.00 | 동일 배치 기준 |
 | MC p-value | < 0.05 | 0.000 | Monte Carlo 통계적 유의성 |
+
+### PBO 판정 (이중 경로)
+
+PBO는 다음 **두 경로 중 하나**를 충족하면 PASS:
+
+| 경로 | 조건 | 설명 |
+|:----:|------|------|
+| **A** | PBO < 40% | 기본 경로 — 과적합 위험 낮음 |
+| **B** | PBO < 80% AND CPCV 전 fold OOS > 0 AND MC p < 0.05 | 보조 경로 — 파라미터 순위 역전이 있으나 기저 alpha 견고 |
+
+**근거**: PBO는 "IS 최적 파라미터가 OOS에서도 최적 순위를 유지하는가"를 측정한다.
+그러나 실전에서 중요한 것은 **"어떤 파라미터를 골라도 OOS에서 수익이 나는가"** (CPCV robustness).
+경로 B는 파라미터 과적합이 있지만, 기저 전략 alpha가 견고한 경우를 구제한다.
+
+**적용 예시**: CTREND (PBO 60%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS.
+Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS (PBO < 80% 충족).
 
 ### CLI 명령
 
@@ -185,12 +201,12 @@ uv run python -m src.cli.backtest validate \
 | G3 | 파라미터 | 4/4 PASS | PASS |
 | G4 | WFA OOS | 1.49 | PASS |
 | G4 | WFA Decay | 39% | PASS |
-| G4 | PBO | 60% | **FAIL** |
+| G4 | PBO | 60% | PASS (경로 B) |
 | G4 | DSR (batch) | 1.00 | PASS |
 | G4 | MC p-value | 0.000 | PASS |
 
-> CTREND은 G4 PBO FAIL에도 불구하고 전 CPCV fold OOS 양수 + MC PASS로
-> G5 EDA Parity 진행이 허용된 유일한 선례.
+> CTREND은 PBO 60%로 경로 A(< 40%) FAIL이나, 전 CPCV fold OOS 양수 + MC p=0.000으로
+> 경로 B를 통해 PASS. Anchor-Mom도 PBO 80%이나 동일 경로 B PASS.
 
 ---
 

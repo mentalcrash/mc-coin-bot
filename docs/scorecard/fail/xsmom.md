@@ -68,6 +68,7 @@ G7 실전배포  [    ]
 | Overfit Prob | — | 86.0% | — | High |
 
 **판정**: **FAIL**
+
 - OOS Sharpe 0.30은 기준 0.3과 동일 (borderline)
 - Decay 76.6% >> 50% (IS 성과의 3/4 이상 소멸)
 - Overfit Probability 86% (과적합 강력 의심)

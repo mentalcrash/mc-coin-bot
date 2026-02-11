@@ -111,6 +111,7 @@ allowed-tools:
 아이디어가 전략으로 발전하기 전에, 시그널의 예측력을 검증한다.
 
 **IC (Information Coefficient) — 필수:**
+
 ```python
 # IC = rank_correlation(signal[t], forward_return[t+1])
 # 기준:
@@ -121,6 +122,7 @@ allowed-tools:
 ```
 
 **AlphaEval 5차원 — 권장 (arXiv:2508.13174):**
+
 ```
 1. Predictive Power (PPS): IC + RankIC 결합
 2. Temporal Stability (RRE): Rolling IC의 순위 엔트로피 → 시간 안정성
@@ -357,6 +359,7 @@ Gate 1 FAIL → 아이디어 폐기, Step 1로 복귀
 ```
 
 **파라미터 최적화 시 GT-Score 활용 권장** (arXiv:2602.00080):
+
 ```
 GT-Score = (mu * ln(z) * r^2) / sigma_d
   mu      = 평균 수익 (성과)
@@ -454,6 +457,7 @@ Gate 0 PASS 아이디어는 **자동으로** `docs/strategy/temp-candidate.md`�
 Step 4.5의 포맷을 따르며, 기존 내용 아래에 append한다.
 
 **기록 절차:**
+
 1. `docs/strategy/temp-candidate.md` 파일 존재 여부 확인
 2. 없으면 헤더와 함께 새 파일 생성
 3. 있으면 기존 내용을 Read로 읽은 후 Edit으로 하단에 추가

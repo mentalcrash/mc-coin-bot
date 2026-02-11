@@ -58,6 +58,7 @@ G7 실전배포  [    ]
 **Gate 2** (PASS): IS Sharpe 1.30, OOS Sharpe 1.01, Decay 21.8%, OOS Return +31.8%
 
 **Gate 3** (PASS): 3개 핵심 파라미터 모두 고원 존재 + ±20% Sharpe 부호 유지
+
 - `er_lookback`: 고원 7개 (5~12), ±20% Sharpe 0.97~1.15
 - `slow_period`: 고원 10개 (20~50), ±20% Sharpe 1.10~1.16 — 매우 안정
 - `vol_target`: 고원 8개 (0.2~0.5), ±20% Sharpe 1.05~1.14

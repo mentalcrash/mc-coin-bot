@@ -1,6 +1,6 @@
 # 전략 스코어카드: Range-Squeeze
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,12 +74,14 @@ G7  실전배포  [    ] (G1 FAIL로 미진행)
 | 코드 품질 | 9/10 |
 
 **수정 완료된 이슈:**
+
 - [H-001] ~~NR 패턴 floating-point `==` 비교~~ → `np.isclose(rtol=1e-9)` 적용 완료
 - [H-002] ~~`daily_range` dirty data 가드 없음~~ → `.clip(lower=0)` 적용 완료
 - [H-003] vol_scalar 무제한 — PM 클램핑에 의존 (전략 레벨 추가 방어 불요, 아키텍처 설계대로)
 - [추가] HEDGE_ONLY drawdown shift(1) 미적용 → `df["drawdown"].shift(1)` 적용 완료
 
 **잘된 점:**
+
 - shift(1) 규칙 올바르게 적용 (is_nr, range_ratio, vol_scalar, drawdown 모두 shift)
 - NR7 + range_ratio squeeze 이중 감지 로직
 - avg_range `.replace(0, np.nan)` 0 나눗셈 방어
@@ -90,6 +92,7 @@ G7  실전배포  [    ] (G1 FAIL로 미진행)
 **판정: FAIL** -- Best Asset(ETH) Sharpe 0.33 < 1.0, CAGR +3.8% < 20%
 
 **실패 사유:**
+
 1. **전 에셋 Sharpe < 1.0**: 최고 ETH 0.33으로 기준 1.0에 크게 미달 (기준의 33%)
 2. **3개 에셋 음수 Sharpe**: BTC(-0.42), BNB(-0.52), DOGE(-0.89) 손실
 3. **전 에셋 음수 Alpha**: BTC B&H 대비 전 에셋에서 크게 열등
@@ -97,6 +100,7 @@ G7  실전배포  [    ] (G1 FAIL로 미진행)
 5. **CAGR 최대 +3.8%**: 20% 기준의 19% 수준, 경제적 가치 없음
 
 **퀀트 해석:**
+
 - **에셋 순서 비정상**: ETH > SOL > BTC > BNB > DOGE. 추세추종이라면 SOL > BTC가 일반적이나, ETH가 1위이고 SOL이 거의 0 수익 -- squeeze-breakout 패턴이 crypto 일봉에서 유의미한 edge를 제공하지 못함
 - **거래 수 과다**: 연 50~60건 거래 (일봉 대비 높음), Win Rate 45~49%로 동전 던지기 수준. Avg Win과 Avg Loss가 유사하여 edge 없음
 - **DOGE 거래 84건으로 급감**: DOGE의 높은 변동성에서 squeeze 감지가 저조하여 거래 미발생 구간 다수
@@ -114,6 +118,7 @@ G7  실전배포  [    ] (G1 FAIL로 미진행)
 
 **근본 원인 분석:**
 NR7 패턴과 range ratio squeeze는 전통 주식에서 유의미하나, crypto 일봉에서는:
+
 1. 24/7 시장 특성상 squeeze 해소 후 방향 지속성이 약함
 2. close-open 방향 (1 bar)으로 breakout 방향을 결정하는 것은 노이즈에 취약
 3. vol-target sizing으로 squeeze 구간 (저변동성)에서 레버리지가 확대되어 false breakout 비용 증가

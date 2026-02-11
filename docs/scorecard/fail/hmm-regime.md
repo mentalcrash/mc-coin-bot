@@ -56,7 +56,8 @@ G7 실전배포  [    ]
 ### Gate 상세 (완료된 Gate만 기록)
 
 **Gate 2** (FAIL): IS Sharpe 1.04, OOS Sharpe -0.66, Decay 162.9%
-  - 실패 사유: OOS Sharpe (-0.66) < 0.3; Sharpe Decay (162.9%) >= 50%; OOS Return (-7.0%) <= 0%
+
+- 실패 사유: OOS Sharpe (-0.66) < 0.3; Sharpe Decay (162.9%) >= 50%; OOS Return (-7.0%) <= 0%
 
 ---
 

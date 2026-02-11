@@ -9,6 +9,7 @@
 ## 현재 시스템 진단
 
 ### 아키텍처
+
 ```
 Rule-Based (w=0.40)  ──┐
 HMM 3-state (w=0.35) ──┼──▶ Weighted Avg ──▶ Hysteresis (5-bar) ──▶ Label
@@ -50,6 +51,7 @@ model.fit(observations)
 ```
 
 **기대 효과:**
+
 - Regime 전환 빈도 50-70% 감소
 - Hysteresis filter 의존도 감소 (모델이 자체적으로 안정)
 - False signal 대폭 감소
@@ -80,6 +82,7 @@ smoothed_probs = result.smoothed_marginal_probabilities  # (n_obs, 3)
 ```
 
 **장점:**
+
 - statsmodels 내장 → 추가 의존성 불필요
 - Regime별 dynamics를 명시적으로 포착
 - Trending/MR 구분 정확도 향상
@@ -119,6 +122,7 @@ model = pyhsmm.models.WeakLimitHDPHSMM(
 ```
 
 **기대 효과:**
+
 - Regime 지속 시간 예측 가능 → "이 trending이 언제 끝날까" 추정
 - Hysteresis를 모델 레벨에서 자연스럽게 구현
 
@@ -182,6 +186,7 @@ def cross_asset_regime_features(
 ```
 
 **핵심 근거:**
+
 - 2025년 10월 crash: funding rate 10%→30% 상승 → $3.21B liquidation cascade
 - Funding rate, OI는 **가격에 선행하는** 정보
 - BTC-ETH decorrelation은 regime transition의 leading indicator
@@ -279,6 +284,7 @@ final_probs = meta.predict_proba(X_test)
 ```
 
 **장점:**
+
 - 고정 가중치 대비 OOS accuracy 10-20% 향상
 - "HMM이 trending에서 잘 맞고, Rule-Based가 volatile에서 잘 맞다" 같은 패턴 자동 학습
 - Walk-forward re-training으로 과적합 방지
@@ -312,6 +318,7 @@ class DynamicEnsemble:
 ```
 
 **"realized_label" 정의 방법:**
+
 - Forward 20일 return > 2sigma → VOLATILE
 - Forward 20일 |return| > 1sigma + ER > 0.4 → TRENDING
 - 그 외 → RANGING
@@ -355,6 +362,7 @@ changepoints = detector.detector(
 ```
 
 **실용적 통합 방안:**
+
 ```
 일반 상황: hysteresis min_hold_bars = 5 (보수적)
 BOCPD alert 시: min_hold_bars = 1 (즉시 전환 허용)
@@ -386,6 +394,7 @@ def jump_model_decode(
 ```
 
 **장점:**
+
 - Jump penalty를 walk-forward CV로 최적화 가능
 - Hysteresis를 모델 레벨에서 자연스럽게 구현
 - HMM보다 해석 용이
@@ -423,6 +432,7 @@ def rolling_transition_matrix(
 **현재 문제:** Sigmoid 기반 score가 진정한 확률이 아님. "p_trending=0.6"이 실제 60%인지 보장 없음.
 
 **Platt Scaling:**
+
 ```python
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -467,6 +477,7 @@ class RegimeValidationMetrics:
 ```
 
 **DSR에 regime trials 포함:**
+
 ```python
 total_trials = (
     n_strategy_params
@@ -528,6 +539,7 @@ def detect_correlation_regime(
 ### 7-A. Signature-MMD Regime Detection
 
 Path signature + Maximum Mean Discrepancy. 비마코프, 비모수적 regime detection.
+
 - **GitHub:** [issaz/signature-regime-detection](https://github.com/issaz/signature-regime-detection)
 - **논문:** [arXiv:2306.15835](https://arxiv.org/abs/2306.15835)
 - **난이도:** 높음
@@ -535,36 +547,42 @@ Path signature + Maximum Mean Discrepancy. 비마코프, 비모수적 regime det
 ### 7-B. Wasserstein Distance Regime Clustering
 
 Sliced Wasserstein K-means. 비가우시안 분포에서 전통 방법 대비 우수.
+
 - **논문:** [arXiv:2110.11848](https://arxiv.org/abs/2110.11848)
 - **난이도:** 중간-높음
 
 ### 7-C. Multi-Model Ensemble-HMM Voting (Oct 2025)
 
 XGBoost/CatBoost + HMM voting. Walk-forward validation 검증.
+
 - **논문:** [AIMS Press](https://www.aimspress.com/article/id/69045d2fba35de34708adb5d)
 - **난이도:** 중간
 
 ### 7-D. Market States: Clustering + State Machines (Oct 2025)
 
 K-means + transition matrix → probabilistic state machine. 6개 TF의 log-momentum + risk 사용.
+
 - **논문:** [arXiv:2510.00953](https://arxiv.org/abs/2510.00953)
 - **난이도:** 낮음-중간
 
 ### 7-E. State Street: t-Distribution Mixture (2025)
 
 Gaussian 대신 t-distribution 사용 → heavy tail 대응. 23개 features → 4 regimes.
+
 - **논문:** [SSGA](https://www.ssga.com/library-content/assets/pdf/global/pc/2025/decoding-market-regimes-with-machine-learning.pdf)
 - **난이도:** 중간
 
 ### 7-F. HMM + RL Portfolio Management (2025)
 
 Bayesian regime filtration + RL. Test accuracy >96%, lead time ~2.4 trading days.
+
 - **논문:** [IDS 2025](https://www.cloud-conf.net/datasec/2025/proceedings/pdfs/IDS2025-3SVVEmiJ6JbFRviTl4Otnv/966100a067/966100a067.pdf)
 - **난이도:** 높음
 
 ### 7-G. TCN-HMM Hybrid
 
 TCN으로 multi-scale temporal features 추출 → HMM clustering. LSTM보다 3-5x 빠른 학습.
+
 - **참고:** [TCN-HMM Framework](https://medium.com/call-for-atlas/temporal-convolutional-neural-network-with-conditioning-for-broad-market-signals-9f0b0426b2b9)
 - **난이도:** 중간
 
@@ -646,22 +664,26 @@ TCN으로 multi-scale temporal features 추출 → HMM clustering. LSTM보다 3-
 ## 참고 문헌
 
 ### HMM / 확률 모델
+
 - Fox et al., "Sticky HDP-HMM" — [Berkeley](https://people.eecs.berkeley.edu/~jordan/papers/stickyHDPHMM_LIDS_TR.pdf)
 - statsmodels MarkovAutoregression — [Docs](https://www.statsmodels.org/dev/examples/notebooks/generated/markov_autoregression.html)
 - hsmmlearn — [GitHub](https://github.com/jvkersch/hsmmlearn)
 - pyhsmm — [GitHub](https://github.com/mattjj/pyhsmm)
 
 ### Changepoint / Transition
+
 - Adams & MacKay (2007), "BOCPD" — [arXiv:0710.3742](https://arxiv.org/abs/0710.3742)
 - Gregory Gundersen BOCPD Python — [Blog](https://gregorygundersen.com/blog/2020/10/20/implementing-bocd/)
 - Jump Model — [arXiv:2402.05272](https://arxiv.org/abs/2402.05272)
 
 ### Crypto Market
+
 - Amberdata Oct 2025 Crash — [Blog](https://blog.amberdata.io/how-3.21b-vanished-in-60-seconds-october-2025-crypto-crash-explained-through-7-charts)
 - FTI Oct 2025 Analysis — [Report](https://www.fticonsulting.com/insights/articles/crypto-crash-october-2025-leverage-met-liquidity)
 - Liquidation Cascade Anatomy — [SSRN](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5611392)
 
 ### 최신 연구
+
 - Signature-MMD — [arXiv:2306.15835](https://arxiv.org/abs/2306.15835)
 - Wasserstein Clustering — [arXiv:2110.11848](https://arxiv.org/abs/2110.11848)
 - Market States Clustering — [arXiv:2510.00953](https://arxiv.org/abs/2510.00953)

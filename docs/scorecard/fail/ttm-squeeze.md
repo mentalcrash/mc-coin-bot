@@ -58,6 +58,7 @@ G7 실전배포  [    ]
 **Gate 2** (PASS): IS Sharpe 1.06, OOS Sharpe 0.58, Decay 45.6%, OOS Return +12.1%
 
 **Gate 3** (FAIL): bb_period, kc_mult 파라미터에서 고원 부재
+
 - `bb_period`: 고원 2개만 (18~20), bb_period=22에서 Sharpe 0.94→0.53 급락, bb_period=30에서 음수
 - `kc_mult`: 고원 2개만 (1.8~2.0), kc_mult=1.0에서 거래 0건, 1.2~1.3에서 Sharpe 0.14~0.19
 - `vol_target`: PASS — 고원 10개 (0.2~0.55), ±20% Sharpe 0.93~0.95

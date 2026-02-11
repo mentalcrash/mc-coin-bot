@@ -112,6 +112,7 @@ COLD (Parquet+JSONL) ← data/bronze/, data/silver/, EventBus JSONL audit
 | **7-D: 결과 평가** | — | 분석 | 백테스트 대비 parity (수익 부호, 거래 수, Sharpe) |
 
 **Paper 모드 성공 기준:**
+
 - WebSocket 24시간 무중단 연결
 - 시그널이 백테스트와 일관 (동일 bar에서 동일 방향)
 - 시뮬 PnL 부호가 백테스트와 일치
@@ -165,6 +166,7 @@ COLD (Parquet+JSONL) ← data/bronze/, data/silver/, EventBus JSONL audit
 ### 4.1 Security Checklist
 
 **Binance API Key:**
+
 - [x] Enable Spot & Margin Trading
 - [ ] Enable Futures (필요시만)
 - [ ] Enable Withdrawals (**절대 비활성화**)
@@ -180,6 +182,7 @@ COLD (Parquet+JSONL) ← data/bronze/, data/silver/, EventBus JSONL audit
 | Level 3 | SOPS (암호화된 git) | 소규모 팀 |
 
 **VPS Hardening:**
+
 ```bash
 # SSH key-only + Firewall + Fail2ban
 sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -219,6 +222,7 @@ apt install fail2ban unattended-upgrades
 ### 4.5 State Recovery (재시작 복구)
 
 복구 순서 (StateManager에 구현됨):
+
 1. SQLite `bot_state` 테이블에서 PM/RM 상태 로드
 2. Exchange position 조회 (`fetch_positions`) — **Live 전환 시**
 3. Reconciliation (state vs exchange) — exchange를 truth로 사용
@@ -250,15 +254,18 @@ Phase 7.5에서 추가:
 ## 5. Sources
 
 ### Database
+
 - [DuckDB vs SQLite 2026](https://www.analyticsvidhya.com/blog/2026/01/duckdb-vs-sqlite/)
 - [Freqtrade - SQLite-based Crypto Trading Bot](https://github.com/freqtrade/freqtrade)
 
 ### Discord Bot
+
 - [discord.py Documentation](https://discordpy.readthedocs.io/en/stable/)
 - [discord.py 2.0 Slash Commands](https://gist.github.com/AbstractUmbra/a9c188797ae194e592efe05fa129c57f)
 - [Discord Rate Limits](https://discord.com/developers/docs/topics/rate-limits)
 
 ### Production Deployment
+
 - [Binance API Rate Limits](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/limits)
 - [Using uv in Docker](https://docs.astral.sh/uv/guides/integration/docker/)
 - [Graceful Shutdowns with asyncio](https://roguelynn.com/words/asyncio-graceful-shutdowns/)

@@ -1,0 +1,35 @@
+# markdownlint configuration
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# MD013 - Line length
+# 테이블과 코드 블록은 길이 제한 해제, 일반 텍스트는 200자
+# 퀀트 리서치/스코어카드 문서의 장문 허용
+MD013: false
+
+# MD024 - No duplicate heading
+# Skill 파일에서 Gate별 동일 섹션명(실행, 판정 기준, 수집 지표 등) 의도적 반복
+MD024: false
+
+# MD036 - No emphasis as heading
+# 볼드 텍스트를 서브섹션 구분으로 의도적 사용 (**Phase A: WFA** 등)
+MD036: false
+
+# MD040 - Fenced code language
+# 언어 미지정 코드 블록 허용 (pseudo-code, 출력 예시 등)
+MD040: false
+
+# MD050 - Strong style
+# **asterisk** vs __underscore__ 혼용 허용
+MD050: false
+
+# MD028 - No blanks in blockquote
+# 인용문 내 빈 줄 허용 (multi-paragraph blockquote)
+MD028: false
+
+# MD029 - Ordered list prefix
+# 순서 번호 스타일 강제 해제 (1/2/3 vs 1/1/1 혼용 허용)
+MD029: false
+
+# MD060 - Table column style
+# 테이블 파이프 정렬 검사 비활성화 (잦은 편집으로 정렬 유지 비용 높음)
+MD060: false

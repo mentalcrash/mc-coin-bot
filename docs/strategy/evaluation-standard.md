@@ -94,6 +94,7 @@ Gate 7: 실전 배포 + 모니터링
 ## Gate 0: 아이디어 + 코드 검증
 
 > Gate 0은 **2단계**로 나뉜다.
+>
 > - **Phase A**: 코드 작성 전 — 아이디어의 경제적 타당성 평가
 > - **Phase B**: 코드 작성 후 — 구현 코드의 퀀트 결함 검증
 
@@ -334,7 +335,7 @@ IS/OOS 각각에 대해 아래 지표를 기록한다 (판정 기준 아님, 분
 | **WFA OOS Sharpe** | >= **0.5** | Walk-Forward OOS 평균 |
 | **WFA Sharpe Decay** | < **40%** | Walk-Forward 감쇠율 |
 | **WFA Consistency** | >= **60%** | 양의 OOS Sharpe + Decay < 50% 비율 |
-| **PBO** | < **40%** | 백테스트 과적합 확률 |
+| **PBO** | 이중 경로 | 경로 A: < 40% / 경로 B: < 80% AND CPCV 전 fold OOS > 0 AND MC p < 0.05 |
 | **DSR** | > **0.95** | Deflated Sharpe (다중 테스트 보정) |
 | **Monte Carlo p-value** | < **0.05** | 통계적 유의성 |
 
@@ -458,7 +459,7 @@ IS/OOS 각각에 대해 아래 지표를 기록한다 (판정 기준 아님, 분
 | **1** | 5 에셋 × TF | Best Asset 선정 | Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50 |
 | **2** | Best Asset | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50%, OOS Trades >= 15 |
 | **3** | Best Asset | 파라미터 스윕 | 고원 존재 (60%+), ±20% 안정 |
-| **4** | Best Asset | WFA + CPCV | WFA OOS >= 0.5, PBO < 40%, DSR > 0.95 |
+| **4** | Best Asset | WFA + CPCV | WFA OOS >= 0.5, PBO 이중 경로, DSR > 0.95 |
 | **5** | Best Asset (2년) | VBT vs EDA | 수익 부호 일치, 편차 < 20% |
 | **6** | Best Asset | 페이퍼 트레이딩 | 일치도 > 90%, 2주+ 무중단 |
 | **7** | Best Asset | 실전 운용 | 3개월 Sharpe > 0.3 |

@@ -1,6 +1,6 @@
 # 전략 스코어카드: Candle-Reject
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -57,6 +57,7 @@ G1 백테스트  [FAIL] Best Sharpe 0.65 < 1.0. SOL/BNB 음수 Sharpe
 - **CAGR 왜곡**: annualization_factor=2190 (4H) 적용으로 1D 데이터의 수익률이 6배 연환산 → 비현실적 CAGR 수치
 
 **에셋 패턴 분석**:
+
 - BTC/ETH에서 양호: 안정적 시장에서 rejection wick 반전이 효과적
 - SOL/BNB에서 FAIL: 고변동/강추세 에셋에서 rejection이 false signal로 전환
 - DOGE 중립: 노이즈 환경에서 약한 양수 (edge 부재)

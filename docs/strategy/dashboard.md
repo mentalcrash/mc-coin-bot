@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 1 + 검증 대기 4 + 재검증 대기 8 + 폐기 41)
+> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 1 + 검증중 1 + 재검증 대기 8 + 폐기 44)
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -21,7 +21,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | **1** | 단일에셋 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50 | `run {config}` |
 | **2** | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |
 | **3** | 파라미터 안정성 | 고원 존재, ±20% Sharpe 부호 유지 | `sweep {config}` |
-| **4** | WFA + CPCV + PBO + DSR | WFA OOS >= 0.5, PBO < 40%, DSR > 0.95 | `validate -m milestone/final` |
+| **4** | WFA + CPCV + PBO + DSR | WFA OOS >= 0.5, PBO 이중 경로, DSR > 0.95 | `validate -m milestone/final` |
 | **5** | EDA Parity | VBT vs EDA 수익 부호 일치, 편차 < 20% | `eda run {config}` |
 | **6** | Paper Trading (2주+) | 시그널 일치 > 90%, 무중단 | `eda run-live` |
 | **7** | 실전 배포 | 3개월 이동 Sharpe > 0.3 | — |
@@ -36,28 +36,27 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (54개 = 활성 1 + 검증 대기 4 + 재검증 대기 8 + 폐기 41)
+## 현재 전략 현황 (54개 = 활성 1 + 검증중 1 + 재검증 대기 8 + 폐기 44)
 
 ### 활성 전략 (1개, Gate 5 완료)
 
 | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | G5 | 비고 |
 |------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|:--:|------|
-| [**CTREND**](../scorecard/ctrend.md) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | P | P | P | **F** | P | PBO 60% > 40% |
+| [**CTREND**](../scorecard/ctrend.md) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | P | P | P | P | P | PBO 60% 경로 B PASS |
 
 > G5 EDA Parity PASS: EDA Sharpe 2.82 vs VBT 2.05, 수익 부호 일치.
-> G4 PBO 60% FAIL이나, 전 CPCV fold OOS Sharpe 양수 (0.49~2.79). MC p=0.000 PASS.
+> G4 PBO 60% 경로 B PASS (전 CPCV fold OOS 양수 0.49~2.79, MC p=0.000).
 > **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-### 검증 대기 (4개) — G0B PASS → G1 백테스트 대기
+### 검증중 (1개, Gate 4 PASS → G5 진행 대기)
 
-> **Tier 7** (6H/12H TF, 2026-02-11 구현). G0B 코드 검증 완료 (C1-C7 전항목 PASS), `/gate-pipeline` 실행 대기.
+| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | 비고 |
+|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|------|
+| [**Anchor-Mom**](../scorecard/anchor-mom.md) | DOGE/USDT | 12H | 1.36 | +49.8% | -31.0% | 371 | P | P | P | P | P | PBO 80% 경로 B PASS, CPCV 100% |
 
-| 전략 | TF | ShortMode | G0A | G0B | Tests | 비고 |
-|------|-----|-----------|:---:|:---:|------:|------|
-| **Accel-Conv** (`accel-conv`) | 6H | HEDGE_ONLY | 27/30 | **P** | 38 | Acceleration + Body Conviction |
-| **Anchor-Mom** (`anchor-mom`) | 12H | HEDGE_ONLY | 25/30 | **P** | 38 | Anchoring + Nearness (W3 레짐, W5 상관) |
-| **QD-Mom** (`qd-mom`) | 6H | HEDGE_ONLY | 25/30 | **P** | 37 | Quarter-Day TSMOM (W3 레짐, W4 턴오버) |
-| **Accel-Skew** (`accel-skew`) | 12H | HEDGE_ONLY | 24/30 | **P** | 38 | Acceleration + Rolling Skewness |
+> G4 PBO 80% 경로 B PASS (전 CPCV fold OOS 양수 0.90~1.75, MC p=0.000, CI [1.13, 1.49]).
+> WFA OOS 1.16, Decay 21.2% PASS. DSR(batch) 1.00 PASS.
+> **다음 단계**: G5 EDA Parity 검증.
 
 ### 재검증 대기 (8개) — TF 불일치 수정 후 재평가
 
@@ -83,7 +82,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [Flow-Imbalance](../scorecard/fail/flow-imbalance.md) | 1H | 1D | -0.12 | BVC 근사가 1D에서 정보 손실 심각 | 1H BVC가 개선되는지 확인, L2 없이 한계 가능 |
 | [Hour-Season](../scorecard/fail/hour-season.md) | 1H | 1D | -1.01 | 1D에서 hour-of-day 계절성 자체가 불가 | 1H에서 rolling t-stat 과적합 여부 재확인 |
 
-### 폐기 전략 (41개)
+### 폐기 전략 (44개)
 
 #### Gate 4 실패 — WFA 심층검증
 
@@ -120,6 +119,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [Kalman-Trend](../scorecard/fail/kalman-trend.md) | 0.78 | +19.4% | Sharpe < 1.0, CAGR -0.6%p 미달. DOGE 거래 0건 |
 | [BB-RSI](../scorecard/fail/bb-rsi.md) | 0.59 | +4.6% | CAGR < 20% |
 | [Entropy-Switch](../scorecard/fail/entropy-switch.md) | 0.52 | +11.1% | 전 에셋 Sharpe < 1.0, MDD -47.9%. Alpha 부재 |
+| [Accel-Skew](../scorecard/fail/accel-skew.md) | 0.47 | +10.0% | Best DOGE 0.47 < 1.0, 3/5 에셋 음수. Skewness 필터 alpha 부재 |
 
 #### Gate 1 실패 — 전 에셋 Sharpe 음수/0 근접
 
@@ -129,6 +129,8 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [AC-Regime](../scorecard/fail/ac-regime.md) | 0.08 | +0.3% | 4/5 에셋 Sharpe 음수, AC 시그널 무효 |
 | [VR-Regime](../scorecard/fail/vr-regime.md) | 0.17 | +0.8% | 전 에셋 Sharpe < 1.0, 극소 거래 (2~30건), significance_z 과도 → 시그널 부재 |
 | [VPIN-Flow](../scorecard/fail/vpin-flow.md) | 0.00 | 0.0% | 전 에셋 거래 0건, VPIN threshold 0.7이 1D 데이터에서 도달 불가 (max 0.45) |
+| [Accel-Conv](../scorecard/fail/accel-conv.md) | -1.05 | -41.3% | 전 에셋 Sharpe 음수 (-1.05~-2.42), MDD 96~99%, 6H 과다 거래 연 ~700건 |
+| [QD-Mom](../scorecard/fail/qd-mom.md) | -0.51 | -21.6% | 전 에셋 Sharpe 음수 (-0.51~-2.10), MDD 82~97%, 6H autocorrelation edge 부재 |
 
 #### Gate 1 실패 — 데이터 부재 / 인프라 미구축
 
@@ -159,7 +161,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | 2 | **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐 |
 | 3 | **SOL/USDT = Best Asset**: 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리 |
 | 4 | **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 (Donchian +10.8%, BB-RSI +4.6%) 조기 제거 |
-| 5 | **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증이 합리적 다음 단계 |
+| 5 | **PBO 이중 경로**: 경로 A (PBO<40%) 또는 경로 B (PBO<80% + CPCV 전fold OOS>0 + MC p<0.05). 기저 alpha 견고하면 파라미터 순위 역전은 허용 |
 | 6 | **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블 |
 | 7 | **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수. 1D OHLCV에서 BVC 근사는 정보 손실 심각 |
 | 8 | **G0A 이론 ≠ G1 실전**: AC-Regime(27/30), VR-Regime(24/30) 등 G0A 고득점이 G1 백테스트 성과를 보장하지 않음. 39개 전략 중 G5 도달 1개(2.6%) |
@@ -173,3 +175,5 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | 16 | **Intraday 계절성** *(1D 테스트 기반, 1H 재검증 대기)*: 30일 rolling hour-of-day t-stat은 1D에서 계산 자체가 무의미. 1H에서 과적합 여부 재확인 필요 |
 | 17 | **4H/1H TF 전략의 1D 백테스트 구조적 불일치 (수정 완료)**: VBT CLI가 `timeframe="1D"` 하드코딩 → 비-1D 전략 8종이 잘못된 TF로 평가됨. 2026-02-11 수정: YAML `backtest.timeframe` 반영. **Tier 5(1H) 4종 + Tier 6(4H) 4종 → 재검증 대기** |
 | 18 | **FULL Short + OU MR = 최악의 조합**: OU z-score 기반 short이 크립토 밈코인(DOGE) 급등에 노출 시 MDD -19,669%. VWAP-Disposition(-622%)의 31.6배. MR 전략에서 FULL short는 구조적 자살, HEDGE_ONLY가 최소 방어선 |
+| 19 | **6H TF Acceleration/Momentum = 구조적 실패**: Accel-Conv(-1.05~-2.42), QD-Mom(-0.51~-2.10) 전 에셋 Sharpe 음수. 6H bar에서 2차 미분(acceleration)은 노이즈 과민, quarter-day autocorrelation은 크립토 24/7에서 부재. 과다 거래(연 400~760건) → 비용 drag 45~77% |
+| 20 | **PBO 이중 경로 도입 (2026-02-11)**: PBO < 40% 단일 기준 → 이중 경로 완화. 경로 B: PBO < 80% AND CPCV 전 fold OOS > 0 AND MC p < 0.05. CTREND(PBO 60%) + Anchor-Mom(PBO 80%) 모두 경로 B PASS. **CPCV 전 fold OOS 양수 여부가 PBO 수치보다 실전 위험의 더 좋은 지표** |

@@ -1,6 +1,6 @@
 # 전략 스코어카드: VPIN-Flow
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -77,6 +77,7 @@ G7  실전배포  [    ] (미진행)
 - **구조적 불일치**: VPIN threshold 0.7은 tick/volume bar 데이터에서만 의미 있는 수치. 1D OHLCV에서는 물리적으로 도달 불가
 
 **수정 가능성 평가**:
+
 - threshold_high를 0.35~0.40으로 낮추면 신호 발생 가능하나, 이는 VPIN의 "고독성" 개념을 무력화
 - 1D 데이터에서 BVC의 `norm.cdf((close-open)/(high-low))` 근사는 bar 내 가격 분포를 단일 점으로 축소 → 정보 손실 심각
 - 원래 설계 의도(마이크로스트럭처)와 가용 데이터(1D)의 **해상도 불일치**가 근본 원인
@@ -94,11 +95,13 @@ G7  실전배포  [    ] (미진행)
 | 코드 품질 | 9/10 |
 
 **수정 완료된 이슈:**
+
 - [C-001] ~~HEDGE_ONLY drawdown shift(1) 미적용~~ → `df["drawdown"].shift(1)` 적용 완료 (look-ahead bias 제거)
 - [H-001] Hedge 모드 `suppress_short`과 `active_short` 상호 배타성 — 로직상 보장됨 (short_mask & ~hedge = suppress, short_mask & hedge = active)
 - [H-002] shift(1) 회귀 테스트 — 기존 테스트에서 shift 적용 검증 커버
 
 **잘된 점:**
+
 - 주요 indicator (vpin, flow_direction, vol_scalar, drawdown) shift(1) 전수 적용
 - BVC `high - low + 1e-10` epsilon 방어
 - VPIN [0,1] 범위 보장 (|imbalance|/volume)

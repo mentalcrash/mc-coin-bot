@@ -1,6 +1,6 @@
 # 전략 스코어카드: AC-Regime
 
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
+> 자동 생성 | 평가 기준: [evaluation-standard.md](../../strategy/evaluation-standard.md)
 
 ## 기본 정보
 
@@ -74,11 +74,13 @@ G7  실전배포  [    ] (G1 FAIL로 미실행)
 | 코드 품질 | 9/10 |
 
 **수정 완료된 이슈:**
+
 - [H-001] ~~AC 공식 `var(x)` 단일 분모~~ → `sqrt(var(x)*var(x_lag))` + `.clip(-1.0, 1.0)` 적용 완료
 - [H-002] ~~HEDGE_ONLY drawdown shift(1) 미적용~~ → `df["drawdown"].shift(1)` 적용 완료
 - [M-002] ~~warmup_periods에 ac_lag 미반영~~ → `ac_window + ac_lag` 반영 완료
 
 **잘된 점:**
+
 - shift(1) 규칙 준수 (ac_rho, sig_bound, mom_direction, vol_scalar, drawdown 모두 shift)
 - Pearson autocorrelation 정확 구현 (sqrt 분모 + clip)
 - 벡터화 연산, 루프 없음
