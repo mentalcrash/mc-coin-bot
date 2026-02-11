@@ -304,6 +304,65 @@ FAIL 사유는 아니나 반드시 기록:
 ============================================================
 ```
 
+## 문서 갱신
+
+검증 완료 후 **판정 결과에 따라** 스코어카드와 대시보드를 갱신한다.
+
+### 스코어카드 갱신 (`docs/scorecard/{strategy_name}.md`)
+
+스코어카드가 이미 존재해야 한다 (`/implement-strategy`에서 생성).
+
+**PASS 시**:
+
+1. Gate 진행 현황에서 G0B 행 추가/갱신:
+
+```
+G0 아이디어  [PASS] XX/30점
+G0B 코드검증 [PASS] C1-C7 전항목 PASS, Warning N건
+```
+
+2. 의사결정 기록에 행 추가:
+
+```markdown
+| {날짜} | G0B | PASS | C1-C7 전항목 PASS. Warning: {W항목 요약}. 다음: /gate-pipeline |
+```
+
+**FAIL 시**:
+
+1. Gate 진행 현황 갱신:
+
+```
+G0B 코드검증 [FAIL] {C항목}: {사유 요약}
+```
+
+2. 의사결정 기록에 행 추가:
+
+```markdown
+| {날짜} | G0B | FAIL | {C항목} FAIL: {사유}. 수정 후 재검증 필요 |
+```
+
+> G0B FAIL은 폐기가 아닌 **수정 후 재검증**. 스코어카드를 fail/로 이동하지 않는다.
+
+### Dashboard 갱신 (`docs/strategy/dashboard.md`)
+
+**PASS 시**:
+
+해당 전략의 비고/상태에 G0B PASS 기록. gate-pipeline 대기 상태로 전환:
+
+```markdown
+| {전략명} | {TF} | {ShortMode} | {G0A}/30 | P | — | G0B PASS, G1 대기 |
+```
+
+**FAIL 시**:
+
+비고에 FAIL 사유 기록:
+
+```markdown
+| {전략명} | {TF} | {ShortMode} | {G0A}/30 | F | — | G0B FAIL: {C항목} |
+```
+
+---
+
 ## 심각도 기준
 
 | 등급 | 정의 | Gate 0B 영향 |
