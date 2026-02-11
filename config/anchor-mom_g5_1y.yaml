@@ -1,0 +1,37 @@
+backtest:
+  symbols:
+    - DOGE/USDT
+  timeframe: "12h"
+  start: "2025-01-01"
+  end: "2026-01-01"
+  capital: 100000.0
+
+strategy:
+  name: anchor-mom
+  params:
+    nearness_lookback: 60
+    mom_lookback: 30
+    strong_nearness: 0.95
+    weak_nearness: 0.85
+    short_nearness: 0.80
+    vol_target: 0.35
+    vol_window: 30
+    min_volatility: 0.05
+    annualization_factor: 730.0
+    atr_period: 14
+    short_mode: 1
+    hedge_threshold: -0.07
+    hedge_strength_ratio: 0.8
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10
+  system_stop_loss: 0.10
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  cost_model:
+    maker_fee: 0.0002
+    taker_fee: 0.0004
+    slippage: 0.0005
+    funding_rate_8h: 0.0001
+    market_impact: 0.0002

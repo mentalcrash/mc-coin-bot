@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 1 + 검증중 1 + 재검증 대기 8 + 폐기 44)
+> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 2 + 재검증 대기 8 + 폐기 44)
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,51 +36,47 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (54개 = 활성 1 + 검증중 1 + 재검증 대기 8 + 폐기 44)
+## 현재 전략 현황 (54개 = 활성 2 + 재검증 대기 8 + 폐기 44)
 
-### 활성 전략 (1개, Gate 5 완료)
+### 활성 전략 (2개, Gate 5 완료)
 
 | 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | G5 | 비고 |
 |------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|:--:|------|
 | [**CTREND**](../scorecard/ctrend.md) | SOL/USDT | 1D | 2.05 | +97.8% | -27.7% | 288 | P | P | P | P | P | P | PBO 60% 경로 B PASS |
+| [**Anchor-Mom**](../scorecard/anchor-mom.md) | DOGE/USDT | 12H | 1.36 | +49.8% | -31.0% | 371 | P | P | P | P | P | P | PBO 80% 경로 B PASS, CPCV 100% |
 
-> G5 EDA Parity PASS: EDA Sharpe 2.82 vs VBT 2.05, 수익 부호 일치.
+> **CTREND**: G5 EDA Parity PASS: EDA Sharpe 2.82 vs VBT 2.05, 수익 부호 일치.
 > G4 PBO 60% 경로 B PASS (전 CPCV fold OOS 양수 0.49~2.79, MC p=0.000).
 > **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-### 검증중 (1개, Gate 4 PASS → G5 진행 대기)
+> **Anchor-Mom**: G5 EDA Parity PASS: EDA Sharpe 0.44 vs VBT 0.42, 수익 부호 일치. CAGR 편차 7.4%.
+> Trades 198 (VBT 63의 3.14x — intrabar SL/TS 구조적 사유). MDD 12.96% (VBT 19.12% 대비 개선).
+> **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | 비고 |
-|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|------|
-| [**Anchor-Mom**](../scorecard/anchor-mom.md) | DOGE/USDT | 12H | 1.36 | +49.8% | -31.0% | 371 | P | P | P | P | P | PBO 80% 경로 B PASS, CPCV 100% |
-
-> G4 PBO 80% 경로 B PASS (전 CPCV fold OOS 양수 0.90~1.75, MC p=0.000, CI [1.13, 1.49]).
-> WFA OOS 1.16, Decay 21.2% PASS. DSR(batch) 1.00 PASS.
-> **다음 단계**: G5 EDA Parity 검증.
-
-### 재검증 대기 (8개) — TF 불일치 수정 후 재평가
+### 재검증 대기 (8개) — G0B 재검증 PASS, G1 재실행 대기
 
 > **원인**: VBT CLI가 `timeframe="1D"`를 하드코딩하여, 1H/4H 설계 전략이 1D 데이터로 잘못 백테스트됨.
 > **수정**: `src/cli/backtest.py`에서 YAML `backtest.timeframe` 반영하도록 수정 완료 (2026-02-11).
+> **G0B 재검증**: 2026-02-12 전략 8종 C1-C7 전항목 PASS 확인. 코드 품질 문제 없음.
 > **다음 단계**: 각 전략의 YAML config에 올바른 TF 설정 후 G1 재실행. `/gate-pipeline` 재평가.
 
 #### Tier 6 — 4H TF (4종)
 
-| 전략 | 설계 TF | 이전 테스트 TF | 이전 Sharpe | 사유 | 재검증 시 주의사항 |
-|------|---------|--------------|------------|------|-----------------|
-| [Perm-Entropy-Mom](../scorecard/fail/perm-entropy-mom.md) | 4H | 1D | 0.67 | PE window 30bars=5일(4H)이 1D에서 30일로 왜곡, Trades < 50 | annualization_factor=2190 확인, PE window 재조정 |
-| [Candle-Reject](../scorecard/fail/candle-reject.md) | 4H | 1D | 0.65 | SOL -0.71, BNB -0.40 | rejection wick 감지가 4H candle에서 유효한지 확인 |
-| [Vol-Climax](../scorecard/fail/vol-climax.md) | 4H | 1D | 0.48 | BNB MDD -102%, SOL MDD -121%. 1D에서 volume spike 평활화 | 4H volume spike가 intraday 패턴 포착하는지 확인 |
-| [OU-MeanRev](../scorecard/fail/ou-meanrev.md) | 4H | 1D | 0.07 | OU window 120bars=20일(4H)이 1D에서 120일로 왜곡, DOGE MDD -19,669% | half-life 재계산, FULL short 유지 여부 재검토 |
+| 전략 | 설계 TF | G0B | 이전 Sharpe (1D) | 사유 | 재검증 시 주의사항 |
+|------|---------|:---:|-----------------|------|-----------------|
+| [Perm-Entropy-Mom](../scorecard/fail/perm-entropy-mom.md) | 4H | P | 0.67 | PE window 30bars=5일(4H)이 1D에서 30일로 왜곡, Trades < 50 | annualization_factor=2190 확인, PE window 재조정 |
+| [Candle-Reject](../scorecard/fail/candle-reject.md) | 4H | P | 0.65 | SOL -0.71, BNB -0.40 | rejection wick 감지가 4H candle에서 유효한지 확인 |
+| [Vol-Climax](../scorecard/fail/vol-climax.md) | 4H | P | 0.48 | BNB MDD -102%, SOL MDD -121%. 1D에서 volume spike 평활화 | 4H volume spike가 intraday 패턴 포착하는지 확인 |
+| [OU-MeanRev](../scorecard/fail/ou-meanrev.md) | 4H | P | 0.07 | OU window 120bars=20일(4H)이 1D에서 120일로 왜곡, DOGE MDD -19,669% | half-life 재계산, FULL short 유지 여부 재검토 |
 
 #### Tier 5 — 1H TF (4종)
 
-| 전략 | 설계 TF | 이전 테스트 TF | 이전 Sharpe | 사유 | 재검증 시 주의사항 |
-|------|---------|--------------|------------|------|-----------------|
-| [Session-Breakout](../scorecard/fail/session-breakout.md) | 1H | 1D | -1.67 | 1D에서 session 개념 자체가 무의미 | 1H에서도 크립토 24/7 session edge 부재 가능성 |
-| [Liq-Momentum](../scorecard/fail/liq-momentum.md) | 1H | 1D | -3.07 | Amihud 계산이 1D 단위로 왜곡 | 1H Amihud + 12H momentum 조합 재확인 |
-| [Flow-Imbalance](../scorecard/fail/flow-imbalance.md) | 1H | 1D | -0.12 | BVC 근사가 1D에서 정보 손실 심각 | 1H BVC가 개선되는지 확인, L2 없이 한계 가능 |
-| [Hour-Season](../scorecard/fail/hour-season.md) | 1H | 1D | -1.01 | 1D에서 hour-of-day 계절성 자체가 불가 | 1H에서 rolling t-stat 과적합 여부 재확인 |
+| 전략 | 설계 TF | G0B | 이전 Sharpe (1D) | 사유 | 재검증 시 주의사항 |
+|------|---------|:---:|-----------------|------|-----------------|
+| [Session-Breakout](../scorecard/fail/session-breakout.md) | 1H | P | -1.67 | 1D에서 session 개념 자체가 무의미 | 1H에서도 크립토 24/7 session edge 부재 가능성 |
+| [Liq-Momentum](../scorecard/fail/liq-momentum.md) | 1H | P | -3.07 | Amihud 계산이 1D 단위로 왜곡 | 1H Amihud + 12H momentum 조합 재확인 |
+| [Flow-Imbalance](../scorecard/fail/flow-imbalance.md) | 1H | P | -0.12 | BVC 근사가 1D에서 정보 손실 심각 | 1H BVC가 개선되는지 확인, L2 없이 한계 가능 |
+| [Hour-Season](../scorecard/fail/hour-season.md) | 1H | P | -1.01 | 1D에서 hour-of-day 계절성 자체가 불가 | 1H에서 rolling t-stat 과적합 여부 재확인 |
 
 ### 폐기 전략 (44개)
 

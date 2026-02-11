@@ -23,6 +23,15 @@ from loguru import logger
 from src.strategy.session_breakout.config import SessionBreakoutConfig, ShortMode
 from src.strategy.types import Direction, StrategySignals
 
+# ---- Regime awareness constants ----
+_REGIME_VOL_RATIO_HIGH = 2.0
+_REGIME_VOL_RATIO_LOW = 0.5
+_REGIME_DAMPENING = 0.5
+_REGIME_MIN_PERIODS = 30
+
+# ---- Turnover control constants ----
+_MIN_HOLD_BARS = 4
+
 
 def generate_signals(
     df: pd.DataFrame,
@@ -80,10 +89,12 @@ def generate_signals(
         np.where(
             is_exit_prev,
             0,
-            np.where(long_signal, 1, np.where(short_signal, -1, 0)),
+            np.where(long_signal, 1, np.where(short_signal, -1, np.nan)),
         ),
         index=df.index,
     )
+    # Turnover control: hold breakout position until exit or reversal
+    direction_raw = direction_raw.ffill().fillna(0).astype(int)
 
     # 4. Strength = direction * vol_scalar
     strength_raw = direction_raw * vol_scalar_prev
@@ -102,7 +113,19 @@ def generate_signals(
         name="strength",
     )
 
-    # 7. 숏 모드에 따른 시그널 처리
+    # 7. Regime awareness: dampen signals in extreme vol environments
+    if "realized_vol" in df.columns:
+        rvol_prev: pd.Series = df["realized_vol"].shift(1)  # type: ignore[assignment]
+        rvol_med: pd.Series = rvol_prev.expanding(  # type: ignore[assignment]
+            min_periods=_REGIME_MIN_PERIODS,
+        ).median()
+        rvol_ratio = rvol_prev / rvol_med.clip(lower=1e-10)
+        extreme_regime = (rvol_ratio > _REGIME_VOL_RATIO_HIGH) | (
+            rvol_ratio < _REGIME_VOL_RATIO_LOW
+        )
+        strength = strength.where(~extreme_regime, strength * _REGIME_DAMPENING)
+
+    # 8. 숏 모드에 따른 시그널 처리
     if config.short_mode == ShortMode.DISABLED:
         short_mask = direction == Direction.SHORT
         direction = direction.where(~short_mask, Direction.NEUTRAL)

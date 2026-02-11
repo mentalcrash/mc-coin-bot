@@ -14,7 +14,7 @@ import math
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import pandas as pd  # noqa: TC002 — runtime use in resample_1m_to_tf
+import pandas as pd
 from loguru import logger
 
 from src.core.events import BarEvent
@@ -55,7 +55,15 @@ def resample_1m_to_tf(df_1m: pd.DataFrame, freq: str) -> pd.DataFrame:
     resampled: pd.DataFrame = df_1m.resample(freq).agg(  # type: ignore[assignment]
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     )
-    return resampled.dropna(subset=["close"])
+    result = resampled.dropna(subset=["close"])
+
+    # Decimal 타입을 float64로 변환 (Parquet에서 로드된 경우)
+    numeric_cols = ["open", "high", "low", "close", "volume"]
+    for col in numeric_cols:
+        if col in result.columns:
+            result[col] = pd.to_numeric(result[col], errors="coerce")
+
+    return result
 
 
 class HistoricalDataFeed:

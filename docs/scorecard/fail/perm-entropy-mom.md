@@ -42,8 +42,8 @@
 
 ```
 G0 아이디어  [PASS] 24/30점
-G0B 코드검증 [PASS]
-G1 백테스트  [FAIL] 전 에셋 Trades < 50, Best Sharpe 0.67 < 1.0, MDD 86.5% > 40%
+G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 1건 (W3 Regime)
+G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 4H TF로 재실행 필요
 ```
 
 ### Gate 1 상세

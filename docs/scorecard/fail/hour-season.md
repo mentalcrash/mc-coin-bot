@@ -33,8 +33,8 @@
 
 ```
 G0 아이디어  [PASS] 22/30점
-G0B 코드검증 [PASS]
-G1 백테스트  [FAIL] 전 에셋 Sharpe 음수 (-1.01 ~ -4.46), MDD 45~78%. 즉시 폐기.
+G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
+G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 1H TF로 재실행 필요
 G2 IS/OOS    [    ]
 G3 파라미터  [    ]
 G4 심층검증  [    ]

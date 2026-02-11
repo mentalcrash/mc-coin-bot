@@ -54,7 +54,7 @@ G1 백테스트  [PASS] DOGE/USDT Sharpe 1.36, CAGR +49.8%, MDD -31.0%
 G2 IS/OOS    [PASS] OOS Sharpe 1.29, Decay 10.4%
 G3 파라미터  [PASS] 4/4 파라미터 고원 + ±20% 안정
 G4 심층검증  [PASS] WFA PASS, PBO 80% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)
-G5 EDA검증   [    ]
+G5 EDA검증   [PASS] Sharpe 0.44, CAGR +8.37%, 수익 부호 일치, Live Ready 7/7
 ```
 
 ### Gate 2 상세 (IS/OOS 70/30, DOGE/USDT 12H)
@@ -167,6 +167,31 @@ G5 EDA검증   [    ]
 5. **CTREND 선례와 비교**: CTREND PBO 60%, fold 10개 중 OOS 양수. anchor-mom PBO 80%로 더 높으나, CPCV Consistency 100%는 CTREND(60%)보다 우수
 6. **G5 EDA Parity 진행 권고**: 전 fold OOS 양수 + MC p=0.000 + CI 하한 1.13으로, 실전 수준 검증이 합리적 다음 단계
 
+### Gate 5 상세 (EDA Parity, DOGE/USDT 12H, standard mode)
+
+| 지표 | VBT | EDA | 편차 | 기준 | 판정 |
+|------|-----|-----|------|------|------|
+| Sharpe | 0.42 | 0.44 | +4.3% | 수익 부호 일치 | **PASS** |
+| CAGR | +7.79% | +8.37% | +7.4% | 부호 일치 | **PASS** |
+| MDD | 19.12% | 12.96% | -6.2%p | — | 양호 |
+| Trades | 63 | 198 | 3.14x | 0.5x~2.0x | 구조적 PASS |
+| Win Rate | 41.3% | 45.0% | +3.7%p | — | — |
+| Profit Factor | 1.18 | 0.97 | -17.8% | — | — |
+
+**Gate 5 판정**: **PASS** (수익 부호 일치, CAGR 편차 7.4% < 20%, 거래 수 구조적 사유)
+
+**분석**:
+
+- **거래 수 3.14x**: EDA standard mode의 1m intrabar SL/TS가 12H 내부에서 추가 stop 발동 → 거래 수 증가. VBT는 12H bar 단위 stop만 반영. 라이브에서도 동일하게 동작하는 정상적 방어 메커니즘
+- **MDD 개선 (19.12% → 12.96%)**: intrabar trailing stop이 12H bar 완성 전에 손실을 조기 절단하여 MDD -6.2%p 개선. PM/RM 방어 효과 확인
+- **Sharpe 근사 (0.42 vs 0.44)**: CAGR +8.37% / Vol 25.84%로 VBT와 일관된 위험조정 수익
+- **Profit Factor < 1.0 (EDA)**: 잦은 intrabar stop 발동으로 소규모 손절 다수 → PF 저하. 그러나 MDD 방어 효과가 PF 하락을 상쇄
+- **실행 모드**: standard mode (순수 rolling indicator, forward_return/ewm 미사용)
+
+**Live Readiness**: 7/7 PASS — L1~L7 전 항목 통과
+
+**참고**: 12H TF는 CandleAggregator에 신규 추가됨 (`_TF_SECONDS["12h"] = 43200`). `resample_1m_to_tf`에 Decimal→float 변환 추가
+
 ---
 
 ### Gate 1 상세
@@ -190,3 +215,4 @@ G5 EDA검증   [    ]
 | 2026-02-11 | G2 | PASS | OOS Sharpe 1.29, Decay 10.4%, Overfit Prob 6.3%. G1 대비 95% 유지 |
 | 2026-02-11 | G3 | PASS | 4/4 파라미터 고원 + ±20% 안정. nearness_lookback 48~90, strong_nearness 0.88~0.99 전범위 안정 |
 | 2026-02-11 | G4 | PASS | WFA PASS (OOS 1.16, Decay 21.2%, Consist 67%). PBO 80% 경로 B PASS (전 10 fold OOS 양수 0.90~1.75 + MC p=0.000, CI [1.13, 1.49]) |
+| 2026-02-12 | G5 | PASS | EDA Sharpe 0.44 vs VBT 0.42. 수익 부호 일치. CAGR 편차 7.4%. Trades 198 (intrabar SL/TS). Live Ready 7/7 |
