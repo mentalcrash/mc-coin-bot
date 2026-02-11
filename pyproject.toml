@@ -106,6 +106,9 @@ exclude = [
 ]
 
 [tool.ruff.lint]
+preview = true                 # preview rule 활성화 (UP042 등)
+explicit-preview-rules = true  # 명시된 preview rule만 활성화
+
 select = [
     "E",     # pycodestyle errors
     "W",     # pycodestyle warnings
@@ -113,6 +116,7 @@ select = [
     "I",     # isort (import 정렬)
     "B",     # flake8-bugbear (잠재적 버그)
     "UP",    # pyupgrade (최신 Python 문법)
+    "UP042", # replace-str-enum: (str, Enum) → StrEnum (preview)
     "N",     # pep8-naming (네이밍 컨벤션)
     "SIM",   # flake8-simplify (코드 단순화)
     "C4",    # flake8-comprehensions (컴프리헨션 최적화)

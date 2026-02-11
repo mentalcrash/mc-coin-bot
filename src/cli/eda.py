@@ -36,14 +36,14 @@ if TYPE_CHECKING:
     from src.models.backtest import PerformanceMetrics
 
 
-class RunMode(str, enum.Enum):
+class RunMode(enum.StrEnum):
     """EDA 백테스트 실행 모드."""
 
     BACKTEST = "backtest"
     SHADOW = "shadow"
 
 
-class LiveRunMode(str, enum.Enum):
+class LiveRunMode(enum.StrEnum):
     """EDA 라이브 실행 모드."""
 
     PAPER = "paper"
