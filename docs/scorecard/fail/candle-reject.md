@@ -8,34 +8,34 @@
 |------|---|
 | **전략명** | Candle-Reject (`candle-reject`) |
 | **유형** | Mean Reversion (Candlestick rejection wick reversal) |
-| **타임프레임** | 4H (annualization_factor=2190, 1D 데이터 백테스트) |
-| **상태** | `폐기 (Gate 1 FAIL)` |
-| **Best Asset** | BTC/USDT (Sharpe 0.65) |
-| **2nd Asset** | ETH/USDT (Sharpe 0.60) |
+| **타임프레임** | 4H (annualization_factor=2190) |
+| **상태** | `폐기 (Gate 1 FAIL — 4H 재검증 확정)` |
+| **Best Asset** | N/A (전 에셋 Sharpe 음수, 4H 재검증) |
 | **경제적 논거** | 긴 꼬리(rejection wick)는 가격 거부를 의미 → 반대 방향이 시장의 진정한 방향 |
 
 ---
 
-## 성과 요약 (6년, 2020-2025)
+## 성과 요약 (6년, 2020-2025, 4H 재검증)
 
-### 에셋별 비교
+### 에셋별 비교 (4H TF, 2026-02-12 재검증)
 
 | 순위 | 에셋 | Sharpe | CAGR | MDD | Trades | PF | Win Rate |
 |------|------|--------|------|-----|--------|------|---------|
-| **1** | **BTC/USDT** | **0.65** | +206.1% | -4.5% | 51 | 1.95 | 49.0% |
-| 2 | ETH/USDT | 0.60 | +160.8% | -2.8% | 41 | 2.14 | 53.7% |
-| 3 | DOGE/USDT | 0.06 | +16.9% | -8.6% | 38 | 1.11 | 55.3% |
-| 4 | BNB/USDT | -0.40 | -190.3% | -14.5% | 43 | 0.54 | 44.2% |
-| 5 | SOL/USDT | -0.71 | -1070.8% | -56.2% | 36 | 0.23 | 50.0% |
+| 1 | SOL/USDT | -0.71 | -4.7% | -29.6% | 245 | 0.72 | 43.3% |
+| 2 | DOGE/USDT | -0.78 | -6.1% | -35.2% | 310 | 0.70 | 45.2% |
+| 3 | BNB/USDT | -0.94 | -7.0% | -41.0% | 270 | 0.65 | 41.9% |
+| 4 | ETH/USDT | -1.09 | -7.2% | -36.5% | 279 | 0.61 | 42.7% |
+| 5 | BTC/USDT | -1.62 | -9.3% | -45.6% | 270 | 0.48 | 39.3% |
 
-### Best Asset 핵심 지표 (BTC/USDT)
+**판정**: 즉시 폐기 — 전 에셋 Sharpe 음수 (조건 #2)
 
-| 지표 | 값 | 기준 | 판정 |
-|------|---|------|------|
-| Sharpe | 0.65 | > 1.0 | **FAIL** |
-| CAGR | +206.1% | > 20% | PASS |
-| MDD | -4.5% | < 40% | PASS |
-| Trades | 51 | > 50 | PASS |
+### 이전 결과 (1D 왜곡, 참고용)
+
+| 에셋 | Sharpe (1D) | Sharpe (4H) | 변화 |
+|------|------------|------------|------|
+| BTC/USDT | 0.65 | -1.62 | 급격 악화 |
+| ETH/USDT | 0.60 | -1.09 | 급격 악화 |
+| SOL/USDT | -0.71 | -0.71 | 동일 |
 
 ---
 
@@ -44,25 +44,18 @@
 ```
 G0 아이디어  [PASS] 24/30점
 G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 1건 (W3 Regime)
-G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 4H TF로 재실행 필요
+G1 백테스트  [FAIL] 4H 재검증 확정. 전 에셋 Sharpe 음수 (-0.71 ~ -1.62)
 ```
 
-### Gate 1 상세
+### Gate 1 상세 (4H 재검증, 2026-02-12)
 
-- **Sharpe 미달**: Best Asset BTC 0.65, 2nd ETH 0.60 — 모두 1.0 미달
-- **SOL/BNB 역전 패턴**: 추세추종 전략과 반대로 SOL이 최악(-0.71). 반전 전략이 고변동 추세 에셋에서 역효과
-- **MDD 양호**: BTC -4.5%, ETH -2.8%로 매우 낮음 — rejection 시그널의 보수적 sizing
-- **거래 수 양호**: 36~51건으로 통계적 최소 기준 충족 (SOL 제외)
-- **BTC/ETH 제한적 양호**: Sharpe 0.6 수준으로 PASS 기준에 근접하나, SOL/BNB에서 크게 손실
-- **CAGR 왜곡**: annualization_factor=2190 (4H) 적용으로 1D 데이터의 수익률이 6배 연환산 → 비현실적 CAGR 수치
+- **즉시 폐기**: 전 에셋 Sharpe 음수 (조건 #2). SOL -0.71 ~ BTC -1.62
+- **1D→4H 전환 시 BTC/ETH 급격 악화**: 1D에서 BTC 0.65, ETH 0.60이었으나 4H에서 -1.62, -1.09로 반전. 1D에서의 양의 수익은 annualization_factor 왜곡(6배 연환산)의 인공물
+- **거래 수 정상화**: 1D(36~51건) → 4H(245~310건). 충분한 거래가 발생하지만 기대값 음수
+- **Rejection wick 반전 전략의 구조적 실패**: 4H candle에서 rejection wick이 반전이 아닌 추세 지속 확인(continuation)으로 작용. Win Rate 39~45%로 random 이하
+- **PF 전 에셋 < 1.0**: 0.48~0.72 범위. rejection 시그널의 예측력이 4H에서도 부재
 
-**에셋 패턴 분석**:
-
-- BTC/ETH에서 양호: 안정적 시장에서 rejection wick 반전이 효과적
-- SOL/BNB에서 FAIL: 고변동/강추세 에셋에서 rejection이 false signal로 전환
-- DOGE 중립: 노이즈 환경에서 약한 양수 (edge 부재)
-
-**CTREND 비교**: CTREND Best SOL Sharpe 2.05 대비 candle-reject BTC 0.65 — 3.2배 열등
+**근본 원인**: Rejection wick은 전통 주식/FX 일봉에서 유효한 반전 시그널이지만, 크립토 4H bar에서는 가격 경로의 일시적 변동일 뿐 진정한 방향 거부를 의미하지 않음. 24/7 크립토 시장에서 wick-based reversal은 noise-dominated
 
 ---
 
@@ -72,4 +65,5 @@ G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 4H TF�
 |------|------|------|------|
 | 2026-02-10 | G0A | PASS | 24/30점 |
 | 2026-02-10 | G0B | PASS | Critical 7항목 결함 0개 |
-| 2026-02-11 | G1 | **FAIL** | Best Sharpe 0.65 < 1.0. 2/5 에셋 음수 Sharpe (SOL -0.71, BNB -0.40). 고변동 에셋에서 rejection reversal 무효 |
+| 2026-02-11 | G1 | **FAIL** | 1D 왜곡: Best BTC Sharpe 0.65 < 1.0 |
+| 2026-02-12 | G1 (4H 재검증) | **FAIL 확정** | 전 에셋 Sharpe 음수 (-0.71 ~ -1.62). 즉시 폐기 조건 #2. Rejection wick reversal 4H에서도 무효 |

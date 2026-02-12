@@ -1,6 +1,6 @@
 # 전략 상황판 (Strategy Dashboard)
 
-> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 2 + 재검증 대기 8 + 폐기 44)
+> 54개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 2 + 폐기 52)
 > 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
 
 ---
@@ -36,7 +36,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 
 ---
 
-## 현재 전략 현황 (54개 = 활성 2 + 재검증 대기 8 + 폐기 44)
+## 현재 전략 현황 (54개 = 활성 2 + 폐기 52)
 
 ### 활성 전략 (2개, Gate 5 완료)
 
@@ -53,32 +53,7 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 > Trades 198 (VBT 63의 3.14x — intrabar SL/TS 구조적 사유). MDD 12.96% (VBT 19.12% 대비 개선).
 > **다음 단계**: Paper Trading (G6) 2주+ 실시간 검증.
 
-### 재검증 대기 (8개) — G0B 재검증 PASS, G1 재실행 대기
-
-> **원인**: VBT CLI가 `timeframe="1D"`를 하드코딩하여, 1H/4H 설계 전략이 1D 데이터로 잘못 백테스트됨.
-> **수정**: `src/cli/backtest.py`에서 YAML `backtest.timeframe` 반영하도록 수정 완료 (2026-02-11).
-> **G0B 재검증**: 2026-02-12 전략 8종 C1-C7 전항목 PASS 확인. 코드 품질 문제 없음.
-> **다음 단계**: 각 전략의 YAML config에 올바른 TF 설정 후 G1 재실행. `/gate-pipeline` 재평가.
-
-#### Tier 6 — 4H TF (4종)
-
-| 전략 | 설계 TF | G0B | 이전 Sharpe (1D) | 사유 | 재검증 시 주의사항 |
-|------|---------|:---:|-----------------|------|-----------------|
-| [Perm-Entropy-Mom](../scorecard/fail/perm-entropy-mom.md) | 4H | P | 0.67 | PE window 30bars=5일(4H)이 1D에서 30일로 왜곡, Trades < 50 | annualization_factor=2190 확인, PE window 재조정 |
-| [Candle-Reject](../scorecard/fail/candle-reject.md) | 4H | P | 0.65 | SOL -0.71, BNB -0.40 | rejection wick 감지가 4H candle에서 유효한지 확인 |
-| [Vol-Climax](../scorecard/fail/vol-climax.md) | 4H | P | 0.48 | BNB MDD -102%, SOL MDD -121%. 1D에서 volume spike 평활화 | 4H volume spike가 intraday 패턴 포착하는지 확인 |
-| [OU-MeanRev](../scorecard/fail/ou-meanrev.md) | 4H | P | 0.07 | OU window 120bars=20일(4H)이 1D에서 120일로 왜곡, DOGE MDD -19,669% | half-life 재계산, FULL short 유지 여부 재검토 |
-
-#### Tier 5 — 1H TF (4종)
-
-| 전략 | 설계 TF | G0B | 이전 Sharpe (1D) | 사유 | 재검증 시 주의사항 |
-|------|---------|:---:|-----------------|------|-----------------|
-| [Session-Breakout](../scorecard/fail/session-breakout.md) | 1H | P | -1.67 | 1D에서 session 개념 자체가 무의미 | 1H에서도 크립토 24/7 session edge 부재 가능성 |
-| [Liq-Momentum](../scorecard/fail/liq-momentum.md) | 1H | P | -3.07 | Amihud 계산이 1D 단위로 왜곡 | 1H Amihud + 12H momentum 조합 재확인 |
-| [Flow-Imbalance](../scorecard/fail/flow-imbalance.md) | 1H | P | -0.12 | BVC 근사가 1D에서 정보 손실 심각 | 1H BVC가 개선되는지 확인, L2 없이 한계 가능 |
-| [Hour-Season](../scorecard/fail/hour-season.md) | 1H | P | -1.01 | 1D에서 hour-of-day 계절성 자체가 불가 | 1H에서 rolling t-stat 과적합 여부 재확인 |
-
-### 폐기 전략 (44개)
+### 폐기 전략 (52개)
 
 #### Gate 4 실패 — WFA 심층검증
 
@@ -114,8 +89,10 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [Donchian Ensemble](../scorecard/fail/donchian-ensemble.md) | 0.99 | +10.8% | CAGR < 20% |
 | [Kalman-Trend](../scorecard/fail/kalman-trend.md) | 0.78 | +19.4% | Sharpe < 1.0, CAGR -0.6%p 미달. DOGE 거래 0건 |
 | [BB-RSI](../scorecard/fail/bb-rsi.md) | 0.59 | +4.6% | CAGR < 20% |
+| [Perm-Entropy-Mom](../scorecard/fail/perm-entropy-mom.md) | 0.52 | +5.6% | **4H 재검증 확정**. Best BNB 0.52 < 1.0, CAGR +5.6% < 20%. PE conviction alpha 부재 |
 | [Entropy-Switch](../scorecard/fail/entropy-switch.md) | 0.52 | +11.1% | 전 에셋 Sharpe < 1.0, MDD -47.9%. Alpha 부재 |
 | [Accel-Skew](../scorecard/fail/accel-skew.md) | 0.47 | +10.0% | Best DOGE 0.47 < 1.0, 3/5 에셋 음수. Skewness 필터 alpha 부재 |
+| [Hour-Season](../scorecard/fail/hour-season.md) | 0.26 | +1.0% | **1H 재검증 확정**. Best ETH 0.26 < 1.0, Trades 22~78건. Intraday 계절성 edge 부재 |
 
 #### Gate 1 실패 — 전 에셋 Sharpe 음수/0 근접
 
@@ -125,6 +102,12 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | [AC-Regime](../scorecard/fail/ac-regime.md) | 0.08 | +0.3% | 4/5 에셋 Sharpe 음수, AC 시그널 무효 |
 | [VR-Regime](../scorecard/fail/vr-regime.md) | 0.17 | +0.8% | 전 에셋 Sharpe < 1.0, 극소 거래 (2~30건), significance_z 과도 → 시그널 부재 |
 | [VPIN-Flow](../scorecard/fail/vpin-flow.md) | 0.00 | 0.0% | 전 에셋 거래 0건, VPIN threshold 0.7이 1D 데이터에서 도달 불가 (max 0.45) |
+| [Flow-Imbalance](../scorecard/fail/flow-imbalance.md) | -0.24 | -2.2% | **1H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.24~-1.56). BVC 근사 1H에서도 무효 |
+| [OU-MeanRev](../scorecard/fail/ou-meanrev.md) | -0.31 | -3.3% | **4H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.31~-1.18). FULL short + 크립토 추세 = MR 구조적 실패 |
+| [Session-Breakout](../scorecard/fail/session-breakout.md) | -0.40 | -9.8% | **1H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.40~-2.52). 크립토 24/7 session edge 부재 |
+| [Candle-Reject](../scorecard/fail/candle-reject.md) | -0.71 | -4.7% | **4H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.71~-1.62). Rejection wick reversal 4H에서도 무효 |
+| [Vol-Climax](../scorecard/fail/vol-climax.md) | -0.05 | -9.5% | **4H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.05~-1.73). Volume climax 반전 4H에서도 무효 |
+| [Liq-Momentum](../scorecard/fail/liq-momentum.md) | -0.93 | -34.9% | **1H 재검증 확정**. 전 에셋 Sharpe 음수 (-0.93~-2.78). MDD 94~100%, 과다 거래 5K~6.8K건 |
 | [Accel-Conv](../scorecard/fail/accel-conv.md) | -1.05 | -41.3% | 전 에셋 Sharpe 음수 (-1.05~-2.42), MDD 96~99%, 6H 과다 거래 연 ~700건 |
 | [QD-Mom](../scorecard/fail/qd-mom.md) | -0.51 | -21.6% | 전 에셋 Sharpe 음수 (-0.51~-2.10), MDD 82~97%, 6H autocorrelation edge 부재 |
 
@@ -165,11 +148,13 @@ Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → G
 | 10 | **밈코인 FULL Short = 구조적 자살**: VWAP-Disposition DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적. DOGE 제외 시 SOL Sharpe 0.96 |
 | 11 | **칼만 필터 ≠ 알파**: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음. vel_threshold가 에셋 변동성에 미적응 (DOGE 거래 0건) |
 | 12 | **레짐 필터의 양면성**: Entropy 필터가 거래 중단→리스크 감소에는 기여하나, alpha 생성 메커니즘 없으면 수익도 함께 감소. 43개 전략 중 G5 도달 여전히 1개(2.3%) |
-| 13 | **FX Session Edge ≠ Crypto Edge** *(1D 테스트 기반, 1H 재검증 대기)*: Asian session breakout은 FX 시장의 institutional flow 시간대 분리에 기반. 크립토 24/7 시장에서는 session 분리가 구조적으로 약함. 단, 이전 결과는 1D 데이터로 왜곡 — 1H 재검증 필요 |
-| 14 | **Amihud Illiquidity** *(1D 테스트 기반, 1H 재검증 대기)*: Equity 미시구조 지표를 크립토에 적용 시 과빈번 전환 가능성. 단, 이전 결과는 1D 데이터로 왜곡 — 1H 재검증 필요 |
-| 15 | **BVC 근사의 TF 불변 한계** *(1D 테스트 기반, 1H 재검증 대기)*: OHLCV 기반 BVC는 1D에서 정보 손실 심각. 1H에서 개선 가능성 있으나 L2 없이 한계 가능. 재검증 필요 |
-| 16 | **Intraday 계절성** *(1D 테스트 기반, 1H 재검증 대기)*: 30일 rolling hour-of-day t-stat은 1D에서 계산 자체가 무의미. 1H에서 과적합 여부 재확인 필요 |
-| 17 | **4H/1H TF 전략의 1D 백테스트 구조적 불일치 (수정 완료)**: VBT CLI가 `timeframe="1D"` 하드코딩 → 비-1D 전략 8종이 잘못된 TF로 평가됨. 2026-02-11 수정: YAML `backtest.timeframe` 반영. **Tier 5(1H) 4종 + Tier 6(4H) 4종 → 재검증 대기** |
+| 13 | **FX Session Edge ≠ Crypto Edge** *(1H 재검증 확정)*: Asian session breakout은 FX 시장의 institutional flow 시간대 분리에 기반. 1H 재검증에서도 전 에셋 Sharpe 음수 (-0.40~-2.52). 크립토 24/7 시장에서 session 분리는 구조적으로 무효 |
+| 14 | **Amihud Illiquidity** *(1H 재검증 확정)*: 1H에서도 Sharpe -0.93~-2.78, MDD 94~100%. Amihud 상태 전환이 너무 빈번 (6K+ trades/6yr), 모멘텀 conviction 확대가 역효과. Equity 미시구조 지표 → 크립토 전이 불가 |
+| 15 | **BVC 근사의 TF 불변 한계** *(1H 재검증 확정)*: 1H에서도 전 에셋 Sharpe 음수 (-0.24~-1.56). OHLCV 기반 BVC 근사는 1D→1H 해상도 상승에도 order flow 방향성 예측력 부재. **L2 data 없이 flow 기반 전략은 근본적으로 불가** |
+| 16 | **Intraday 계절성** *(1H 재검증 확정)*: 1H에서 Best ETH Sharpe 0.26, 3/5 에셋 음수. Trades 22~78건으로 극소. 30일 rolling t-stat은 크립토 1H에서도 과적합 (비정상 intraday 패턴) |
+| 17 | **4H/1H TF 전략의 1D 백테스트 구조적 불일치 → 재검증 완료**: VBT CLI `timeframe="1D"` 하드코딩 수정 후 8종 재검증 (2026-02-12). **8개 전략 모두 올바른 TF에서도 G1 FAIL**. TF 불일치는 일부 전략의 수치를 왜곡했으나, 근본적 alpha 부재는 TF와 무관 |
 | 18 | **FULL Short + OU MR = 최악의 조합**: OU z-score 기반 short이 크립토 밈코인(DOGE) 급등에 노출 시 MDD -19,669%. VWAP-Disposition(-622%)의 31.6배. MR 전략에서 FULL short는 구조적 자살, HEDGE_ONLY가 최소 방어선 |
 | 19 | **6H TF Acceleration/Momentum = 구조적 실패**: Accel-Conv(-1.05~-2.42), QD-Mom(-0.51~-2.10) 전 에셋 Sharpe 음수. 6H bar에서 2차 미분(acceleration)은 노이즈 과민, quarter-day autocorrelation은 크립토 24/7에서 부재. 과다 거래(연 400~760건) → 비용 drag 45~77% |
 | 20 | **PBO 이중 경로 도입 (2026-02-11)**: PBO < 40% 단일 기준 → 이중 경로 완화. 경로 B: PBO < 80% AND CPCV 전 fold OOS > 0 AND MC p < 0.05. CTREND(PBO 60%) + Anchor-Mom(PBO 80%) 모두 경로 B PASS. **CPCV 전 fold OOS 양수 여부가 PBO 수치보다 실전 위험의 더 좋은 지표** |
+| 21 | **4H Reversal 전략의 크립토 부적합 (2026-02-12 확정)**: Candle-Reject(-0.71~-1.62), Vol-Climax(-0.05~-1.73), OU-MeanRev(-0.31~-1.18) 전 에셋 Sharpe 음수. 4H bar에서 rejection wick, volume climax, OU mean reversion 시그널 모두 크립토 추세 지속성에 패배. **반전(MR) 전략은 크립토에서 구조적 불리 — 추세추종/앙상블만 생존** |
+| 22 | **54개 전략 중 G5 도달 2개 (3.7%)**: 재검증 8종 포함 52개 폐기 확정. **alpha 생성은 ML 앙상블(CTREND) + 멀티 모멘텀(Anchor-Mom)에 집중**. 단일 지표/반전/미시구조 전략은 크립토 OHLCV에서 체계적으로 실패 |

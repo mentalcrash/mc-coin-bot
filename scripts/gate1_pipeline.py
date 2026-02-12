@@ -33,8 +33,9 @@ END = datetime(2025, 12, 31, tzinfo=UTC)
 INITIAL_CAPITAL = Decimal(100_000)
 RESULTS_DIR = ROOT / "results"
 
-# 1H timeframe 전략 목록 (1m → 1H resample 필요)
+# 비-1D timeframe 전략 목록
 HOURLY_STRATEGIES = {"session-breakout", "liq-momentum", "flow-imbalance", "hour-season"}
+FOUR_HOURLY_STRATEGIES = {"perm-entropy-mom", "candle-reject", "vol-climax", "ou-meanrev"}
 
 
 def create_portfolio(strategy_name: str) -> Portfolio:
@@ -55,7 +56,12 @@ def run_single(
     symbol: str,
 ) -> dict[str, Any] | None:
     try:
-        timeframe = "1h" if strategy_name in HOURLY_STRATEGIES else "1D"
+        if strategy_name in HOURLY_STRATEGIES:
+            timeframe = "1h"
+        elif strategy_name in FOUR_HOURLY_STRATEGIES:
+            timeframe = "4h"
+        else:
+            timeframe = "1D"
         data = service.get(
             MarketDataRequest(symbol=symbol, timeframe=timeframe, start=START, end=END)
         )

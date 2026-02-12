@@ -9,7 +9,7 @@
 | **전략명** | Liq-Momentum (`liq-momentum`) |
 | **유형** | Liquidity-Adjusted Momentum |
 | **타임프레임** | 1H |
-| **상태** | `폐기 (Gate 1 FAIL)` |
+| **상태** | `폐기 (Gate 1 FAIL — 1H 재검증 확정)` |
 | **Best Asset** | N/A (전 에셋 Sharpe 음수) |
 | **경제적 논거** | Amihud illiquidity + relative volume으로 유동성 상태를 분류하고, 저유동성 환경에서 모멘텀 conviction을 확대하여 정보 비대칭 프리미엄을 포착 |
 
@@ -34,7 +34,7 @@
 ```
 G0 아이디어  [PASS]
 G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 1H TF로 재실행 필요
+G1 백테스트  [FAIL] 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.93 ~ -2.78)
 G2 IS/OOS    [    ]
 G3 파라미터  [    ]
 G4 심층검증  [    ]
@@ -82,4 +82,5 @@ G5 EDA검증   [    ]
 | 날짜 | Gate | 판정 | 근거 |
 |------|------|------|------|
 | 2026-02-10 | G0B | PASS | 44 tests PASS, shift(1) lookahead 방지, vectorized ops, Pydantic frozen config, model_validator |
-| 2026-02-10 | G1 | FAIL | 전 에셋 Sharpe 음수 (-3.07~-6.48), MDD ~100%, 즉시 폐기 조건 #1+#2 해당 |
+| 2026-02-10 | G1 | FAIL | 1D 왜곡: 전 에셋 Sharpe 음수 (-3.07~-6.48) |
+| 2026-02-12 | G1 (1H 재검증) | **FAIL 확정** | 전 에셋 Sharpe 음수 (-0.93~-2.78). MDD 94~100%. 1H에서도 과다 거래(5K~6.8K건), Amihud+momentum 조합 크립토 무효 확인 |

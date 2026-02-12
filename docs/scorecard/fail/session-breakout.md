@@ -9,7 +9,7 @@
 | **전략명** | Session Breakout (`session-breakout`) |
 | **유형** | Structural / Session Decomposition |
 | **타임프레임** | 1H |
-| **상태** | `폐기 (Gate 1 FAIL)` |
+| **상태** | `폐기 (Gate 1 FAIL — 1H 재검증 확정)` |
 | **Best Asset** | N/A (전 에셋 Sharpe 음수) |
 | **경제적 논거** | Asian session (00-08 UTC) low-vol range를 EU/US 세션 open 시 breakout 포착 |
 
@@ -34,7 +34,7 @@
 ```
 G0 아이디어  [PASS] 27/30점
 G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 1H TF로 재실행 필요
+G1 백테스트  [FAIL] 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.40 ~ -2.52)
 G2 IS/OOS    [    ]
 G3 파라미터  [    ]
 G4 심층검증  [    ]
@@ -84,4 +84,5 @@ G5 EDA검증   [    ]
 |------|------|------|------|
 | 2026-02-10 | G0 | PASS | 27/30점. FX에서 검증된 session breakout 가설 |
 | 2026-02-10 | G0B | PASS | 코드 품질 검증 통과 |
-| 2026-02-10 | G1 | FAIL | 전 에셋 Sharpe 음수 (-1.67 ~ -3.49), MDD 88~97%. 크립토 24/7 시장에서 session decomposition edge 부재 |
+| 2026-02-10 | G1 | FAIL | 1D 왜곡: 전 에셋 Sharpe 음수 (-1.67 ~ -3.49) |
+| 2026-02-12 | G1 (1H 재검증) | **FAIL 확정** | 전 에셋 Sharpe 음수 (-0.40~-2.52). MDD 52~93%. DOGE -0.40이 "최선"이나 여전히 음수. Session breakout 크립토 24/7에서 edge 부재 확인 |

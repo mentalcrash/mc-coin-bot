@@ -9,7 +9,7 @@
 | **전략명** | Flow Imbalance (`flow-imbalance`) |
 | **유형** | Microstructure / Order Flow Proxy |
 | **타임프레임** | 1H |
-| **상태** | `폐기 (Gate 1 FAIL)` |
+| **상태** | `폐기 (Gate 1 FAIL — 1H 재검증 확정)` |
 | **Best Asset** | N/A (전 에셋 Sharpe 음수) |
 | **경제적 논거** | BVC(Bulk Volume Classification)로 매수/매도 볼륨을 추정하고, OFI(Order Flow Imbalance)와 VPIN proxy로 주문 흐름 불균형을 감지하여 방향 예측 |
 
@@ -34,7 +34,7 @@
 ```
 G0 아이디어  [PASS] 23/30점
 G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 1H TF로 재실행 필요
+G1 백테스트  [FAIL] 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.24 ~ -1.56)
 G2 IS/OOS    [    ]
 G3 파라미터  [    ]
 G4 심층검증  [    ]
@@ -88,4 +88,5 @@ G5 EDA검증   [    ]
 |------|------|------|------|
 | 2026-02-10 | G0 | PASS | 23/30점 |
 | 2026-02-10 | G0B | PASS | shift(1) lookahead 방지, vectorized ops, Pydantic frozen config |
-| 2026-02-10 | G1 | FAIL | 전 에셋 Sharpe 음수 (-0.12~-1.63), BNB MDD -54.2%, 즉시 폐기 조건 #2 해당 |
+| 2026-02-10 | G1 | FAIL | 1D 왜곡: 전 에셋 Sharpe 음수 (-0.12~-1.63) |
+| 2026-02-12 | G1 (1H 재검증) | **FAIL 확정** | 전 에셋 Sharpe 음수 (-0.24~-1.56). BNB MDD -51.1%. BVC 근사 한계 1H에서도 불변 확인 |

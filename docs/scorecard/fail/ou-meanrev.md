@@ -8,9 +8,9 @@
 |------|---|
 | **전략명** | OU-MeanRev (`ou-meanrev`) |
 | **유형** | Mean Reversion (Ornstein-Uhlenbeck process) |
-| **타임프레임** | 4H (annualization_factor=2190, 1D 데이터 백테스트) |
-| **상태** | `폐기 (Gate 1 FAIL)` |
-| **Best Asset** | SOL/USDT (Sharpe 0.07) |
+| **타임프레임** | 4H (annualization_factor=2190) |
+| **상태** | `폐기 (Gate 1 FAIL — 4H 재검증 확정)` |
+| **Best Asset** | N/A (전 에셋 Sharpe 음수, 4H 재검증) |
 | **경제적 논거** | OU process half-life가 짧으면 강한 mean-reversion → Z-score 진입, 길면 거래 중단 |
 
 ---
@@ -43,7 +43,7 @@
 ```
 G0 아이디어  [PASS] 22/30점
 G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 1건 (W3 Regime)
-G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 4H TF로 재실행 필요
+G1 백테스트  [FAIL] 4H 재검증 확정. 전 에셋 Sharpe 음수 (-0.31 ~ -1.18)
 ```
 
 ### Gate 1 상세
@@ -71,4 +71,5 @@ G1 백테스트  [재검증 대기] 이전 결과는 1D 데이터 왜곡. 4H TF�
 |------|------|------|------|
 | 2026-02-10 | G0A | PASS | 22/30점 |
 | 2026-02-10 | G0B | PASS | Critical 7항목 결함 0개 |
-| 2026-02-11 | G1 | **FAIL** | 즉시 폐기: DOGE MDD -19,669% (FULL short + 밈코인 급등), SOL MDD -110%. 전 에셋 Sharpe ~0, 4/5 음수. OU process 4H→1D TF 불일치 |
+| 2026-02-11 | G1 | **FAIL** | 1D 왜곡: DOGE MDD -19,669% |
+| 2026-02-12 | G1 (4H 재검증) | **FAIL 확정** | 전 에셋 Sharpe 음수 (-0.31~-1.18). DOGE MDD -64.6%, BNB MDD -58.3%. FULL short + 크립토 추세 지속 = MR 전략 구조적 실패 |
