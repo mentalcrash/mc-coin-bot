@@ -1,6 +1,6 @@
 # Gate Criteria — Single Source of Truth
 # 9개 Gate의 평가 기준을 YAML로 구조화.
-# 수정 후 `pipeline report`로 dashboard.md 재생성.
+# 수정 후 `pipeline report`로 확인, `--output FILE`로 파일 저장.
 
 gates:
   # ─── Gate 0A: 아이디어 검증 ────────────────────────────────────

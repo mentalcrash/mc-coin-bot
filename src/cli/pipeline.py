@@ -249,23 +249,38 @@ def update_status_cmd(
 
 
 @app.command()
-def report() -> None:
-    """Dashboard 자동 생성 (YAML → markdown)."""
+def report(
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Save markdown to file instead of console"),
+    ] = None,
+) -> None:
+    """전략 상황판 출력. --output FILE 시 markdown 저장."""
     from pathlib import Path
 
     from src.pipeline.gate_store import GateCriteriaStore
     from src.pipeline.lesson_store import LessonStore
-    from src.pipeline.report import DashboardGenerator
 
     store = StrategyStore()
     lesson_store = LessonStore()
     gate_store = GateCriteriaStore()
-    generator = DashboardGenerator(store, lesson_store=lesson_store, gate_store=gate_store)
-    content = generator.generate()
 
-    output = Path("docs/strategy/dashboard.md")
-    output.write_text(content, encoding="utf-8")
-    console.print(f"[green]Dashboard generated: {output}[/green]")
+    if output:
+        from src.pipeline.report import DashboardGenerator
+
+        generator = DashboardGenerator(store, lesson_store=lesson_store, gate_store=gate_store)
+        content = generator.generate()
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+        console.print(f"[green]Dashboard saved: {out_path}[/green]")
+    else:
+        from src.pipeline.report import ConsoleRenderer
+
+        renderer = ConsoleRenderer(
+            store, lesson_store=lesson_store, gate_store=gate_store, console=console
+        )
+        renderer.render()
 
 
 @app.command()

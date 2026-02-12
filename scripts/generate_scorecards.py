@@ -566,7 +566,7 @@ def generate_scorecard(
     # Header
     a(f"# 전략 스코어카드: {display_name}")
     a("")
-    a("> 자동 생성 | 평가 기준: [dashboard.md](../strategy/dashboard.md)")
+    a("> 자동 생성 | 평가 기준: `pipeline gates-list`")
     a("")
 
     # 기본 정보

@@ -3,7 +3,7 @@
 이 파일은 p1-g0a-discover 스킬에서 중복 회피를 위해 참조한다.
 **동일 접근법 재시도는 금지**하며, 차별화 포인트를 명시해야 한다.
 
-> 최신 현황은 [docs/strategy/dashboard.md](../../../../docs/strategy/dashboard.md) 참조.
+> 최신 현황은 `pipeline report`로 확인.
 > 총 46개 전략 중 **활성 1개 (CTREND)**, **폐기 45개**.
 
 ---
@@ -95,7 +95,7 @@
 
 ## 폐기에서 얻은 핵심 교훈 (16가지)
 
-> 최신 교훈은 [lessons.md](../../../../docs/strategy/lessons.md) 참조.
+> 최신 교훈은 `pipeline lessons-list`로 확인.
 
 1. **앙상블 > 단일지표**: ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수
 2. **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐

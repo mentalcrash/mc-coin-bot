@@ -559,7 +559,7 @@ uv run python main.py pipeline lessons-add \
 uv run python main.py pipeline report
 ```
 
-> YAML 기반으로 dashboard.md를 자동 생성. 수동 편집 불필요.
+> YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
 > G5 FAIL은 코드 수정 후 재시도 가능 — 스코어카드를 fail/로 이동하지 않는다.
 
 ---
@@ -665,7 +665,7 @@ uv run python main.py pipeline report
   최종 판정: [PASS / CONDITIONAL PASS / FAIL]
   다음 단계: [G6 Paper Trading / 코드 수정 후 G5 재시도 / 폐기]
   YAML:       strategies/{strategy_name}.yaml (갱신 완료)
-  대시보드:   docs/strategy/dashboard.md (pipeline report 자동 생성)
+  대시보드:   pipeline report (콘솔 출력, --output로 파일 저장)
 ============================================================
 ```
 
@@ -676,5 +676,4 @@ uv run python main.py pipeline report
 - [references/parity-criteria.md](references/parity-criteria.md) — Parity 정량 기준 + 괴리 원인 카탈로그
 - [references/live-readiness-checklist.md](references/live-readiness-checklist.md) — 라이브 준비 7항목 상세 검증 패턴
 - [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (G5 선례)
-- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 상황판
-- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 평가 표준
+- `pipeline report` — 전략 상황판 (CLI)

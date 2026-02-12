@@ -135,7 +135,7 @@ sequenceDiagram
     end
 ```
 
-Gate별 상세 기준과 전체 현황은 [전략 상황판](docs/strategy/dashboard.md) 참조.
+Gate별 상세 기준과 전체 현황은 `uv run python main.py pipeline report`로 확인.
 
 ---
 
@@ -342,7 +342,7 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | G5 PASS |
 
 > 50개 전략 중 2개 활성 + 48개 폐기.
-> 상세 현황은 **[전략 상황판](docs/strategy/dashboard.md)** 참조 (`uv run python main.py pipeline report`로 자동 생성).
+> 상세 현황은 `uv run python main.py pipeline report`로 확인.
 
 전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
 

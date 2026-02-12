@@ -1,6 +1,6 @@
 # 전략 스코어카드: Vol-Adaptive
 
-> 자동 생성 | 평가 기준: [dashboard.md](../../strategy/dashboard.md)
+> 자동 생성 | 평가 기준: `pipeline gates-list`
 
 ## 기본 정보
 

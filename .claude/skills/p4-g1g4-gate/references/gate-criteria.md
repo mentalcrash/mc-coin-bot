@@ -1,6 +1,6 @@
 # Gate 판정 기준 — Machine-Readable Reference
 
-> [dashboard.md](../../../../docs/strategy/dashboard.md)의 정량 기준 요약.
+> `gates/criteria.yaml`의 정량 기준 요약. `pipeline gates-show G1`로 확인.
 > 파이프라인 실행 시 이 파일의 수치를 기준으로 PASS/FAIL을 판정한다.
 
 ---

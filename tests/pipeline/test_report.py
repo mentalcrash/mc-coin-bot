@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_models import LessonRecord
@@ -19,7 +20,7 @@ from src.pipeline.models import (
     StrategyRecord,
     StrategyStatus,
 )
-from src.pipeline.report import DashboardGenerator, _extract_note, _fail_rationale
+from src.pipeline.report import ConsoleRenderer, DashboardGenerator, _extract_note, _fail_rationale
 from src.pipeline.store import StrategyStore
 
 
@@ -116,7 +117,7 @@ class TestDashboardGenerator:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "AUTO-GENERATED" in content
-        assert "수동 편집 금지" in content
+        assert "--output" in content
 
     def test_gate_criteria_skill_name(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
@@ -163,14 +164,14 @@ class TestDashboardGenerator:
         assert "핵심 교훈" in content
         assert "(없음)" in content
 
-    def test_lessons_fallback_without_store(
+    def test_lessons_without_store_returns_empty(
         self,
         store_with_data: StrategyStore,
     ) -> None:
         gen = DashboardGenerator(store_with_data, lesson_store=None)
-        # Without lesson_store, falls back to file (may or may not exist)
         content = gen.generate()
-        assert isinstance(content, str)
+        # lesson_store=None이면 교훈 섹션 없음
+        assert "핵심 교훈" not in content
 
 
 class TestExtractNote:
@@ -301,3 +302,56 @@ class TestFailRationale:
         result = _fail_rationale(record, GateId.G1)
         assert result == long_rationale
         assert len(result) == 120
+
+
+def _capture(store_with_data: StrategyStore, **kwargs: object) -> str:
+    """ConsoleRenderer 출력 캡처 헬퍼."""
+    console = Console(file=None, no_color=True, width=120)
+    renderer = ConsoleRenderer(store_with_data, console=console, **kwargs)  # type: ignore[arg-type]
+    with console.capture() as capture:
+        renderer.render()
+    return capture.get()
+
+
+class TestConsoleRenderer:
+    def test_render_header(self, store_with_data: StrategyStore) -> None:
+        output = _capture(store_with_data)
+        assert "Strategy Dashboard" in output
+        assert "Active: 1" in output
+        assert "Retired: 1" in output
+
+    def test_render_active_strategy(self, store_with_data: StrategyStore) -> None:
+        output = _capture(store_with_data)
+        assert "CTREND" in output
+        assert "SOL/USDT" in output
+
+    def test_render_retired_summary(self, store_with_data: StrategyStore) -> None:
+        output = _capture(store_with_data)
+        assert "Retired Strategies" in output
+
+    def test_render_active_notes(self, store_with_data: StrategyStore) -> None:
+        output = _capture(store_with_data)
+        assert "SOL Sharpe 2.05" in output
+
+    def test_render_empty_store(self, tmp_path: Path) -> None:
+        store = StrategyStore(base_dir=tmp_path)
+        output = _capture(store)
+        assert "Active: 0" in output
+        assert "No active strategies" in output
+
+    def test_render_with_lessons(
+        self,
+        store_with_data: StrategyStore,
+        tmp_path: Path,
+        sample_lesson: LessonRecord,
+    ) -> None:
+        lesson_store = LessonStore(base_dir=tmp_path / "lessons")
+        lesson_store.save(sample_lesson)
+        output = _capture(store_with_data, lesson_store=lesson_store)
+        assert "Lessons" in output
+        assert "앙상블 > 단일지표" in output
+
+    def test_render_without_lessons(self, store_with_data: StrategyStore) -> None:
+        output = _capture(store_with_data)
+        # lesson_store=None → 교훈 테이블 미출력
+        assert "Lessons" not in output

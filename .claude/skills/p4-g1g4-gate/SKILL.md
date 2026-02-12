@@ -541,7 +541,7 @@ mv docs/scorecard/{strategy_name}.md docs/scorecard/fail/{strategy_name}.md
 uv run python main.py pipeline report
 ```
 
-> YAML 기반으로 dashboard.md를 자동 생성. 수동 편집 불필요.
+> YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
 
 ### F-5. 최종 리포트 출력
 
@@ -622,7 +622,7 @@ uv run python main.py pipeline report
   최종 판정: [G4 PASS / G{N} FAIL]
   다음 단계: {G5 EDA Parity / 폐기}
   YAML:       strategies/{strategy_name}.yaml (갱신 완료)
-  대시보드:   docs/strategy/dashboard.md (pipeline report 자동 생성)
+  대시보드:   pipeline report (콘솔 출력, --output로 파일 저장)
 ============================================================
 ```
 
@@ -633,5 +633,4 @@ uv run python main.py pipeline report
 - [references/gate-criteria.md](references/gate-criteria.md) — Gate별 정량 기준 + CLI 명령 표
 - [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) — 시니어 퀀트 해석 패턴
 - [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (참조 선례)
-- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 상황판
-- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 평가 표준
+- `pipeline report` — 전략 상황판 (CLI)

@@ -1,6 +1,6 @@
 # 전략 평가표: TSMOM (Time-Series Momentum)
 
-> **템플릿 참조**: [template.md](../template.md) | 평가 기준: [dashboard.md](../../strategy/dashboard.md)
+> **템플릿 참조**: [template.md](../template.md) | 평가 기준: `pipeline gates-list`
 
 ---
 

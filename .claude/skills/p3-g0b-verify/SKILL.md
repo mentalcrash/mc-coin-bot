@@ -32,7 +32,7 @@ argument-hint: <strategy-name-or-directory>
 
 ---
 
-## 판정 기준 (dashboard.md 기준)
+## 판정 기준 (gates/criteria.yaml 기준)
 
 | 판정 | 조건 |
 |------|------|

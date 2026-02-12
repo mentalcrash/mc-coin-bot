@@ -717,7 +717,7 @@ uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTE
 uv run python main.py pipeline report
 ```
 
-> YAML 데이터에서 자동으로 `docs/strategy/dashboard.md`를 생성한다.
+> YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
 > 수동 편집 불필요.
 
 ### 10-2. YAML 상태 갱신
@@ -794,6 +794,6 @@ uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTE
 | [references/code-templates.md](references/code-templates.md) | 4-file 코드 템플릿 |
 | [references/implementation-checklist.md](references/implementation-checklist.md) | 구현 체크리스트 + 폐기 패턴 |
 | [strategies/*.yaml](../../../strategies/) | YAML 파이프라인 (Single Source of Truth) |
-| [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) | 전략 상황판 |
+| `pipeline report` | 전략 상황판 (CLI) |
 | [.claude/rules/strategy.md](../../rules/strategy.md) | 전략 개발 규칙 |
 | [src/strategy/base.py](../../../src/strategy/base.py) | BaseStrategy ABC |
