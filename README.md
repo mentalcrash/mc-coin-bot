@@ -2,9 +2,8 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-31개 전략을 체계적으로 평가하여 실전 운용 후보를 선별합니다.
-VectorBT + EDA 이중 백테스트와 4단계 과적합 검증(IS/OOS, 파라미터 안정성, WFA, CPCV)을 거쳐 실거래로 전환합니다.
-현재 **1개 전략 Gate 2 PASS** (CTREND), 2개 PENDING.
+50개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
+현재 **2개 전략 G5 PASS** (CTREND, Anchor-Mom) — Paper Trading(G6) 대기 중.
 
 ---
 
@@ -89,42 +88,54 @@ portfolio:
 
 ---
 
-## 전략 평가 체계
+## 전략 파이프라인
 
-전략은 **Gate 0A(아이디어)** → **Gate 7(실전 배포)** 까지 8단계 관문을 순차적으로 통과해야 합니다.
-각 Gate에서 FAIL되면 즉시 폐기 처리됩니다. 현재 50개 전략 중 **2개가 G5 PASS** (CTREND, Anchor-Mom).
+전략은 **아이디어 발굴(G0A)** → **실전 배포(G7)** 까지 8단계 Gate를 순차 통과해야 합니다.
+각 Gate에서 FAIL 시 즉시 폐기. 50개 전략 중 **2개 G5 PASS** (CTREND, Anchor-Mom).
 
-상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md)을 참조하세요.
+```mermaid
+sequenceDiagram
+    participant U as User (Architect)
+    participant C as Claude (Engineer)
+    participant S as System (CI/Backtest)
 
-### Gate별 검증 기준
+    rect rgb(240, 248, 255)
+    Note over U,S: Phase 1 — 발굴 & 구현
+    U->>C: /p1-g0a-discover
+    C-->>U: 후보 전략 (6항목 ≥ 18/30)
+    U->>C: /p2-implement
+    C->>S: 4-file 코드 + 테스트 생성
+    U->>C: /p3-g0b-verify
+    C-->>U: Critical 7항목 검증 PASS/FAIL
+    end
 
-| Gate | 검증 | 핵심 기준 | 방법 |
-|:----:|------|----------|------|
-| **0A** | 아이디어 검증 | 6항목 (논거, 데이터, 선행연구 등) 합계 >= 18/30점 | 수동 평가 |
-| **0B** | 코드 품질 검증 | Critical 7항목 (look-ahead, data leakage, cost model 등) 결함 0개 | `/p3-g0b-verify` |
-| **1** | 단일에셋 백테스트 | 5코인 x 6년(2020-2025). **Best Asset: Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50** | `scripts/gate1_pipeline.py` |
-| **2** | IS/OOS 검증 | 70/30 시간 분할. **OOS Sharpe >= 0.3, Sharpe Decay < 50%** | `scripts/gate2_validate.py` |
-| **3** | 파라미터 안정성 | 각 파라미터 ±20% 변동 시 **Sharpe 부호 유지 + 고원(plateau) 존재** | `scripts/gate3_param_sweep.py` |
-| **4** | 심층검증 (WFA/CPCV/PBO) | Walk-Forward 5-fold **OOS >= 0.5**. PBO 이중 경로: A(PBO<40%) 또는 B(PBO<80% + CPCV 전fold OOS>0 + MC p<0.05). **DSR > 0.95** | `validate -m milestone/final` |
-| **5** | EDA Parity | VBT vs EDA 백테스트 **수익 부호 일치, 편차 < 20%** | `eda run {config}` |
-| **6** | Paper Trading | 2주+ 실시간. **시그널 일치 > 90%, 무중단 운영** | `eda run-live --mode paper` |
-| **7** | 실전 배포 | **3개월 이동 Sharpe > 0.3** | `eda run-live --mode live` |
+    rect rgb(255, 248, 240)
+    Note over U,S: Phase 2 — 백테스트 검증 (G1~G4)
+    U->>C: /p4-g1g4-gate
+    C->>S: G1: 5코인 × 6년 백테스트
+    S-->>C: Sharpe > 1.0, CAGR > 20%?
+    C->>S: G2: IS/OOS 70/30 Split
+    S-->>C: Decay < 50%?
+    C->>S: G3: 파라미터 ±20% Sweep
+    S-->>C: 고원 존재?
+    C->>S: G4: WFA + CPCV + PBO + DSR
+    S-->>C: WFA OOS ≥ 0.5, DSR > 0.95?
+    Note right of S: FAIL 시 즉시 폐기
+    end
 
-### 비용 모델
+    rect rgb(240, 255, 240)
+    Note over U,S: Phase 3 — 라이브 전환
+    U->>C: /p5-g5-eda-parity
+    C->>S: VBT vs EDA 수익 비교
+    S-->>C: 부호 일치, 편차 < 20%?
+    C->>S: G6: Paper Trading (2주+)
+    S-->>C: 시그널 일치 > 90%?
+    C->>S: G7: Live 배포
+    S-->>U: 3개월 이동 Sharpe > 0.3
+    end
+```
 
-모든 백테스트에 적용되는 비용:
-
-| 항목 | 값 | 항목 | 값 |
-|------|---:|------|---:|
-| Maker Fee | 0.02% | Slippage | 0.05% |
-| Taker Fee | 0.04% | Funding (8h) | 0.01% |
-| Market Impact | 0.02% | **편도 합계** | **~0.11%** |
-
-### 즉시 폐기 조건 (Gate 1)
-
-- 전 5개 에셋에서 Sharpe 음수
-- 전 5개 에셋에서 MDD > 50%
-- Best Asset CAGR < 0%
+Gate별 상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md) 참조.
 
 ---
 
@@ -241,7 +252,7 @@ uv run python main.py ingest info
 ### 일괄 백테스트 & 스코어카드
 
 ```bash
-# 전 전략 일괄 백테스트 (23 전략 x 5 자산)
+# 전 전략 일괄 백테스트 (50 전략 x 5 자산)
 uv run python scripts/bulk_backtest.py
 
 # 스코어카드 자동 생성
@@ -325,32 +336,19 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ## 전략 현황
 
-50개 전략 평가 완료: **2개 활성** (CTREND, Anchor-Mom) + 48개 폐기.
-상세 현황과 폐기 전략 목록은 **[전략 상황판](docs/strategy/dashboard.md)** 참조.
+| 전략 | Best Asset | TF | Sharpe | CAGR | 상태 |
+|------|-----------|-----|--------|------|------|
+| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | G5 PASS |
+| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | G5 PASS |
 
-| 전략 | Best Asset | TF | Sharpe | CAGR | G0~G5 | 상태 |
-|------|-----------|-----|--------|------|:-----:|------|
-| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | All P | G5 PASS, Paper Trading 대기 |
-| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | All P | G5 PASS, Paper Trading 대기 |
-
-### Pipeline CLI
+> 50개 전략 중 2개 활성 + 48개 폐기.
+> 상세 현황은 **[전략 상황판](docs/strategy/dashboard.md)** 참조 (`uv run python main.py pipeline report`로 자동 생성).
 
 전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
 
 ```bash
-# 전략 현황 요약
-uv run python main.py pipeline status
-
-# 전체 전략 표 (Gate 진행도 포함)
-uv run python main.py pipeline table
-
-# 전략 목록 (필터링)
-uv run python main.py pipeline list --status ACTIVE
-uv run python main.py pipeline list --gate G2 --verdict PASS
-
-# 전략 상세
-uv run python main.py pipeline show ctrend
-
-# Dashboard 자동 생성
-uv run python main.py pipeline report
+uv run python main.py pipeline status   # 현황 요약
+uv run python main.py pipeline table    # 전체 Gate 진행도
+uv run python main.py pipeline show ctrend  # 전략 상세
+uv run python main.py pipeline report   # Dashboard 재생성
 ```
