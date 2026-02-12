@@ -101,7 +101,7 @@ portfolio:
 | Gate | 검증 | 핵심 기준 | 방법 |
 |:----:|------|----------|------|
 | **0A** | 아이디어 검증 | 6항목 (논거, 데이터, 선행연구 등) 합계 >= 18/30점 | 수동 평가 |
-| **0B** | 코드 품질 검증 | Critical 7항목 (look-ahead, data leakage, cost model 등) 결함 0개 | `/verify-strategy` |
+| **0B** | 코드 품질 검증 | Critical 7항목 (look-ahead, data leakage, cost model 등) 결함 0개 | `/p3-g0b-verify` |
 | **1** | 단일에셋 백테스트 | 5코인 x 6년(2020-2025). **Best Asset: Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50** | `scripts/gate1_pipeline.py` |
 | **2** | IS/OOS 검증 | 70/30 시간 분할. **OOS Sharpe >= 0.3, Sharpe Decay < 50%** | `scripts/gate2_validate.py` |
 | **3** | 파라미터 안정성 | 각 파라미터 ±20% 변동 시 **Sharpe 부호 유지 + 고원(plateau) 존재** | `scripts/gate3_param_sweep.py` |

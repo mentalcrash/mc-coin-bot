@@ -1,6 +1,6 @@
 # Discarded Strategies — 폐기 전략 목록 (2026-02-10)
 
-이 파일은 strategy-discovery 스킬에서 중복 회피를 위해 참조한다.
+이 파일은 p1-g0a-discover 스킬에서 중복 회피를 위해 참조한다.
 **동일 접근법 재시도는 금지**하며, 차별화 포인트를 명시해야 한다.
 
 > 최신 현황은 [docs/strategy/dashboard.md](../../../../docs/strategy/dashboard.md) 참조.

@@ -1,5 +1,5 @@
 ---
-name: eda-parity
+name: p5-g5-eda-parity
 description: >
   Gate 5 EDA Parity 검증. VBT 벡터화 백테스트와 EDA 이벤트 기반 백테스트의
   수익 정합성을 검증하고, 라이브 환경 전환 준비 상태를 확인한다.
@@ -99,7 +99,7 @@ cat strategies/{strategy_name}.yaml
 ```
 
 YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
-G4 PASS가 없으면 중단: "G4 미통과 전략입니다. `/gate-pipeline`을 먼저 실행하세요."
+G4 PASS가 없으면 중단: "G4 미통과 전략입니다. `/p4-g1g4-gate`를 먼저 실행하세요."
 
 ### 0-3. Best Asset + TF 추출
 

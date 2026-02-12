@@ -1,4 +1,4 @@
-# Implementation Checklist — implement-strategy
+# Implementation Checklist — p2-implement
 
 > 구현 완료 전 반드시 확인하는 체크리스트와 폐기 전략 패턴 회피 가이드.
 

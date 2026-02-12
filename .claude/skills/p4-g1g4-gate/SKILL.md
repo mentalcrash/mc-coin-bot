@@ -1,5 +1,5 @@
 ---
-name: gate-pipeline
+name: p4-g1g4-gate
 description: >
   G0B PASS 전략의 G1~G4 순차 검증 파이프라인. 시니어 퀀트 관점에서 백테스트(G1),
   IS/OOS(G2), 파라미터 안정성(G3), WFA/CPCV/PBO/DSR(G4)을 실행하고
@@ -64,7 +64,7 @@ cat strategies/{strategy_name}.yaml
 ```
 
 YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
-G0B PASS가 없으면 중단: "G0B 미통과 전략입니다. `/verify-strategy`를 먼저 실행하세요."
+G0B PASS가 없으면 중단: "G0B 미통과 전략입니다. `/p3-g0b-verify`를 먼저 실행하세요."
 
 ### 0-3. Silver 데이터 존재
 

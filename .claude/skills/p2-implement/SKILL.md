@@ -1,12 +1,12 @@
 ---
-name: implement-strategy
+name: p2-implement
 description: >
-  strategy-discovery에서 발굴한 전략 후보를 무결점 코드로 구현하는 스킬.
+  p1-g0a-discover에서 발굴한 전략 후보를 무결점 코드로 구현하는 스킬.
   시니어 퀀트 개발자로서 4-file 구조(config/preprocessor/signal/strategy) + 테스트를
   Zero-Tolerance Lint Policy에 맞춰 작성하고, Registry 등록 + Dashboard 갱신까지 완수한다.
   사용 시점: (1) temp-candidate.md에 후보가 있을 때,
   (2) "전략 구현", "implement", "코드 작성" 요청 시,
-  (3) strategy-discovery 완료 후 다음 단계로,
+  (3) p1-g0a-discover 완료 후 다음 단계로,
   (4) G0A PASS 전략의 코드화가 필요할 때.
 context: fork
 allowed-tools:
@@ -19,7 +19,7 @@ allowed-tools:
 argument-hint: <strategy-name> [--from temp-candidate]
 ---
 
-# implement-strategy: 전략 코드 구현
+# p2-implement: 전략 코드 구현
 
 ## 역할
 
@@ -62,7 +62,7 @@ cat docs/strategy/temp-candidate.md
 ```bash
 cat strategies/{strategy_name}.yaml
 # meta.status가 CANDIDATE이고 gates.G0A.status가 PASS인지 확인
-# YAML이 없으면: "strategy-discovery에서 pipeline create를 먼저 실행하세요"
+# YAML이 없으면: "p1-g0a-discover에서 pipeline create를 먼저 실행하세요"
 ```
 
 > discovery에서 YAML을 이미 생성했으므로, YAML이 없으면 workflow 순서 오류.
@@ -768,8 +768,8 @@ uv run python main.py pipeline report
   Registry: {registry-key} ✓ ({total} strategies)
 
   다음 단계:
-    1. /verify-strategy {registry-key}  (Gate 0B 코드 검증)
-    2. /gate-pipeline {registry-key}    (G1~G4 검증)
+    1. /p3-g0b-verify {registry-key}  (Gate 0B 코드 검증)
+    2. /p4-g1g4-gate {registry-key}    (G1~G4 검증)
 
 ============================================================
 ```

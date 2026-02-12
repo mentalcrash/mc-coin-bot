@@ -1,8 +1,8 @@
 #!/bin/bash
 # scan_strategy.sh — Gate 0B 전략 코드 자동 프리스캔
 #
-# 사용법: bash .claude/skills/verify-strategy/scripts/scan_strategy.sh <strategy_dir>
-# 예시:   bash .claude/skills/verify-strategy/scripts/scan_strategy.sh src/strategy/range_squeeze
+# 사용법: bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh <strategy_dir>
+# 예시:   bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh src/strategy/range_squeeze
 #
 # C1-C7 관련 의심 패턴을 자동 탐지. 결과는 수동 검토의 시작점.
 

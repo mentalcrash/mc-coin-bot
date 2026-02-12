@@ -1,5 +1,5 @@
 ---
-name: strategy-discovery
+name: p1-g0a-discover
 description: >
   체계적 알파 리서치 워크플로우로 새 트레이딩 전략 아이디어를 발굴하고 검증한다.
   타임프레임별 적합 전략 탐색, Long/Short/Hedge 모드 평가, 경제적 논거 검증,

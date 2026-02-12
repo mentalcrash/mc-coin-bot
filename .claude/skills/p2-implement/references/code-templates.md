@@ -1,4 +1,4 @@
-# Code Templates — implement-strategy
+# Code Templates — p2-implement
 
 > 각 파일의 완전한 코드 템플릿. `{placeholder}`는 전략별 값으로 대체.
 

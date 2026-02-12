@@ -1,5 +1,5 @@
 ---
-name: verify-strategy
+name: p3-g0b-verify
 description: >
   Gate 0 Phase B 전략 코드 검증. 새 전략 구현 완료 후 백테스트 실행 전에 수행하는 필수 관문.
   시니어 퀀트 개발자 관점에서 look-ahead bias, 데이터 누수, 시그널 로직 결함, 포지션 사이징 오류,
@@ -18,7 +18,7 @@ allowed-tools:
 argument-hint: <strategy-name-or-directory>
 ---
 
-# Gate 0B: 전략 코드 검증 (verify-strategy)
+# Gate 0B: 전략 코드 검증 (p3-g0b-verify)
 
 ## 역할
 
@@ -79,9 +79,9 @@ src/strategy/{name}/
 3. YAML 메타데이터 확인 (필수)
    cat strategies/{strategy_name}.yaml
    # meta.status가 IMPLEMENTED이고 gates.G0A.status가 PASS인지 확인
-   # YAML 없음 → "/implement-strategy를 먼저 실행하세요"
-   # G0A 미통과 → "strategy-discovery에서 G0A를 먼저 통과하세요"
-4. 자동 스캔 실행: bash .claude/skills/verify-strategy/scripts/scan_strategy.sh src/strategy/{name}
+   # YAML 없음 → "/p2-implement를 먼저 실행하세요"
+   # G0A 미통과 → "p1-g0a-discover에서 G0A를 먼저 통과하세요"
+4. 자동 스캔 실행: bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh src/strategy/{name}
 ```
 
 ### 1단계: [C1] Look-Ahead Bias (CRITICAL)
@@ -341,7 +341,7 @@ uv run python main.py pipeline report
 
 ### 스코어카드 갱신 (선택 — `docs/scorecard/{strategy_name}.md`)
 
-스코어카드가 이미 존재해야 한다 (`/implement-strategy`에서 생성).
+스코어카드가 이미 존재해야 한다 (`/p2-implement`에서 생성).
 
 **PASS 시**:
 
@@ -355,7 +355,7 @@ G0B 코드검증 [PASS] C1-C7 전항목 PASS, Warning N건
 2. 의사결정 기록에 행 추가:
 
 ```markdown
-| {날짜} | G0B | PASS | C1-C7 전항목 PASS. Warning: {W항목 요약}. 다음: /gate-pipeline |
+| {날짜} | G0B | PASS | C1-C7 전항목 PASS. Warning: {W항목 요약}. 다음: /p4-g1g4-gate |
 ```
 
 **FAIL 시**:

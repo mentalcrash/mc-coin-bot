@@ -128,7 +128,7 @@ Gate 7: 실전 배포 + 모니터링
 ### Phase B: 코드 품질 검증
 
 > 전략 코드 구현 완료 후, Gate 1 백테스트 실행 **전에** 수행한다.
-> `/verify-strategy` 스킬을 활용하여 체계적으로 검증한다.
+> `/p3-g0b-verify` 스킬을 활용하여 체계적으로 검증한다.
 
 #### 검증 체크리스트 (Critical — 하나라도 FAIL이면 Gate 0 FAIL)
 
@@ -161,7 +161,7 @@ Gate 7: 실전 배포 + 모니터링
 
 #### Phase B CLI / 도구
 
-- 수동 코드 리뷰: `/verify-strategy` 스킬 실행
+- 수동 코드 리뷰: `/p3-g0b-verify` 스킬 실행
 - 자동 검증: `uv run pytest tests/unit/test_strategy_{name}.py` (단위 테스트 전수 통과)
 - lint/type: `uv run ruff check . && uv run pyright src/`
 
@@ -515,7 +515,7 @@ docs/scorecard/
 
 | Gate | 명령 |
 |------|------|
-| Gate 0B | `/verify-strategy` (코드 리뷰 스킬) |
+| Gate 0B | `/p3-g0b-verify` (코드 리뷰 스킬) |
 | Gate 1 | `uv run python -m src.cli.backtest run {config}` |
 | Gate 2 | `uv run python -m src.cli.backtest validate -m quick -s {name}` |
 | Gate 3 | `uv run python scripts/gate3_param_sweep.py` |
