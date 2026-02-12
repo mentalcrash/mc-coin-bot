@@ -1,0 +1,15 @@
+id: 14
+title: Amihud Illiquidity
+body: 1H에서도 Sharpe -0.93~-2.78, MDD 94~100%. Amihud 상태 전환이 너무 빈번 (6K+ trades/6yr),
+  모멘텀 conviction 확대가 역효과. Equity 미시구조 지표 → 크립토 전이 불가
+category: market-structure
+tags:
+- Amihud
+- illiquidity
+- microstructure
+- equity-to-crypto
+strategies:
+- liq-momentum
+timeframes:
+- 1H
+added_at: '2026-02-10'

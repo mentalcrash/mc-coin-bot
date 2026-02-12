@@ -1,0 +1,14 @@
+id: 17
+title: 4H/1H TF 전략의 1D 백테스트 구조적 불일치
+body: VBT CLI timeframe='1D' 하드코딩 수정 후 8종 재검증 (2026-02-12). 8개 전략 모두 올바른 TF에서도 G1
+  FAIL. TF 불일치는 일부 전략의 수치를 왜곡했으나, 근본적 alpha 부재는 TF와 무관
+category: data-resolution
+tags:
+- timeframe
+- backtest
+- TF-mismatch
+strategies: []
+timeframes:
+- 4H
+- 1H
+added_at: '2026-02-10'

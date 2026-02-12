@@ -383,6 +383,329 @@ class TestCancelOrder:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# fetch_ticker
+# ---------------------------------------------------------------------------
+
+
+class TestFetchTicker:
+    """fetch_ticker() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_returns_ticker(self) -> None:
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.fetch_ticker = AsyncMock(
+            return_value={"last": 50000.0, "bid": 49999.0, "ask": 50001.0}
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                ticker = await client.fetch_ticker("BTC/USDT:USDT")
+
+        assert ticker["last"] == 50000.0
+        mock_exchange.fetch_ticker.assert_called_once_with("BTC/USDT:USDT")
+
+    @pytest.mark.asyncio
+    async def test_retries_on_network_error(self) -> None:
+        import ccxt as ccxt_sync
+
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        call_count = 0
+
+        async def flaky_ticker(symbol: str) -> dict[str, float]:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ccxt_sync.NetworkError("timeout")
+            return {"last": 42000.0}
+
+        mock_exchange.fetch_ticker = AsyncMock(side_effect=flaky_ticker)
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                ticker = await client.fetch_ticker("BTC/USDT:USDT")
+
+        assert ticker["last"] == 42000.0
+        assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# fetch_open_orders
+# ---------------------------------------------------------------------------
+
+
+class TestFetchOpenOrders:
+    """fetch_open_orders() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_returns_open_orders(self) -> None:
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.fetch_open_orders = AsyncMock(
+            return_value=[{"id": "ord_001", "status": "open", "symbol": "BTC/USDT:USDT"}]
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                orders = await client.fetch_open_orders("BTC/USDT:USDT")
+
+        assert len(orders) == 1
+        assert orders[0]["id"] == "ord_001"
+
+    @pytest.mark.asyncio
+    async def test_empty_when_no_orders(self) -> None:
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.fetch_open_orders = AsyncMock(return_value=[])
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                orders = await client.fetch_open_orders("BTC/USDT:USDT")
+
+        assert orders == []
+
+
+# ---------------------------------------------------------------------------
+# fetch_order
+# ---------------------------------------------------------------------------
+
+
+class TestFetchOrder:
+    """fetch_order() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_returns_order_status(self) -> None:
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.fetch_order = AsyncMock(
+            return_value={"id": "ord_001", "status": "closed", "filled": 0.001}
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                order = await client.fetch_order("ord_001", "BTC/USDT:USDT")
+
+        assert order["status"] == "closed"
+        mock_exchange.fetch_order.assert_called_once_with("ord_001", "BTC/USDT:USDT")
+
+
+# ---------------------------------------------------------------------------
+# get_min_notional / validate_min_notional
+# ---------------------------------------------------------------------------
+
+
+class TestMinNotional:
+    """get_min_notional() / validate_min_notional() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_get_from_market(self) -> None:
+        """market()에서 MIN_NOTIONAL 추출."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.market = MagicMock(
+            return_value={"limits": {"cost": {"min": 10.0, "max": 1000000.0}}}
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                min_val = client.get_min_notional("BTC/USDT:USDT")
+
+        assert min_val == 10.0
+
+    @pytest.mark.asyncio
+    async def test_default_when_no_info(self) -> None:
+        """market()에 min 정보 없으면 기본값 5.0."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.market = MagicMock(return_value={"limits": {"cost": {}}})
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                min_val = client.get_min_notional("BTC/USDT:USDT")
+
+        assert min_val == 5.0
+
+    @pytest.mark.asyncio
+    async def test_default_on_exception(self) -> None:
+        """market() 예외 시 기본값 5.0."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.market = MagicMock(side_effect=Exception("unknown symbol"))
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                min_val = client.get_min_notional("UNKNOWN/USDT:USDT")
+
+        assert min_val == 5.0
+
+    @pytest.mark.asyncio
+    async def test_validate_passes(self) -> None:
+        """notional >= MIN_NOTIONAL 시 True."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.market = MagicMock(
+            return_value={"limits": {"cost": {"min": 5.0}}}
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                assert client.validate_min_notional("BTC/USDT:USDT", 10.0) is True
+
+    @pytest.mark.asyncio
+    async def test_validate_fails(self) -> None:
+        """notional < MIN_NOTIONAL 시 False."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.market = MagicMock(
+            return_value={"limits": {"cost": {"min": 10.0}}}
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                assert client.validate_min_notional("BTC/USDT:USDT", 5.0) is False
+
+
+# ---------------------------------------------------------------------------
+# Jitter in retry
+# ---------------------------------------------------------------------------
+
+
+class TestJitter:
+    """_retry_with_backoff() jitter 검증."""
+
+    @pytest.mark.asyncio
+    async def test_jitter_varies_wait_time(self) -> None:
+        """jitter로 인해 재시도 간격이 고정이 아님을 확인."""
+        import ccxt as ccxt_sync
+
+        waits: list[float] = []
+        original_sleep = __import__("asyncio").sleep
+
+        async def capture_sleep(delay: float) -> None:
+            waits.append(delay)
+            await original_sleep(0)  # 즉시 반환
+
+        call_count = 0
+
+        async def flaky() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise ccxt_sync.NetworkError("fail")
+            return "ok"
+
+        with patch("src.exchange.binance_futures_client.asyncio.sleep", side_effect=capture_sleep):
+            result = await BinanceFuturesClient._retry_with_backoff(
+                flaky, max_retries=3, base_backoff=1.0
+            )
+
+        assert result == "ok"
+        assert len(waits) == 2
+        # jitter: wait = base * 2^attempt * (0.5 ~ 1.5) → 최소 0.5, 최대 3.0
+        for w in waits:
+            assert 0.4 < w < 4.0
+
+
+# ---------------------------------------------------------------------------
+# API Circuit Breaker
+# ---------------------------------------------------------------------------
+
+
+class TestApiCircuitBreaker:
+    """API 연속 실패 → 주문 차단 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_healthy_by_default(self) -> None:
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                assert client.is_api_healthy is True
+                assert client._consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_success_resets_counter(self) -> None:
+        """성공 시 실패 카운터 리셋."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                client._consecutive_failures = 3
+                await client.create_order(
+                    symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                )
+                assert client._consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_increments_counter(self) -> None:
+        """실패 시 카운터 증가."""
+        import ccxt as ccxt_sync
+
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.create_order = AsyncMock(
+            side_effect=ccxt_sync.ExchangeError("server error")
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                with pytest.raises(OrderExecutionError):
+                    await client.create_order(
+                        symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                    )
+                assert client._consecutive_failures == 1
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_after_max_failures(self) -> None:
+        """MAX_CONSECUTIVE_FAILURES 도달 시 unhealthy."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                client._consecutive_failures = 5
+                assert client.is_api_healthy is False
+
+    @pytest.mark.asyncio
+    async def test_recovery_after_success(self) -> None:
+        """CB 후 성공하면 healthy 복구."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                client._consecutive_failures = 5
+                assert client.is_api_healthy is False
+                await client.create_order(
+                    symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                )
+                assert client.is_api_healthy is True
+                assert client._consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_network_error_increments(self) -> None:
+        """NetworkError (retry 실패) 후 카운터 증가."""
+        import ccxt as ccxt_sync
+
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.create_order = AsyncMock(
+            side_effect=ccxt_sync.NetworkError("timeout")
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                with pytest.raises(NetworkError):
+                    await client.create_order(
+                        symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                    )
+                assert client._consecutive_failures == 1
+
+
 class TestRetry:
     """_retry_with_backoff() 테스트."""
 

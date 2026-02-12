@@ -1,0 +1,17 @@
+id: 24
+title: 다중 필터 AND 조건의 공집합 함정
+body: Cap-Wick-Rev 3중 필터(ATR spike 2x + Volume surge 2x + Wick ratio 50% + Close position
+  30%) AND 조건이 BTC 4H 6년(13147 bars)에서 0건 매칭. 개별 필터는 2~12% hit이지만 교집합=0. ATR spike
+  시점의 bar는 강한 방향성(wick 비율 낮음)을 가져 wick+spike 동시 충족 불가. 다중 AND 필터 전략은 반드시 교집합 크기를 사전
+  검증해야 함.
+category: strategy-design
+tags:
+- multi-filter
+- AND-condition
+- zero-trades
+- 4H
+strategies:
+- cap-wick-rev
+timeframes:
+- 4H
+added_at: '2026-02-13'

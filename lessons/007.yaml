@@ -1,0 +1,14 @@
+id: 7
+title: 데이터 해상도 = 전략 해상도
+body: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수. 1D OHLCV에서 BVC 근사는 정보 손실 심각
+category: data-resolution
+tags:
+- VPIN
+- BVC
+- tick-data
+- microstructure
+strategies:
+- vpin-flow
+timeframes:
+- 1D
+added_at: '2026-02-10'

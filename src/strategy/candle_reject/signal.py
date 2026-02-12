@@ -24,6 +24,12 @@ from loguru import logger
 from src.strategy.candle_reject.config import CandleRejectConfig, ShortMode
 from src.strategy.types import Direction, StrategySignals
 
+# ---- Regime awareness constants ----
+_REGIME_VOL_RATIO_HIGH = 2.0
+_REGIME_VOL_RATIO_LOW = 0.5
+_REGIME_DAMPENING = 0.5
+_REGIME_MIN_PERIODS = 30
+
 
 def _count_consecutive(series: pd.Series) -> pd.Series:
     """같은 방향의 연속 횟수를 벡터화로 계산.
@@ -164,7 +170,21 @@ def generate_signals(
     )
 
     # =========================================================================
-    # 9. 숏 모드에 따른 시그널 처리
+    # 9. Regime awareness: dampen signals in extreme vol environments
+    # =========================================================================
+    if "realized_vol" in df.columns:
+        rvol_prev: pd.Series = df["realized_vol"].shift(1)  # type: ignore[assignment]
+        rvol_med: pd.Series = rvol_prev.expanding(  # type: ignore[assignment]
+            min_periods=_REGIME_MIN_PERIODS,
+        ).median()
+        rvol_ratio = rvol_prev / rvol_med.clip(lower=1e-10)
+        extreme_regime = (rvol_ratio > _REGIME_VOL_RATIO_HIGH) | (
+            rvol_ratio < _REGIME_VOL_RATIO_LOW
+        )
+        strength = strength.where(~extreme_regime, strength * _REGIME_DAMPENING)
+
+    # =========================================================================
+    # 10. 숏 모드에 따른 시그널 처리
     # =========================================================================
     if config.short_mode == ShortMode.DISABLED:
         short_mask = direction == Direction.SHORT

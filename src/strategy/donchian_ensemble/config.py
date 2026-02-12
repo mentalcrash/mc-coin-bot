@@ -144,7 +144,10 @@ class DonchianEnsembleConfig(BaseModel):
         """
         annualization_map: dict[str, float] = {
             "1h": 8760.0,
+            "2h": 4380.0,
+            "3h": 2920.0,
             "4h": 2190.0,
+            "6h": 1460.0,
             "1d": 365.0,
         }
 

@@ -37,15 +37,18 @@
 ### 1.2 Modern Discovery Methods (2025-2026)
 
 **LLM-Assisted Strategy Discovery:**
+
 - [QuantEvolve](https://arxiv.org/abs/2510.18569) (ACM ICAIF 2025): Multi-agent evolutionary framework combining quality-diversity optimization with hypothesis-driven strategy generation
 - Feature map dimensions: Sharpe Ratio, Trading Frequency, Max Drawdown, Sortino Ratio, Total Return, Strategy Category
 - LLM agents generate, critique, and refine strategy hypotheses iteratively
 
 **R&D-Agent-Quant:**
+
 - [Multi-agent framework](https://arxiv.org/html/2505.15155v2) for joint optimization of data-centric factors and models
 - Automated factor discovery + model selection pipeline
 
 **Systematic Screening Process:**
+
 1. **Hypothesis Formation** -- Theory-driven (e.g., "funding rate mean-reverts within 8h") or data-driven (e.g., pattern mining)
 2. **Literature Review** -- Check if signal is known/crowded; estimate alpha decay risk
 3. **Quick Feasibility** -- Can it be backtested? Is data available? Is execution realistic?
@@ -85,48 +88,56 @@ Stage 7: Production (Full Allocation)
 ### 2.2 Stage Details
 
 #### Stage 0: Ideation & Hypothesis
+
 - **Input**: Market observation, academic paper, on-chain anomaly
 - **Output**: Written hypothesis with testable predictions
 - **Duration**: 1-3 days
 - **Gate**: Must articulate WHY edge exists and WHO loses
 
 #### Stage 1: Exploratory Research
+
 - **Activities**: Data collection, feature engineering, correlation analysis, regime visualization
 - **Output**: Jupyter notebook with EDA results
 - **Duration**: 1-2 weeks
 - **Gate**: Statistical evidence of signal (e.g., IC > 0.02, t-stat > 2.0)
 
 #### Stage 2: Strategy Prototyping (In-Sample)
+
 - **Activities**: Backtest implementation, parameter selection, cost modeling
 - **Output**: Backtest results with full metrics
 - **Duration**: 1-2 weeks
 - **Gate**: See Section 3 for specific thresholds
 
 #### Stage 3: Out-of-Sample Validation
+
 - **Activities**: Hold-out test (minimum 30% of data), walk-forward analysis
 - **Output**: OOS performance comparison
 - **Duration**: 1 week
 - **Gate**: IS/OOS Sharpe degradation < 50%; OOS Sharpe > 0.5
 
 #### Stage 4: Advanced Validation
+
 - **Activities**: CPCV, PBO computation, Deflated Sharpe Ratio, Monte Carlo simulation
 - **Output**: Statistical validation report
 - **Duration**: 1-2 weeks
 - **Gate**: PBO < 0.40, DSR p-value < 0.05
 
 #### Stage 5: Paper Trading
+
 - **Activities**: Deploy to paper environment, monitor fill quality, slippage, latency
 - **Output**: Paper trading log with execution analytics
 - **Duration**: 2-4 weeks (minimum 50 trades)
 - **Gate**: Realized Sharpe within 1 std of backtest; no execution anomalies
 
 #### Stage 6: Incubation
+
 - **Activities**: Deploy with 5-10% of target allocation
 - **Output**: Live performance tracking
 - **Duration**: 1-3 months
 - **Gate**: Consistent with paper trading; no unexpected drawdowns
 
 #### Stage 7: Production
+
 - **Activities**: Full allocation, continuous monitoring, alpha decay tracking
 - **Output**: Daily performance reports, risk dashboards
 - **Deprecation Trigger**: Rolling Sharpe drops below 0.5 for 3 months; drawdown exceeds 2x historical
@@ -197,27 +208,32 @@ Stage 7: Production (Full Allocation)
 ### 4.2 CPCV (Combinatorial Purged Cross-Validation)
 
 **Why CPCV is superior** ([ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0950705124011110)):
+
 - Research demonstrates "marked superiority of CPCV in mitigating overfitting risks"
 - Outperforms K-Fold, Purged K-Fold, and Walk-Forward
 - Lower PBO and superior DSR Test Statistic
 
 **Mechanism:**
+
 1. **Purging**: Remove training observations whose label horizon overlaps with test period
 2. **Embargo**: Remove fixed percentage of observations after each test period to prevent leakage
 3. **Combinatorial**: Systematically construct multiple train-test splits, producing a distribution of OOS estimates
 
 **2025 Variants:**
+
 - **Bagged CPCV**: Ensemble approach for enhanced robustness
 - **Adaptive CPCV**: Dynamic adjustments based on market conditions
 
 ### 4.3 Walk-Forward Analysis
 
 **Limitations identified in 2025:**
+
 - Notable shortcomings in false discovery prevention
 - Increased temporal variability and weaker stationarity
 - Still useful as complementary validation, not sole method
 
 **Best Practice Configuration:**
+
 ```
 IS Window: 252-504 trading days (1-2 years for daily crypto)
 OOS Window: 63-126 trading days (3-6 months)
@@ -228,11 +244,13 @@ Minimum Folds: 6-8 for statistical power
 ### 4.4 Deflated Sharpe Ratio (DSR)
 
 **What it corrects** ([Bailey & Lopez de Prado](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf)):
+
 1. Selection bias under multiple testing
 2. Non-normally distributed returns (skewness, kurtosis)
 3. Number of strategies tested (trial inflation)
 
 **Interpretation:**
+
 - DSR < 1.0 → High probability of failing live
 - DSR > 1.0 → Strategy may have genuine alpha
 - Must record ALL trials (including failures) -- discarding failed trials underestimates overfitting probability
@@ -240,12 +258,14 @@ Minimum Folds: 6-8 for statistical power
 ### 4.5 Probability of Backtest Overfitting (PBO)
 
 **Implementation** ([Bailey et al.](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf)):
+
 - Uses Combinatorially Symmetric Cross-Validation (CSCV)
 - Estimates probability that the optimal IS strategy underperforms in OOS
-- **Threshold**: PBO < 0.40 (40%) for strategy to be considered for deployment
+- **Threshold**: Dual-path — Path A: PBO < 0.40 (40%), or Path B: PBO < 0.80 (80%) AND all CPCV folds OOS > 0 AND MC p < 0.05
 - **Critical**: Record total number of trials including ALL failures
 
 **Limitations:**
+
 - Does not detect forward-looking bias, data leakage, or invalid features
 - These remain the developer's responsibility through rigorous due diligence
 
@@ -264,6 +284,7 @@ Minimum Folds: 6-8 for statistical power
 ### 4.7 Overfitting Red Flags
 
 From [Backtesting Discipline](https://midlandsinbusiness.com/backtesting-discipline-how-to-avoid-overfitting-and-bias-in-trading-strategies/):
+
 - Sharpe > 1.5 on IS data (for non-HFT strategies)
 - Profit Factor > 2.0
 - Annual returns > 100% without proportional risk
@@ -303,11 +324,13 @@ In cryptocurrency CTA backtesting, evolutionary and grid search performed simila
 ### 5.3 Parameter Stability Analysis
 
 **Parameter Cliff Test:**
+
 - Perturb each parameter +/- 10-20%
 - If Sharpe changes > 30%, strategy is fragile
 - Prefer "parameter plateaus" -- regions where performance is stable
 
 **Heatmap Approach:**
+
 - For 2-parameter strategies: generate Sharpe heatmap
 - Look for broad "warm" regions, not isolated peaks
 - Isolated peaks = overfitting; broad plateaus = robust signal
@@ -410,6 +433,7 @@ Validation Metrics:
 ### 6.3 Regime Attribution Analysis
 
 Log and analyze performance by market regime:
+
 - **Bull / Bear / Sideways** (based on 200-day MA or similar)
 - **High Vol / Low Vol** (based on realized vol percentile)
 - **Risk-On / Risk-Off** (based on cross-asset correlations)
@@ -490,6 +514,7 @@ Month 4+:  Full allocation (continuous monitoring)
 ### 7.4 Deprecation Criteria
 
 Pull/deprecate a strategy when:
+
 - Rolling 3-month Sharpe < 0.5
 - Max drawdown exceeds 2x historical max
 - Slippage increases significantly (execution degradation)
@@ -506,12 +531,14 @@ Pull/deprecate a strategy when:
 ### 8.1 Machine Learning Integration
 
 **Dominant Architectures:**
+
 - **N-BEATS**: Superior for time-series forecasting in crypto
 - **CNN-LSTM hybrids**: Capture non-linear price patterns
 - **Transformer-based models**: Attention mechanisms for regime detection
 - **GAN-based synthetic data**: Expected to boost accuracy 18% in low-liquidity altcoins in 2026
 
 **Key 2025-2026 Research:**
+
 - [Machine Learning-Driven Multi-Factor Quantitative Model](https://dl.acm.org/doi/10.1145/3766918.3766922) for Ethereum
 - Online learning + genetic algorithms for dynamic factor updates: **97% annualized return, Sharpe 2.5** in backtests Q4 2021-Q3 2024
 - Reinforcement learning (Deep Q-Networks) for [dynamic position management](https://www.nature.com/articles/s41598-024-51408-w)
@@ -522,12 +549,14 @@ Pull/deprecate a strategy when:
 ### 8.2 Regime Detection and Adaptive Strategies
 
 **State-of-the-Art:**
+
 - [Regime-switching models](https://link.springer.com/article/10.1007/s42521-024-00123-2) applied to crypto with 3 regimes based on volatility and return quantiles
 - Hidden Markov Models (HMM) for unsupervised regime classification
 - Distinct volatility regimes identified: heightened (mid-2021, early 2022, late 2024), moderate (early 2021, mid-2022), calm (mid-2023 to mid-2024)
 - Extreme daily changes align with FOMC announcements, supporting event-driven volatility hypotheses
 
 **Practical Implementation:**
+
 - Use regime as a filter: different strategies for different regimes
 - Use regime probability as a position sizing modifier
 - AI excels at detecting bull-to-bear transitions -- vital for 2026's expected regulatory waves
@@ -535,12 +564,14 @@ Pull/deprecate a strategy when:
 ### 8.3 Multi-Asset Portfolio Optimization
 
 **Current Approaches:**
+
 - [Risk Parity](https://quantpedia.com/risk-parity-asset-allocation/): Allocate based on risk contribution, not expected returns
 - [Hierarchical Risk Parity (HRP)](https://arxiv.org/html/2505.24831v1): Clustering-based approach avoids inverse covariance instability
 - [Machine learning-based dynamic risk allocation](https://www.nature.com/articles/s41598-025-26337-x): Real-time adjustment
 - Novel clustering of price correlation networks for optimal portfolio construction
 
 **2026 Institutional Guidance:**
+
 - [XBTO](https://www.xbto.com/resources/crypto-portfolio-allocation-2026-institutional-strategy-guide): Focus on relative value and capital preservation over momentum
 - Disciplined BTC allocation: 1-3% via DCA, add during leverage unwinds
 - Real trading data from 9 crypto teams managing $4B+ shows Funding Arbitrage and Long-Short as dominant quant approaches ([1Token](https://blog.1token.tech/crypto-quant-strategy-index-vii-oct-2025/))
@@ -565,12 +596,14 @@ Pull/deprecate a strategy when:
 ### 8.5 On-Chain Data for Alpha Generation
 
 **Key Platforms:**
+
 - [Nansen](https://www.nansen.ai/post/top-crypto-analytics-platforms-2025-guide): Wallet labeling, smart money tracking, institutional flow analysis
 - [Glassnode](https://www.nansen.ai/post/top-crypto-analytics-platforms-2025-guide): Proprietary on-chain indicators, market cycle analysis
 - [CryptoQuant](https://www.nansen.ai/post/top-crypto-analytics-platforms-2025-guide): Miner, whale, exchange activity tracking
 - [Dune Analytics](https://beincrypto.com/dune-on-chain-signals-crypto-2026/): Custom SQL queries on blockchain data
 
 **Alpha Strategies:**
+
 - Whale wallet tracking: Monitor wallets > 1000 BTC for accumulation/distribution patterns
 - Exchange reserve changes: Sustained outflows of 50K+ BTC correlate with reduced volatility and upward price pressure
 - DeFi TVL changes: Protocol-level TVL trends as leading indicator
@@ -579,6 +612,7 @@ Pull/deprecate a strategy when:
 ### 8.6 Cross-Exchange Arbitrage Evolution
 
 **2025-2026 Reality:**
+
 - Average spread between exchanges has shrunk from **2-5% to 0.1-1%** ([PixelPlex](https://pixelplex.io/blog/crypto-arbitrage-bot-development/))
 - Price discrepancies last **seconds, not minutes** -- manual arbitrage is impossible
 - Arbitrage windows close in milliseconds; **50-100ms delay = profit vs loss**
@@ -586,6 +620,7 @@ Pull/deprecate a strategy when:
 - Stablecoin cross-border: deviations mean-revert with **24-minute half-life**
 
 **Infrastructure Requirements:**
+
 - Low-latency VPS co-located near exchange servers
 - Multi-exchange API management (CCXT for 100+ exchanges)
 - Real-time order book monitoring
@@ -594,6 +629,7 @@ Pull/deprecate a strategy when:
 ### 8.7 DeFi Yield Strategy Development
 
 **2025-2026 Landscape:**
+
 - Transition from experimental yield strategies toward [proven blue-chip protocols](https://medium.com/sentora/2025-year-in-review-structural-changes-in-defi-3d9b6702d57e) (Aave, Lido, MakerDAO)
 - Fixed-rate lending protocols gaining traction
 - Yield tokenization enabling structured products
@@ -601,6 +637,7 @@ Pull/deprecate a strategy when:
 - **Real-World Assets (RWAs)**: Reached $18B TVL; institutional integration via BlackRock's BUIDL fund
 
 **Systematic Yield Strategies:**
+
 - Cross-protocol yield arbitrage
 - Funding rate carry trades (CEX-DeFi basis trade)
 - Liquidation protection strategies
@@ -631,24 +668,28 @@ Pull/deprecate a strategy when:
 From [QuantInsti](https://blog.quantinsti.com/ways-trading-strategy-fail/) and [Harel Jacobson](https://volquant.medium.com/beware-of-the-traps-quantitative-trading-mistakes-f3e434f0a1cb):
 
 **Statistical Traps:**
+
 - Assuming normal distribution for financial assets (the weakest assumption possible)
 - Confusing correlation with causation in feature selection
 - Using non-stationary data without proper transformation
 - Ignoring autocorrelation in return series
 
 **Execution Traps:**
+
 - Not accounting for API rate limits (Binance: 1200 req/min → IP ban)
 - Ignoring partial fills and order queue position
 - Not handling exchange maintenance windows
 - Missing reconnection logic for WebSocket drops
 
 **Risk Management Traps:**
+
 - No position sizing rules → one bad trade wipes out weeks of gains
 - No maximum drawdown circuit breaker
 - Ignoring correlation across portfolio positions
 - Not adapting to changing volatility regimes
 
 **Market Structure Traps:**
+
 - Ignoring liquidity constraints (thin order books in altcoins)
 - Not accounting for funding rate costs in perpetual futures
 - Assuming constant market microstructure
@@ -657,6 +698,7 @@ From [QuantInsti](https://blog.quantinsti.com/ways-trading-strategy-fail/) and [
 ### 9.3 Lessons from MC Coin Bot Tier 2 Results
 
 From our own experience:
+
 - **Single indicator < Ensemble**: Donchian Ensemble (multi-lookback) outperforms single-period (Sharpe 1.00 vs lower)
 - **Single coin < Multi-asset**: Diversification is the real alpha
 - **1-bar hold periods are structurally unprofitable**: Larry-VB with 125 trades/year x 0.1% cost = 12.5% drag
@@ -798,6 +840,7 @@ Infrastructure:
 ## Sources
 
 ### Academic & Research
+
 - [Quantitative Alpha in Crypto Markets (SSRN)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5225612)
 - [Backtest Overfitting in the ML Era (ScienceDirect)](https://www.sciencedirect.com/science/article/abs/pii/S0950705124011110)
 - [The Deflated Sharpe Ratio (Bailey & Lopez de Prado)](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf)
@@ -811,6 +854,7 @@ Infrastructure:
 - [Latency Arbitrage in Cryptocurrency Markets (SSRN)](https://papers.ssrn.com/sol3/Delivery.cfm/5143158.pdf?abstractid=5143158&mirid=1)
 
 ### Industry & Practice
+
 - [QuantStart: Sharpe Ratio for Algo Trading](https://www.quantstart.com/articles/Sharpe-Ratio-for-Algorithmic-Trading-Performance-Measurement/)
 - [BacktestBase: Minimum Trades for Valid Backtest](https://www.backtestbase.com/education/how-many-trades-for-backtest)
 - [QuantConnect: Live Trading Deployment](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/deployment)
@@ -821,6 +865,7 @@ Infrastructure:
 - [CoinAPI: Best Crypto Data Platforms 2026](https://www.coinapi.io/blog/best-crypto-data-platforms-2026)
 
 ### Market Intelligence
+
 - [XBTO: Crypto Portfolio Allocation 2026](https://www.xbto.com/resources/crypto-portfolio-allocation-2026-institutional-strategy-guide)
 - [Sentora: 2025 Year in Review DeFi](https://medium.com/sentora/2025-year-in-review-structural-changes-in-defi-3d9b6702d57e)
 - [Nansen: Top Crypto Analytics Platforms 2025](https://www.nansen.ai/post/top-crypto-analytics-platforms-2025-guide)
@@ -829,6 +874,7 @@ Infrastructure:
 - [PixelPlex: Crypto Arbitrage Bot Development 2026](https://pixelplex.io/blog/crypto-arbitrage-bot-development/)
 
 ### Frameworks & Tools
+
 - [QuantConnect/LEAN](https://www.quantconnect.com/)
 - [Python Quant Trading Ecosystem 2025](https://medium.com/@mahmoud.abdou2002/the-ultimate-python-quantitative-trading-ecosystem-2025-guide-074c480bce2e)
 - [Analyzing Alpha: Top 21 Python Trading Tools](https://analyzingalpha.com/python-trading-tools)

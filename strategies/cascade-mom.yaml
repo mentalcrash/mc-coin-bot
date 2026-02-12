@@ -1,0 +1,25 @@
+meta:
+  name: cascade-mom
+  display_name: Cascade Momentum
+  category: Behavioral Momentum
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: 연속 동방향 4H 리턴(streak)은 허딩/FOMO 캐스케이드를 반영하며 방향 지속. 스트릭 카운트 × 평균
+    body / ATR 정규화로 시그널 생성
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 26
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 26/30점

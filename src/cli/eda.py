@@ -36,14 +36,14 @@ if TYPE_CHECKING:
     from src.models.backtest import PerformanceMetrics
 
 
-class RunMode(str, enum.Enum):
+class RunMode(enum.StrEnum):
     """EDA 백테스트 실행 모드."""
 
     BACKTEST = "backtest"
     SHADOW = "shadow"
 
 
-class LiveRunMode(str, enum.Enum):
+class LiveRunMode(enum.StrEnum):
     """EDA 라이브 실행 모드."""
 
     PAPER = "paper"
@@ -460,6 +460,25 @@ def run_live(
     setup_logger(console_level="DEBUG" if verbose else "INFO")
 
     if mode == LiveRunMode.LIVE:
+        # config 요약 표시
+        cfg = load_config(config_path)
+        summary_table = Table(title="LIVE Mode Configuration", show_header=False)
+        summary_table.add_column("Key", style="cyan")
+        summary_table.add_column("Value", style="bold red")
+        summary_table.add_row("Strategy", cfg.strategy.name)
+        summary_table.add_row("Symbols", ", ".join(cfg.backtest.symbols))
+        summary_table.add_row("Capital", f"${cfg.backtest.capital:,.0f}")
+        summary_table.add_row("Leverage", f"{cfg.portfolio.max_leverage_cap:.1f}x")
+        sl_str = f"{cfg.portfolio.system_stop_loss:.0%}" if cfg.portfolio.system_stop_loss else "OFF"
+        summary_table.add_row("System SL", sl_str)
+        ts_str = (
+            f"{cfg.portfolio.trailing_stop_atr_multiplier:.1f}x ATR"
+            if cfg.portfolio.use_trailing_stop
+            else "OFF"
+        )
+        summary_table.add_row("Trailing Stop", ts_str)
+        console.print(summary_table)
+
         confirm = typer.confirm(
             "WARNING: LIVE mode trades with real funds on Binance Futures. Continue?"
         )

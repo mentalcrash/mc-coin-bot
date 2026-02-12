@@ -1,0 +1,72 @@
+meta:
+  name: range-squeeze
+  display_name: Range-Squeeze
+  category: 변동성/돌파
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: NR7 패턴 + range ratio squeeze 후 vol compression이 해소되며 발생하는 방향성
+    breakout을 포착. Crypto의 높은 vol로 squeeze-breakout 사이클이 뚜렷.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: Critical 0, High 0 (수정완료), Medium 4
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.33
+      cagr: 3.8
+      mdd: 27.5
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.33
+  cagr: 3.8
+  mdd: 27.5
+  trades: 331
+  profit_factor: 1.12
+- symbol: SOL/USDT
+  sharpe: 0.08
+  cagr: 0.2
+  mdd: 28.1
+  trades: 301
+  profit_factor: 1.02
+- symbol: BTC/USDT
+  sharpe: -0.42
+  cagr: -6.5
+  mdd: 41.4
+  trades: 310
+  profit_factor: 0.87
+- symbol: BNB/USDT
+  sharpe: -0.52
+  cagr: -8.4
+  mdd: 53.5
+  trades: 369
+  profit_factor: 0.84
+- symbol: DOGE/USDT
+  sharpe: -0.89
+  cagr: -94.7
+  mdd: 529.4
+  trades: 84
+  profit_factor: 0.68
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점 -- 경제적 논거 4, 참신성 3, 데이터 5, 구현 5, 용량 4, 레짐독립 3
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: Critical 0개. HIGH 3건 발견 -> 2건 수정 완료 (isclose, clip), 1건 아키텍처 의존 (vol_scalar
+    PM 클램핑)

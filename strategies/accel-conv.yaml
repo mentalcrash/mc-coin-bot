@@ -1,0 +1,72 @@
+meta:
+  name: accel-conv
+  display_name: Accel-Conv
+  category: Acceleration + Body Conviction Momentum
+  timeframe: 6H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 가격 가속도(2차 미분)와 캔들 body conviction 동시 양(+) → 추세 지속 확률 극대화
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 27
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 전 에셋 Sharpe 음수 (-1.05 ~ -2.42), MDD 96~99%
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -1.05
+  cagr: -41.3
+  mdd: 96.8
+  trades: 4548
+  profit_factor: 0.88
+- symbol: SOL/USDT
+  sharpe: -1.5
+  cagr: -43.0
+  mdd: 96.7
+  trades: 3898
+  profit_factor: 0.84
+- symbol: ETH/USDT
+  sharpe: -1.61
+  cagr: -46.1
+  mdd: 98.7
+  trades: 4381
+  profit_factor: 0.92
+- symbol: BNB/USDT
+  sharpe: -1.68
+  cagr: -47.5
+  mdd: 98.9
+  trades: 4361
+  profit_factor: 0.91
+- symbol: BTC/USDT
+  sharpe: -2.42
+  cagr: -57.4
+  mdd: 99.4
+  trades: 4192
+  profit_factor: 0.85
+decisions:
+- date: '2026-02-11'
+  gate: G0A
+  verdict: PASS
+  rationale: 27/30점
+- date: '2026-02-11'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS
+- date: '2026-02-11'
+  gate: G1
+  verdict: FAIL
+  rationale: 전 에셋 Sharpe 음수 (-1.05~-2.42), MDD 96~99%, 과다 거래 연 ~700건

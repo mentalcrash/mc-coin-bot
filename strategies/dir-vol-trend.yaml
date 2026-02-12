@@ -1,0 +1,25 @@
+meta:
+  name: dir-vol-trend
+  display_name: Directional Volume Trend
+  category: Volume Structure
+  timeframe: 6H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: Up-bar/down-bar 거래량 비율로 방향적 conviction 측정. bar 간 거래량 배분(BVC와
+    다름) 기반 추세추종
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

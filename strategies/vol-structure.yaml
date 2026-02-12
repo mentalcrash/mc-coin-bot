@@ -1,0 +1,75 @@
+meta:
+  name: vol-structure
+  display_name: Vol Structure
+  category: 레짐 전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 단기/장기 변동성 비율은 시장 레짐 전환의 선행 지표로, 구조적 변화를 조기에 포착한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.18
+      mdd: 28.3
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      is_sharpe: -0.3268
+      oos_sharpe: -0.2342
+      decay: -28.3
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 1.18
+  cagr: 31.77
+  mdd: 28.3
+  trades: 268
+  profit_factor: 1.89
+- symbol: ETH/USDT
+  sharpe: 0.55
+  cagr: 11.92
+  mdd: 57.18
+  trades: 354
+  profit_factor: 1.25
+- symbol: DOGE/USDT
+  sharpe: 0.5
+  cagr: 12.04
+  mdd: 61.42
+  trades: 297
+  profit_factor: 1.39
+- symbol: BNB/USDT
+  sharpe: 0.4
+  cagr: 7.85
+  mdd: 65.68
+  trades: 428
+  profit_factor: 1.19
+- symbol: BTC/USDT
+  sharpe: 0.38
+  cagr: 6.77
+  mdd: 49.06
+  trades: 389
+  profit_factor: 1.19
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: PASS
+  rationale: SOL/USDT Sharpe 1.18
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe 0.59, Decay 57.2%

@@ -1,0 +1,83 @@
+meta:
+  name: max-min
+  display_name: MAX-MIN
+  category: 하이브리드
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 신고가 돌파는 추세 지속을, 신저가 매수는 과매도 반등을 포착하여 시장 레짐에 적응한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 22
+      max_score: 30
+  G2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 0.8
+      oos_sharpe: 0.8
+      decay: 6.2
+  G3:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 3/3 고원 + ±20% 안정
+  G4:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 0.82
+  cagr: 15.28
+  mdd: 13.86
+  trades: 181
+  profit_factor: 1.96
+- symbol: BNB/USDT
+  sharpe: 0.73
+  cagr: 6.28
+  mdd: 11.71
+  trades: 226
+  profit_factor: 1.48
+- symbol: ETH/USDT
+  sharpe: 0.7
+  cagr: 5.08
+  mdd: 15.17
+  trades: 230
+  profit_factor: 1.38
+- symbol: BTC/USDT
+  sharpe: 0.59
+  cagr: 4.96
+  mdd: 14.91
+  trades: 227
+  profit_factor: 1.35
+- symbol: SOL/USDT
+  sharpe: 0.55
+  cagr: 4.73
+  mdd: 13.41
+  trades: 209
+  profit_factor: 1.36
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: PASS
+  rationale: OOS Sharpe 0.80, Decay 6.2%
+- date: '2026-02-09'
+  gate: G3
+  verdict: PASS
+  rationale: 3/3 파라미터 고원+안정
+- date: '2026-02-09'
+  gate: G4
+  verdict: FAIL
+  rationale: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34

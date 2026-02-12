@@ -1,0 +1,64 @@
+meta:
+  name: hurst-regime
+  display_name: Hurst/ER Regime
+  category: 레짐 전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: Hurst > 0.5는 추세 지속, < 0.5는 평균회귀 성향을 나타내며, 이에 맞는 전략을 선택한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.24
+      mdd: 57.31
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.24
+  cagr: 1.89
+  mdd: 57.31
+  trades: 462
+  profit_factor: 1.06
+- symbol: DOGE/USDT
+  sharpe: 0.02
+  cagr: -13.83
+  mdd: 80.85
+  trades: 537
+  profit_factor: 0.89
+- symbol: ETH/USDT
+  sharpe: -0.27
+  cagr: -15.32
+  mdd: 78.9
+  trades: 510
+  profit_factor: 0.91
+- symbol: BNB/USDT
+  sharpe: -0.33
+  cagr: -18.81
+  mdd: 89.99
+  trades: 470
+  profit_factor: 0.91
+- symbol: BTC/USDT
+  sharpe: -0.72
+  cagr: -26.9
+  mdd: 90.46
+  trades: 486
+  profit_factor: 0.82
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: FAIL
+  rationale: SOL/USDT Sharpe 0.24

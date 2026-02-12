@@ -23,6 +23,15 @@ from loguru import logger
 from src.strategy.flow_imbalance.config import FlowImbalanceConfig, ShortMode
 from src.strategy.types import Direction, StrategySignals
 
+# ---- Regime awareness constants ----
+_REGIME_VOL_RATIO_HIGH = 2.0
+_REGIME_VOL_RATIO_LOW = 0.5
+_REGIME_DAMPENING = 0.5
+_REGIME_MIN_PERIODS = 30
+
+# ---- Turnover control constants ----
+_MIN_HOLD_BARS = 4
+
 
 def generate_signals(
     df: pd.DataFrame,
@@ -85,6 +94,13 @@ def generate_signals(
     timed_out = (bars_in_position >= config.timeout_bars) & (raw_direction != 0)
     raw_direction = raw_direction.where(~timed_out, 0)
 
+    # 4b. Turnover control: cooldown after position exit
+    went_flat = (raw_direction == 0) & (raw_direction.shift(1).fillna(0) != 0)
+    flat_group = went_flat.cumsum()
+    bars_since_flat: pd.Series = flat_group.groupby(flat_group).cumcount()  # type: ignore[assignment]
+    in_cooldown = (bars_since_flat > 0) & (bars_since_flat < _MIN_HOLD_BARS)
+    raw_direction = raw_direction.where(~(in_cooldown & (raw_direction != 0)), 0)
+
     # 5. Strength = direction * vol_scalar
     strength_raw = raw_direction * vol_scalar_prev
 
@@ -102,7 +118,19 @@ def generate_signals(
         name="strength",
     )
 
-    # 8. 숏 모드에 따른 시그널 처리
+    # 8. Regime awareness: dampen signals in extreme vol environments
+    if "realized_vol" in df.columns:
+        rvol_prev: pd.Series = df["realized_vol"].shift(1)  # type: ignore[assignment]
+        rvol_med: pd.Series = rvol_prev.expanding(  # type: ignore[assignment]
+            min_periods=_REGIME_MIN_PERIODS,
+        ).median()
+        rvol_ratio = rvol_prev / rvol_med.clip(lower=1e-10)
+        extreme_regime = (rvol_ratio > _REGIME_VOL_RATIO_HIGH) | (
+            rvol_ratio < _REGIME_VOL_RATIO_LOW
+        )
+        strength = strength.where(~extreme_regime, strength * _REGIME_DAMPENING)
+
+    # 9. 숏 모드에 따른 시그널 처리
     if config.short_mode == ShortMode.DISABLED:
         short_mask = direction == Direction.SHORT
         direction = direction.where(~short_mask, Direction.NEUTRAL)

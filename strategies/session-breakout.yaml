@@ -1,0 +1,73 @@
+meta:
+  name: session-breakout
+  display_name: Session Breakout
+  category: Structural / Session Decomposition
+  timeframe: 1H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: Asian session (00-08 UTC) low-vol range를 EU/US 세션 open 시 breakout
+    포착
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 27
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.40 ~ -2.52)
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -1.67
+  cagr: -29.9
+  mdd: 89.0
+  trades: 1649
+  profit_factor: 0.67
+- symbol: SOL/USDT
+  sharpe: -2.26
+  cagr: -29.5
+  mdd: 88.4
+  trades: 1457
+  profit_factor: 0.63
+- symbol: ETH/USDT
+  sharpe: -2.56
+  cagr: -34.7
+  mdd: 92.7
+  trades: 1676
+  profit_factor: 0.61
+- symbol: BNB/USDT
+  sharpe: -3.39
+  cagr: -40.1
+  mdd: 95.4
+  trades: 1615
+  profit_factor: 0.58
+- symbol: BTC/USDT
+  sharpe: -3.49
+  cagr: -42.6
+  mdd: 96.6
+  trades: 1671
+  profit_factor: 0.52
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 27/30점. FX에서 검증된 session breakout 가설
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: 코드 품질 검증 통과
+- date: '2026-02-10'
+  gate: G1
+  verdict: FAIL
+  rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-1.67 ~ -3.49)'

@@ -13,6 +13,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -213,6 +214,15 @@ class LiveExecutor:
             logger.error("LiveExecutor: PM not set, cannot execute order {}", order.client_order_id)
             return None
 
+        # API 건전성 체크
+        if not self._client.is_api_healthy:
+            logger.critical(
+                "LiveExecutor: API unhealthy ({} consecutive failures), blocking order {}",
+                self._client.consecutive_failures,
+                order.client_order_id,
+            )
+            return None
+
         futures_symbol = BinanceFuturesClient.to_futures_symbol(order.symbol)
 
         try:
@@ -280,6 +290,20 @@ class LiveExecutor:
             return "LONG", True, True
         return "SHORT", False, False
 
+    async def _fetch_fresh_price(self, futures_symbol: str) -> float | None:
+        """거래소에서 실시간 가격 조회.
+
+        실패 시 PM last_price로 fallback.
+        """
+        try:
+            ticker = await self._client.fetch_ticker(futures_symbol)
+            last = float(ticker.get("last", 0) or 0)
+            if last > 0:
+                return last
+        except Exception:
+            logger.warning("LiveExecutor: fetch_ticker failed for {}, using PM price", futures_symbol)
+        return None
+
     async def _execute_single(
         self,
         order: OrderRequestEvent,
@@ -305,15 +329,28 @@ class LiveExecutor:
             pos = self._pm.positions.get(order.symbol)
             amount = pos.size if pos and pos.is_open else order.notional_usd / 50000.0
         else:
-            # 거래소에서 현재가로 수량 계산 (last_price 사용)
+            # 실시간 가격 조회 → fallback: PM last_price
+            fresh_price = await self._fetch_fresh_price(futures_symbol)
             pos = self._pm.positions.get(order.symbol)
-            price_est = pos.last_price if pos and pos.last_price > 0 else 0.0
+            pm_price = pos.last_price if pos and pos.last_price > 0 else 0.0
+            price_est = fresh_price if fresh_price is not None else pm_price
             if price_est <= 0:
                 logger.warning(
                     "LiveExecutor: No price estimate for {}, cannot calculate amount", order.symbol
                 )
                 return None
             amount = order.notional_usd / price_est
+
+            # MIN_NOTIONAL 사전 검증
+            if not self._client.validate_min_notional(futures_symbol, order.notional_usd):
+                min_notional = self._client.get_min_notional(futures_symbol)
+                logger.warning(
+                    "LiveExecutor: notional ${:.2f} < MIN_NOTIONAL ${:.2f} for {}, skipping",
+                    order.notional_usd,
+                    min_notional,
+                    order.symbol,
+                )
+                return None
 
         if amount <= 0 or not math.isfinite(amount):
             logger.warning("LiveExecutor: Invalid amount {:.8f} for {}", amount, order.symbol)
@@ -328,15 +365,50 @@ class LiveExecutor:
             client_order_id=order.client_order_id,
         )
 
-        return self._parse_fill(order, result)
+        # 주문 확인: status != "closed"면 fetch_order로 재확인
+        result = await self._confirm_order(result, futures_symbol)
+
+        return self._parse_fill(order, result, amount)
+
+    async def _confirm_order(
+        self, result: dict[str, Any], futures_symbol: str
+    ) -> dict[str, Any]:
+        """주문 상태 확인 — closed가 아니면 0.5s 후 재확인."""
+        _confirm_delay = 0.5
+        status = str(result.get("status", ""))
+        if status == "closed":
+            return result
+
+        order_id = str(result.get("id", ""))
+        if not order_id:
+            return result
+
+        await asyncio.sleep(_confirm_delay)
+        try:
+            confirmed = await self._client.fetch_order(order_id, futures_symbol)
+        except Exception:
+            logger.warning("LiveExecutor: Order {} confirmation failed, using original", order_id)
+            return result
+        else:
+            logger.info(
+                "LiveExecutor: Order {} confirmed — status={}",
+                order_id,
+                confirmed.get("status"),
+            )
+            return confirmed
 
     @staticmethod
-    def _parse_fill(order: OrderRequestEvent, result: dict[str, Any]) -> FillEvent | None:
+    def _parse_fill(
+        order: OrderRequestEvent,
+        result: dict[str, Any],
+        requested_amount: float = 0.0,
+    ) -> FillEvent | None:
         """CCXT 응답에서 FillEvent 생성.
 
         Args:
             order: 원본 주문 요청
             result: CCXT create_order 응답
+            requested_amount: 요청한 수량 (partial fill 감지용)
 
         Returns:
             FillEvent 또는 파싱 실패 시 None
@@ -351,6 +423,16 @@ class LiveExecutor:
                 filled_qty,
             )
             return None
+
+        # Partial fill 감지
+        _partial_fill_threshold = 0.99
+        if requested_amount > 0 and filled_qty < requested_amount * _partial_fill_threshold:
+            logger.warning(
+                "LiveExecutor: Partial fill — requested={:.6f}, filled={:.6f} ({:.1%})",
+                requested_amount,
+                filled_qty,
+                filled_qty / requested_amount,
+            )
 
         # 수수료 추출
         fee_info = result.get("fee")

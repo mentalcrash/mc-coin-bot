@@ -1,0 +1,13 @@
+id: 9
+title: 통계적 검정 전략의 한계
+body: significance threshold (z=1.96)가 일봉 데이터에서 거래 빈도를 극단 제한 (BTC 6년간 2건). 학술적 엄밀성
+  ≠ 실용성
+category: strategy-design
+tags:
+- statistical-test
+- z-score
+- trade-frequency
+strategies: []
+timeframes:
+- 1D
+added_at: '2026-02-10'

@@ -1,0 +1,17 @@
+id: 18
+title: FULL Short + OU MR = 최악의 조합
+body: OU z-score 기반 short이 크립토 밈코인(DOGE) 급등에 노출 시 MDD -19,669%. VWAP-Disposition(-622%)의
+  31.6배. MR 전략에서 FULL short는 구조적 자살, HEDGE_ONLY가 최소 방어선
+category: risk-management
+tags:
+- OU
+- mean-reversion
+- short
+- DOGE
+- MDD
+strategies:
+- ou-meanrev
+- vwap-disposition
+timeframes:
+- 4H
+added_at: '2026-02-10'

@@ -23,6 +23,15 @@ from loguru import logger
 from src.strategy.liq_momentum.config import LiqMomentumConfig, ShortMode
 from src.strategy.types import Direction, StrategySignals
 
+# ---- Regime awareness constants ----
+_REGIME_VOL_RATIO_HIGH = 2.0
+_REGIME_VOL_RATIO_LOW = 0.5
+_REGIME_DAMPENING = 0.5
+_REGIME_MIN_PERIODS = 30
+
+# ---- Turnover control constants ----
+_MIN_HOLD_BARS = 6
+
 
 def generate_signals(
     df: pd.DataFrame,
@@ -84,6 +93,15 @@ def generate_signals(
     # 5. Final strength
     strength_raw = base_signal * liq_multiplier * weekend_mult
 
+    # 5b. Turnover control: require consecutive same-direction bars before change
+    raw_dir = pd.Series(np.sign(strength_raw).fillna(0).astype(int), index=df.index)
+    dir_changed = raw_dir != raw_dir.shift(1)
+    dir_group = dir_changed.cumsum()
+    consec: pd.Series = dir_group.groupby(dir_group).cumcount() + 1  # type: ignore[assignment]
+    confirmed = consec >= _MIN_HOLD_BARS
+    stable_dir = raw_dir.where(confirmed, np.nan).ffill().fillna(0).astype(int)
+    strength_raw = stable_dir * strength_raw.abs()
+
     # 6. Direction 정규화
     direction = pd.Series(
         np.sign(strength_raw).fillna(0).astype(int),
@@ -98,7 +116,19 @@ def generate_signals(
         name="strength",
     )
 
-    # 8. 숏 모드에 따른 시그널 처리
+    # 8. Regime awareness: dampen signals in extreme vol environments
+    if "realized_vol" in df.columns:
+        rvol_prev: pd.Series = df["realized_vol"].shift(1)  # type: ignore[assignment]
+        rvol_med: pd.Series = rvol_prev.expanding(  # type: ignore[assignment]
+            min_periods=_REGIME_MIN_PERIODS,
+        ).median()
+        rvol_ratio = rvol_prev / rvol_med.clip(lower=1e-10)
+        extreme_regime = (rvol_ratio > _REGIME_VOL_RATIO_HIGH) | (
+            rvol_ratio < _REGIME_VOL_RATIO_LOW
+        )
+        strength = strength.where(~extreme_regime, strength * _REGIME_DAMPENING)
+
+    # 9. 숏 모드에 따른 시그널 처리
     if config.short_mode == ShortMode.DISABLED:
         short_mask = direction == Direction.SHORT
         direction = direction.where(~short_mask, Direction.NEUTRAL)

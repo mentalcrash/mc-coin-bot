@@ -9,7 +9,7 @@ Rules Applied:
     - #01 Project Structure: Dependency flow (Models can be imported by all layers)
 """
 
-from enum import Enum, IntEnum
+from enum import IntEnum, StrEnum
 
 
 class Direction(IntEnum):
@@ -26,7 +26,7 @@ class Direction(IntEnum):
     LONG = 1
 
 
-class SignalType(str, Enum):
+class SignalType(StrEnum):
     """시그널 유형.
 
     전략이 생성하는 시그널의 유형을 정의합니다.

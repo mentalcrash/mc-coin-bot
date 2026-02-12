@@ -58,6 +58,7 @@ class AccelConvStrategy(BaseStrategy):
             "trailing_stop_atr_multiplier": 3.0,
             "rebalance_threshold": 0.10,
             "use_intrabar_stop": True,
+            "max_leverage_cap": 2.0,
         }
 
     @classmethod

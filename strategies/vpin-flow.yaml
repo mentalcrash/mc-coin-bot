@@ -1,0 +1,35 @@
+meta:
+  name: vpin-flow
+  display_name: VPIN-Flow
+  category: 마이크로스트럭처
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: BVC로 buy/sell volume을 근사하고 VPIN으로 정보거래 확률을 측정. 고독성(high VPIN)
+    시 informed trading 방향을 추종하여 대형 가격 변동을 사전 포착.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 22
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: Critical 0 (수정완료), High 0, Medium 3
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 전 에셋 거래 0건 — VPIN threshold 도달 불가 (1D 데이터 한계)
+asset_performance: []
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점 — 경제적 논거 4, 참신성 5, 데이터 3, 구현 3, 용량 3, 레짐독립 4

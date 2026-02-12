@@ -99,7 +99,7 @@ class TestMtfMacdConfigTimeframe:
 
     def test_for_timeframe_unknown(self) -> None:
         """알 수 없는 타임프레임은 기본값 365.0 사용."""
-        config = MtfMacdConfig.for_timeframe("3h")
+        config = MtfMacdConfig.for_timeframe("7h")
         assert config.annualization_factor == 365.0
 
 

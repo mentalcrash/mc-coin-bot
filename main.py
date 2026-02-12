@@ -15,6 +15,7 @@ import typer
 from src.cli.backtest import app as backtest_app
 from src.cli.eda import app as eda_app
 from src.cli.ingest import app as ingest_app
+from src.cli.pipeline import app as pipeline_app
 
 # Main Typer Application
 app = typer.Typer(
@@ -27,6 +28,7 @@ app = typer.Typer(
 app.add_typer(ingest_app, name="ingest", help="Data ingestion pipeline (Bronze/Silver)")
 app.add_typer(backtest_app, name="backtest", help="Strategy backtesting (VectorBT)")
 app.add_typer(eda_app, name="eda", help="EDA (Event-Driven Architecture) backtesting")
+app.add_typer(pipeline_app, name="pipeline", help="Strategy pipeline management (YAML)")
 
 
 if __name__ == "__main__":

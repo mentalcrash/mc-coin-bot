@@ -1,0 +1,14 @@
+id: 1
+title: 앙상블 > 단일지표
+body: ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수
+category: strategy-design
+tags:
+- ML
+- ensemble
+- decay
+- generalization
+strategies:
+- ctrend
+timeframes:
+- 1D
+added_at: '2026-02-10'

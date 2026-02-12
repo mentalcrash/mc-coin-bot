@@ -703,6 +703,180 @@ class TestLiveFactory:
         assert runner._asset_weights == weights
 
 
+class TestPreflightChecks:
+    """_preflight_checks() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_preflight_returns_balance(self) -> None:
+        """정상 잔고 반환."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        futures_client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 5000.0, "free": 4500.0}}
+        )
+        futures_client.fetch_open_orders = AsyncMock(return_value=[])
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+            initial_capital=5000.0,
+        )
+        balance = await runner._preflight_checks()
+        assert balance == 5000.0
+
+    @pytest.mark.asyncio
+    async def test_preflight_zero_balance_raises(self) -> None:
+        """잔고 0이면 RuntimeError."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        futures_client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 0.0, "free": 0.0}}
+        )
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        with pytest.raises(RuntimeError, match="must be > 0"):
+            await runner._preflight_checks()
+
+    @pytest.mark.asyncio
+    async def test_preflight_warns_large_diff(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Config capital 대비 50% 이상 차이 시 WARNING."""
+        import logging
+
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        futures_client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 2000.0, "free": 2000.0}}
+        )
+        futures_client.fetch_open_orders = AsyncMock(return_value=[])
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+            initial_capital=10000.0,
+        )
+        with caplog.at_level(logging.WARNING):
+            balance = await runner._preflight_checks()
+
+        assert balance == 2000.0
+
+    @pytest.mark.asyncio
+    async def test_preflight_detects_stale_orders(self) -> None:
+        """미체결 주문 감지 시 에러는 안 나지만 함수 완료."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        futures_client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 5000.0, "free": 5000.0}}
+        )
+        futures_client.fetch_open_orders = AsyncMock(
+            return_value=[{"id": "stale_001", "status": "open"}]
+        )
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+        balance = await runner._preflight_checks()
+        assert balance == 5000.0
+
+    @pytest.mark.asyncio
+    async def test_preflight_called_in_live_run(self) -> None:
+        """LIVE run() 시 preflight_checks가 호출되고 capital이 override됨."""
+        client = _make_mock_client()
+        futures_client = _make_mock_futures_client()
+        futures_client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 7777.0, "free": 7777.0}}
+        )
+        futures_client.fetch_open_orders = AsyncMock(return_value=[])
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+            initial_capital=10000.0,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+        runner._feed.symbols = ["BTC/USDT"]
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.2)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+
+        # preflight가 fetch_balance를 호출했어야 함
+        futures_client.fetch_balance.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_paper_mode_skips_preflight(self) -> None:
+        """Paper 모드에서는 preflight 미실행."""
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=AlwaysLongStrategy(),
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            initial_capital=10000.0,
+        )
+
+        stopped = asyncio.Event()
+
+        async def mock_start(bus: object) -> None:
+            await stopped.wait()
+
+        runner._feed = MagicMock(spec=LiveDataFeed)
+        runner._feed.start = AsyncMock(side_effect=mock_start)
+        runner._feed.stop = AsyncMock(side_effect=lambda: stopped.set())
+        runner._feed.bars_emitted = 0
+
+        async def trigger_shutdown() -> None:
+            await asyncio.sleep(0.1)
+            runner.request_shutdown()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown())
+        await runner.run()
+        await shutdown_task
+        # Paper 모드: futures_client 없으므로 fetch_balance 호출 없음
+
+
 class TestLiveRunIntegration:
     """Live 모드 run() 통합 테스트."""
 

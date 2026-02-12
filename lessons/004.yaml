@@ -1,0 +1,14 @@
+id: 4
+title: CAGR > 20% 필터의 위력
+body: 안정적이나 수익 낮은 전략 (Donchian +10.8%, BB-RSI +4.6%) 조기 제거
+category: pipeline-process
+tags:
+- CAGR
+- filter
+- gate-criteria
+strategies:
+- donchian-ensemble
+- bb-rsi
+timeframes:
+- 1D
+added_at: '2026-02-10'

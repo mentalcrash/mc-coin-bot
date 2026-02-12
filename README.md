@@ -2,9 +2,8 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-31개 전략을 체계적으로 평가하여 실전 운용 후보를 선별합니다.
-VectorBT + EDA 이중 백테스트와 4단계 과적합 검증(IS/OOS, 파라미터 안정성, WFA, CPCV)을 거쳐 실거래로 전환합니다.
-현재 **1개 전략 Gate 2 PASS** (CTREND), 2개 PENDING.
+50개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
+현재 **2개 전략 G5 PASS** (CTREND, Anchor-Mom) — Paper Trading(G6) 대기 중.
 
 ---
 
@@ -89,20 +88,54 @@ portfolio:
 
 ---
 
-## 전략 평가 체계
+## 전략 파이프라인
 
-전략은 Gate 0(아이디어) → Gate 7(실전 배포) 순서로 평가됩니다.
-상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md)을 참조하세요.
+전략은 **아이디어 발굴(G0A)** → **실전 배포(G7)** 까지 8단계 Gate를 순차 통과해야 합니다.
+각 Gate에서 FAIL 시 즉시 폐기. 50개 전략 중 **2개 G5 PASS** (CTREND, Anchor-Mom).
 
-| Gate | 검증 | 핵심 기준 | CLI |
-|:----:|------|----------|-----|
-| 0 | 아이디어 | >= 18/30점 | — |
-| 1 | 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40% | `run {config}` |
-| 2 | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |
-| 3 | 파라미터 안정성 | 고원 존재, ±20% 안정 | `sweep {config}` |
-| 4 | WFA + CPCV + PBO | WFA OOS >= 0.5, PBO < 40% | `validate -m milestone/final` |
-| 5 | EDA Parity | VBT vs EDA 수익 부호 일치 | `eda run` |
-| 6 | Paper Trading (2주+) | 시그널 일치 > 90% | `eda run-live` |
+```mermaid
+sequenceDiagram
+    participant U as User (Architect)
+    participant C as Claude (Engineer)
+    participant S as System (CI/Backtest)
+
+    rect rgb(240, 248, 255)
+    Note over U,S: Phase 1 — 발굴 & 구현
+    U->>C: /p1-g0a-discover
+    C-->>U: 후보 전략 (6항목 ≥ 18/30)
+    U->>C: /p2-implement
+    C->>S: 4-file 코드 + 테스트 생성
+    U->>C: /p3-g0b-verify
+    C-->>U: Critical 7항목 검증 PASS/FAIL
+    end
+
+    rect rgb(255, 248, 240)
+    Note over U,S: Phase 2 — 백테스트 검증 (G1~G4)
+    U->>C: /p4-g1g4-gate
+    C->>S: G1: 5코인 × 6년 백테스트
+    S-->>C: Sharpe > 1.0, CAGR > 20%?
+    C->>S: G2: IS/OOS 70/30 Split
+    S-->>C: Decay < 50%?
+    C->>S: G3: 파라미터 ±20% Sweep
+    S-->>C: 고원 존재?
+    C->>S: G4: WFA + CPCV + PBO + DSR
+    S-->>C: WFA OOS ≥ 0.5, DSR > 0.95?
+    Note right of S: FAIL 시 즉시 폐기
+    end
+
+    rect rgb(240, 255, 240)
+    Note over U,S: Phase 3 — 라이브 전환
+    U->>C: /p5-g5-eda-parity
+    C->>S: VBT vs EDA 수익 비교
+    S-->>C: 부호 일치, 편차 < 20%?
+    C->>S: G6: Paper Trading (2주+)
+    S-->>C: 시그널 일치 > 90%?
+    C->>S: G7: Live 배포
+    S-->>U: 3개월 이동 Sharpe > 0.3
+    end
+```
+
+Gate별 상세 기준과 전체 현황은 `uv run python main.py pipeline report`로 확인.
 
 ---
 
@@ -216,14 +249,11 @@ uv run python main.py ingest bulk-download --top 100 --year 2024 --year 2025
 uv run python main.py ingest info
 ```
 
-### 일괄 백테스트 & 스코어카드
+### 일괄 백테스트
 
 ```bash
-# 전 전략 일괄 백테스트 (23 전략 x 5 자산)
+# 전 전략 일괄 백테스트 (50 전략 x 5 자산)
 uv run python scripts/bulk_backtest.py
-
-# 스코어카드 자동 생성
-uv run python scripts/generate_scorecards.py
 ```
 
 ### 배포 (Docker Compose + Coolify)
@@ -303,9 +333,37 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ## 전략 현황
 
-31개 전략 평가 완료: 1개 활성 (CTREND) + 2개 PENDING + 28개 폐기.
-상세 현황과 폐기 전략 목록은 **[전략 상황판](docs/strategy/dashboard.md)** 참조.
+| 전략 | Best Asset | TF | Sharpe | CAGR | 상태 |
+|------|-----------|-----|--------|------|------|
+| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | G5 PASS |
+| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | G5 PASS |
 
-| 전략 | Best Asset | Sharpe | CAGR | G0 | G1 | G2 | G3 | G4 | 상태 |
-|------|-----------|--------|------|:--:|:--:|:--:|:--:|:--:|------|
-| **CTREND** | SOL/USDT | 2.05 | +97.8% | P | P | P | P | F | PBO 60%, EDA/Paper 검증 권고 |
+> 50개 전략 중 2개 활성 + 48개 폐기.
+> 상세 현황은 `uv run python main.py pipeline report`로 확인.
+
+전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
+
+```bash
+uv run python main.py pipeline status   # 현황 요약
+uv run python main.py pipeline table    # 전체 Gate 진행도
+uv run python main.py pipeline show ctrend  # 전략 상세
+uv run python main.py pipeline report   # Dashboard 재생성
+```
+
+### 교훈 관리 (Lessons)
+
+50개 전략 평가 과정에서 축적된 22개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+카테고리(6종), 태그, 전략, TF별 프로그래매틱 검색이 가능합니다.
+
+```bash
+uv run python main.py pipeline lessons-list              # 전체 교훈 목록
+uv run python main.py pipeline lessons-list -c strategy-design  # 카테고리 필터
+uv run python main.py pipeline lessons-list -t ML         # 태그 필터
+uv run python main.py pipeline lessons-list -s ctrend     # 관련 전략 필터
+uv run python main.py pipeline lessons-list --tf 1H       # TF 필터
+uv run python main.py pipeline lessons-show 1             # 교훈 상세
+uv run python main.py pipeline lessons-add \
+  --title "제목" --body "설명" -c strategy-design -t tag1 -t tag2
+```
+
+카테고리: `strategy-design`, `risk-management`, `market-structure`, `data-resolution`, `pipeline-process`, `meta-analysis`

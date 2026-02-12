@@ -1,0 +1,68 @@
+meta:
+  name: candle-reject
+  display_name: Candle-Reject
+  category: Mean Reversion (Candlestick rejection wick reversal)
+  timeframe: 4H (annualization_factor=2190)
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 긴 꼬리(rejection wick)는 가격 거부를 의미 → 반대 방향이 시장의 진정한 방향
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 1건 (W3 Regime)
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 4H 재검증 확정. 전 에셋 Sharpe 음수 (-0.71 ~ -1.62)
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: -0.71
+  cagr: -4.7
+  mdd: 29.6
+  trades: 245
+  profit_factor: 0.72
+- symbol: DOGE/USDT
+  sharpe: -0.78
+  cagr: -6.1
+  mdd: 35.2
+  trades: 310
+  profit_factor: 0.7
+- symbol: BNB/USDT
+  sharpe: -0.94
+  cagr: -7.0
+  mdd: 41.0
+  trades: 270
+  profit_factor: 0.65
+- symbol: ETH/USDT
+  sharpe: -1.09
+  cagr: -7.2
+  mdd: 36.5
+  trades: 279
+  profit_factor: 0.61
+- symbol: BTC/USDT
+  sharpe: -1.62
+  cagr: -9.3
+  mdd: 45.6
+  trades: 270
+  profit_factor: 0.48
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: Critical 7항목 결함 0개

@@ -1,0 +1,56 @@
+meta:
+  name: cap-wick-rev
+  display_name: Capitulation Wick Reversal
+  category: Mean Reversion
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-12'
+  retired_at: '2026-02-13'
+  economic_rationale: 레버리지 청산 캐스케이드 후 가격 과잉반응 → 48-72h 회복 패턴. 3중 필터(ATR spike + Volume
+    surge + Wick ratio) + confirmation bars로 진짜 capitulation만 포착.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0
+  G1:
+    status: FAIL
+    date: '2026-02-13'
+    details:
+      btc_trades: 0.0
+      eth_trades: 0.0
+      bnb_trades: 0.0
+      sol_trades: 0.0
+      doge_trades: 0.0
+asset_performance: []
+decisions:
+- date: '2026-02-12'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-12'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 6개 feature 모두 shift(1) 적용, 3중 필터 + confirmation
+    bars 지연 진입, 벡터화 연산, vol_scalar 0나눗셈 방어, ShortMode 3분기 정상
+- date: '2026-02-13'
+  gate: G1
+  verdict: FAIL
+  rationale: '전 에셋 0건 거래 (즉시 폐기 #3). 3중 필터(ATR spike+Vol surge+Wick ratio) AND 조건이
+    6년 데이터에서 공집합. ATR 2x spike 시점에서 large wick bar가 존재하지 않는 구조적 문제.'

@@ -480,7 +480,7 @@ src/
 
 ## 11. EDA vs VBT 실전 비교 결과 (2026-02-07)
 
-> 상세 분석: [docs/eda-vs-vbt-comparison.md](../eda-vs-vbt-comparison.md)
+> 상세 분석: VBT vs EDA 비교는 위 표 참조.
 
 ### 통제 환경 Parity (SimpleMomentum)
 

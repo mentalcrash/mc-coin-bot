@@ -1,0 +1,74 @@
+meta:
+  name: ttm-squeeze
+  display_name: TTM Squeeze
+  category: 변동성 돌파
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: BB가 KC 안에 들어가면 변동성 압축, 밖으로 나오면 폭발적 움직임이 시작된다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 0.58
+      oos_sharpe: 0.58
+      decay: 45.6
+  G3:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: bb_period, kc_mult 고원 부재
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 0.94
+  cagr: 17.67
+  mdd: 37.67
+  trades: 43
+  profit_factor: 2.97
+- symbol: DOGE/USDT
+  sharpe: 0.83
+  cagr: 23.19
+  mdd: 37.69
+  trades: 50
+  profit_factor: 2.15
+- symbol: BNB/USDT
+  sharpe: 0.59
+  cagr: 12.07
+  mdd: 31.45
+  trades: 51
+  profit_factor: 1.89
+- symbol: SOL/USDT
+  sharpe: 0.55
+  cagr: 8.54
+  mdd: 31.43
+  trades: 27
+  profit_factor: 1.95
+- symbol: ETH/USDT
+  sharpe: 0.17
+  cagr: 1.39
+  mdd: 39.09
+  trades: 41
+  profit_factor: 1.23
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: PASS
+  rationale: OOS Sharpe 0.58, Decay 45.6%
+- date: '2026-02-09'
+  gate: G3
+  verdict: FAIL
+  rationale: bb_period, kc_mult 고원 부재 — 폐기

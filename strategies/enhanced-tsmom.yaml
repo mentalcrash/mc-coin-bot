@@ -1,0 +1,75 @@
+meta:
+  name: enhanced-tsmom
+  display_name: Enhanced VW-TSMOM
+  category: 추세추종
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 거래량 증가와 함께하는 가격 움직임은 더 높은 지속성을 가지며, 허위 돌파를 필터링한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.22
+      mdd: 37.52
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      is_sharpe: 1.0618
+      oos_sharpe: 0.643
+      decay: 39.4
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 1.22
+  cagr: 39.05
+  mdd: 37.52
+  trades: 171
+  profit_factor: 1.86
+- symbol: DOGE/USDT
+  sharpe: 1.17
+  cagr: 57.82
+  mdd: 28.48
+  trades: 174
+  profit_factor: 2.21
+- symbol: ETH/USDT
+  sharpe: 1.13
+  cagr: 36.4
+  mdd: 34.38
+  trades: 157
+  profit_factor: 1.99
+- symbol: SOL/USDT
+  sharpe: 1.13
+  cagr: 42.61
+  mdd: 42.73
+  trades: 138
+  profit_factor: 1.62
+- symbol: BNB/USDT
+  sharpe: 1.02
+  cagr: 34.11
+  mdd: 38.23
+  trades: 184
+  profit_factor: 1.81
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: PASS
+  rationale: BTC/USDT Sharpe 1.22
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe 0.25, Decay 85.2%

@@ -62,13 +62,16 @@ class EDARiskManager:
         self._config = config
         self._pm = portfolio_manager
         self._max_open_positions = max_open_positions
-        self._max_order_size_usd = max_order_size_usd
+        self._static_max_order_size_usd = max_order_size_usd
+        self._use_dynamic_max_order_size = False
         self._bus: EventBus | None = None
         self._enable_circuit_breaker = enable_circuit_breaker
 
         # Drawdown 추적
         self._peak_equity: float = portfolio_manager.total_equity
         self._circuit_breaker_triggered = False
+        # Exchange equity sync (live 모드 전용)
+        self._exchange_cb_pending = False
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
@@ -87,6 +90,23 @@ class EDARiskManager:
         return self._compute_drawdown(self._pm.total_equity)
 
     @property
+    def max_order_size_usd(self) -> float:
+        """단일 주문 최대 금액 (USD).
+
+        동적 모드: equity * max_leverage_cap. 정적 모드: 생성자 값.
+        """
+        if self._use_dynamic_max_order_size:
+            return self._pm.total_equity * self._config.max_leverage_cap
+        return self._static_max_order_size_usd
+
+    def enable_dynamic_max_order_size(self) -> None:
+        """동적 max_order_size 모드 활성화.
+
+        equity 변동에 따라 자동 조정. LIVE 모드에서 호출.
+        """
+        self._use_dynamic_max_order_size = True
+
+    @property
     def is_circuit_breaker_active(self) -> bool:
         """서킷 브레이커 발동 여부."""
         return self._circuit_breaker_triggered
@@ -102,6 +122,33 @@ class EDARiskManager:
             self._peak_equity = float(state["peak_equity"])  # type: ignore[arg-type]
         if "circuit_breaker_triggered" in state:
             self._circuit_breaker_triggered = bool(state["circuit_breaker_triggered"])
+
+    async def sync_exchange_equity(self, exchange_equity: float) -> None:
+        """거래소 실제 equity로 peak/drawdown 동기화.
+
+        Reconciler가 주기적으로 호출. exchange_equity 기준으로
+        peak 갱신 + drawdown 체크 → CB 플래그 설정.
+
+        Args:
+            exchange_equity: 거래소 조회 총 equity (USDT)
+        """
+        if not self._enable_circuit_breaker or self._circuit_breaker_triggered:
+            return
+        if self._config.system_stop_loss is None:
+            self._peak_equity = max(self._peak_equity, exchange_equity)
+            return
+
+        drawdown = self._compute_drawdown(exchange_equity)
+        self._peak_equity = max(self._peak_equity, exchange_equity)
+
+        if drawdown >= self._config.system_stop_loss:
+            self._exchange_cb_pending = True
+            logger.critical(
+                "EXCHANGE EQUITY CB: drawdown {:.1%} >= stop-loss {:.1%} (exchange_equity=${:.0f})",
+                drawdown,
+                self._config.system_stop_loss,
+                exchange_equity,
+            )
 
     async def _on_order_request(self, event: AnyEvent) -> None:
         """OrderRequestEvent 검증."""
@@ -185,8 +232,9 @@ class EDARiskManager:
             return f"Max open positions reached ({open_count}/{self._max_open_positions})"
 
         # 3. Single order size check (포지션 축소 주문은 제외)
-        if order.notional_usd > self._max_order_size_usd and not self._is_reducing_position(order):
-            return f"Order size ${order.notional_usd:,.0f} > max ${self._max_order_size_usd:,.0f}"
+        max_size = self.max_order_size_usd
+        if order.notional_usd > max_size and not self._is_reducing_position(order):
+            return f"Order size ${order.notional_usd:,.0f} > max ${max_size:,.0f}"
 
         return None
 
@@ -215,6 +263,21 @@ class EDARiskManager:
         # Circuit breaker 비활성화 시 peak만 추적
         if not self._enable_circuit_breaker:
             self._peak_equity = max(self._peak_equity, equity)
+            return
+
+        # Exchange equity CB 펜딩 시 즉시 발동
+        if self._exchange_cb_pending and not self._circuit_breaker_triggered:
+            self._exchange_cb_pending = False
+            self._circuit_breaker_triggered = True
+            bus = self._bus
+            assert bus is not None
+            cb_event = CircuitBreakerEvent(
+                reason="Exchange equity drawdown exceeded system stop-loss",
+                close_all_positions=True,
+                correlation_id=event.correlation_id,
+                source="RiskManager",
+            )
+            await bus.publish(cb_event)
             return
 
         # System stop-loss 체크 (peak 업데이트 전에 drawdown 계산)

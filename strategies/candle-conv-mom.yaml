@@ -1,0 +1,25 @@
+meta:
+  name: candle-conv-mom
+  display_name: Candle Conviction Momentum
+  category: Candlestick Morphology
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: Full-bodied candle(body/range 높음)은 시장 합의를 반영. Rolling conviction(direction
+    × body_ratio) 기반 trend continuation 시그널
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 25
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점

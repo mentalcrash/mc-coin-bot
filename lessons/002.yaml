@@ -1,0 +1,11 @@
+id: 2
+title: IS Sharpe ≠ 실전 성과
+body: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐
+category: pipeline-process
+tags:
+- overfitting
+- IS
+- gate-attrition
+strategies: []
+timeframes: []
+added_at: '2026-02-10'

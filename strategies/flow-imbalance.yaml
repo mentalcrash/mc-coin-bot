@@ -1,0 +1,73 @@
+meta:
+  name: flow-imbalance
+  display_name: Flow Imbalance
+  category: Microstructure / Order Flow Proxy
+  timeframe: 1H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: BVC(Bulk Volume Classification)로 매수/매도 볼륨을 추정하고, OFI(Order Flow
+    Imbalance)와 VPIN proxy로 주문 흐름 불균형을 감지하여 방향 예측
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.24 ~ -1.56)
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -0.12
+  cagr: -2.0
+  mdd: 29.5
+  trades: 324
+  profit_factor: 0.91
+- symbol: ETH/USDT
+  sharpe: -0.47
+  cagr: -3.3
+  mdd: 27.0
+  trades: 290
+  profit_factor: 0.82
+- symbol: SOL/USDT
+  sharpe: -0.51
+  cagr: -3.9
+  mdd: 27.7
+  trades: 338
+  profit_factor: 0.83
+- symbol: BTC/USDT
+  sharpe: -0.63
+  cagr: -4.5
+  mdd: 37.4
+  trades: 317
+  profit_factor: 0.78
+- symbol: BNB/USDT
+  sharpe: -1.63
+  cagr: -11.9
+  mdd: 54.2
+  trades: 454
+  profit_factor: 0.55
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: shift(1) lookahead 방지, vectorized ops, Pydantic frozen config
+- date: '2026-02-10'
+  gate: G1
+  verdict: FAIL
+  rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-0.12~-1.63)'

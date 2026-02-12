@@ -1,0 +1,70 @@
+meta:
+  name: ac-regime
+  display_name: AC-Regime
+  category: 레짐전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: Returns의 serial correlation 부호로 regime을 분류. 양수 AC → trending
+    (정보 점진적 반영), 음수 AC → mean-reverting (과잉반응 후 복귀).
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 27
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: Critical 0, High 0 (수정완료), Medium 4
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 전 에셋 Sharpe 음수/0 근접, Best ETH 0.08 << 1.0
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.08
+  cagr: 0.3
+  mdd: 25.9
+  trades: 28
+  profit_factor: 1.09
+- symbol: SOL/USDT
+  sharpe: -0.04
+  cagr: -1.2
+  mdd: 18.7
+  trades: 48
+  profit_factor: 0.93
+- symbol: DOGE/USDT
+  sharpe: -0.12
+  cagr: -2.6
+  mdd: 41.6
+  trades: 46
+  profit_factor: 0.81
+- symbol: BTC/USDT
+  sharpe: -0.39
+  cagr: -5.1
+  mdd: 42.4
+  trades: 34
+  profit_factor: 0.54
+- symbol: BNB/USDT
+  sharpe: -0.51
+  cagr: -5.1
+  mdd: 32.7
+  trades: 44
+  profit_factor: 0.6
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 27/30점 — 경제적 논거 4, 참신성 5, 데이터 5, 구현 4, 용량 4, 레짐독립 5
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: Critical 0개. HIGH 2건 발견 → 전수 수정 완료 (AC sqrt 분모, drawdown shift, warmup
+    fix)

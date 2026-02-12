@@ -1,0 +1,64 @@
+meta:
+  name: zscore-mr
+  display_name: Z-Score MR
+  category: 평균회귀
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 가격의 통계적 이상값(z-score > 2)은 평균으로의 회귀 압력이 높음을 시사한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 22
+      max_score: 30
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.02
+      mdd: 52.28
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -0.02
+  cagr: -2.02
+  mdd: 52.28
+  trades: 98
+  profit_factor: 0.96
+- symbol: SOL/USDT
+  sharpe: -0.3
+  cagr: -5.09
+  mdd: 50.18
+  trades: 108
+  profit_factor: 0.79
+- symbol: BNB/USDT
+  sharpe: -0.63
+  cagr: -10.54
+  mdd: 55.44
+  trades: 123
+  profit_factor: 0.67
+- symbol: BTC/USDT
+  sharpe: -1.12
+  cagr: -15.46
+  mdd: 67.54
+  trades: 112
+  profit_factor: 0.47
+- symbol: ETH/USDT
+  sharpe: -1.2
+  cagr: -17.09
+  mdd: 69.5
+  trades: 117
+  profit_factor: 0.46
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: FAIL
+  rationale: DOGE/USDT Sharpe -0.02

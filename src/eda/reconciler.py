@@ -16,12 +16,18 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from src.models.types import Direction
+
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.exchange.binance_futures_client import BinanceFuturesClient
 
-# Drift 임계값 (5%): 이 이상 차이나면 CRITICAL
-_DRIFT_THRESHOLD = 0.05
+# Position drift 임계값 (2%): 이 이상 차이나면 CRITICAL
+_DRIFT_THRESHOLD = 0.02
+
+# Balance drift 임계값
+_BALANCE_DRIFT_THRESHOLD = 0.05  # 5%: CRITICAL
+_BALANCE_WARN_THRESHOLD = 0.02  # 2%: WARNING
 
 
 class PositionReconciler:
@@ -87,6 +93,53 @@ class PositionReconciler:
                 )
             return drifts
 
+    async def check_balance(
+        self,
+        pm: EDAPortfolioManager,
+        futures_client: BinanceFuturesClient,
+    ) -> float | None:
+        """PM equity vs 거래소 잔고 비교.
+
+        Args:
+            pm: PortfolioManager
+            futures_client: Futures client
+
+        Returns:
+            거래소 equity (float) 또는 실패 시 None
+        """
+        try:
+            balance = await futures_client.fetch_balance()
+            usdt_info = balance.get("USDT", {})
+            exchange_equity = float(
+                usdt_info.get("total", 0) if isinstance(usdt_info, dict) else 0
+            )
+        except Exception:
+            logger.exception("PositionReconciler: Failed to fetch balance")
+            return None
+
+        pm_equity = pm.total_equity
+        if pm_equity <= 0:
+            return exchange_equity
+
+        drift = abs(pm_equity - exchange_equity) / pm_equity
+
+        if drift > _BALANCE_DRIFT_THRESHOLD:
+            logger.critical(
+                "PositionReconciler: BALANCE DRIFT {:.1%} — PM=${:.0f} vs Exchange=${:.0f}",
+                drift,
+                pm_equity,
+                exchange_equity,
+            )
+        elif drift > _BALANCE_WARN_THRESHOLD:
+            logger.warning(
+                "PositionReconciler: balance drift {:.1%} — PM=${:.0f} vs Exchange=${:.0f}",
+                drift,
+                pm_equity,
+                exchange_equity,
+            )
+
+        return exchange_equity
+
     async def _compare(
         self,
         pm: EDAPortfolioManager,
@@ -103,75 +156,102 @@ class PositionReconciler:
         futures_symbols = [BinanceFuturesClient.to_futures_symbol(s) for s in symbols]
         exchange_positions = await futures_client.fetch_positions(futures_symbols)
 
-        # 거래소 포지션을 symbol → {size, side} 맵으로 변환
-        exchange_map: dict[str, dict[str, float | str]] = {}
+        # Hedge Mode: 심볼당 LONG/SHORT 분리 매핑
+        exchange_map: dict[str, dict[str, float]] = {}
         for pos in exchange_positions:
             sym = str(pos.get("symbol", ""))
-            # Futures symbol → Spot symbol 역변환 (BTC/USDT:USDT → BTC/USDT)
             spot_sym = sym.split(":")[0] if ":" in sym else sym
             contracts = abs(float(pos.get("contracts", 0)))
             side = str(pos.get("side", "")).lower()
-            exchange_map[spot_sym] = {"size": contracts, "side": side}
+
+            if spot_sym not in exchange_map:
+                exchange_map[spot_sym] = {"long_size": 0.0, "short_size": 0.0}
+
+            if side == "long":
+                exchange_map[spot_sym]["long_size"] = contracts
+            elif side == "short":
+                exchange_map[spot_sym]["short_size"] = contracts
 
         drifts: list[str] = []
 
         for symbol in symbols:
             pm_pos = pm.positions.get(symbol)
-            ex_info = exchange_map.get(symbol)
+            ex_info = exchange_map.get(symbol, {"long_size": 0.0, "short_size": 0.0})
 
             pm_size = pm_pos.size if pm_pos and pm_pos.is_open else 0.0
-            ex_size = float(ex_info["size"]) if ex_info else 0.0
+            pm_dir = pm_pos.direction if pm_pos and pm_pos.is_open else Direction.NEUTRAL
 
-            # 방향 비교 (PM Direction vs exchange side)
-            pm_side = ""
-            if pm_pos and pm_pos.is_open:
-                from src.models.types import Direction
-
-                pm_side = "long" if pm_pos.direction == Direction.LONG else "short"
-
-            ex_side = str(ex_info["side"]) if ex_info else ""
-
-            # 불일치 감지
-            has_drift = False
-
-            # 방향 불일치
-            if pm_size > 0 and ex_size > 0 and pm_side != ex_side:
-                logger.warning(
-                    "PositionReconciler: {} direction mismatch — PM={}, Exchange={}",
-                    symbol,
-                    pm_side,
-                    ex_side,
-                )
-                has_drift = True
-
-            # 수량 불일치 (상대 비교)
-            if pm_size > 0 or ex_size > 0:
-                max_size = max(pm_size, ex_size)
-                if max_size > 0:
-                    drift_ratio = abs(pm_size - ex_size) / max_size
-                    if drift_ratio > _DRIFT_THRESHOLD:
-                        logger.warning(
-                            "PositionReconciler: {} size drift — PM={:.6f}, Exchange={:.6f} ({:.1f}%)",
-                            symbol,
-                            pm_size,
-                            ex_size,
-                            drift_ratio * 100,
-                        )
-                        has_drift = True
-
-            # 한쪽만 포지션 보유
-            if (pm_size > 0) != (ex_size > 0):
-                who_has = "PM" if pm_size > 0 else "Exchange"
-                logger.warning(
-                    "PositionReconciler: {} — only {} has position (PM={:.6f}, Exchange={:.6f})",
-                    symbol,
-                    who_has,
-                    pm_size,
-                    ex_size,
-                )
-                has_drift = True
-
-            if has_drift:
+            if self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info):
                 drifts.append(symbol)
 
         return drifts
+
+    @staticmethod
+    def _check_symbol_drift(
+        symbol: str,
+        pm_size: float,
+        pm_dir: Direction,
+        ex_info: dict[str, float],
+    ) -> bool:
+        """단일 심볼의 포지션 불일치 검사.
+
+        Returns:
+            True면 drift 감지됨
+        """
+
+        # PM 방향에 맞는 거래소 사이즈 선택
+        if pm_dir == Direction.LONG:
+            ex_size = ex_info["long_size"]
+        elif pm_dir == Direction.SHORT:
+            ex_size = ex_info["short_size"]
+        else:
+            ex_size = ex_info["long_size"] + ex_info["short_size"]
+
+        has_drift = False
+
+        # 수량 불일치 (상대 비교)
+        if pm_size > 0 or ex_size > 0:
+            max_size = max(pm_size, ex_size)
+            if max_size > 0:
+                drift_ratio = abs(pm_size - ex_size) / max_size
+                if drift_ratio > _DRIFT_THRESHOLD:
+                    dir_label = pm_dir.value if pm_dir != Direction.NEUTRAL else "neutral"
+                    logger.warning(
+                        "PositionReconciler: {} size drift — PM={:.6f} ({}), Exchange={:.6f} ({:.1f}%)",
+                        symbol,
+                        pm_size,
+                        dir_label,
+                        ex_size,
+                        drift_ratio * 100,
+                    )
+                    has_drift = True
+
+        # 한쪽만 포지션 보유
+        if (pm_size > 0) != (ex_size > 0):
+            who_has = "PM" if pm_size > 0 else "Exchange"
+            logger.warning(
+                "PositionReconciler: {} — only {} has position (PM={:.6f}, Exchange={:.6f})",
+                symbol,
+                who_has,
+                pm_size,
+                ex_size,
+            )
+            has_drift = True
+
+        # 거래소에 반대방향 포지션 존재 감지
+        if pm_dir == Direction.LONG and ex_info["short_size"] > 0:
+            logger.warning(
+                "PositionReconciler: {} — PM is LONG but exchange has SHORT ({:.6f})",
+                symbol,
+                ex_info["short_size"],
+            )
+            has_drift = True
+        elif pm_dir == Direction.SHORT and ex_info["long_size"] > 0:
+            logger.warning(
+                "PositionReconciler: {} — PM is SHORT but exchange has LONG ({:.6f})",
+                symbol,
+                ex_info["long_size"],
+            )
+            has_drift = True
+
+        return has_drift

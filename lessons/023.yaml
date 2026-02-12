@@ -1,0 +1,19 @@
+id: 23
+title: 비-OHLCV 데이터 의존 전략은 구조적으로 백테스트 불가
+body: copula-pairs(pair_close)와 funding-carry(funding_rate)는 표준 OHLCV 캔들에 포함되지 않는 외부 데이터를
+  필요로 하여 현재 백테스트 파이프라인(단일 심볼 OHLCV 기반)에서 검증 불가. 별도 데이터 인프라(페어 가격 동시 로딩,
+  펀딩비 API 수집) 구축 비용 대비 기대 alpha가 불확실하여 폐기 결정. 향후 전략 발굴 시 OHLCV 단일 심볼로 완결되는
+  전략만 후보로 선정해야 함
+category: data-resolution
+tags:
+- non-ohlcv
+- pairs-trading
+- funding-rate
+- data-dependency
+- infra-cost
+strategies:
+- copula-pairs
+- funding-carry
+timeframes:
+- 1D
+added_at: '2026-02-12'

@@ -1,0 +1,13 @@
+id: 12
+title: 레짐 필터의 양면성
+body: Entropy 필터가 거래 중단→리스크 감소에는 기여하나, alpha 생성 메커니즘 없으면 수익도 함께 감소. 43개 전략 중 G5 도달
+  여전히 1개(2.3%)
+category: strategy-design
+tags:
+- regime
+- entropy
+- filter
+strategies:
+- perm-entropy-mom
+timeframes: []
+added_at: '2026-02-10'

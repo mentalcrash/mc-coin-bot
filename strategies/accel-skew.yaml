@@ -1,0 +1,73 @@
+meta:
+  name: accel-skew
+  display_name: Accel-Skew
+  category: Acceleration + Rolling Skewness
+  timeframe: 12H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 가격 가속도가 양(+)이고 rolling skewness도 양(+)이면 우상향 테일이 reward로 전환
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.47
+      cagr: 10.0
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 0.47
+  cagr: 10.0
+  mdd: 27.4
+  trades: 839
+  profit_factor: 1.11
+- symbol: ETH/USDT
+  sharpe: 0.12
+  cagr: 0.3
+  mdd: 38.5
+  trades: 816
+  profit_factor: 1.02
+- symbol: BTC/USDT
+  sharpe: -0.03
+  cagr: -2.9
+  mdd: 36.4
+  trades: 785
+  profit_factor: 0.99
+- symbol: SOL/USDT
+  sharpe: -0.21
+  cagr: -6.0
+  mdd: 46.5
+  trades: 702
+  profit_factor: 0.93
+- symbol: BNB/USDT
+  sharpe: -0.41
+  cagr: -10.2
+  mdd: 55.1
+  trades: 794
+  profit_factor: 0.9
+decisions:
+- date: '2026-02-11'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-11'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS
+- date: '2026-02-11'
+  gate: G1
+  verdict: FAIL
+  rationale: Best Sharpe 0.47 < 1.0, CAGR +10.0% < 20%. Skewness 필터 alpha 부재
