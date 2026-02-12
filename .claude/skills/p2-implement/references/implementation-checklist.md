@@ -174,9 +174,8 @@
 
 ### Documentation
 
-- [ ] Dashboard 갱신 ("검증중 전략" 추가)
-- [ ] temp-candidate.md 상태 갱신
-- [ ] 전략 수 카운트 갱신
+- [ ] `pipeline update-status` → IMPLEMENTED
+- [ ] `pipeline report` → Dashboard 재생성
 
 ---
 

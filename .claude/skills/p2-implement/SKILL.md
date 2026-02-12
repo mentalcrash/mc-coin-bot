@@ -4,7 +4,7 @@ description: >
   p1-g0a-discover에서 발굴한 전략 후보를 무결점 코드로 구현하는 스킬.
   시니어 퀀트 개발자로서 4-file 구조(config/preprocessor/signal/strategy) + 테스트를
   Zero-Tolerance Lint Policy에 맞춰 작성하고, Registry 등록 + Dashboard 갱신까지 완수한다.
-  사용 시점: (1) temp-candidate.md에 후보가 있을 때,
+  사용 시점: (1) strategies/*.yaml에 CANDIDATE 전략이 있을 때,
   (2) "전략 구현", "implement", "코드 작성" 요청 시,
   (3) p1-g0a-discover 완료 후 다음 단계로,
   (4) G0A PASS 전략의 코드화가 필요할 때.
@@ -16,7 +16,7 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
-argument-hint: <strategy-name> [--from temp-candidate]
+argument-hint: <strategy-name>
 ---
 
 # p2-implement: 전략 코드 구현
@@ -41,7 +41,7 @@ argument-hint: <strategy-name> [--from temp-candidate]
 | 인수 | 필수 | 설명 | 예시 |
 |------|:----:|------|------|
 | `strategy_name` | O | registry key (kebab-case) | `accel-conv` |
-| `--from temp-candidate` | X | temp-candidate.md에서 후보 정보 로드 | — |
+| | | | |
 
 > `strategy_name`은 kebab-case (e.g., `accel-conv`), 디렉토리명은 snake_case (e.g., `accel_conv`).
 
@@ -49,15 +49,7 @@ argument-hint: <strategy-name> [--from temp-candidate]
 
 ## Step 0: 후보 정보 수집
 
-### 0-1. temp-candidate.md에서 후보 로드
-
-```bash
-cat docs/strategy/temp-candidate.md
-```
-
-해당 전략의 다음 정보를 추출한다:
-
-### 0-1b. YAML 존재 확인 (필수)
+### 0-1. YAML에서 후보 로드
 
 ```bash
 cat strategies/{strategy_name}.yaml
@@ -67,7 +59,7 @@ cat strategies/{strategy_name}.yaml
 
 > discovery에서 YAML을 이미 생성했으므로, YAML이 없으면 workflow 순서 오류.
 
-다음 정보를 YAML + temp-candidate.md에서 추출한다:
+다음 정보를 YAML에서 추출한다:
 
 | 항목 | 필수 | 용도 |
 |------|:----:|------|
@@ -728,12 +720,10 @@ uv run python main.py pipeline report
 > YAML 데이터에서 자동으로 `docs/strategy/dashboard.md`를 생성한다.
 > 수동 편집 불필요.
 
-### 10-2. temp-candidate.md 상태 갱신
+### 10-2. YAML 상태 갱신
 
-해당 후보의 상태를 `구현 완료`로 변경:
-
-```markdown
-| **상태** | 구현 완료 → G0B 검증 대기 |
+```bash
+uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTED
 ```
 
 ---
@@ -803,7 +793,7 @@ uv run python main.py pipeline report
 |------|------|
 | [references/code-templates.md](references/code-templates.md) | 4-file 코드 템플릿 |
 | [references/implementation-checklist.md](references/implementation-checklist.md) | 구현 체크리스트 + 폐기 패턴 |
-| [docs/strategy/temp-candidate.md](../../../docs/strategy/temp-candidate.md) | 후보 목록 |
+| [strategies/*.yaml](../../../strategies/) | YAML 파이프라인 (Single Source of Truth) |
 | [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) | 전략 상황판 |
 | [.claude/rules/strategy.md](../../rules/strategy.md) | 전략 개발 규칙 |
 | [src/strategy/base.py](../../../src/strategy/base.py) | BaseStrategy ABC |
