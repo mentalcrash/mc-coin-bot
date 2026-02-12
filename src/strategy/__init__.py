@@ -28,9 +28,11 @@ import src.strategy.accel_conv  # 전략 등록 side effect
 import src.strategy.accel_skew  # 전략 등록 side effect
 import src.strategy.adx_regime  # 전략 등록 side effect
 import src.strategy.anchor_mom  # 전략 등록 side effect
+import src.strategy.asym_semivar_mr  # 전략 등록 side effect
 import src.strategy.bb_rsi  # 전략 등록 side effect
 import src.strategy.breakout  # 전략 등록 side effect
 import src.strategy.candle_reject  # 전략 등록 side effect
+import src.strategy.cap_wick_rev  # 전략 등록 side effect
 import src.strategy.copula_pairs  # 전략 등록 side effect
 import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
