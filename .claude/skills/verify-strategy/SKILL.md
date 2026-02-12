@@ -76,7 +76,12 @@ src/strategy/{name}/
 ```
 1. 전략 디렉토리 구조 확인 (config, preprocessor, signal, strategy 파일 존재)
 2. 테스트 파일 존재 확인: tests/strategy/{name}/
-3. 자동 스캔 실행: bash .claude/skills/verify-strategy/scripts/scan_strategy.sh src/strategy/{name}
+3. YAML 메타데이터 확인 (필수)
+   cat strategies/{strategy_name}.yaml
+   # meta.status가 IMPLEMENTED이고 gates.G0A.status가 PASS인지 확인
+   # YAML 없음 → "/implement-strategy를 먼저 실행하세요"
+   # G0A 미통과 → "strategy-discovery에서 G0A를 먼저 통과하세요"
+4. 자동 스캔 실행: bash .claude/skills/verify-strategy/scripts/scan_strategy.sh src/strategy/{name}
 ```
 
 ### 1단계: [C1] Look-Ahead Bias (CRITICAL)
@@ -322,11 +327,11 @@ uv run python main.py pipeline record {strategy_name} \
 
 ```bash
 uv run python main.py pipeline record {strategy_name} \
-  --gate G0B --verdict FAIL \
+  --gate G0B --verdict FAIL --no-retire \
   --rationale "{C항목} FAIL: {사유}"
 ```
 
-> G0B FAIL은 폐기가 아닌 **수정 후 재검증**. `pipeline record`의 auto-retire를 방지하려면 YAML에서 수동으로 status를 IMPLEMENTED로 복원한다.
+> `--no-retire`: G0B FAIL은 폐기가 아닌 **수정 후 재검증**이므로 auto-retire를 방지한다. status는 IMPLEMENTED 유지.
 
 ### Dashboard 자동 생성
 

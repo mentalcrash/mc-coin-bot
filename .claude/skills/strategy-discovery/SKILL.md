@@ -45,26 +45,24 @@ allowed-tools:
 시작 전 반드시 다음을 확인한다:
 
 ```
-1. 대시보드 최신 현황 확인 (필수)
-   - docs/strategy/dashboard.md를 Read로 확인
-   - 현재: 46개 전략, 활성 1개(CTREND G5 PASS), 폐기 45개
-   - 핵심 교훈 16개를 숙지하고, 동일 실패 패턴 반복 방지
+1. 파이프라인 현황 확인 (필수 — CLI 사용)
+   uv run python main.py pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
+   uv run python main.py pipeline table     # 전체 전략 Gate 진행도
 
 2. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
    - 1D (일봉): 가장 안정적, 비용 효율적. 프로젝트 주력. 유일한 G5 PASS가 1D
-   - 4H: 중간 빈도. 비용과 신호 밸런스. 아직 미탐색
+   - 4H: 중간 빈도. 비용과 신호 밸런스
    - 1H: 높은 빈도. Tier 5 4종 전멸 (교훈 #13~#16). 극히 신중하게 접근
    - 1m→aggregation: EDA 전용 (CandleAggregator 활용)
 
 3. 현재 포트폴리오 구성 확인
-   - CTREND만 Gate 5 PASS (ML 앙상블 28지표, SOL Sharpe 2.05, EDA Sharpe 2.82)
-   - 45개 전략 폐기 — 성공률 2.2%
-   - G5 도달까지: G1 통과율 ~50%, G2 통과율 ~20%, G4 통과율 ~5%
+   uv run python main.py pipeline list --status ACTIVE   # 활성 전략
+   # G5 도달까지: G1 통과율 ~50%, G2 통과율 ~20%, G4 통과율 ~5%
 
-4. 폐기 전략 목록 확인 (필수)
-   - [references/discarded-strategies.md](references/discarded-strategies.md) 참조
-   - 특히 "실패 패턴 요약" 테이블로 빠른 중복 체크
-   - 동일 접근법 재시도 금지
+4. 폐기 전략 실패 패턴 확인 (필수)
+   uv run python main.py pipeline list --status RETIRED   # YAML 기반 동적 조회
+   references/discarded-strategies.md의 "실패 패턴 요약" + "교훈" 섹션 참조
+   동일 접근법 재시도 금지
 ```
 
 ### Step 1: 아이디어 생성 — IC 기반 시그널 탐색
@@ -314,6 +312,23 @@ Gate 0 PASS인 아이디어를 `docs/strategy/temp-candidate.md`에 기록한다
                 ↘ 사용자 거부 → ❌ 폐기 (사유 기록)
 ```
 
+### Step 4.6: YAML 메타데이터 생성 (Gate 0A PASS 시 필수)
+
+Gate 0 PASS인 아이디어는 `pipeline create` CLI로 YAML을 생성한다:
+
+```bash
+uv run python main.py pipeline create {registry-name} \
+  --display-name "{Display Name}" \
+  --category "{카테고리}" \
+  --timeframe {TF} \
+  --short-mode {SHORT_MODE} \
+  --rationale "{경제적 논거}" \
+  --g0a-score {점수}
+```
+
+- `strategies/{registry-name}.yaml` 생성 (status: CANDIDATE, G0A: PASS)
+- 생성 후 Dashboard 갱신: `uv run python main.py pipeline report`
+
 ### Step 5: 구현 위임
 
 설계가 완료되고 **사용자 승인**을 받으면 구현을 진행한다.
@@ -375,30 +390,21 @@ GT-Score = (mu * ln(z) * r^2) / sigma_d
 
 사용자가 아이디어가 없을 때, 다음 프롬프트로 탐색을 돕는다:
 
-### 카테고리별 커버리지 (2026-02-10)
+### 카테고리별 커버리지 확인
 
 ```
-현재 포트폴리오 커버리지 (46개 전략, G5 PASS 1개):
-  [x] Trend-Following (CTREND PASS, TSMOM/Enhanced/VW/XSMOM/Donchian 등 10개 FAIL)
-  [x] Mean Reversion (BB-RSI, Z-Score MR FAIL)
-  [x] Hybrid / Blend (Mom-MR Blend, Multi-Factor FAIL — alpha 상쇄 패턴)
-  [x] Regime Detection (ADX/HMM/Hurst/AC/VR/Entropy/Vol-Regime 등 7개 FAIL)
-  [x] Microstructure (VPIN-Flow 1D, Flow-Imbalance 1H FAIL — OHLCV BVC 한계 확인)
-  [x] Volatility (Vol Structure, Vol-Adaptive, GK Breakout, HAR Vol FAIL)
-  [x] Session/Seasonality (Session-Breakout, Hour-Season FAIL — 크립토 비적합 확인)
-  [x] Liquidity (Liq-Momentum FAIL — Amihud 크립토 비적합 확인)
-  [x] Carry/Yield (Funding Carry 폐기 — 데이터 부재)
-  [x] Pairs/Stat Arb (Copula Pairs 폐기 — 데이터 부재)
-  [ ] Behavioral Finance — Disposition effect, anchoring (미시도)
-  [ ] Information-Theoretic — Transfer entropy, mutual information (미시도)
-  [ ] Cross-Asset Signal — BTC dominance → 단일에셋 신호 변환 (미시도)
-  [ ] ML 앙상블 변형 — CTREND 외 다른 ML 접근 (Random Forest, XGBoost 등)
+현재 포트폴리오 커버리지를 동적으로 확인:
+  uv run python main.py pipeline status         # 전체 상태 카운트
+  uv run python main.py pipeline list --status RETIRED   # 폐기 전략 카테고리 확인
+  uv run python main.py pipeline list --status ACTIVE    # 활성 전략 확인
 
-가장 유망한 미탐색 영역:
-  1순위: Behavioral Finance — 경제적 논거 강함, disposition effect 실증 풍부
-  2순위: ML 앙상블 변형 — CTREND 성공 패턴 확장, 다른 feature set/모델
-  3순위: Information-Theoretic — 참신성 높음, entropy/MI 기반 시그널
-  4순위: Cross-Asset Signal — BTC 지배력→ALT 시그널 변환
+미탐색 영역 (판단 영역 — 폐기 전략 카테고리와 대조하여 확인):
+  - Behavioral Finance — Disposition effect, anchoring
+  - Information-Theoretic — Transfer entropy, mutual information
+  - Cross-Asset Signal — BTC dominance → 단일에셋 신호 변환
+  - ML 앙상블 변형 — CTREND 외 다른 ML 접근
+
+위 목록은 발견된 미탐색 영역 가이드이며, pipeline list로 확인한 폐기 목록과 대조하여 최신 상태를 반영한다.
 ```
 
 ### 최신 학술 리서치 탐색
@@ -518,3 +524,5 @@ Step 4.5의 포맷을 따르며, 기존 내용 아래에 append한다.
 - [ ] CTREND와의 예상 상관관계 평가됨
 - [ ] 설계 문서 10개 항목 모두 작성됨
 - [ ] **`docs/strategy/temp-candidate.md`에 후보 기록됨** (Gate 0 PASS 시 필수)
+- [ ] **`pipeline create` 실행하여 YAML 생성됨** (Gate 0A PASS 시 필수)
+- [ ] **`pipeline report` 실행하여 dashboard 갱신됨**

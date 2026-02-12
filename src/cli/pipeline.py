@@ -4,7 +4,9 @@ Commands:
     - status: 전략 현황 요약 (상태별 카운트)
     - list: 전략 목록 (필터링)
     - show: 전략 상세 정보
+    - create: 새 전략 YAML 생성 (CANDIDATE 상태)
     - record: Gate 결과 기록
+    - update-status: 전략 상태 변경
     - report: Dashboard 자동 생성
     - migrate: Markdown → YAML 마이그레이션
     - table: 모든 전략 현황 표
@@ -12,6 +14,7 @@ Commands:
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 import typer
@@ -20,8 +23,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.pipeline.models import (
+    Decision,
     GateId,
+    GateResult,
     GateVerdict,
+    StrategyMeta,
     StrategyRecord,
     StrategyStatus,
 )
@@ -141,6 +147,54 @@ def show(name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")]
 
 
 @app.command()
+def create(
+    name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")],
+    display_name: Annotated[str, typer.Option("--display-name", help="표시 이름")],
+    category: Annotated[str, typer.Option("--category", help="전략 카테고리")],
+    timeframe: Annotated[str, typer.Option("--timeframe", "--tf", help="타임프레임")],
+    short_mode: Annotated[str, typer.Option("--short-mode", help="DISABLED|HEDGE_ONLY|FULL")],
+    rationale: Annotated[str, typer.Option("--rationale", "-r", help="경제적 논거")] = "",
+    g0a_score: Annotated[int, typer.Option("--g0a-score", help="Gate 0A 점수")] = 0,
+) -> None:
+    """새 전략 YAML 생성 (CANDIDATE 상태)."""
+    store = StrategyStore()
+    if store.exists(name):
+        console.print(f"[red]Already exists: {name}[/red]")
+        raise typer.Exit(code=1)
+
+    today = date.today()
+    record_obj = StrategyRecord(
+        meta=StrategyMeta(
+            name=name,
+            display_name=display_name,
+            category=category,
+            timeframe=timeframe,
+            short_mode=short_mode,
+            status=StrategyStatus.CANDIDATE,
+            created_at=today,
+            economic_rationale=rationale,
+        ),
+        gates={
+            GateId.G0A: GateResult(
+                status=GateVerdict.PASS,
+                date=today,
+                details={"score": g0a_score, "max_score": 30},
+            ),
+        },
+        decisions=[
+            Decision(
+                date=today,
+                gate=GateId.G0A,
+                verdict=GateVerdict.PASS,
+                rationale=f"{g0a_score}/30점",
+            ),
+        ],
+    )
+    store.save(record_obj)
+    console.print(f"[green]Created: strategies/{name}.yaml (CANDIDATE)[/green]")
+
+
+@app.command()
 def record(
     name: Annotated[str, typer.Argument(help="Strategy name")],
     gate: Annotated[str, typer.Option("--gate", "-g", help="Gate ID (G0A, G1, ...)")],
@@ -149,6 +203,7 @@ def record(
     detail: Annotated[
         list[str] | None, typer.Option("--detail", "-d", help="key=value pairs")
     ] = None,
+    no_retire: Annotated[bool, typer.Option("--no-retire", help="FAIL 시 자동 RETIRED 방지")] = False,
 ) -> None:
     """Gate 결과 기록."""
     store = StrategyStore()
@@ -169,9 +224,26 @@ def record(
     store.record_gate(name, gid, gv, details=details, rationale=rationale)
     console.print(f"[green]Recorded {gate} {verdict} for {name}[/green]")
 
-    if gv == GateVerdict.FAIL:
+    if gv == GateVerdict.FAIL and not no_retire:
         store.update_status(name, StrategyStatus.RETIRED)
         console.print("[yellow]Status → RETIRED[/yellow]")
+    elif gv == GateVerdict.FAIL and no_retire:
+        console.print("[yellow]FAIL recorded (status unchanged — --no-retire)[/yellow]")
+
+
+@app.command(name="update-status")
+def update_status_cmd(
+    name: Annotated[str, typer.Argument(help="Strategy name")],
+    status: Annotated[str, typer.Option("--status", "-s", help="New status")],
+) -> None:
+    """전략 상태 변경."""
+    store = StrategyStore()
+    if not store.exists(name):
+        console.print(f"[red]Strategy not found: {name}[/red]")
+        raise typer.Exit(code=1)
+    new_status = StrategyStatus(status)
+    store.update_status(name, new_status)
+    console.print(f"[green]{name} → {new_status}[/green]")
 
 
 @app.command()

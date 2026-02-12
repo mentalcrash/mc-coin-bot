@@ -57,6 +57,18 @@ cat docs/strategy/temp-candidate.md
 
 해당 전략의 다음 정보를 추출한다:
 
+### 0-1b. YAML 존재 확인 (필수)
+
+```bash
+cat strategies/{strategy_name}.yaml
+# meta.status가 CANDIDATE이고 gates.G0A.status가 PASS인지 확인
+# YAML이 없으면: "strategy-discovery에서 pipeline create를 먼저 실행하세요"
+```
+
+> discovery에서 YAML을 이미 생성했으므로, YAML이 없으면 workflow 순서 오류.
+
+다음 정보를 YAML + temp-candidate.md에서 추출한다:
+
 | 항목 | 필수 | 용도 |
 |------|:----:|------|
 | 전략명 (registry key) | O | `@register("name")` |
@@ -684,40 +696,19 @@ uv run pytest --tb=short -q
 
 ---
 
-## Step 9: YAML 메타데이터 + 스코어카드 생성
+## Step 9: YAML 메타데이터 업데이트 + 스코어카드 생성
 
-### 9-1. YAML 메타데이터 생성 (필수)
+### 9-1. YAML 메타데이터 업데이트 (필수)
 
-`strategies/{strategy_name}.yaml` 파일을 생성한다. 이것이 **Single Source of Truth**이다.
+`strategies/{strategy_name}.yaml`은 discovery 단계에서 이미 생성됨 (status: CANDIDATE).
+구현 완료 후 status를 IMPLEMENTED로 업데이트한다:
 
-```yaml
-# strategies/{strategy-name}.yaml
-meta:
-  name: {strategy-name}
-  display_name: {DisplayName}
-  category: {카테고리}
-  timeframe: {TF}
-  short_mode: {DISABLED|HEDGE_ONLY|FULL}
-  status: IMPLEMENTED
-  created_at: "{YYYY-MM-DD}"
-  economic_rationale: {핵심 가설 1~2문장}
-parameters: {}
-gates:
-  G0A:
-    status: PASS
-    date: "{YYYY-MM-DD}"
-    details:
-      score: {G0A점수}
-      max_score: 30
-asset_performance: []
-decisions:
-  - date: "{YYYY-MM-DD}"
-    gate: G0A
-    verdict: PASS
-    rationale: "{G0A점수}/30점"
+```bash
+# status 변경: CANDIDATE → IMPLEMENTED
+uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTED
 ```
 
-> **Gate 0A 점수와 경제적 논거**는 `temp-candidate.md`에서 추출한다.
+> parameters 추가가 필요하면 YAML 직접 편집 (config.py의 기본값과 동일하므로 보통 불필요).
 
 ### 9-2. 스코어카드 파일 생성 (선택)
 
