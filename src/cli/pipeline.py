@@ -556,6 +556,53 @@ def gates_show(
     console.print(Panel("\n".join(lines), title=f"Gate {g.gate_id}"))
 
 
+# ─── Gate runner commands ────────────────────────────────────────────
+
+
+@app.command(name="gate1-run")
+def gate1_run(
+    strategies: Annotated[list[str], typer.Argument(help="전략 이름 (복수)")],
+    symbols: Annotated[
+        str, typer.Option("--symbols", help="쉼표 구분 심볼")
+    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT",
+    start: Annotated[str, typer.Option("--start", help="시작일 (YYYY-MM-DD)")] = "2020-01-01",
+    end: Annotated[str, typer.Option("--end", help="종료일 (YYYY-MM-DD)")] = "2025-12-31",
+    capital: Annotated[int, typer.Option("--capital", help="초기 자본")] = 100_000,
+    save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
+) -> None:
+    """Gate 1: 5-coin x 6-year 단일에셋 백테스트 + YAML 자동 갱신."""
+    from datetime import UTC, datetime
+
+    from src.cli._gate_runners import run_gate1
+
+    symbol_list = [s.strip() for s in symbols.split(",")]
+    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
+
+    run_gate1(
+        strategies=strategies,
+        symbols=symbol_list,
+        start=start_dt,
+        end=end_dt,
+        capital=capital,
+        save_json=save_json,
+        console=console,
+    )
+
+
+@app.command(name="gate3-run")
+def gate3_run(
+    strategies: Annotated[
+        list[str] | None, typer.Argument(help="전략 이름 (미지정 시 전체)")
+    ] = None,
+    save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
+) -> None:
+    """Gate 3: 파라미터 안정성 검증 (plateau + ±20% stability) + YAML 자동 갱신."""
+    from src.cli._gate_runners import run_gate3
+
+    run_gate3(strategies=strategies, save_json=save_json, console=console)
+
+
 # ─── Display helpers ─────────────────────────────────────────────────
 
 
