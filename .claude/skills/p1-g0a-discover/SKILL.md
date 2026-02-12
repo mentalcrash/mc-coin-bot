@@ -49,19 +49,26 @@ allowed-tools:
    uv run python main.py pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
    uv run python main.py pipeline table     # 전체 전략 Gate 진행도
 
-2. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
+2. 교훈 데이터 참조 (필수 — 실패 반복 방지)
+   uv run python main.py pipeline lessons-list              # 전체 교훈 목록
+   uv run python main.py pipeline lessons-list --tf {TF}    # 타겟 TF 관련 교훈 필터
+   uv run python main.py pipeline lessons-list -c strategy-design   # 전략 설계 교훈
+   uv run python main.py pipeline lessons-list -c market-structure  # 시장 구조 교훈
+   # → 교훈에서 명시된 안티패턴/실패 유형을 아이디어 생성 시 반드시 회피
+
+3. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
    - 1D (일봉): 가장 안정적, 비용 효율적. 프로젝트 주력. 유일한 G5 PASS가 1D
    - 4H: 중간 빈도. 비용과 신호 밸런스
    - 1H: 높은 빈도. Tier 5 4종 전멸 (교훈 #13~#16). 극히 신중하게 접근
    - 1m→aggregation: EDA 전용 (CandleAggregator 활용)
 
-3. 현재 포트폴리오 구성 확인
+4. 현재 포트폴리오 구성 확인
    uv run python main.py pipeline list --status ACTIVE   # 활성 전략
    # G5 도달까지: G1 통과율 ~50%, G2 통과율 ~20%, G4 통과율 ~5%
 
-4. 폐기 전략 실패 패턴 확인 (필수)
+5. 폐기 전략 실패 패턴 확인 (필수)
    uv run python main.py pipeline list --status RETIRED   # YAML 기반 동적 조회
-   references/discarded-strategies.md의 "실패 패턴 요약" + "교훈" 섹션 참조
+   references/discarded-strategies.md의 "실패 패턴 요약" 섹션 참조
    동일 접근법 재시도 금지
 ```
 
@@ -173,11 +180,19 @@ allowed-tools:
 
 **PASS (18점 이상)인 경우에만 Step 3으로 진행한다.**
 
-### Step 3: 중복 검사 — 폐기 전략 회피
+### Step 3: 중복 검사 — 폐기 전략 회피 + 교훈 검증
 
-[references/discarded-strategies.md](references/discarded-strategies.md)의 **"실패 패턴 요약"** 테이블을 먼저 확인한다:
+[references/discarded-strategies.md](references/discarded-strategies.md)의 **"실패 패턴 요약"** 테이블과 **교훈 데이터**를 함께 확인한다:
 
 ```
+0. 교훈 데이터 매칭 (최우선 — 프로그래매틱 검색)
+   # 아이디어 관련 교훈이 있는지 확인
+   uv run python main.py pipeline lessons-list --tf {TF}        # 타겟 TF 교훈
+   uv run python main.py pipeline lessons-list -s {관련전략}     # 유사 전략 교훈
+   uv run python main.py pipeline lessons-list -t {키워드}       # 태그 검색
+   # 교훈이 명시하는 안티패턴과 아이디어가 일치하면 → 즉시 폐기 또는 수정
+   # 예: lessons-list --tf 1H → "FX Session ≠ Crypto", "BVC 근사 한계" 등 확인
+
 1. 실패 패턴 매칭 (빠른 체크)
    - 단일 지표 trend-following? → Decay 56~92% (TSMOM 외 6개 전멸)
    - 레짐 감지 = 전략? → ADX/HMM/Hurst/AC/VR 등 7개 전멸
@@ -198,6 +213,7 @@ allowed-tools:
    - 어떤 점이 폐기 전략과 다른가?
    - 새로운 데이터 소스, 새로운 수학적 접근, 또는 근본적으로 다른 edge가 있는가?
    - "파라미터 조정"이나 "필터 추가"만으로는 차별화 불충분
+   - 관련 교훈 번호를 명시하여 왜 이번에는 다른지 설명
 
 → 차별화 불충분 시 아이디어를 수정하거나 폐기한다.
 ```
@@ -493,8 +509,9 @@ Step 4.5의 절차를 따른다.
 
 완료 전 확인:
 
+- [ ] **교훈 데이터 확인됨** (`lessons-list`로 관련 TF/카테고리/전략 교훈 검토)
 - [ ] Gate 0 스코어카드 작성됨 (18점 이상)
-- [ ] 폐기 전략과 중복 없음 확인
+- [ ] 폐기 전략과 중복 없음 확인 (교훈 + discarded-strategies 교차 검증)
 - [ ] 경제적 논거 1문단 이상 작성됨
 - [ ] ShortMode 3가지 중 근거 있는 선택
 - [ ] TF 적합성 확인 (비용 영향 포함)

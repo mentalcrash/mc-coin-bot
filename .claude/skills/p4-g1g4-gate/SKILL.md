@@ -497,14 +497,45 @@ uv run python main.py pipeline record {strategy_name} \
 
 > `pipeline record`가 FAIL 시 자동으로 status → RETIRED 변경.
 
-### F-2. 스코어카드 이동 (선택)
+### F-2. 교훈 기록 (새로운 실패 패턴 발견 시)
+
+FAIL 사유가 **기존 교훈에 없는 새로운 패턴**이면 교훈 데이터에 추가한다.
+
+```bash
+# 1. 기존 교훈에 유사 패턴이 있는지 확인
+uv run python main.py pipeline lessons-list -c strategy-design
+uv run python main.py pipeline lessons-list -c market-structure
+uv run python main.py pipeline lessons-list -t {관련키워드}
+uv run python main.py pipeline lessons-list --tf {TF}
+
+# 2. 새로운 패턴이면 교훈 추가
+uv run python main.py pipeline lessons-add \
+  --title "{실패 패턴 한줄 요약}" \
+  --body "{구체적 사유: 에셋별 Sharpe, MDD, FAIL 근거, 구조적 원인}" \
+  -c {category} \
+  -t {태그1} -t {태그2} \
+  -s {strategy_name} \
+  --tf {TF}
+```
+
+| FAIL 유형 | 카테고리 | 예시 |
+|----------|----------|------|
+| 전 에셋 Sharpe 음수 | `strategy-design` | "4H Reversal 크립토 부적합" |
+| 특정 TF에서 구조적 실패 | `market-structure` | "1H 크립토 session edge 부재" |
+| MDD 폭발 (FULL Short + 밈코인) | `risk-management` | "FULL Short + OU MR = 최악 조합" |
+| IS→OOS Decay > 50% | `pipeline-process` | "IS Sharpe ≠ 실전 성과" |
+| OHLCV 데이터 한계 | `data-resolution` | "BVC 근사 TF 불변 한계" |
+
+> **기존 교훈과 겹치면 추가하지 않는다.** `lessons-list` 검색 후 판단.
+
+### F-3. 스코어카드 이동 (선택)
 
 ```bash
 mkdir -p docs/scorecard/fail/
 mv docs/scorecard/{strategy_name}.md docs/scorecard/fail/{strategy_name}.md
 ```
 
-### F-3. Dashboard 자동 생성
+### F-4. Dashboard 자동 생성
 
 ```bash
 uv run python main.py pipeline report
@@ -512,7 +543,7 @@ uv run python main.py pipeline report
 
 > YAML 기반으로 dashboard.md를 자동 생성. 수동 편집 불필요.
 
-### F-4. 최종 리포트 출력
+### F-5. 최종 리포트 출력
 
 리포트 형식으로 출력한다.
 

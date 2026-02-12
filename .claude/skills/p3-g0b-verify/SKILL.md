@@ -374,6 +374,36 @@ G0B 코드검증 [FAIL] {C항목}: {사유 요약}
 
 ---
 
+## 교훈 기록 (FAIL 시)
+
+**반복되는 결함 패턴**이 발견되면 교훈 데이터에 기록하여 향후 전략 개발에서 회피한다.
+
+### 교훈 기록 판단 기준
+
+| 상황 | 교훈 기록 | 이유 |
+|------|:--------:|------|
+| 이전에 발견된 적 없는 새로운 결함 패턴 | O | 미래 방지 |
+| 기존 교훈에 이미 포함된 패턴 | X | 중복 방지 |
+| 전략 고유 버그 (일반화 불가) | X | 교훈이 아닌 버그 수정 |
+
+### 교훈 기록 프로세스
+
+```bash
+# 1. 기존 교훈 확인 (중복 방지)
+uv run python main.py pipeline lessons-list -c strategy-design
+uv run python main.py pipeline lessons-list -t {관련키워드}
+
+# 2. 새로운 패턴이면 교훈 추가
+uv run python main.py pipeline lessons-add \
+  --title "{결함 패턴 제목}" \
+  --body "{구체적 설명 + 영향 + 방지법}" \
+  -c strategy-design \
+  -t {태그1} -t {태그2} \
+  -s {strategy_name}
+```
+
+---
+
 ## 심각도 기준
 
 | 등급 | 정의 | Gate 0B 영향 |

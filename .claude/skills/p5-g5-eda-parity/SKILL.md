@@ -517,7 +517,43 @@ G5 EDA검증   [PASS/FAIL] Sharpe X.XX, CAGR +XX.X%, 수익 부호 일치/불일
 | {날짜} | G5 | PASS/FAIL | EDA Sharpe X.XX vs VBT X.XX. 수익 부호 일치. Trades N (PM threshold 필터링). Live Ready 7/7 |
 ```
 
-### 7-4. Dashboard 자동 생성
+### 7-4. 교훈 기록 (FAIL 시)
+
+G5 FAIL 시, 새로운 교훈 패턴이 발견되었는지 판단하고 기록한다.
+
+| 상황 | 판단 | 행동 |
+|------|------|------|
+| 새로운 괴리 패턴 발견 | 기존 교훈에 없는 원인 | `lessons-add`로 기록 |
+| 기존 교훈의 반복 | 이미 기록된 패턴 | 기록 불필요 |
+| 전략 특이적 버그 | 구현 오류 | 코드 수정 후 재시도, 교훈 불필요 |
+
+**프로세스:**
+
+```bash
+# 1. FAIL 유형에 해당하는 기존 교훈 확인
+uv run python main.py pipeline lessons-list --tag EDA
+uv run python main.py pipeline lessons-list --category data-resolution
+
+# 2. 새로운 패턴이면 교훈 추가
+uv run python main.py pipeline lessons-add \
+  --title "{괴리 원인 요약}" \
+  --body "{상세 설명: VBT vs EDA 괴리의 구조적 원인과 라이브 영향}" \
+  --category {category} \
+  --tag EDA --tag G5 --tag {관련 태그} \
+  --strategy {strategy_name}
+```
+
+**FAIL 유형 → category 매핑:**
+
+| FAIL 유형 | category | 예시 |
+|----------|----------|------|
+| 수익 부호 불일치 | `strategy-design` | 시그널 타이밍 구조적 차이 |
+| 수익률 편차 > 20% | `data-resolution` | 1m aggregation vs 일봉 차이 |
+| 거래 수 극단 괴리 | `pipeline-process` | PM/RM 필터링 과잉 |
+| EWM/rolling 초기화 | `data-resolution` | incremental buffer edge effect |
+| Live Readiness FAIL | `pipeline-process` | EDA 인프라 결함 |
+
+### 7-5. Dashboard 자동 생성
 
 ```bash
 uv run python main.py pipeline report
