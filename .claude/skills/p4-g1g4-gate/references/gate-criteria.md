@@ -1,6 +1,6 @@
 # Gate 판정 기준 — Machine-Readable Reference
 
-> [evaluation-standard.md](../../../../docs/strategy/evaluation-standard.md)의 정량 기준 요약.
+> [dashboard.md](../../../../docs/strategy/dashboard.md)의 정량 기준 요약.
 > 파이프라인 실행 시 이 파일의 수치를 기준으로 PASS/FAIL을 판정한다.
 
 ---

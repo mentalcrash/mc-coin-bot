@@ -480,8 +480,27 @@ def fmt(val: float | None, decimals: int = 2, suffix: str = "") -> str:
         return "—"
 
 
+def _load_g1_thresholds() -> dict[str, tuple[str, float]]:
+    """Gate 1 임계값을 YAML에서 로드 (fallback: 하드코딩)."""
+    try:
+        from src.pipeline.gate_store import GateCriteriaStore
+
+        store = GateCriteriaStore()
+        return store.get_pass_thresholds("G1")
+    except (FileNotFoundError, KeyError, ImportError):
+        return {
+            "Sharpe": (">", 1.0),
+            "CAGR": (">", 20.0),
+            "MDD": ("<", 40.0),
+            "Trades": (">", 50),
+        }
+
+
+_G1_THRESHOLDS = _load_g1_thresholds()
+
+
 def gate1_verdict(best: dict[str, Any]) -> str:
-    """Gate 1 자동 판정."""
+    """Gate 1 자동 판정 (YAML 기준 사용)."""
     m = best["metrics"]
     sharpe = m["sharpe_ratio"]
     mdd = m["max_drawdown"]
@@ -490,9 +509,12 @@ def gate1_verdict(best: dict[str, Any]) -> str:
 
     if (total_return < 0 and trades < 20) or (sharpe < 0.5 and trades < 20):
         return "FAIL"
-    if sharpe > 1.0:
+
+    t = _G1_THRESHOLDS
+    sharpe_thresh = t.get("Sharpe", (">", 1.0))[1]
+    if sharpe > sharpe_thresh:
         return "PASS"
-    if 0.5 <= sharpe <= 1.0 or 25 <= mdd <= 40:
+    if 0.5 <= sharpe <= sharpe_thresh or 25 <= mdd <= 40:
         return "WATCH"
     return "FAIL"
 
@@ -544,7 +566,7 @@ def generate_scorecard(
     # Header
     a(f"# 전략 스코어카드: {display_name}")
     a("")
-    a("> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)")
+    a("> 자동 생성 | 평가 기준: [dashboard.md](../strategy/dashboard.md)")
     a("")
 
     # 기본 정보

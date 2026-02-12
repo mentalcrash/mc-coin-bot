@@ -32,7 +32,7 @@ argument-hint: <strategy-name-or-directory>
 
 ---
 
-## 판정 기준 (evaluation-standard.md 기준)
+## 판정 기준 (dashboard.md 기준)
 
 | 판정 | 조건 |
 |------|------|

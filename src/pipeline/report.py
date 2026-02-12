@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.pipeline.gate_models import GateCriteria, GateType
+from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
     GateId,
@@ -28,9 +30,11 @@ class DashboardGenerator:
         self,
         store: StrategyStore,
         lesson_store: LessonStore | None = None,
+        gate_store: GateCriteriaStore | None = None,
     ) -> None:
         self.store = store
         self.lesson_store = lesson_store
+        self.gate_store = gate_store
 
     def generate(self) -> str:
         """전체 dashboard markdown 생성."""
@@ -58,8 +62,8 @@ class DashboardGenerator:
             "# 전략 상황판 (Strategy Dashboard)\n\n"
             f"> {total}개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. "
             f"(활성 {active} + 폐기 {retired})\n"
-            "> 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, "
-            "상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다."
+            "> 개별 스코어카드는 [docs/scorecard/](../scorecard/)에 있다. "
+            "Gate 기준은 아래 테이블 참조."
         )
 
     def _pipeline_diagram(self) -> str:
@@ -72,6 +76,29 @@ class DashboardGenerator:
         )
 
     def _gate_criteria_table(self) -> str:
+        if self.gate_store is not None:
+            return self._generate_gate_criteria_table()
+        return self._static_gate_criteria_table()
+
+    def _generate_gate_criteria_table(self) -> str:
+        """GateCriteriaStore → 동적 Gate 기준 테이블."""
+        assert self.gate_store is not None
+        gates = self.gate_store.load_all()
+        lines = [
+            "### Gate별 통과 기준\n",
+            "| Gate | 검증 | 핵심 기준 | CLI |",
+            "|:----:|------|----------|-----|",
+        ]
+        for g in gates:
+            gid_short = g.gate_id.replace("G0", "0").replace("G", "")
+            cli = f"`{g.cli_command}`" if g.cli_command else "—"
+            criteria_text = _summarize_criteria(g)
+            lines.append(f"| **{gid_short}** | {g.name} | {criteria_text} | {cli} |")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _static_gate_criteria_table() -> str:
+        """Fallback: 하드코딩 Gate 기준 테이블."""
         return (
             "### Gate별 통과 기준\n\n"
             "| Gate | 검증 | 핵심 기준 | CLI |\n"
@@ -88,13 +115,17 @@ class DashboardGenerator:
         )
 
     def _cost_model_table(self) -> str:
+        from src.portfolio.cost_model import CostModel
+
+        cm = CostModel.binance_futures()
+        total = cm.total_fee_rate
         return (
             "### 비용 모델\n\n"
             "| 항목 | 값 | 항목 | 값 |\n"
             "|------|---:|------|---:|\n"
-            "| Maker Fee | 0.02% | Slippage | 0.05% |\n"
-            "| Taker Fee | 0.04% | Funding (8h) | 0.01% |\n"
-            "| Market Impact | 0.02% | **편도 합계** | **~0.11%** |"
+            f"| Maker Fee | {cm.maker_fee:.2%} | Slippage | {cm.slippage:.2%} |\n"
+            f"| Taker Fee | {cm.taker_fee:.2%} | Funding (8h) | {cm.funding_rate_8h:.2%} |\n"
+            f"| Market Impact | {cm.market_impact:.2%} | **편도 합계** | **~{total:.2%}** |"
         )
 
     # ─── Dynamic sections ─────────────────────────────────────────
@@ -344,6 +375,22 @@ class DashboardGenerator:
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────
+
+
+def _summarize_criteria(g: GateCriteria) -> str:
+    """GateCriteria → 1줄 요약 텍스트."""
+    if g.gate_type == GateType.SCORING and g.scoring:
+        n = len(g.scoring.items)
+        return f"{n}항목 합계 >= {g.scoring.pass_threshold}/{g.scoring.max_total}"
+    if g.gate_type == GateType.CHECKLIST and g.checklist:
+        return g.checklist.pass_rule
+    if g.gate_type == GateType.THRESHOLD and g.threshold:
+        parts = []
+        for m in g.threshold.pass_metrics:
+            val_str = str(int(m.value)) if m.value == int(m.value) else str(m.value)
+            parts.append(f"{m.name} {m.operator} {val_str}{m.unit}")
+        return ", ".join(parts)
+    return ""
 
 
 def _gate_letter(record: StrategyRecord, gid: GateId) -> str:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_models import LessonRecord
 from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
@@ -62,7 +63,7 @@ class TestDashboardGenerator:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "Maker Fee" in content
-        assert "0.11%" in content
+        assert "편도 합계" in content
 
     def test_generate_counts(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
@@ -70,11 +71,25 @@ class TestDashboardGenerator:
         assert "활성 1" in content
         assert "폐기 1" in content
 
-    def test_generate_gate_criteria(self, store_with_data: StrategyStore) -> None:
+    def test_generate_gate_criteria_fallback(self, store_with_data: StrategyStore) -> None:
+        """gate_store=None이면 하드코딩 fallback 사용."""
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "Sharpe > 1.0" in content
         assert "OOS Sharpe >= 0.3" in content
+
+    def test_generate_gate_criteria_dynamic(
+        self,
+        store_with_data: StrategyStore,
+        gate_yaml_path: Path,
+    ) -> None:
+        """gate_store 있으면 동적 테이블 생성."""
+        g_store = GateCriteriaStore(path=gate_yaml_path)
+        gen = DashboardGenerator(store_with_data, gate_store=g_store)
+        content = gen.generate()
+        assert "Gate별 통과 기준" in content
+        assert "아이디어 검증" in content
+        assert "Sharpe > 1" in content
 
     def test_generate_empty_store(self, tmp_path: Path) -> None:
         store = StrategyStore(base_dir=tmp_path)

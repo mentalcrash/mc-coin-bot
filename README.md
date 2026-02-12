@@ -135,7 +135,7 @@ sequenceDiagram
     end
 ```
 
-Gate별 상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md) 참조.
+Gate별 상세 기준과 전체 현황은 [전략 상황판](docs/strategy/dashboard.md) 참조.
 
 ---
 

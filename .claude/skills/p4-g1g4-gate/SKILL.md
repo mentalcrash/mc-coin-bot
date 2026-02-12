@@ -634,4 +634,4 @@ uv run python main.py pipeline report
 - [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) — 시니어 퀀트 해석 패턴
 - [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (참조 선례)
 - [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 상황판
-- [docs/strategy/evaluation-standard.md](../../../docs/strategy/evaluation-standard.md) — 전략 평가 표준
+- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 평가 표준

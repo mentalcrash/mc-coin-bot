@@ -1,0 +1,262 @@
+# Gate Criteria — Single Source of Truth
+# 9개 Gate의 평가 기준을 YAML로 구조화.
+# 수정 후 `pipeline report`로 dashboard.md 재생성.
+
+gates:
+  # ─── Gate 0A: 아이디어 검증 ────────────────────────────────────
+  - gate_id: G0A
+    name: 아이디어 검증
+    description: "코드 작성 전 경제적 타당성 평가 (6항목, 각 1~5점)"
+    gate_type: scoring
+    cli_command: ""
+    scoring:
+      pass_threshold: 18
+      max_total: 30
+      items:
+        - name: 경제적 논거
+          description: "5=행동편향/구조적 제약으로 설명 가능, 1=설명 불가"
+        - name: 참신성
+          description: "5=미공개, 1=SSRN 공개 3년+"
+        - name: 데이터 확보성
+          description: "5=Binance API 즉시 사용, 1=별도 수집 필요"
+        - name: 구현 난이도
+          description: "5=VectorBT 단순 구현, 1=HFT 인프라 필요"
+        - name: 수용 용량
+          description: "5=$1M+ 운용, 1=$100K 미만"
+        - name: 레짐 의존성
+          description: "5=모든 시장 환경, 1=특정 레짐만"
+
+  # ─── Gate 0B: 코드 품질 검증 ───────────────────────────────────
+  - gate_id: G0B
+    name: 코드 품질 검증
+    description: "전략 코드 구현 완료 후, Gate 1 백테스트 실행 전 수행"
+    gate_type: checklist
+    cli_command: "/p3-g0b-verify"
+    checklist:
+      pass_rule: "Critical 체크리스트 (C1~C7) 모두 결함 없음"
+      items:
+        - code: C1
+          name: Look-Ahead Bias
+          description: "미래 데이터를 현재 시그널 생성에 사용하는가? close[t]→signal[t]→open[t+1] 체결"
+          severity: critical
+        - code: C2
+          name: Data Leakage
+          description: "IS/OOS 경계를 넘어 학습하는가? fit()은 IS에서만, predict()는 OOS에서"
+          severity: critical
+        - code: C3
+          name: Survivorship Bias
+          description: "상폐 종목이 제외되었는가? 백테스트 기간 전체에 존재하는지 확인"
+          severity: critical
+        - code: C4
+          name: Signal Vectorization
+          description: "벡터 연산 올바르게 적용? pandas 인덱스 정렬, NaN 전파, iloc/loc 오용"
+          severity: critical
+        - code: C5
+          name: Position Sizing
+          description: "vol-target, leverage cap 올바르게 적용? 0으로 나누기 방지"
+          severity: critical
+        - code: C6
+          name: Cost Model 적용
+          description: "거래 비용 누락/과소 적용? CostModel 파라미터가 BacktestEngine에 전달되는지"
+          severity: critical
+        - code: C7
+          name: Entry/Exit Logic
+          description: "진입/청산 조건 논리적 모순 없는가? 동시 long+short 불가, 동일 bar 진입+청산 금지"
+          severity: critical
+        - code: W1
+          name: Warmup Period
+          description: "지표 계산에 필요한 최소 bar 수 확보되는가? (예: EMA-200은 최소 200 bar)"
+          severity: warning
+        - code: W2
+          name: Parameter Count
+          description: "자유 파라미터 수가 거래 수 대비 과다하지 않은가? (Trades/Params > 10)"
+          severity: warning
+        - code: W3
+          name: Regime Concentration
+          description: "수익 대부분이 특정 레짐에 집중되지 않는가?"
+          severity: warning
+        - code: W4
+          name: Turnover
+          description: "연간 회전율이 비용 대비 합리적인가? (연 200회 이상이면 비용 민감도 높음)"
+          severity: warning
+        - code: W5
+          name: Correlation with Existing
+          description: "기존 활성 전략과의 수익률 상관계수 0.7 이하인가?"
+          severity: warning
+
+  # ─── Gate 1: 단일에셋 백테스트 ─────────────────────────────────
+  - gate_id: G1
+    name: 단일에셋 백테스트
+    description: "5개 에셋 x 6년 백테스트 후 Best Asset + Best Timeframe 선정"
+    gate_type: threshold
+    cli_command: "run {config}"
+    threshold:
+      pass_metrics:
+        - name: Sharpe
+          operator: ">"
+          value: 1.0
+        - name: CAGR
+          operator: ">"
+          value: 20.0
+          unit: "%"
+        - name: MDD
+          operator: "<"
+          value: 40.0
+          unit: "%"
+        - name: Trades
+          operator: ">"
+          value: 50
+      auxiliary_metrics:
+        - name: Profit Factor
+          operator: ">"
+          value: 1.3
+          description: "총이익 / 총손실"
+        - name: Win Rate
+          operator: ">"
+          value: 45.0
+          unit: "%"
+          description: "승률 (추세추종 기준)"
+        - name: Sortino
+          operator: ">"
+          value: 1.5
+          description: "하방 변동성 기준 위험조정 수익"
+        - name: Calmar
+          operator: ">"
+          value: 1.0
+          description: "CAGR / MDD"
+      immediate_fail:
+        - condition: "MDD > 50%"
+          reason: "파산 위험"
+        - condition: "Sharpe < 0 (모든 에셋)"
+          reason: "구조적 결함"
+        - condition: "Trades < 20 AND 총수익 < 0"
+          reason: "수익성 없음 + 통계적 무의미"
+        - condition: "수익 80%+ 단일 거래"
+          reason: "운으로 인한 성과 (concentration risk)"
+      watch_rule: "PASS 조건 일부 미달이지만 Sharpe >= 0.5 AND CAGR > 0%"
+
+  # ─── Gate 2: IS/OOS 검증 ──────────────────────────────────────
+  - gate_id: G2
+    name: IS/OOS 검증
+    description: "Best Asset에 대해 IS/OOS 70/30 분할 검증. 과적합 여부 판단"
+    gate_type: threshold
+    cli_command: "validate -m quick"
+    threshold:
+      pass_metrics:
+        - name: OOS Sharpe
+          operator: ">="
+          value: 0.3
+        - name: Sharpe Decay
+          operator: "<"
+          value: 50.0
+          unit: "%"
+          description: "(IS Sharpe - OOS Sharpe) / IS Sharpe x 100%"
+        - name: OOS Total Return
+          operator: ">"
+          value: 0.0
+          unit: "%"
+        - name: OOS Trades
+          operator: ">="
+          value: 15
+
+  # ─── Gate 3: 파라미터 안정성 ───────────────────────────────────
+  - gate_id: G3
+    name: 파라미터 안정성
+    description: "파라미터 변동에 대한 전략의 로버스트성 검증"
+    gate_type: threshold
+    cli_command: "sweep {config}"
+    threshold:
+      pass_metrics:
+        - name: 파라미터 고원
+          operator: ">="
+          value: 60.0
+          unit: "%"
+          description: "Sharpe > 0인 파라미터 조합 비율"
+        - name: "±20% Sharpe 부호"
+          operator: ">"
+          value: 0.0
+          description: "핵심 파라미터 ±20% 변경 시 양의 Sharpe 유지"
+
+  # ─── Gate 4: 심층 검증 ────────────────────────────────────────
+  - gate_id: G4
+    name: 심층 검증
+    description: "WFA + CPCV + PBO + DSR 통계적 유의성 검증"
+    gate_type: threshold
+    cli_command: "validate -m milestone/final"
+    threshold:
+      pass_metrics:
+        - name: WFA OOS Sharpe
+          operator: ">="
+          value: 0.5
+        - name: WFA Sharpe Decay
+          operator: "<"
+          value: 40.0
+          unit: "%"
+        - name: WFA Consistency
+          operator: ">="
+          value: 60.0
+          unit: "%"
+          description: "양의 OOS Sharpe + Decay < 50% 비율"
+        - name: DSR
+          operator: ">"
+          value: 0.95
+        - name: Monte Carlo p-value
+          operator: "<"
+          value: 0.05
+
+  # ─── Gate 5: EDA Parity ───────────────────────────────────────
+  - gate_id: G5
+    name: EDA Parity
+    description: "VBT 백테스트와 EDA 이벤트 기반 백테스트의 수익 정합성 검증"
+    gate_type: threshold
+    cli_command: "eda run {config}"
+    threshold:
+      pass_metrics:
+        - name: 수익 부호 일치
+          operator: "=="
+          value: 1.0
+          description: "VBT 양수→EDA 양수, VBT 음수→EDA 음수 (1=일치, 0=불일치)"
+        - name: 수익률 편차
+          operator: "<"
+          value: 20.0
+          unit: "%"
+      auxiliary_metrics:
+        - name: 거래 수 비율
+          operator: ">="
+          value: 0.5
+          description: "VBT 대비 EDA 거래 수 (0.5x~2.0x)"
+
+  # ─── Gate 6: 모의 거래 ────────────────────────────────────────
+  - gate_id: G6
+    name: 모의 거래
+    description: "실제 시장 데이터로 실시간 시그널 생성, 체결은 시뮬레이션. 최소 2주"
+    gate_type: threshold
+    cli_command: "eda run-live"
+    threshold:
+      pass_metrics:
+        - name: 시그널 일치도
+          operator: ">"
+          value: 90.0
+          unit: "%"
+          description: "백테스트 대비 시그널 방향 일치율"
+        - name: 체결 편차
+          operator: "<"
+          value: 10.0
+          unit: "%"
+          description: "예상 체결가 vs 실제 체결가"
+        - name: 무중단 운영
+          operator: "=="
+          value: 1.0
+          description: "2주간 에러 없이 작동 (1=성공, 0=실패)"
+
+  # ─── Gate 7: 실전 배포 ────────────────────────────────────────
+  - gate_id: G7
+    name: 실전 배포
+    description: "실제 자금 운용 + 지속적 모니터링으로 전략 은퇴 시점 판단"
+    gate_type: threshold
+    cli_command: ""
+    threshold:
+      pass_metrics:
+        - name: 3개월 이동 Sharpe
+          operator: ">"
+          value: 0.3

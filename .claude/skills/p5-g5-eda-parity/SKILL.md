@@ -677,4 +677,4 @@ uv run python main.py pipeline report
 - [references/live-readiness-checklist.md](references/live-readiness-checklist.md) — 라이브 준비 7항목 상세 검증 패턴
 - [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (G5 선례)
 - [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 상황판
-- [docs/strategy/evaluation-standard.md](../../../docs/strategy/evaluation-standard.md) — 전략 평가 표준
+- [docs/strategy/dashboard.md](../../../docs/strategy/dashboard.md) — 전략 평가 표준

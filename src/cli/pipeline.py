@@ -253,12 +253,14 @@ def report() -> None:
     """Dashboard 자동 생성 (YAML → markdown)."""
     from pathlib import Path
 
+    from src.pipeline.gate_store import GateCriteriaStore
     from src.pipeline.lesson_store import LessonStore
     from src.pipeline.report import DashboardGenerator
 
     store = StrategyStore()
     lesson_store = LessonStore()
-    generator = DashboardGenerator(store, lesson_store=lesson_store)
+    gate_store = GateCriteriaStore()
+    generator = DashboardGenerator(store, lesson_store=lesson_store, gate_store=gate_store)
     content = generator.generate()
 
     output = Path("docs/strategy/dashboard.md")
@@ -465,6 +467,88 @@ def lessons_add(
     )
     store.save(record)
     console.print(f"[green]Created: lessons/{new_id:03d}.yaml — {title}[/green]")
+
+
+# ─── Gate criteria commands ──────────────────────────────────────────
+
+
+@app.command(name="gates-list")
+def gates_list() -> None:
+    """Gate 평가 기준 요약 테이블."""
+    from src.pipeline.gate_store import GateCriteriaStore
+
+    store = GateCriteriaStore()
+    try:
+        gates = store.load_all()
+    except FileNotFoundError:
+        console.print("[red]gates/criteria.yaml not found.[/red]")
+        raise typer.Exit(code=1) from None
+
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        title=f"Gate Criteria ({len(gates)} gates)",
+    )
+    table.add_column("Gate", style="bold", width=5)
+    table.add_column("Name", min_width=14)
+    table.add_column("Type", width=10)
+    table.add_column("CLI")
+
+    for g in gates:
+        cli = g.cli_command if g.cli_command else "-"
+        table.add_row(g.gate_id, g.name, g.gate_type.value, cli)
+
+    console.print(table)
+
+
+@app.command(name="gates-show")
+def gates_show(
+    gate_id: Annotated[str, typer.Argument(help="Gate ID (G0A, G1, ...)")],
+) -> None:
+    """Gate 상세 기준 표시."""
+    from src.pipeline.gate_models import GateType, Severity
+    from src.pipeline.gate_store import GateCriteriaStore
+
+    store = GateCriteriaStore()
+    try:
+        g = store.load(gate_id)
+    except (FileNotFoundError, KeyError):
+        console.print(f"[red]Gate not found: {gate_id}[/red]")
+        raise typer.Exit(code=1) from None
+
+    lines = [
+        f"[bold]{g.gate_id}[/bold] — {g.name}",
+        "",
+        g.description,
+        "",
+        f"[bold]Type:[/bold] {g.gate_type.value}",
+    ]
+    if g.cli_command:
+        lines.append(f"[bold]CLI:[/bold] {g.cli_command}")
+
+    if g.gate_type == GateType.SCORING and g.scoring:
+        lines.append(f"\n[bold]PASS:[/bold] >= {g.scoring.pass_threshold}/{g.scoring.max_total}")
+        lines.extend(f"  - {item.name}: {item.description}" for item in g.scoring.items)
+
+    elif g.gate_type == GateType.CHECKLIST and g.checklist:
+        lines.append(f"\n[bold]PASS:[/bold] {g.checklist.pass_rule}")
+        for item in g.checklist.items:
+            c = "red" if item.severity == Severity.CRITICAL else "yellow"
+            lines.append(f"  [{c}]{item.code}[/{c}] {item.name}: {item.description}")
+
+    elif g.gate_type == GateType.THRESHOLD and g.threshold:
+        lines.append("\n[bold]PASS Metrics:[/bold]")
+        lines.extend(
+            f"  - {m.name} {m.operator} {int(m.value) if m.value == int(m.value) else m.value}{m.unit}"
+            for m in g.threshold.pass_metrics
+        )
+        if g.threshold.immediate_fail:
+            lines.append("\n[bold]Immediate FAIL:[/bold]")
+            lines.extend(
+                f"  - {rule.condition} → {rule.reason}" for rule in g.threshold.immediate_fail
+            )
+
+    console.print(Panel("\n".join(lines), title=f"Gate {g.gate_id}"))
 
 
 # ─── Display helpers ─────────────────────────────────────────────────

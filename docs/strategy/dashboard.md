@@ -3,7 +3,7 @@
 # 전략 상황판 (Strategy Dashboard)
 
 > 52개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. (활성 2 + 폐기 48)
-> 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](evaluation-standard.md)에 있다.
+> 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, 상세 평가 기준은 [전략 평가 표준](dashboard.md)에 있다.
 
 ---
 

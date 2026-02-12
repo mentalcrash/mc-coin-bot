@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
+import yaml
 
+from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_models import LessonCategory, LessonRecord
 from src.pipeline.models import (
     AssetMetrics,
@@ -187,3 +190,55 @@ def sample_lesson_market() -> LessonRecord:
         timeframes=["1H"],
         added_at=date(2026, 2, 10),
     )
+
+
+_SAMPLE_GATE_YAML = {
+    "gates": [
+        {
+            "gate_id": "G0A",
+            "name": "아이디어 검증",
+            "gate_type": "scoring",
+            "scoring": {
+                "pass_threshold": 18,
+                "max_total": 30,
+                "items": [
+                    {"name": "경제적 논거", "description": "5=행동편향"},
+                    {"name": "참신성", "description": "5=미공개"},
+                ],
+            },
+        },
+        {
+            "gate_id": "G1",
+            "name": "단일에셋 백테스트",
+            "gate_type": "threshold",
+            "cli_command": "run {config}",
+            "threshold": {
+                "pass_metrics": [
+                    {"name": "Sharpe", "operator": ">", "value": 1.0},
+                    {"name": "CAGR", "operator": ">", "value": 20.0, "unit": "%"},
+                    {"name": "MDD", "operator": "<", "value": 40.0, "unit": "%"},
+                    {"name": "Trades", "operator": ">", "value": 50},
+                ],
+            },
+        },
+    ],
+}
+
+
+@pytest.fixture
+def gate_yaml_path(tmp_path: Path) -> Path:
+    """임시 criteria.yaml 작성."""
+    gate_dir = tmp_path / "gates"
+    gate_dir.mkdir(exist_ok=True)
+    path = gate_dir / "criteria.yaml"
+    path.write_text(
+        yaml.dump(_SAMPLE_GATE_YAML, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def gate_store(gate_yaml_path: Path) -> GateCriteriaStore:
+    """임시 GateCriteriaStore."""
+    return GateCriteriaStore(path=gate_yaml_path)

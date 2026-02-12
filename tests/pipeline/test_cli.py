@@ -1,4 +1,4 @@
-"""Tests for src/cli/pipeline.py — create, update-status, record --no-retire."""
+"""Tests for src/cli/pipeline.py — create, update-status, record --no-retire, gates-list/show."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from src.cli.pipeline import app
+from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.models import GateId, GateVerdict, StrategyStatus
 from src.pipeline.store import StrategyStore
 
@@ -314,3 +316,76 @@ class TestRecordNoRetire:
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("retire-test")
         assert record.meta.status == StrategyStatus.IMPLEMENTED
+
+
+# ─── gates-list / gates-show commands ────────────────────────────────
+
+_SAMPLE_GATES_YAML = {
+    "gates": [
+        {
+            "gate_id": "G0A",
+            "name": "아이디어 검증",
+            "gate_type": "scoring",
+            "scoring": {
+                "pass_threshold": 18,
+                "max_total": 30,
+                "items": [
+                    {"name": "경제적 논거", "description": "5=행동편향"},
+                ],
+            },
+        },
+        {
+            "gate_id": "G1",
+            "name": "단일에셋 백테스트",
+            "gate_type": "threshold",
+            "cli_command": "run {config}",
+            "threshold": {
+                "pass_metrics": [
+                    {"name": "Sharpe", "operator": ">", "value": 1.0},
+                ],
+            },
+        },
+    ],
+}
+
+
+class TestGatesCommands:
+    @pytest.fixture(autouse=True)
+    def _patch_gate_store(self, tmp_path: Path) -> None:  # type: ignore[misc]
+        """Patch GateCriteriaStore to use tmp gate yaml."""
+        gate_path = tmp_path / "criteria.yaml"
+        gate_path.write_text(
+            yaml.dump(_SAMPLE_GATES_YAML, default_flow_style=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        original_init = GateCriteriaStore.__init__
+
+        def patched_init(self: GateCriteriaStore, path: Path = gate_path) -> None:
+            original_init(self, path=path)
+
+        with patch.object(GateCriteriaStore, "__init__", patched_init):
+            yield
+
+    def test_gates_list(self) -> None:
+        result = runner.invoke(app, ["gates-list"])
+        assert result.exit_code == 0
+        assert "G0A" in result.output
+        assert "G1" in result.output
+        assert "아이디어 검증" in result.output
+
+    def test_gates_show_scoring(self) -> None:
+        result = runner.invoke(app, ["gates-show", "G0A"])
+        assert result.exit_code == 0
+        assert "아이디어 검증" in result.output
+        assert "18" in result.output
+
+    def test_gates_show_threshold(self) -> None:
+        result = runner.invoke(app, ["gates-show", "G1"])
+        assert result.exit_code == 0
+        assert "Sharpe" in result.output
+        assert "1" in result.output
+
+    def test_gates_show_not_found(self) -> None:
+        result = runner.invoke(app, ["gates-show", "G99"])
+        assert result.exit_code == 1
+        assert "not found" in result.output
