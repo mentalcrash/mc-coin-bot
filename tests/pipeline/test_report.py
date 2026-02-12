@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-from src.pipeline.models import StrategyRecord
-from src.pipeline.report import DashboardGenerator
+from src.pipeline.models import (
+    Decision,
+    GateId,
+    GateResult,
+    GateVerdict,
+    StrategyMeta,
+    StrategyRecord,
+    StrategyStatus,
+)
+from src.pipeline.report import DashboardGenerator, _extract_note, _fail_rationale
 from src.pipeline.store import StrategyStore
 
 
@@ -85,3 +94,160 @@ class TestDashboardGenerator:
         content = gen.generate()
         # BB-RSI failed at G1 with Sharpe < 1.0 and CAGR > 0
         assert "Gate 1 실패" in content
+
+    def test_auto_generated_marker(self, store_with_data: StrategyStore) -> None:
+        gen = DashboardGenerator(store_with_data)
+        content = gen.generate()
+        assert "AUTO-GENERATED" in content
+        assert "수동 편집 금지" in content
+
+    def test_gate_criteria_skill_name(self, store_with_data: StrategyStore) -> None:
+        gen = DashboardGenerator(store_with_data)
+        content = gen.generate()
+        assert "/p3-g0b-verify" in content
+        assert "/quant-code-audit" not in content
+
+    def test_active_notes_block(self, store_with_data: StrategyStore) -> None:
+        gen = DashboardGenerator(store_with_data)
+        content = gen.generate()
+        # sample_record has decisions[-1] = G1 PASS "SOL Sharpe 2.05"
+        assert "> **CTREND**: SOL Sharpe 2.05" in content
+
+    def test_retired_fail_rationale_from_decisions(
+        self,
+        store_with_data: StrategyStore,
+    ) -> None:
+        gen = DashboardGenerator(store_with_data)
+        content = gen.generate()
+        # retired_record decision rationale = "CAGR < 20%"
+        assert "CAGR < 20%" in content
+
+
+class TestExtractNote:
+    def test_no_truncation(self) -> None:
+        """60자 이상 note도 절삭 없이 전체 반환."""
+        long_note = "A" * 100
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="test",
+                display_name="Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.ACTIVE,
+                created_at=date(2026, 1, 1),
+            ),
+            gates={
+                GateId.G4: GateResult(
+                    status=GateVerdict.PASS,
+                    date=date(2026, 1, 1),
+                    details={"note": long_note},
+                ),
+            },
+        )
+        assert _extract_note(record) == long_note
+        assert len(_extract_note(record)) == 100
+
+    def test_empty_when_no_g4(self) -> None:
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="test",
+                display_name="Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.ACTIVE,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        assert _extract_note(record) == ""
+
+
+class TestFailRationale:
+    def test_decisions_rationale_preferred(self) -> None:
+        """decisions.rationale이 gates.details보다 우선."""
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="test",
+                display_name="Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.RETIRED,
+                created_at=date(2026, 1, 1),
+            ),
+            gates={
+                GateId.G1: GateResult(
+                    status=GateVerdict.FAIL,
+                    date=date(2026, 1, 1),
+                    details={"note": "gate details note"},
+                ),
+            },
+            decisions=[
+                Decision(
+                    date=date(2026, 1, 1),
+                    gate=GateId.G1,
+                    verdict=GateVerdict.FAIL,
+                    rationale="Rich decision rationale with details",
+                ),
+            ],
+        )
+        result = _fail_rationale(record, GateId.G1)
+        assert result == "Rich decision rationale with details"
+
+    def test_fallback_to_gate_details(self) -> None:
+        """decisions에 해당 gate 없으면 gates.details fallback."""
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="test",
+                display_name="Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.RETIRED,
+                created_at=date(2026, 1, 1),
+            ),
+            gates={
+                GateId.G1: GateResult(
+                    status=GateVerdict.FAIL,
+                    date=date(2026, 1, 1),
+                    details={"note": "gate note fallback"},
+                ),
+            },
+            decisions=[],
+        )
+        result = _fail_rationale(record, GateId.G1)
+        assert result == "gate note fallback"
+
+    def test_no_truncation(self) -> None:
+        """80자 이상도 절삭 없이 전체 반환."""
+        long_rationale = "B" * 120
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="test",
+                display_name="Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.RETIRED,
+                created_at=date(2026, 1, 1),
+            ),
+            gates={
+                GateId.G1: GateResult(
+                    status=GateVerdict.FAIL,
+                    date=date(2026, 1, 1),
+                    details={"note": "short"},
+                ),
+            },
+            decisions=[
+                Decision(
+                    date=date(2026, 1, 1),
+                    gate=GateId.G1,
+                    verdict=GateVerdict.FAIL,
+                    rationale=long_rationale,
+                ),
+            ],
+        )
+        result = _fail_rationale(record, GateId.G1)
+        assert result == long_rationale
+        assert len(result) == 120

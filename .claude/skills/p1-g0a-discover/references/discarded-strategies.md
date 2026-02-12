@@ -95,7 +95,7 @@
 
 ## 폐기에서 얻은 핵심 교훈 (16가지)
 
-> 최신 교훈은 [dashboard.md](../../../../docs/strategy/dashboard.md) "핵심 교훈" 섹션 참조.
+> 최신 교훈은 [lessons.md](../../../../docs/strategy/lessons.md) 참조.
 
 1. **앙상블 > 단일지표**: ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수
 2. **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐
