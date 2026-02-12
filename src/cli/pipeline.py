@@ -90,6 +90,18 @@ def status() -> None:
 
     console.print(table)
 
+    # TESTING breakdown by next_gate
+    testing = [r for r in records if r.meta.status == StrategyStatus.TESTING]
+    if testing:
+        breakdown: dict[str, int] = {}
+        for r in testing:
+            ng = r.next_gate or "DONE"
+            breakdown[ng] = breakdown.get(ng, 0) + 1
+        parts = [f"  {gate}: {cnt}" for gate, cnt in sorted(breakdown.items())]
+        console.print("\n[yellow]TESTING Breakdown:[/yellow]")
+        for part in parts:
+            console.print(part)
+
 
 @app.command(name="list")
 def list_strategies(
@@ -312,6 +324,7 @@ def full_table() -> None:
     table.add_column("Best Asset", width=11)
     for gname in _GATE_DISPLAY:
         table.add_column(gname, justify="center", width=3)
+    table.add_column("Next", justify="center", width=4)
 
     for i, r in enumerate(records, 1):
         color = _STATUS_COLORS.get(r.meta.status, "white")
@@ -326,6 +339,7 @@ def full_table() -> None:
             mdd_str = f"-{best.mdd:.1f}%"
 
         gate_cells = [_gate_badge_colored(r, GateId(g)) for g in _GATE_DISPLAY]
+        next_gate_str = r.next_gate if r.next_gate else "-"
 
         table.add_row(
             str(i),
@@ -337,6 +351,7 @@ def full_table() -> None:
             mdd_str,
             best_asset_str,
             *gate_cells,
+            next_gate_str,
         )
 
     console.print()
@@ -622,6 +637,8 @@ def _print_strategy_table(records: list[StrategyRecord]) -> None:
         gate = str(r.current_gate) if r.current_gate else "-"
         if r.fail_gate:
             gate = f"{r.fail_gate} [red]FAIL[/red]"
+        elif r.current_gate and r.next_gate:
+            gate = f"{r.current_gate} → {r.next_gate}"
         table.add_row(
             r.meta.display_name,
             r.meta.timeframe,
@@ -651,7 +668,15 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
 
     # Gate progress
     gate_line = "  ".join(f"{g}: {_gate_badge_colored(r, GateId(g))}" for g in _GATE_DISPLAY)
-    console.print(f"\n[bold]Gate Progress:[/bold] {gate_line}\n")
+    console.print(f"\n[bold]Gate Progress:[/bold] {gate_line}")
+
+    # Next gate info
+    if r.fail_gate:
+        console.print(f"[red]Pipeline: BLOCKED at {r.fail_gate}[/red]\n")
+    elif r.next_gate:
+        console.print(f"[yellow]Next Gate: {r.next_gate}[/yellow]\n")
+    else:
+        console.print("[green]Pipeline: COMPLETE[/green]\n")
 
     # Asset table
     if r.asset_performance:

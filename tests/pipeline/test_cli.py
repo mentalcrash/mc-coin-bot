@@ -294,7 +294,7 @@ class TestRecordNoRetire:
         record = store.load("retire-test")
         assert record.meta.status == StrategyStatus.IMPLEMENTED
 
-    def test_record_pass_unaffected_by_no_retire(self, strategies_dir: Path) -> None:
+    def test_record_pass_auto_transitions_to_testing(self, strategies_dir: Path) -> None:
         self._create_implemented()
         result = runner.invoke(
             app,
@@ -315,7 +315,8 @@ class TestRecordNoRetire:
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("retire-test")
-        assert record.meta.status == StrategyStatus.IMPLEMENTED
+        # IMPLEMENTED + PASS → TESTING 자동 전환
+        assert record.meta.status == StrategyStatus.TESTING
 
 
 # ─── gates-list / gates-show commands ────────────────────────────────

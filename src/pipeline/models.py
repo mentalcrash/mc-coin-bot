@@ -169,6 +169,20 @@ class StrategyRecord(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def next_gate(self) -> str | None:
+        """다음 수행할 Gate. FAIL 시 None, 전체 PASS 시 None."""
+        for gid in GATE_ORDER:
+            result = self.gates.get(gid)
+            if result is not None and result.status == GateVerdict.FAIL:
+                return None  # 파이프라인 blocked
+        for gid in GATE_ORDER:
+            result = self.gates.get(gid)
+            if result is None or result.status != GateVerdict.PASS:
+                return gid  # 첫 미통과 Gate
+        return None  # 전체 완료
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def best_sharpe(self) -> float | None:
         """Best Asset의 Sharpe."""
         if not self.asset_performance:

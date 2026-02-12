@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,9 @@ import pytest
 from src.pipeline.models import (
     AssetMetrics,
     GateId,
+    GateResult,
     GateVerdict,
+    StrategyMeta,
     StrategyRecord,
     StrategyStatus,
 )
@@ -142,3 +145,74 @@ class TestMutation:
         updated = store.set_asset_performance("ctrend", new_metrics)
         assert len(updated.asset_performance) == 1
         assert updated.best_asset == "DOGE/USDT"
+
+
+def _make_implemented_record(name: str = "impl-test") -> StrategyRecord:
+    """IMPLEMENTED 상태의 테스트 레코드."""
+    return StrategyRecord(
+        meta=StrategyMeta(
+            name=name,
+            display_name="Impl Test",
+            category="Test",
+            timeframe="1D",
+            short_mode="DISABLED",
+            status=StrategyStatus.IMPLEMENTED,
+            created_at=date(2026, 1, 1),
+        ),
+        gates={
+            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+        },
+    )
+
+
+class TestAutoTransition:
+    """record_gate()의 IMPLEMENTED → TESTING 자동 전환 테스트."""
+
+    def test_implemented_pass_transitions_to_testing(self, store: StrategyStore) -> None:
+        store.save(_make_implemented_record())
+        updated = store.record_gate(
+            "impl-test", GateId.G0B, GateVerdict.PASS,
+            details={"C1": "PASS"}, rationale="C1-C7 PASS",
+        )
+        assert updated.meta.status == StrategyStatus.TESTING
+
+    def test_active_pass_stays_active(self, store: StrategyStore) -> None:
+        rec = _make_implemented_record("active-test")
+        active_meta = rec.meta.model_copy(update={"status": StrategyStatus.ACTIVE})
+        rec = rec.model_copy(update={"meta": active_meta})
+        store.save(rec)
+        updated = store.record_gate(
+            "active-test", GateId.G1, GateVerdict.PASS,
+            details={}, rationale="PASS",
+        )
+        assert updated.meta.status == StrategyStatus.ACTIVE
+
+    def test_testing_pass_stays_testing(self, store: StrategyStore) -> None:
+        rec = _make_implemented_record("testing-test")
+        testing_meta = rec.meta.model_copy(update={"status": StrategyStatus.TESTING})
+        rec = rec.model_copy(update={"meta": testing_meta})
+        store.save(rec)
+        updated = store.record_gate(
+            "testing-test", GateId.G1, GateVerdict.PASS,
+            details={}, rationale="PASS",
+        )
+        assert updated.meta.status == StrategyStatus.TESTING
+
+    def test_candidate_pass_stays_candidate(self, store: StrategyStore) -> None:
+        rec = _make_implemented_record("cand-test")
+        cand_meta = rec.meta.model_copy(update={"status": StrategyStatus.CANDIDATE})
+        rec = rec.model_copy(update={"meta": cand_meta})
+        store.save(rec)
+        updated = store.record_gate(
+            "cand-test", GateId.G0B, GateVerdict.PASS,
+            details={}, rationale="PASS",
+        )
+        assert updated.meta.status == StrategyStatus.CANDIDATE
+
+    def test_implemented_fail_stays_implemented(self, store: StrategyStore) -> None:
+        store.save(_make_implemented_record("fail-test"))
+        updated = store.record_gate(
+            "fail-test", GateId.G0B, GateVerdict.FAIL,
+            details={}, rationale="C1 FAIL",
+        )
+        assert updated.meta.status == StrategyStatus.IMPLEMENTED

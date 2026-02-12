@@ -129,6 +129,12 @@ class StrategyStore:
         ]
 
         updated = record.model_copy(update={"gates": new_gates, "decisions": new_decisions})
+
+        # IMPLEMENTED + PASS → TESTING 자동 전환
+        if updated.meta.status == StrategyStatus.IMPLEMENTED and verdict == GateVerdict.PASS:
+            new_meta = updated.meta.model_copy(update={"status": StrategyStatus.TESTING})
+            updated = updated.model_copy(update={"meta": new_meta})
+
         self.save(updated)
         return updated
 

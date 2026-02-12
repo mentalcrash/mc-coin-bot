@@ -320,8 +320,13 @@ FAIL 사유는 아니나 반드시 기록:
 ```bash
 uv run python main.py pipeline record {strategy_name} \
   --gate G0B --verdict PASS \
+  --detail "C1=PASS" --detail "C2=PASS" --detail "C3=PASS" \
+  --detail "C4=PASS" --detail "C5=PASS" --detail "C6=PASS" --detail "C7=PASS" \
+  --detail "warnings=0" \
   --rationale "C1-C7 전항목 PASS. Warning N건"
 ```
+
+> `--detail key=value`로 C1-C7 개별 결과를 구조화하여 저장. YAML의 `gates.G0B.details`에 기록됨.
 
 **FAIL 시**:
 

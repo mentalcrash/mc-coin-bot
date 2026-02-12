@@ -145,3 +145,64 @@ class TestStrategyRecord:
             ),
         )
         assert record.best_sharpe is None
+
+
+def _make_record(
+    gates: dict[GateId, GateResult] | None = None,
+) -> StrategyRecord:
+    """next_gate 테스트용 헬퍼."""
+    return StrategyRecord(
+        meta=StrategyMeta(
+            name="test",
+            display_name="Test",
+            category="Test",
+            timeframe="1D",
+            short_mode="DISABLED",
+            status=StrategyStatus.TESTING,
+            created_at=date(2026, 1, 1),
+        ),
+        gates=gates or {},
+    )
+
+
+class TestNextGate:
+    def test_no_gates_returns_g0a(self) -> None:
+        record = _make_record()
+        assert record.next_gate == "G0A"
+
+    def test_g0a_pass_returns_g0b(self) -> None:
+        record = _make_record({
+            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+        })
+        assert record.next_gate == "G0B"
+
+    def test_g0a_g0b_g1_pass_returns_g2(self) -> None:
+        record = _make_record({
+            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+        })
+        assert record.next_gate == "G2"
+
+    def test_fail_returns_none(self) -> None:
+        record = _make_record({
+            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            GateId.G1: GateResult(status=GateVerdict.FAIL, date=date(2026, 1, 1)),
+        })
+        assert record.next_gate is None
+
+    def test_all_pass_returns_none(self) -> None:
+        all_pass = {
+            gid: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1))
+            for gid in GATE_ORDER
+        }
+        record = _make_record(all_pass)
+        assert record.next_gate is None
+
+    def test_gap_returns_missing_gate(self) -> None:
+        """G0A PASS, G0B 없음, G1 PASS → G0B (gap 위치)."""
+        record = _make_record({
+            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+        })
+        assert record.next_gate == "G0B"

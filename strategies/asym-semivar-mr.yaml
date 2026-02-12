@@ -1,0 +1,42 @@
+meta:
+  name: asym-semivar-mr
+  display_name: Asymmetric Semivariance MR
+  category: Mean Reversion
+  timeframe: 4H
+  short_mode: FULL
+  status: TESTING
+  created_at: '2026-02-12'
+  retired_at: null
+  economic_rationale: 방향별 semivariance 비율로 공포/탐욕 과잉반응 감지 → contrarian 진입. Downside
+    semivariance 예측력이 total variance 대비 우수(Kyei-Mensah 2024).
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0
+asset_performance: []
+decisions:
+- date: '2026-02-12'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-12'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전봉 기준 시그널, rolling semivariance/zscore
+    무 leakage, 벡터화 연산, vol_scalar 0나눗셈 방어, ShortMode 3분기 정상
