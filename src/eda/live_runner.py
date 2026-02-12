@@ -247,6 +247,11 @@ class LiveRunner:
         from src.eda.persistence.database import Database
         from src.eda.persistence.trade_persistence import TradePersistence
 
+        # 0. LIVE 모드 Pre-flight checks → 거래소 잔고로 capital override
+        capital = self._initial_capital
+        if self._mode == LiveMode.LIVE and self._futures_client is not None:
+            capital = await self._preflight_checks()
+
         # 1. DB 초기화 (db_path가 있을 때만)
         db: Database | None = None
         if self._db_path:
@@ -262,32 +267,24 @@ class LiveRunner:
             )
             pm = EDAPortfolioManager(
                 config=self._config,
-                initial_capital=self._initial_capital,
+                initial_capital=capital,
                 asset_weights=self._asset_weights,
                 target_timeframe=self._target_timeframe,
             )
             rm = EDARiskManager(
                 config=self._config,
                 portfolio_manager=pm,
-                max_order_size_usd=self._initial_capital * self._config.max_leverage_cap,
+                max_order_size_usd=capital * self._config.max_leverage_cap,
                 enable_circuit_breaker=True,
             )
+            # LIVE 모드: 동적 max_order_size 활성화
+            if self._mode == LiveMode.LIVE:
+                rm.enable_dynamic_max_order_size()
             oms = OMS(executor=self._executor, portfolio_manager=pm)
             analytics = AnalyticsEngine(initial_capital=self._initial_capital)
 
-            # BacktestExecutor인 경우 bar 핸들러 등록 (Paper 모드)
-            if isinstance(self._executor, BacktestExecutor):
-                bt_executor = self._executor
-
-                async def executor_bar_handler(event: AnyEvent) -> None:
-                    assert isinstance(event, BarEvent)
-                    bt_executor.on_bar(event)
-
-                bus.subscribe(EventType.BAR, executor_bar_handler)
-
-            # LiveExecutor인 경우 PM 참조 설정
-            if isinstance(self._executor, LiveExecutor):
-                self._executor.set_pm(pm)
+            # Executor별 초기화
+            self._setup_executor(bus, pm)
 
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm)
@@ -331,17 +328,10 @@ class LiveRunner:
                 uptime_task = asyncio.create_task(self._periodic_uptime_update(metrics_exporter))
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
-            reconciler_task: asyncio.Task[None] | None = None
-            if self._mode == LiveMode.LIVE and self._futures_client is not None:
-                from src.eda.reconciler import PositionReconciler
+            reconciler_task = await self._setup_reconciler(pm, rm)
 
-                reconciler = PositionReconciler()
-                await reconciler.initial_check(pm, self._futures_client, self._symbols)
-                reconciler_task = asyncio.create_task(
-                    self._periodic_reconciliation(
-                        reconciler, pm, self._futures_client, self._symbols
-                    )
-                )
+            # 구조화된 startup summary
+            self._log_startup_summary(capital)
 
             logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
 
@@ -568,6 +558,115 @@ class LiveRunner:
         logger.info("Fetched {} warmup bars for {} (requested {})", len(bars), symbol, limit)
         return bars, timestamps
 
+    def _setup_executor(self, bus: EventBus, pm: EDAPortfolioManager) -> None:
+        """Executor별 초기화.
+
+        - BacktestExecutor: BAR 핸들러 등록
+        - LiveExecutor: PM 참조 설정
+        """
+        if isinstance(self._executor, BacktestExecutor):
+            bt_executor = self._executor
+
+            async def executor_bar_handler(event: AnyEvent) -> None:
+                assert isinstance(event, BarEvent)
+                bt_executor.on_bar(event)
+
+            bus.subscribe(EventType.BAR, executor_bar_handler)
+        elif isinstance(self._executor, LiveExecutor):
+            self._executor.set_pm(pm)
+
+    async def _setup_reconciler(
+        self,
+        pm: EDAPortfolioManager,
+        rm: EDARiskManager,
+    ) -> asyncio.Task[None] | None:
+        """Live 모드: PositionReconciler 초기 + 주기적 검증 task 생성."""
+        if self._mode != LiveMode.LIVE or self._futures_client is None:
+            return None
+
+        from src.eda.reconciler import PositionReconciler
+
+        reconciler = PositionReconciler()
+        await reconciler.initial_check(pm, self._futures_client, self._symbols)
+        return asyncio.create_task(
+            self._periodic_reconciliation(
+                reconciler, pm, rm, self._futures_client, self._symbols
+            )
+        )
+
+    async def _preflight_checks(self) -> float:
+        """LIVE 모드 시작 전 거래소 상태 검증.
+
+        - USDT 잔고 조회 + 0 이하 검증
+        - config capital과 50% 이상 차이 시 WARNING
+        - 미체결 주문 감지 시 CRITICAL 로그
+
+        Returns:
+            거래소 USDT 잔고 (PM initial_capital로 사용)
+
+        Raises:
+            RuntimeError: 잔고 0 이하
+        """
+        assert self._futures_client is not None
+        logger.info("Running pre-flight checks...")
+
+        # 1. 잔고 확인
+        balance = await self._futures_client.fetch_balance()
+        usdt_info = balance.get("USDT", {})
+        total_balance = float(usdt_info.get("total", 0) if isinstance(usdt_info, dict) else 0)
+
+        if total_balance <= 0:
+            msg = f"Pre-flight FAIL: USDT balance is {total_balance:.2f} (must be > 0)"
+            logger.critical(msg)
+            raise RuntimeError(msg)
+
+        logger.info("Pre-flight: USDT balance = ${:.2f}", total_balance)
+
+        # 2. Config capital 대비 차이 확인
+        config_capital = self._initial_capital
+        if config_capital > 0:
+            _balance_warn_ratio = 0.5
+            diff_ratio = abs(total_balance - config_capital) / config_capital
+            if diff_ratio > _balance_warn_ratio:
+                logger.warning(
+                    "Pre-flight WARNING: exchange balance ${:.0f} differs from config capital ${:.0f} by {:.0%}",
+                    total_balance,
+                    config_capital,
+                    diff_ratio,
+                )
+
+        # 3. 미체결 주문 감지
+        for symbol in self._symbols:
+            futures_symbol = self._futures_client.to_futures_symbol(symbol)
+            try:
+                open_orders = await self._futures_client.fetch_open_orders(futures_symbol)
+                if open_orders:
+                    logger.critical(
+                        "Pre-flight: {} stale open orders for {} — cancel manually before trading!",
+                        len(open_orders),
+                        symbol,
+                    )
+            except Exception:
+                logger.warning("Pre-flight: Failed to check open orders for {}", symbol)
+
+        logger.info("Pre-flight checks PASSED — using exchange balance ${:.2f}", total_balance)
+        return total_balance
+
+    def _log_startup_summary(self, capital: float) -> None:
+        """구조화된 startup summary 로그."""
+        summary = (
+            f"=== LiveRunner Startup Summary ===\n"
+            f"  Mode:       {self._mode.value}\n"
+            f"  Strategy:   {self._strategy.name}\n"
+            f"  Symbols:    {', '.join(self._symbols) if self._symbols else 'N/A'}\n"
+            f"  Timeframe:  {self._target_timeframe}\n"
+            f"  Capital:    ${capital:,.2f}\n"
+            f"  Leverage:   {self._config.max_leverage_cap:.1f}x\n"
+            f"  SL:         {f'{self._config.system_stop_loss:.0%}' if self._config.system_stop_loss else 'OFF'}\n"
+            f"  TS:         {f'{self._config.trailing_stop_atr_multiplier:.1f}x ATR' if self._config.use_trailing_stop else 'OFF'}"
+        )
+        logger.info("{}", summary)
+
     def _setup_signal_handlers(self) -> None:
         """SIGTERM/SIGINT 핸들러 등록."""
         loop = asyncio.get_running_loop()
@@ -624,14 +723,19 @@ class LiveRunner:
     async def _periodic_reconciliation(
         reconciler: PositionReconciler,
         pm: EDAPortfolioManager,
+        rm: EDARiskManager,
         futures_client: BinanceFuturesClient,
         symbols: list[str],
         interval: float = _RECONCILER_INTERVAL,
     ) -> None:
-        """주기적 포지션 교차 검증."""
+        """주기적 포지션 + 잔고 교차 검증."""
         while True:
             await asyncio.sleep(interval)
             await reconciler.periodic_check(pm, futures_client, symbols)
+            # 잔고 검증 + RM equity sync
+            exchange_equity = await reconciler.check_balance(pm, futures_client)
+            if exchange_equity is not None:
+                await rm.sync_exchange_equity(exchange_equity)
 
     @property
     def feed(self) -> LiveDataFeed:

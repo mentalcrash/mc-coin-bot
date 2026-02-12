@@ -12,6 +12,7 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+import random
 from typing import TYPE_CHECKING, Any
 
 import ccxt.pro as ccxt
@@ -53,10 +54,14 @@ class BinanceFuturesClient:
         ...     )
     """
 
+    # API 연속 실패 시 주문 차단
+    _MAX_CONSECUTIVE_FAILURES = 5
+
     def __init__(self, settings: IngestionSettings | None = None) -> None:
         self._settings = settings or get_settings()
         self._exchange: binance | None = None
         self._initialized = False
+        self._consecutive_failures = 0
 
     async def __aenter__(self) -> BinanceFuturesClient:
         await self._initialize()
@@ -136,6 +141,31 @@ class BinanceFuturesClient:
             msg = "BinanceFuturesClient not initialized. Use 'async with BinanceFuturesClient() as client:'"
             raise RuntimeError(msg)
         return self._exchange
+
+    @property
+    def is_api_healthy(self) -> bool:
+        """API 연속 실패가 임계값 미만인지 확인."""
+        return self._consecutive_failures < self._MAX_CONSECUTIVE_FAILURES
+
+    @property
+    def consecutive_failures(self) -> int:
+        """연속 API 실패 횟수."""
+        return self._consecutive_failures
+
+    def _record_success(self) -> None:
+        """API 호출 성공 → 실패 카운터 리셋."""
+        if self._consecutive_failures > 0:
+            logger.debug("API recovery: consecutive failures reset from {}", self._consecutive_failures)
+        self._consecutive_failures = 0
+
+    def _record_failure(self) -> None:
+        """API 호출 실패 → 실패 카운터 증가."""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._MAX_CONSECUTIVE_FAILURES:
+            logger.critical(
+                "API CIRCUIT BREAKER: {} consecutive failures — orders will be blocked",
+                self._consecutive_failures,
+            )
 
     async def setup_account(self, symbols: list[str], *, leverage: int = 1) -> None:
         """계정 설정: Hedge Mode + Cross Margin + 지정 Leverage.
@@ -236,22 +266,31 @@ class BinanceFuturesClient:
             return result
 
         try:
-            return await self._retry_with_backoff(_do_create)
+            result = await self._retry_with_backoff(_do_create)
         except ccxt.InsufficientFunds as e:
+            self._record_failure()
             raise InsufficientFundsError(
                 "Insufficient funds for order",
                 context={"symbol": symbol, "side": side, "amount": amount, "error": str(e)},
             ) from e
         except ccxt.InvalidOrder as e:
+            # InvalidOrder는 로직 에러 → CB 카운트 제외
             raise OrderExecutionError(
                 "Invalid order parameters",
                 context={"symbol": symbol, "side": side, "amount": amount, "error": str(e)},
             ) from e
         except ccxt.ExchangeError as e:
+            self._record_failure()
             raise OrderExecutionError(
                 "Order execution failed",
                 context={"symbol": symbol, "side": side, "error": str(e)},
             ) from e
+        except (NetworkError, RateLimitError):
+            self._record_failure()
+            raise
+        else:
+            self._record_success()
+            return result
 
     async def fetch_positions(self, symbols: list[str] | None = None) -> list[dict[str, Any]]:
         """오픈 포지션 조회.
@@ -300,6 +339,91 @@ class BinanceFuturesClient:
 
         return await self._retry_with_backoff(_do_cancel)
 
+    async def fetch_ticker(self, symbol: str) -> dict[str, Any]:
+        """실시간 가격 조회.
+
+        Args:
+            symbol: 거래 심볼 (예: "BTC/USDT:USDT")
+
+        Returns:
+            Ticker dict (last, bid, ask 등 포함)
+        """
+
+        async def _do_fetch() -> dict[str, Any]:
+            result: dict[str, Any] = await self.exchange.fetch_ticker(symbol)  # type: ignore[assignment]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """미체결 주문 조회.
+
+        Args:
+            symbol: 거래 심볼 (None이면 전체)
+
+        Returns:
+            미체결 주문 리스트
+        """
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = await self.exchange.fetch_open_orders(symbol)  # type: ignore[assignment]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
+        """주문 상태 조회.
+
+        Args:
+            order_id: 주문 ID
+            symbol: 거래 심볼
+
+        Returns:
+            주문 상태 dict
+        """
+
+        async def _do_fetch() -> dict[str, Any]:
+            result: dict[str, Any] = await self.exchange.fetch_order(order_id, symbol)  # type: ignore[assignment]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    def get_min_notional(self, symbol: str) -> float:
+        """심볼의 MIN_NOTIONAL 값 조회.
+
+        exchange.market(symbol)에서 limits.cost.min 추출.
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            최소 주문 금액 (USD). 정보 없으면 5.0 (Binance 기본값)
+        """
+        _default_min_notional = 5.0
+        try:
+            market: dict[str, Any] = self.exchange.market(symbol)  # type: ignore[no-untyped-call,assignment]
+            limits = market.get("limits", {})
+            cost_limits = limits.get("cost", {})
+            min_val = cost_limits.get("min")
+            if min_val is not None:
+                return float(min_val)
+        except Exception:
+            logger.debug("Failed to get MIN_NOTIONAL for {}, using default", symbol)
+        return _default_min_notional
+
+    def validate_min_notional(self, symbol: str, notional_usd: float) -> bool:
+        """주문 금액이 MIN_NOTIONAL 이상인지 검증.
+
+        Args:
+            symbol: 거래 심볼
+            notional_usd: 주문 금액 (USD)
+
+        Returns:
+            True면 통과, False면 미달
+        """
+        min_notional = self.get_min_notional(symbol)
+        return notional_usd >= min_notional
+
     @staticmethod
     def to_futures_symbol(symbol: str) -> str:
         """Spot 심볼 → Futures 심볼 변환.
@@ -341,6 +465,7 @@ class BinanceFuturesClient:
                 is_rate_limit = True
                 if attempt < max_retries:
                     wait = base_backoff * (2 ** (attempt + 1))
+                    wait *= 0.5 + random.random()  # jitter: thundering herd 방지
                     logger.warning(
                         "Rate limited (attempt {}/{}), waiting {:.1f}s",
                         attempt + 1,
@@ -354,6 +479,7 @@ class BinanceFuturesClient:
                 last_exc = e
                 if attempt < max_retries:
                     wait = base_backoff * (2**attempt)
+                    wait *= 0.5 + random.random()  # jitter: thundering herd 방지
                     logger.warning(
                         "Retryable error (attempt {}/{}): {}, waiting {:.1f}s",
                         attempt + 1,

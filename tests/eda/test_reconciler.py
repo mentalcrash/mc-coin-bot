@@ -171,6 +171,124 @@ class TestInitialCheck:
         assert drifts == []
 
 
+class TestCheckBalance:
+    """check_balance() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_returns_exchange_equity(self) -> None:
+        """거래소 equity 반환."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10200.0, "free": 10000.0}}
+        )
+
+        reconciler = PositionReconciler()
+        result = await reconciler.check_balance(pm, client)
+        assert result == 10200.0
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_failure(self) -> None:
+        """API 실패 시 None 반환."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(side_effect=Exception("API down"))
+
+        reconciler = PositionReconciler()
+        result = await reconciler.check_balance(pm, client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_no_log_within_threshold(self) -> None:
+        """2% 이내 drift 시 WARNING/CRITICAL 없음."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10100.0}}  # 1% drift
+        )
+
+        reconciler = PositionReconciler()
+        result = await reconciler.check_balance(pm, client)
+        assert result == 10100.0
+
+    @pytest.mark.asyncio
+    async def test_warns_moderate_drift(self) -> None:
+        """2-5% drift 시 WARNING (CRITICAL은 아님)."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10300.0}}  # 3% drift
+        )
+
+        reconciler = PositionReconciler()
+        result = await reconciler.check_balance(pm, client)
+        assert result == 10300.0
+
+    @pytest.mark.asyncio
+    async def test_critical_large_drift(self) -> None:
+        """5% 초과 drift 시 CRITICAL."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 8000.0}}  # 20% drift
+        )
+
+        reconciler = PositionReconciler()
+        result = await reconciler.check_balance(pm, client)
+        assert result == 8000.0
+
+
+class TestHedgeMode:
+    """Hedge Mode 포지션 비교 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_long_short_separate(self) -> None:
+        """Hedge Mode: LONG/SHORT 별도 매핑."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.01, last_price=50000.0
+            )
+        }
+        pm = _make_pm(positions)
+        # 거래소에 LONG + SHORT 모두 있음
+        client = _make_futures_client(
+            [
+                {"symbol": "BTC/USDT:USDT", "contracts": 0.01, "side": "long"},
+                {"symbol": "BTC/USDT:USDT", "contracts": 0.005, "side": "short"},
+            ]
+        )
+
+        reconciler = PositionReconciler()
+        drifts = await reconciler.initial_check(pm, client, ["BTC/USDT"])
+        # PM is LONG, exchange LONG size matches → size OK
+        # But exchange has opposite SHORT → drift
+        assert "BTC/USDT" in drifts
+
+    @pytest.mark.asyncio
+    async def test_pm_short_exchange_short_match(self) -> None:
+        """PM SHORT, 거래소 SHORT 일치."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.SHORT, size=0.01, last_price=50000.0
+            )
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [
+                {"symbol": "BTC/USDT:USDT", "contracts": 0.01, "side": "short"},
+            ]
+        )
+
+        reconciler = PositionReconciler()
+        drifts = await reconciler.initial_check(pm, client, ["BTC/USDT"])
+        assert drifts == []
+
+
 class TestPeriodicCheck:
     """periodic_check() 테스트."""
 

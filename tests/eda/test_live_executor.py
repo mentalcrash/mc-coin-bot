@@ -59,6 +59,12 @@ def _make_mock_client() -> MagicMock:
     client.to_futures_symbol = MagicMock(
         side_effect=lambda s: f"{s}:USDT" if ":USDT" not in s else s
     )
+    client.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
+    client.fetch_order = AsyncMock(
+        return_value={"id": "ord_001", "status": "closed", "filled": 0.001, "average": 50000.0}
+    )
+    client.validate_min_notional = MagicMock(return_value=True)
+    client.get_min_notional = MagicMock(return_value=5.0)
     return client
 
 
@@ -319,13 +325,14 @@ class TestExecute:
 
     @pytest.mark.asyncio
     async def test_no_price_estimate_returns_none(self) -> None:
-        """가격 추정 불가 시 None."""
+        """가격 추정 불가 시 None (fetch_ticker 실패 + PM price=0)."""
         positions = {
             "BTC/USDT": FakePosition(
                 symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=0.0
             )
         }
         client = _make_mock_client()
+        client.fetch_ticker = AsyncMock(return_value={"last": 0})
         executor = LiveExecutor(client)
         executor.set_pm(_make_mock_pm(positions))
 
@@ -386,3 +393,227 @@ class TestParseFill:
         fill = LiveExecutor._parse_fill(order, result)
         assert fill is not None
         assert fill.fill_price == 49000.0
+
+    def test_partial_fill_detected(self) -> None:
+        """partial fill (filled < requested * 0.99) 시 fill은 반환하되 경고."""
+        order = _make_order()
+        result = {"average": 50000.0, "filled": 0.0005, "fee": None}
+        # requested 0.001, filled 0.0005 → 50% partial
+        fill = LiveExecutor._parse_fill(order, result, requested_amount=0.001)
+        assert fill is not None
+        assert fill.fill_qty == 0.0005
+
+
+# ---------------------------------------------------------------------------
+# Fresh price fetch
+# ---------------------------------------------------------------------------
+
+
+class TestFreshPriceFetch:
+    """실시간 가격 조회 + fallback 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_uses_fresh_price_for_entry(self) -> None:
+        """Entry 주문 시 fetch_ticker로 실시간 가격 사용."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=45000.0
+            )
+        }
+        client = _make_mock_client()
+        client.fetch_ticker = AsyncMock(return_value={"last": 52000.0})
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=520.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        # fetch_ticker가 호출되었어야 함
+        client.fetch_ticker.assert_called_once()
+        assert fill is not None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_pm_price_on_ticker_failure(self) -> None:
+        """fetch_ticker 실패 시 PM last_price로 fallback."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=48000.0
+            )
+        }
+        client = _make_mock_client()
+        client.fetch_ticker = AsyncMock(side_effect=Exception("API error"))
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=480.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        # fallback으로 PM price 사용 → 주문 성공
+        assert fill is not None
+
+    @pytest.mark.asyncio
+    async def test_reduce_only_skips_ticker(self) -> None:
+        """청산 주문(reduce_only)은 fetch_ticker 미호출."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.001, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(target_weight=0, side="SELL", notional_usd=50.0)
+        fill = await executor.execute(order)
+
+        # reduce_only → fetch_ticker 미호출
+        client.fetch_ticker.assert_not_called()
+        assert fill is not None
+
+
+# ---------------------------------------------------------------------------
+# MIN_NOTIONAL 검증
+# ---------------------------------------------------------------------------
+
+
+class TestMinNotionalCheck:
+    """MIN_NOTIONAL 사전 검증 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_below_min_notional(self) -> None:
+        """notional < MIN_NOTIONAL 시 거래소 호출 없이 None 반환."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        client.validate_min_notional = MagicMock(return_value=False)
+        client.get_min_notional = MagicMock(return_value=10.0)
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=3.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        assert fill is None
+        # create_order가 호출되면 안됨
+        client.create_order.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_passes_above_min_notional(self) -> None:
+        """notional >= MIN_NOTIONAL 시 정상 진행."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        client.validate_min_notional = MagicMock(return_value=True)
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=100.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        assert fill is not None
+        client.create_order.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Order confirmation
+# ---------------------------------------------------------------------------
+
+
+class TestOrderConfirmation:
+    """주문 상태 확인 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_confirms_non_closed_order(self) -> None:
+        """status != 'closed' 시 fetch_order로 재확인."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        client.create_order = AsyncMock(
+            return_value={
+                "id": "ord_002",
+                "status": "open",
+                "filled": 0,
+                "average": 0,
+            }
+        )
+        client.fetch_order = AsyncMock(
+            return_value={
+                "id": "ord_002",
+                "status": "closed",
+                "filled": 0.001,
+                "average": 50000.0,
+                "fee": {"cost": 0.02, "currency": "USDT"},
+            }
+        )
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=50.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        # fetch_order가 확인 호출
+        client.fetch_order.assert_called_once_with("ord_002", "BTC/USDT:USDT")
+        assert fill is not None
+        assert fill.fill_price == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_skips_confirmation_when_closed(self) -> None:
+        """status == 'closed' 시 fetch_order 미호출."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=50.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        client.fetch_order.assert_not_called()
+        assert fill is not None
+
+    @pytest.mark.asyncio
+    async def test_confirmation_failure_uses_original(self) -> None:
+        """fetch_order 실패 시 원본 결과 사용."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.NEUTRAL, size=0.0, last_price=50000.0
+            )
+        }
+        client = _make_mock_client()
+        client.create_order = AsyncMock(
+            return_value={
+                "id": "ord_003",
+                "status": "open",
+                "filled": 0.001,
+                "average": 50000.0,
+                "fee": {"cost": 0.02, "currency": "USDT"},
+            }
+        )
+        client.fetch_order = AsyncMock(side_effect=Exception("API error"))
+
+        executor = LiveExecutor(client)
+        executor.set_pm(_make_mock_pm(positions))
+
+        order = _make_order(notional_usd=50.0, target_weight=1.0, side="BUY")
+        fill = await executor.execute(order)
+
+        # 원본 결과로 fill 생성
+        assert fill is not None
+        assert fill.fill_price == 50000.0
