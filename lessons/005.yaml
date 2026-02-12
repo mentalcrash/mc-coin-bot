@@ -1,0 +1,15 @@
+id: 5
+title: PBO 이중 경로
+body: 경로 A (PBO<40%) 또는 경로 B (PBO<80% + CPCV 전fold OOS>0 + MC p<0.05). 기저 alpha 견고하면
+  파라미터 순위 역전은 허용
+category: risk-management
+tags:
+- PBO
+- CPCV
+- overfitting
+- validation
+strategies:
+- ctrend
+- anchor-mom
+timeframes: []
+added_at: '2026-02-10'

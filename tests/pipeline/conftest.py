@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+from src.pipeline.lesson_models import LessonCategory, LessonRecord
 from src.pipeline.models import (
     AssetMetrics,
     Decision,
@@ -155,4 +156,34 @@ def retired_record() -> StrategyRecord:
                 rationale="CAGR < 20%",
             ),
         ],
+    )
+
+
+@pytest.fixture
+def sample_lesson() -> LessonRecord:
+    """strategy-design 카테고리 교훈."""
+    return LessonRecord(
+        id=1,
+        title="앙상블 > 단일지표",
+        body="ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수",
+        category=LessonCategory.STRATEGY_DESIGN,
+        tags=["ML", "ensemble", "decay"],
+        strategies=["ctrend"],
+        timeframes=["1D"],
+        added_at=date(2026, 2, 10),
+    )
+
+
+@pytest.fixture
+def sample_lesson_market() -> LessonRecord:
+    """market-structure 카테고리 교훈."""
+    return LessonRecord(
+        id=13,
+        title="FX Session Edge ≠ Crypto Edge",
+        body="Asian session breakout은 FX 시장의 institutional flow 시간대 분리에 기반. 크립토 24/7 시장에서 session 분리는 구조적으로 무효",
+        category=LessonCategory.MARKET_STRUCTURE,
+        tags=["session", "FX", "crypto"],
+        strategies=["session-breakout"],
+        timeframes=["1H"],
+        added_at=date(2026, 2, 10),
     )

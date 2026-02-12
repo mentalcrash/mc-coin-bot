@@ -1,0 +1,18 @@
+id: 21
+title: 4H Reversal 전략의 크립토 부적합
+body: Candle-Reject(-0.71~-1.62), Vol-Climax(-0.05~-1.73), OU-MeanRev(-0.31~-1.18)
+  전 에셋 Sharpe 음수. 4H bar에서 rejection wick, volume climax, OU mean reversion 시그널 모두
+  크립토 추세 지속성에 패배. 반전(MR) 전략은 크립토에서 구조적 불리 — 추세추종/앙상블만 생존
+category: strategy-design
+tags:
+- reversal
+- mean-reversion
+- 4H
+- crypto-trend
+strategies:
+- candle-reject
+- vol-climax
+- ou-meanrev
+timeframes:
+- 4H
+added_at: '2026-02-10'

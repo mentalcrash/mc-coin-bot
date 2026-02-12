@@ -1,0 +1,15 @@
+id: 22
+title: 50개 전략 중 G5 도달 2개 (4.0%)
+body: 재검증 8종 포함 48개 폐기 확정. alpha 생성은 ML 앙상블(CTREND) + 멀티 모멘텀(Anchor-Mom)에 집중. 단일 지표/반전/미시구조
+  전략은 크립토 OHLCV에서 체계적으로 실패
+category: meta-analysis
+tags:
+- summary
+- attrition
+- ML
+- momentum
+strategies:
+- ctrend
+- anchor-mom
+timeframes: []
+added_at: '2026-02-10'

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from src.pipeline.lesson_models import LessonRecord
+from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
     Decision,
     GateId,
@@ -121,6 +123,39 @@ class TestDashboardGenerator:
         content = gen.generate()
         # retired_record decision rationale = "CAGR < 20%"
         assert "CAGR < 20%" in content
+
+    def test_lessons_from_lesson_store(
+        self,
+        store_with_data: StrategyStore,
+        tmp_path: Path,
+        sample_lesson: LessonRecord,
+    ) -> None:
+        lesson_store = LessonStore(base_dir=tmp_path / "lessons")
+        lesson_store.save(sample_lesson)
+        gen = DashboardGenerator(store_with_data, lesson_store=lesson_store)
+        content = gen.generate()
+        assert "핵심 교훈" in content
+        assert "앙상블 > 단일지표" in content
+
+    def test_lessons_empty_lesson_store(
+        self,
+        store_with_data: StrategyStore,
+        tmp_path: Path,
+    ) -> None:
+        lesson_store = LessonStore(base_dir=tmp_path / "empty_lessons")
+        gen = DashboardGenerator(store_with_data, lesson_store=lesson_store)
+        content = gen.generate()
+        assert "핵심 교훈" in content
+        assert "(없음)" in content
+
+    def test_lessons_fallback_without_store(
+        self,
+        store_with_data: StrategyStore,
+    ) -> None:
+        gen = DashboardGenerator(store_with_data, lesson_store=None)
+        # Without lesson_store, falls back to file (may or may not exist)
+        content = gen.generate()
+        assert isinstance(content, str)
 
 
 class TestExtractNote:

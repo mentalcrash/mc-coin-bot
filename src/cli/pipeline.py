@@ -203,7 +203,9 @@ def record(
     detail: Annotated[
         list[str] | None, typer.Option("--detail", "-d", help="key=value pairs")
     ] = None,
-    no_retire: Annotated[bool, typer.Option("--no-retire", help="FAIL 시 자동 RETIRED 방지")] = False,
+    no_retire: Annotated[
+        bool, typer.Option("--no-retire", help="FAIL 시 자동 RETIRED 방지")
+    ] = False,
 ) -> None:
     """Gate 결과 기록."""
     store = StrategyStore()
@@ -249,13 +251,15 @@ def update_status_cmd(
 @app.command()
 def report() -> None:
     """Dashboard 자동 생성 (YAML → markdown)."""
+    from pathlib import Path
+
+    from src.pipeline.lesson_store import LessonStore
     from src.pipeline.report import DashboardGenerator
 
     store = StrategyStore()
-    generator = DashboardGenerator(store)
+    lesson_store = LessonStore()
+    generator = DashboardGenerator(store, lesson_store=lesson_store)
     content = generator.generate()
-
-    from pathlib import Path
 
     output = Path("docs/strategy/dashboard.md")
     output.write_text(content, encoding="utf-8")
@@ -336,6 +340,131 @@ def full_table() -> None:
     retired = sum(1 for r in records if r.meta.status == StrategyStatus.RETIRED)
     summary = f"\n  [green]ACTIVE: {active}[/green] | [red]RETIRED: {retired}[/red] | Total: {len(records)}"
     console.print(summary)
+
+
+# ─── Lessons commands ────────────────────────────────────────────────
+
+
+@app.command(name="lessons-list")
+def lessons_list(
+    category: Annotated[
+        str | None, typer.Option("--category", "-c", help="Filter by category")
+    ] = None,
+    tag: Annotated[str | None, typer.Option("--tag", "-t", help="Filter by tag")] = None,
+    strategy: Annotated[
+        str | None, typer.Option("--strategy", "-s", help="Filter by strategy")
+    ] = None,
+    timeframe: Annotated[str | None, typer.Option("--tf", help="Filter by timeframe")] = None,
+) -> None:
+    """교훈 목록 (필터링 가능)."""
+    from src.pipeline.lesson_models import LessonCategory
+    from src.pipeline.lesson_store import LessonStore
+
+    store = LessonStore()
+
+    if category:
+        try:
+            cat = LessonCategory(category)
+        except ValueError:
+            console.print(f"[red]Invalid category: {category}[/red]")
+            console.print(f"Valid: {', '.join(c.value for c in LessonCategory)}")
+            raise typer.Exit(code=1) from None
+        records = store.filter_by_category(cat)
+    elif tag:
+        records = store.filter_by_tag(tag)
+    elif strategy:
+        records = store.filter_by_strategy(strategy)
+    elif timeframe:
+        records = store.filter_by_timeframe(timeframe)
+    else:
+        records = store.load_all()
+
+    if not records:
+        console.print("[yellow]No lessons match the given filters.[/yellow]")
+        return
+
+    table = Table(show_header=True, header_style="bold", title=f"Lessons ({len(records)})")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Title", style="bold", min_width=20)
+    table.add_column("Category", width=18)
+    table.add_column("Tags")
+
+    for r in records:
+        table.add_row(
+            str(r.id),
+            r.title,
+            r.category.value,
+            ", ".join(r.tags),
+        )
+
+    console.print(table)
+
+
+@app.command(name="lessons-show")
+def lessons_show(
+    lesson_id: Annotated[int, typer.Argument(help="Lesson ID")],
+) -> None:
+    """교훈 상세 정보."""
+    from src.pipeline.lesson_store import LessonStore
+
+    store = LessonStore()
+    try:
+        record = store.load(lesson_id)
+    except FileNotFoundError:
+        console.print(f"[red]Lesson not found: {lesson_id}[/red]")
+        raise typer.Exit(code=1) from None
+
+    lines = [
+        f"[bold]#{record.id}[/bold] {record.title}",
+        "",
+        record.body,
+        "",
+        f"[bold]Category:[/bold] {record.category.value}",
+        f"[bold]Tags:[/bold] {', '.join(record.tags) if record.tags else '-'}",
+        f"[bold]Strategies:[/bold] {', '.join(record.strategies) if record.strategies else '-'}",
+        f"[bold]Timeframes:[/bold] {', '.join(record.timeframes) if record.timeframes else '-'}",
+        f"[bold]Added:[/bold] {record.added_at}",
+    ]
+    console.print(Panel("\n".join(lines), title=f"Lesson #{record.id}"))
+
+
+@app.command(name="lessons-add")
+def lessons_add(
+    title: Annotated[str, typer.Option("--title", help="교훈 제목")],
+    body: Annotated[str, typer.Option("--body", help="상세 설명")],
+    category: Annotated[str, typer.Option("--category", "-c", help="카테고리")],
+    tag: Annotated[list[str] | None, typer.Option("--tag", "-t", help="태그 (복수 가능)")] = None,
+    strategy: Annotated[
+        list[str] | None, typer.Option("--strategy", "-s", help="관련 전략 (복수 가능)")
+    ] = None,
+    timeframe: Annotated[list[str] | None, typer.Option("--tf", help="관련 TF (복수 가능)")] = None,
+) -> None:
+    """새 교훈 추가 (next_id 자동)."""
+    from src.pipeline.lesson_models import LessonCategory, LessonRecord
+    from src.pipeline.lesson_store import LessonStore
+
+    try:
+        cat = LessonCategory(category)
+    except ValueError:
+        console.print(f"[red]Invalid category: {category}[/red]")
+        console.print(f"Valid: {', '.join(c.value for c in LessonCategory)}")
+        raise typer.Exit(code=1) from None
+
+    store = LessonStore()
+    new_id = store.next_id()
+
+    record = LessonRecord(
+        id=new_id,
+        title=title,
+        body=body,
+        category=cat,
+        tags=tag or [],
+        strategies=strategy or [],
+        timeframes=timeframe or [],
+        added_at=date.today(),
+    )
+    store.save(record)
+    console.print(f"[green]Created: lessons/{new_id:03d}.yaml — {title}[/green]")
 
 
 # ─── Display helpers ─────────────────────────────────────────────────

@@ -1,0 +1,15 @@
+id: 16
+title: Intraday 계절성
+body: 1H에서 Best ETH Sharpe 0.26, 3/5 에셋 음수. Trades 22~78건으로 극소. 30일 rolling t-stat은
+  크립토 1H에서도 과적합 (비정상 intraday 패턴)
+category: market-structure
+tags:
+- seasonality
+- intraday
+- t-stat
+- overfitting
+strategies:
+- hour-season
+timeframes:
+- 1H
+added_at: '2026-02-10'

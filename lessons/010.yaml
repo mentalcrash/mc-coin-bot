@@ -1,0 +1,15 @@
+id: 10
+title: 밈코인 FULL Short = 구조적 자살
+body: VWAP-Disposition DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적. DOGE 제외 시 SOL
+  Sharpe 0.96
+category: risk-management
+tags:
+- DOGE
+- short
+- meme-coin
+- MDD
+strategies:
+- vwap-disposition
+timeframes:
+- 1D
+added_at: '2026-02-10'

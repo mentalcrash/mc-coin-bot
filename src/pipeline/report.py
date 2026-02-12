@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
     GateId,
     GateVerdict,
@@ -23,8 +24,13 @@ _LESSONS_PATH = Path("docs/strategy/lessons.md")
 class DashboardGenerator:
     """YAML 데이터 → dashboard.md 생성."""
 
-    def __init__(self, store: StrategyStore) -> None:
+    def __init__(
+        self,
+        store: StrategyStore,
+        lesson_store: LessonStore | None = None,
+    ) -> None:
         self.store = store
+        self.lesson_store = lesson_store
 
     def generate(self) -> str:
         """전체 dashboard markdown 생성."""
@@ -315,10 +321,26 @@ class DashboardGenerator:
         return "\n".join(lines)
 
     def _lessons(self) -> str:
-        """핵심 교훈 (별도 파일에서 로드)."""
+        """핵심 교훈 (LessonStore 우선, fallback: lessons.md)."""
+        if self.lesson_store is not None:
+            return self._generate_lessons_table()
         if _LESSONS_PATH.exists():
             return _LESSONS_PATH.read_text(encoding="utf-8").strip()
         return ""
+
+    def _generate_lessons_table(self) -> str:
+        """LessonStore → markdown 테이블 생성."""
+        assert self.lesson_store is not None
+        records = self.lesson_store.load_all()
+        if not records:
+            return "## 핵심 교훈\n\n(없음)"
+        lines = [
+            "## 핵심 교훈\n",
+            "| # | 교훈 |",
+            "|---|------|",
+            *[f"| {r.id} | **{r.title}**: {r.body} |" for r in records],
+        ]
+        return "\n".join(lines)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────

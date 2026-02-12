@@ -1,0 +1,17 @@
+id: 19
+title: 6H TF Acceleration/Momentum = 구조적 실패
+body: Accel-Conv(-1.05~-2.42), QD-Mom(-0.51~-2.10) 전 에셋 Sharpe 음수. 6H bar에서 2차 미분(acceleration)은
+  노이즈 과민, quarter-day autocorrelation은 크립토 24/7에서 부재. 과다 거래(연 400~760건) → 비용 drag
+  45~77%
+category: market-structure
+tags:
+- 6H
+- acceleration
+- autocorrelation
+- overtrading
+strategies:
+- accel-conv
+- qd-mom
+timeframes:
+- 6H
+added_at: '2026-02-10'

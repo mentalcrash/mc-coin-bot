@@ -1,0 +1,16 @@
+id: 15
+title: BVC 근사의 TF 불변 한계
+body: 1H에서도 전 에셋 Sharpe 음수 (-0.24~-1.56). OHLCV 기반 BVC 근사는 1D→1H 해상도 상승에도 order flow
+  방향성 예측력 부재. L2 data 없이 flow 기반 전략은 근본적으로 불가
+category: market-structure
+tags:
+- BVC
+- order-flow
+- L2-data
+- OHLCV
+strategies:
+- flow-imbalance
+timeframes:
+- 1D
+- 1H
+added_at: '2026-02-10'

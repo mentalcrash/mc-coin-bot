@@ -1,0 +1,15 @@
+id: 8
+title: G0A 이론 ≠ G1 실전
+body: AC-Regime(27/30), VR-Regime(24/30) 등 G0A 고득점이 G1 백테스트 성과를 보장하지 않음. 39개 전략 중
+  G5 도달 1개(2.6%)
+category: pipeline-process
+tags:
+- G0A
+- G1
+- gate-attrition
+- theory-vs-practice
+strategies:
+- ac-regime
+- vr-regime
+timeframes: []
+added_at: '2026-02-10'

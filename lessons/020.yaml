@@ -1,0 +1,16 @@
+id: 20
+title: PBO 이중 경로 도입
+body: 'PBO < 40% 단일 기준 → 이중 경로 완화. 경로 B: PBO < 80% AND CPCV 전 fold OOS > 0 AND MC
+  p < 0.05. CTREND(PBO 60%) + Anchor-Mom(PBO 80%) 모두 경로 B PASS. CPCV 전 fold OOS 양수
+  여부가 PBO 수치보다 실전 위험의 더 좋은 지표'
+category: strategy-design
+tags:
+- PBO
+- CPCV
+- dual-path
+- validation
+strategies:
+- ctrend
+- anchor-mom
+timeframes: []
+added_at: '2026-02-10'

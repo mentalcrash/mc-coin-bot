@@ -1,0 +1,13 @@
+id: 11
+title: 칼만 필터 ≠ 알파
+body: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음. vel_threshold가 에셋 변동성에 미적응 (DOGE 거래 0건)
+category: strategy-design
+tags:
+- kalman
+- noise-filtering
+- MA
+strategies:
+- kalman-trend
+timeframes:
+- 1D
+added_at: '2026-02-10'

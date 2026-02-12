@@ -1,0 +1,15 @@
+id: 13
+title: FX Session Edge ≠ Crypto Edge
+body: Asian session breakout은 FX 시장의 institutional flow 시간대 분리에 기반. 1H 재검증에서도 전 에셋
+  Sharpe 음수 (-0.40~-2.52). 크립토 24/7 시장에서 session 분리는 구조적으로 무효
+category: market-structure
+tags:
+- session
+- FX
+- crypto
+- 24/7
+strategies:
+- session-breakout
+timeframes:
+- 1H
+added_at: '2026-02-10'

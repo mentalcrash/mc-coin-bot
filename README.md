@@ -352,3 +352,21 @@ uv run python main.py pipeline table    # 전체 Gate 진행도
 uv run python main.py pipeline show ctrend  # 전략 상세
 uv run python main.py pipeline report   # Dashboard 재생성
 ```
+
+### 교훈 관리 (Lessons)
+
+50개 전략 평가 과정에서 축적된 22개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+카테고리(6종), 태그, 전략, TF별 프로그래매틱 검색이 가능합니다.
+
+```bash
+uv run python main.py pipeline lessons-list              # 전체 교훈 목록
+uv run python main.py pipeline lessons-list -c strategy-design  # 카테고리 필터
+uv run python main.py pipeline lessons-list -t ML         # 태그 필터
+uv run python main.py pipeline lessons-list -s ctrend     # 관련 전략 필터
+uv run python main.py pipeline lessons-list --tf 1H       # TF 필터
+uv run python main.py pipeline lessons-show 1             # 교훈 상세
+uv run python main.py pipeline lessons-add \
+  --title "제목" --body "설명" -c strategy-design -t tag1 -t tag2
+```
+
+카테고리: `strategy-design`, `risk-management`, `market-structure`, `data-resolution`, `pipeline-process`, `meta-analysis`
