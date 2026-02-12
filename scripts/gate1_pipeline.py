@@ -138,6 +138,10 @@ def main() -> None:
     output_path.write_text(json.dumps(output, indent=2, default=str), encoding="utf-8")
     logger.info(f"Results saved to {output_path} ({elapsed:.1f}s)")
 
+    # Update YAML
+    for sname, results in all_results.items():
+        _update_yaml(sname, results)
+
     # Print summary
     for sname, results in all_results.items():
         print(f"\n{'=' * 60}")
@@ -168,6 +172,64 @@ def main() -> None:
                 f"{r['total_trades']:>8} {pf:>8} "
                 f"{alpha:>10} {beta:>6}"
             )
+
+
+def _update_yaml(strategy_name: str, results: list[dict[str, Any]]) -> None:
+    """Gate 1 결과를 YAML에 자동 기록."""
+    from src.pipeline.models import AssetMetrics, GateId, GateVerdict, StrategyStatus
+    from src.pipeline.store import StrategyStore
+
+    store = StrategyStore()
+    if not store.exists(strategy_name):
+        return
+
+    sorted_results = sorted(results, key=lambda x: x.get("sharpe_ratio") or 0, reverse=True)
+    best = sorted_results[0]
+    best_sharpe = best.get("sharpe_ratio") or 0
+    best_cagr = (best.get("cagr") or 0) * 100
+    best_mdd = abs(best.get("max_drawdown") or 0)
+    best_trades = best.get("total_trades") or 0
+
+    verdict = GateVerdict.PASS if (
+        best_sharpe > 1.0 and best_cagr > 20.0 and best_mdd < 40.0 and best_trades > 50
+    ) else GateVerdict.FAIL
+
+    details = {
+        "best_asset": best["symbol"],
+        "sharpe": round(best_sharpe, 2),
+        "cagr": round(best_cagr, 1),
+        "mdd": round(best_mdd, 1),
+        "trades": best_trades,
+    }
+    rationale = (
+        f"{best['symbol']} Sharpe {best_sharpe:.2f}, "
+        f"CAGR {best_cagr:+.1f}%, MDD -{best_mdd:.1f}%"
+    )
+
+    store.record_gate(strategy_name, GateId.G1, verdict, details=details, rationale=rationale)
+
+    metrics = [
+        AssetMetrics(
+            symbol=r["symbol"],
+            sharpe=round(r.get("sharpe_ratio") or 0, 2),
+            cagr=round((r.get("cagr") or 0) * 100, 1),
+            mdd=round(abs(r.get("max_drawdown") or 0), 1),
+            trades=r.get("total_trades") or 0,
+            profit_factor=round(r["profit_factor"], 2) if r.get("profit_factor") else None,
+            win_rate=round(r["win_rate"], 1) if r.get("win_rate") else None,
+            sortino=round(r["sortino_ratio"], 2) if r.get("sortino_ratio") else None,
+            calmar=round(r["calmar_ratio"], 2) if r.get("calmar_ratio") else None,
+            alpha=round(r["alpha"], 1) if r.get("alpha") else None,
+            beta=round(r["beta"], 2) if r.get("beta") else None,
+        )
+        for r in results
+    ]
+    store.set_asset_performance(strategy_name, metrics)
+
+    if verdict == GateVerdict.FAIL:
+        store.update_status(strategy_name, StrategyStatus.RETIRED)
+
+    logger.info(f"  YAML updated: {strategy_name} G1 {verdict}")
 
 
 if __name__ == "__main__":

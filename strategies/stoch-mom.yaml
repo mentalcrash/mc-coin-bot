@@ -1,0 +1,65 @@
+meta:
+  name: stoch-mom
+  display_name: Stochastic Momentum
+  category: 하이브리드
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 스토캐스틱 크로스오버는 단기 모멘텀 변화를, SMA 필터는 전체 추세 방향을 확인한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 21
+      max_score: 30
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.34
+      oos_sharpe: -0.34
+      decay: 124.9
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.94
+  cagr: 7.05
+  mdd: 8.99
+  trades: 176
+  profit_factor: 1.63
+- symbol: BTC/USDT
+  sharpe: 0.93
+  cagr: 6.58
+  mdd: 12.74
+  trades: 247
+  profit_factor: 1.59
+- symbol: DOGE/USDT
+  sharpe: 0.76
+  cagr: 9.52
+  mdd: 12.49
+  trades: 187
+  profit_factor: 1.8
+- symbol: ETH/USDT
+  sharpe: 0.75
+  cagr: 4.49
+  mdd: 13.13
+  trades: 227
+  profit_factor: 1.42
+- symbol: BNB/USDT
+  sharpe: 0.15
+  cagr: 0.84
+  mdd: 12.23
+  trades: 250
+  profit_factor: 1.1
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 21/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.34, Decay 124.9%

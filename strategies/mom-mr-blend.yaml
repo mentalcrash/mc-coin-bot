@@ -1,0 +1,65 @@
+meta:
+  name: mom-mr-blend
+  display_name: Mom-MR Blend
+  category: 하이브리드
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 모멘텀과 평균회귀를 동일 비중으로 혼합하면 레짐 변화에 대한 로버스트성이 향상된다는 가설.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.1
+      oos_sharpe: -0.1
+      decay: 109.1
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.48
+  cagr: 6.66
+  mdd: 29.16
+  trades: 99
+  profit_factor: 1.29
+- symbol: DOGE/USDT
+  sharpe: 0.36
+  cagr: 11.85
+  mdd: 36.24
+  trades: 89
+  profit_factor: 1.39
+- symbol: BTC/USDT
+  sharpe: 0.09
+  cagr: 0.3
+  mdd: 27.43
+  trades: 86
+  profit_factor: 1.08
+- symbol: SOL/USDT
+  sharpe: -0.13
+  cagr: -2.6
+  mdd: 26.42
+  trades: 71
+  profit_factor: 0.89
+- symbol: BNB/USDT
+  sharpe: -0.21
+  cagr: -4.45
+  mdd: 52.36
+  trades: 108
+  profit_factor: 0.86
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.10, Decay 109.1%

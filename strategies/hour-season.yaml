@@ -1,0 +1,73 @@
+meta:
+  name: hour-season
+  display_name: Hour Seasonality
+  category: Structural / Seasonality
+  timeframe: 1H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 시간대별(0~23h) rolling t-stat으로 유의미한 수익률 패턴 감지, volume confirm
+    필터링
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 22
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.26
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -1.01
+  cagr: -12.8
+  mdd: 63.1
+  trades: 1157
+  profit_factor: 0.66
+- symbol: SOL/USDT
+  sharpe: -1.62
+  cagr: -9.4
+  mdd: 44.8
+  trades: 946
+  profit_factor: 0.65
+- symbol: BNB/USDT
+  sharpe: -3.51
+  cagr: -21.9
+  mdd: 77.6
+  trades: 1273
+  profit_factor: 0.43
+- symbol: ETH/USDT
+  sharpe: -3.72
+  cagr: -20.1
+  mdd: 73.9
+  trades: 1200
+  profit_factor: 0.43
+- symbol: BTC/USDT
+  sharpe: -4.46
+  cagr: -20.2
+  mdd: 74.1
+  trades: 1104
+  profit_factor: 0.41
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점. Vojtko(2023) hour-of-day anomaly 기반
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: 코드 품질 검증 통과
+- date: '2026-02-10'
+  gate: G1
+  verdict: FAIL
+  rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-1.01 ~ -4.46)'

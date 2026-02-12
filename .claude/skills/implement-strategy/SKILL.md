@@ -684,79 +684,60 @@ uv run pytest --tb=short -q
 
 ---
 
-## Step 9: 스코어카드 생성
+## Step 9: YAML 메타데이터 + 스코어카드 생성
 
-### 9-1. 스코어카드 파일 생성 (`docs/scorecard/{strategy_name}.md`)
+### 9-1. YAML 메타데이터 생성 (필수)
 
-[docs/scorecard/template.md](../../../docs/scorecard/template.md) 템플릿을 기반으로 초기 스코어카드를 생성한다.
+`strategies/{strategy_name}.yaml` 파일을 생성한다. 이것이 **Single Source of Truth**이다.
 
-```markdown
-# 전략 스코어카드: {DisplayName}
-
-> 자동 생성 | 평가 기준: [evaluation-standard.md](../strategy/evaluation-standard.md)
-
-## 기본 정보
-
-| 항목 | 값 |
-|------|---|
-| **전략명** | {DisplayName} (`{registry-key}`) |
-| **유형** | {카테고리} |
-| **타임프레임** | {TF} |
-| **상태** | `검증중` |
-| **Best Asset** | — (G1 대기) |
-| **경제적 논거** | {핵심 가설 1~2문장} |
-
----
-
-## Gate 진행 현황
-
-~~~
-G0 아이디어  [PASS] {G0A점수}/30점
-G0B 코드검증 [    ] → /verify-strategy 대기
-G1 백테스트  [    ]
-G2 IS/OOS    [    ]
-G3 파라미터  [    ]
-G4 심층검증  [    ]
-G5 EDA검증   [    ]
-G6 모의거래  [    ]
-G7 실전배포  [    ]
-~~~
-
----
-
-## 의사결정 기록
-
-| 날짜 | Gate | 판정 | 근거 |
-|------|------|------|------|
-| {날짜} | G0A | PASS | {G0A점수}/30점. {핵심 논거 요약} |
+```yaml
+# strategies/{strategy-name}.yaml
+meta:
+  name: {strategy-name}
+  display_name: {DisplayName}
+  category: {카테고리}
+  timeframe: {TF}
+  short_mode: {DISABLED|HEDGE_ONLY|FULL}
+  status: IMPLEMENTED
+  created_at: "{YYYY-MM-DD}"
+  economic_rationale: {핵심 가설 1~2문장}
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: "{YYYY-MM-DD}"
+    details:
+      score: {G0A점수}
+      max_score: 30
+asset_performance: []
+decisions:
+  - date: "{YYYY-MM-DD}"
+    gate: G0A
+    verdict: PASS
+    rationale: "{G0A점수}/30점"
 ```
 
 > **Gate 0A 점수와 경제적 논거**는 `temp-candidate.md`에서 추출한다.
-> 성과 요약 섹션은 G1 완료 후 gate-pipeline에서 추가한다.
+
+### 9-2. 스코어카드 파일 생성 (선택)
+
+[docs/scorecard/template.md](../../../docs/scorecard/template.md) 템플릿을 기반으로 초기 스코어카드를 생성한다.
+스코어카드는 사람이 읽는 문서이며, YAML이 프로그래매틱 관리의 주체이다.
 
 ---
 
 ## Step 10: Dashboard 갱신
 
-### 10-1. docs/strategy/dashboard.md 갱신
+### 10-1. Pipeline CLI로 Dashboard 자동 생성
 
-"검증중 전략" 테이블에 새 행 추가:
-
-```markdown
-| **{StrategyName}** (`{registry-key}`) | {TF} | {ShortMode} | {G0A점수}/30 | — | — | {설명} |
+```bash
+uv run python main.py pipeline report
 ```
 
-> 기존 행의 형식을 정확히 따른다. G0B는 미완 (`—`).
+> YAML 데이터에서 자동으로 `docs/strategy/dashboard.md`를 생성한다.
+> 수동 편집 불필요.
 
-### 10-2. 전략 수 갱신
-
-Dashboard 상단의 전략 총 수를 갱신:
-
-```markdown
-## 현재 전략 현황 (N개 = 활성 M + 검증중 K + 폐기 L)
-```
-
-### 10-3. temp-candidate.md 상태 갱신
+### 10-2. temp-candidate.md 상태 갱신
 
 해당 후보의 상태를 `구현 완료`로 변경:
 

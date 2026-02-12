@@ -155,11 +155,15 @@ unfixable = []
 # [중요] 특정 파일/폴더에 대한 예외 규칙 적용
 [tool.ruff.lint.per-file-ignores]
 # 테스트 코드는 보안 검사 및 일부 엄격한 룰 제외
-"tests/**/*" = ["S101", "S106", "SLF001", "PLR2004", "PD", "N802"]
+"tests/**/*" = ["S101", "S105", "S106", "SLF001", "PLR2004", "PD", "N802", "TC001", "TC003"]
 # 연구용 노트북/스크립트는 print 사용 허용
 "research/**/*" = ["T201", "PD"]
 # 전략 __init__.py는 side effect import로 전략 자동 등록
 "src/strategy/__init__.py" = ["F401"]
+# Pipeline models: date는 Pydantic field annotation 런타임 필요, PASS는 enum 값
+"src/pipeline/models.py" = ["TC003", "S105"]
+# Pipeline report: StrategyStore 런타임 필요
+"src/pipeline/report.py" = ["TC001"]
 # 스크립트는 로거 설정 후 import, 매직넘버, print 허용
 "scripts/**/*" = ["E402", "PLR2004", "RUF001", "RUF002", "RUF003", "TRY300", "T201"]
 

@@ -1,0 +1,54 @@
+meta:
+  name: risk-mom
+  display_name: Risk Momentum
+  category: 추세추종
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 변동성이 높을 때 포지션을 줄이고, 낮을 때 늘려서 위험 조정 수익률을 개선한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.77
+  cagr: 10.39
+  mdd: 95.51
+  trades: 154
+  profit_factor: 1.03
+- symbol: DOGE/USDT
+  sharpe: 0.77
+  cagr: 29.87
+  mdd: 93.28
+  trades: 160
+  profit_factor: 1.04
+- symbol: BNB/USDT
+  sharpe: 0.72
+  cagr: 26.72
+  mdd: 88.2
+  trades: 197
+  profit_factor: 1.11
+- symbol: ETH/USDT
+  sharpe: 0.69
+  cagr: 22.87
+  mdd: 91.87
+  trades: 149
+  profit_factor: 1.17
+- symbol: BTC/USDT
+  sharpe: 0.36
+  cagr: -0.1
+  mdd: 88.13
+  trades: 159
+  profit_factor: 1.07
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

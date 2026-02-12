@@ -1,0 +1,75 @@
+meta:
+  name: donchian
+  display_name: Donchian Channel
+  category: 추세추종
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 신고가/신저가 돌파는 추세 시작의 강한 시그널이며, 터틀 트레이딩으로 검증되었다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 25
+      max_score: 30
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.01
+      mdd: 50.01
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      is_sharpe: 1.4928
+      oos_sharpe: -0.1742
+      decay: 111.7
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 1.01
+  cagr: 30.5
+  mdd: 50.01
+  trades: 97
+  profit_factor: 2.18
+- symbol: DOGE/USDT
+  sharpe: 0.98
+  cagr: 35.73
+  mdd: 42.73
+  trades: 126
+  profit_factor: 2.25
+- symbol: BNB/USDT
+  sharpe: 0.93
+  cagr: 29.14
+  mdd: 34.55
+  trades: 147
+  profit_factor: 2.21
+- symbol: ETH/USDT
+  sharpe: 0.88
+  cagr: 25.17
+  mdd: 38.38
+  trades: 157
+  profit_factor: 1.63
+- symbol: BTC/USDT
+  sharpe: 0.78
+  cagr: 20.77
+  mdd: 47.7
+  trades: 134
+  profit_factor: 1.64
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: PASS
+  rationale: SOL/USDT Sharpe 1.01
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe 0.12, Decay 91.1%

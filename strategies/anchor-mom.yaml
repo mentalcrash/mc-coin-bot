@@ -1,0 +1,116 @@
+meta:
+  name: anchor-mom
+  display_name: Anchor-Mom
+  category: Anchored Momentum (Rolling High Nearness + Momentum)
+  timeframe: 12H
+  short_mode: HEDGE_ONLY
+  status: ACTIVE
+  created_at: '2026-02-10'
+  retired_at: null
+  economic_rationale: Rolling high 대비 근접도(nearness)와 모멘텀 방향 결합으로 심리적 앵커링 효과 포착
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: C1-C7 전항목 PASS
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.36
+      cagr: 49.8
+      mdd: 31.0
+  G2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.29
+      oos_sharpe: 1.29
+      decay: 10.4
+  G3:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 4/4 파라미터 고원 + ±20% 안정
+  G4:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 'WFA PASS, PBO 80% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)'
+  G5:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 0.44
+      cagr: 8.37
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 1.36
+  cagr: 49.8
+  mdd: 31.0
+  trades: 371
+  profit_factor: 1.95
+- symbol: SOL/USDT
+  sharpe: 1.01
+  cagr: 27.4
+  mdd: 32.5
+  trades: 324
+  profit_factor: 1.5
+- symbol: BNB/USDT
+  sharpe: 0.9
+  cagr: 26.1
+  mdd: 33.3
+  trades: 372
+  profit_factor: 1.54
+- symbol: ETH/USDT
+  sharpe: 0.84
+  cagr: 22.5
+  mdd: 40.3
+  trades: 374
+  profit_factor: 1.32
+- symbol: BTC/USDT
+  sharpe: 0.58
+  cagr: 12.8
+  mdd: 52.3
+  trades: 349
+  profit_factor: 1.24
+decisions:
+- date: '2026-02-11'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-11'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS
+- date: '2026-02-11'
+  gate: G1
+  verdict: PASS
+  rationale: DOGE/USDT Sharpe 1.36, CAGR +49.8%, MDD -31.0%, 371 trades. 전 에셋 양수 수익
+- date: '2026-02-11'
+  gate: G2
+  verdict: PASS
+  rationale: OOS Sharpe 1.29, Decay 10.4%, Overfit Prob 6.3%. G1 대비 95% 유지
+- date: '2026-02-11'
+  gate: G3
+  verdict: PASS
+  rationale: 4/4 파라미터 고원 + ±20% 안정. nearness_lookback 48~90, strong_nearness 0.88~0.99
+    전범위 안정
+- date: '2026-02-11'
+  gate: G4
+  verdict: PASS
+  rationale: WFA PASS (OOS 1.16, Decay 21.2%, Consist 67%). PBO 80% 경로 B PASS (전 10
+    fold OOS 양수 0.90~1.75 + MC p=0.000, CI [1.13, 1.49])
+- date: '2026-02-12'
+  gate: G5
+  verdict: PASS
+  rationale: EDA Sharpe 0.44 vs VBT 0.42. 수익 부호 일치. CAGR 편차 7.4%. Trades 198 (intrabar
+    SL/TS). Live Ready 7/7

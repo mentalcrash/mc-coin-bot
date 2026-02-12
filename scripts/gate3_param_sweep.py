@@ -580,6 +580,35 @@ def main() -> None:
     output_path.write_text(json.dumps(output, indent=2, default=json_default), encoding="utf-8")
     logger.info(f"Results saved to {output_path}")
 
+    # Update YAML
+    for s in summary:
+        _update_yaml_g3(s)
+
+
+def _update_yaml_g3(result: dict[str, Any]) -> None:
+    """Gate 3 결과를 YAML에 자동 기록."""
+    from src.pipeline.models import GateId, GateVerdict, StrategyStatus
+    from src.pipeline.store import StrategyStore
+
+    store = StrategyStore()
+    name = result["strategy"]
+    if not store.exists(name):
+        return
+
+    verdict = GateVerdict(result["verdict"])
+    details: dict[str, Any] = {
+        "param_verdicts": result.get("param_verdicts", {}),
+    }
+    if result.get("fail_params"):
+        details["fail_params"] = result["fail_params"]
+
+    fail_str = ", ".join(result["fail_params"]) if result.get("fail_params") else "all stable"
+    rationale = f"{verdict}: {fail_str}"
+
+    store.record_gate(name, GateId.G3, verdict, details=details, rationale=rationale)
+    if verdict == GateVerdict.FAIL:
+        store.update_status(name, StrategyStatus.RETIRED)
+
 
 if __name__ == "__main__":
     main()

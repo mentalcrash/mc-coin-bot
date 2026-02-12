@@ -208,6 +208,39 @@ def main() -> None:
         )
     print("-" * 90)
 
+    # Update YAML
+    for r in results:
+        _update_yaml_g2(r)
+
+
+def _update_yaml_g2(result: dict[str, Any]) -> None:
+    """Gate 2 결과를 YAML에 자동 기록."""
+    from src.pipeline.models import GateId, GateVerdict, StrategyStatus
+    from src.pipeline.store import StrategyStore
+
+    store = StrategyStore()
+    name = result["strategy"]
+    if not store.exists(name):
+        return
+
+    verdict = GateVerdict(result["gate2_verdict"])
+    details = {
+        "asset": result["asset"],
+        "is_sharpe": round(result["is_sharpe"], 2),
+        "oos_sharpe": round(result["oos_sharpe"], 2),
+        "decay": round(result["decay"] * 100, 1),
+        "oos_return": round(result["oos_return"], 1),
+        "oos_mdd": round(result["oos_mdd"], 1),
+    }
+    rationale = (
+        f"OOS Sharpe {result['oos_sharpe']:.2f}, "
+        f"Decay {result['decay']:.1%}"
+    )
+
+    store.record_gate(name, GateId.G2, verdict, details=details, rationale=rationale)
+    if verdict == GateVerdict.FAIL:
+        store.update_status(name, StrategyStatus.RETIRED)
+
 
 if __name__ == "__main__":
     main()

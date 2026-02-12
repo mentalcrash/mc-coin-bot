@@ -1,0 +1,65 @@
+meta:
+  name: adaptive-breakout
+  display_name: Adaptive Breakout
+  category: 추세추종
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 변동성 압축 후 확장 시 돌파 모멘텀이 발생하며, 적응형 채널이 시장 상태에 맞춰 필터링한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.68
+      oos_sharpe: -0.68
+      decay: 201.1
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.54
+  cagr: 6.69
+  mdd: 12.1
+  trades: 78
+  profit_factor: 1.62
+- symbol: BTC/USDT
+  sharpe: 0.43
+  cagr: 5.3
+  mdd: 19.35
+  trades: 79
+  profit_factor: 1.45
+- symbol: DOGE/USDT
+  sharpe: 0.42
+  cagr: 8.18
+  mdd: 48.68
+  trades: 75
+  profit_factor: 1.35
+- symbol: BNB/USDT
+  sharpe: -0.2
+  cagr: -4.0
+  mdd: 42.57
+  trades: 85
+  profit_factor: 0.79
+- symbol: ETH/USDT
+  sharpe: -0.31
+  cagr: -3.82
+  mdd: 30.58
+  trades: 82
+  profit_factor: 0.77
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.68, Decay 201.1%

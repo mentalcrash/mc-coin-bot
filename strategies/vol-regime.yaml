@@ -1,0 +1,75 @@
+meta:
+  name: vol-regime
+  display_name: Vol Regime
+  category: 레짐 전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 시장 변동성 수준에 따라 최적 전략 파라미터가 다르며, 자동 전환이 성과를 개선한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.41
+      mdd: 32.34
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      is_sharpe: 1.8581
+      oos_sharpe: 0.0857
+      decay: 95.4
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 1.41
+  cagr: 57.6
+  mdd: 32.34
+  trades: 298
+  profit_factor: 1.83
+- symbol: SOL/USDT
+  sharpe: 0.89
+  cagr: 29.8
+  mdd: 44.61
+  trades: 281
+  profit_factor: 1.28
+- symbol: BNB/USDT
+  sharpe: 0.81
+  cagr: 26.47
+  mdd: 50.54
+  trades: 379
+  profit_factor: 1.39
+- symbol: DOGE/USDT
+  sharpe: 0.77
+  cagr: 35.21
+  mdd: 72.02
+  trades: 335
+  profit_factor: 1.44
+- symbol: BTC/USDT
+  sharpe: 0.55
+  cagr: 13.94
+  mdd: 54.36
+  trades: 343
+  profit_factor: 1.17
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: PASS
+  rationale: ETH/USDT Sharpe 1.41
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe 0.37, Decay 77.3%

@@ -1,0 +1,69 @@
+meta:
+  name: vr-regime
+  display_name: VR-Regime
+  category: 레짐전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: Lo-MacKinlay Variance Ratio로 random walk hypothesis를 검정. VR
+    > 1 → trending (momentum), VR < 1 → mean-reverting (contrarian). Non-parametric
+    test 기반.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: Critical 0, High 0 (수정완료), Medium 4
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.17
+asset_performance:
+- symbol: BNB/USDT
+  sharpe: 0.17
+  cagr: 0.8
+  mdd: 12.5
+  trades: 10
+  profit_factor: 1.28
+- symbol: DOGE/USDT
+  sharpe: 0.05
+  cagr: -6.5
+  mdd: 74.3
+  trades: 30
+  profit_factor: 0.52
+- symbol: ETH/USDT
+  sharpe: -0.11
+  cagr: -0.4
+  mdd: 5.0
+  trades: 4
+  profit_factor: 0.75
+- symbol: SOL/USDT
+  sharpe: -0.57
+  cagr: -2.1
+  mdd: 15.3
+  trades: 9
+  profit_factor: 0.26
+- symbol: BTC/USDT
+  sharpe: -0.62
+  cagr: -3.1
+  mdd: 17.2
+  trades: 2
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점 — 경제적 논거 4, 참신성 4, 데이터 5, 구현 4, 용량 3, 레짐독립 4
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: Critical 0개. HIGH 2건 발견 → 전수 수정 완료 (warmup vr_k 반영, 주석 정정, drawdown shift)

@@ -1,0 +1,64 @@
+meta:
+  name: larry-vb
+  display_name: Larry VB
+  category: 변동성 돌파
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 전일 변동폭 대비 일정 비율 이상 상승 시 강한 매수세가 존재한다고 판단한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 20
+      max_score: 30
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: 0.15
+      mdd: 47.49
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 0.15
+  cagr: -0.38
+  mdd: 47.49
+  trades: 678
+  profit_factor: 1.01
+- symbol: SOL/USDT
+  sharpe: -0.02
+  cagr: -4.35
+  mdd: 56.63
+  trades: 681
+  profit_factor: 0.98
+- symbol: BTC/USDT
+  sharpe: -0.32
+  cagr: -11.69
+  mdd: 65.43
+  trades: 768
+  profit_factor: 0.92
+- symbol: ETH/USDT
+  sharpe: -0.33
+  cagr: -11.98
+  mdd: 64.51
+  trades: 767
+  profit_factor: 0.92
+- symbol: BNB/USDT
+  sharpe: -0.74
+  cagr: -22.3
+  mdd: 83.16
+  trades: 759
+  profit_factor: 0.87
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 20/30점
+- date: '2026-02-09'
+  gate: G1
+  verdict: FAIL
+  rationale: DOGE/USDT Sharpe 0.15

@@ -1,0 +1,64 @@
+meta:
+  name: hmm-regime
+  display_name: HMM Regime
+  category: 레짐 전환
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: 시장은 관찰 불가한 상태(레짐)에 의해 지배되며, HMM이 이를 확률적으로 추정한다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 23
+      max_score: 30
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.66
+      oos_sharpe: -0.66
+      decay: 162.9
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 0.75
+  cagr: 18.71
+  mdd: 31.67
+  trades: 82
+  profit_factor: 1.88
+- symbol: SOL/USDT
+  sharpe: 0.3
+  cagr: 4.17
+  mdd: 51.75
+  trades: 54
+  profit_factor: 1.14
+- symbol: ETH/USDT
+  sharpe: 0.22
+  cagr: 2.4
+  mdd: 41.13
+  trades: 77
+  profit_factor: 1.18
+- symbol: DOGE/USDT
+  sharpe: 0.12
+  cagr: 0.08
+  mdd: 45.94
+  trades: 2
+- symbol: BNB/USDT
+  sharpe: -0.01
+  cagr: -1.33
+  mdd: 27.58
+  trades: 39
+  profit_factor: 0.97
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.66, Decay 162.9%

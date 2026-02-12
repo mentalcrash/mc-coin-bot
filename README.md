@@ -91,18 +91,40 @@ portfolio:
 
 ## 전략 평가 체계
 
-전략은 Gate 0(아이디어) → Gate 7(실전 배포) 순서로 평가됩니다.
+전략은 **Gate 0A(아이디어)** → **Gate 7(실전 배포)** 까지 8단계 관문을 순차적으로 통과해야 합니다.
+각 Gate에서 FAIL되면 즉시 폐기 처리됩니다. 현재 50개 전략 중 **2개가 G5 PASS** (CTREND, Anchor-Mom).
+
 상세 기준은 [전략 평가 표준](docs/strategy/evaluation-standard.md), 전체 현황은 [전략 상황판](docs/strategy/dashboard.md)을 참조하세요.
 
-| Gate | 검증 | 핵심 기준 | CLI |
-|:----:|------|----------|-----|
-| 0 | 아이디어 | >= 18/30점 | — |
-| 1 | 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40% | `run {config}` |
-| 2 | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |
-| 3 | 파라미터 안정성 | 고원 존재, ±20% 안정 | `sweep {config}` |
-| 4 | WFA + CPCV + PBO | WFA OOS >= 0.5, PBO 이중 경로 | `validate -m milestone/final` |
-| 5 | EDA Parity | VBT vs EDA 수익 부호 일치 | `eda run` |
-| 6 | Paper Trading (2주+) | 시그널 일치 > 90% | `eda run-live` |
+### Gate별 검증 기준
+
+| Gate | 검증 | 핵심 기준 | 방법 |
+|:----:|------|----------|------|
+| **0A** | 아이디어 검증 | 6항목 (논거, 데이터, 선행연구 등) 합계 >= 18/30점 | 수동 평가 |
+| **0B** | 코드 품질 검증 | Critical 7항목 (look-ahead, data leakage, cost model 등) 결함 0개 | `/verify-strategy` |
+| **1** | 단일에셋 백테스트 | 5코인 x 6년(2020-2025). **Best Asset: Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50** | `scripts/gate1_pipeline.py` |
+| **2** | IS/OOS 검증 | 70/30 시간 분할. **OOS Sharpe >= 0.3, Sharpe Decay < 50%** | `scripts/gate2_validate.py` |
+| **3** | 파라미터 안정성 | 각 파라미터 ±20% 변동 시 **Sharpe 부호 유지 + 고원(plateau) 존재** | `scripts/gate3_param_sweep.py` |
+| **4** | 심층검증 (WFA/CPCV/PBO) | Walk-Forward 5-fold **OOS >= 0.5**. PBO 이중 경로: A(PBO<40%) 또는 B(PBO<80% + CPCV 전fold OOS>0 + MC p<0.05). **DSR > 0.95** | `validate -m milestone/final` |
+| **5** | EDA Parity | VBT vs EDA 백테스트 **수익 부호 일치, 편차 < 20%** | `eda run {config}` |
+| **6** | Paper Trading | 2주+ 실시간. **시그널 일치 > 90%, 무중단 운영** | `eda run-live --mode paper` |
+| **7** | 실전 배포 | **3개월 이동 Sharpe > 0.3** | `eda run-live --mode live` |
+
+### 비용 모델
+
+모든 백테스트에 적용되는 비용:
+
+| 항목 | 값 | 항목 | 값 |
+|------|---:|------|---:|
+| Maker Fee | 0.02% | Slippage | 0.05% |
+| Taker Fee | 0.04% | Funding (8h) | 0.01% |
+| Market Impact | 0.02% | **편도 합계** | **~0.11%** |
+
+### 즉시 폐기 조건 (Gate 1)
+
+- 전 5개 에셋에서 Sharpe 음수
+- 전 5개 에셋에서 MDD > 50%
+- Best Asset CAGR < 0%
 
 ---
 
@@ -303,9 +325,32 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 ## 전략 현황
 
-31개 전략 평가 완료: 1개 활성 (CTREND) + 2개 PENDING + 28개 폐기.
+50개 전략 평가 완료: **2개 활성** (CTREND, Anchor-Mom) + 48개 폐기.
 상세 현황과 폐기 전략 목록은 **[전략 상황판](docs/strategy/dashboard.md)** 참조.
 
-| 전략 | Best Asset | Sharpe | CAGR | G0 | G1 | G2 | G3 | G4 | 상태 |
-|------|-----------|--------|------|:--:|:--:|:--:|:--:|:--:|------|
-| **CTREND** | SOL/USDT | 2.05 | +97.8% | P | P | P | P | F | PBO 60%, EDA/Paper 검증 권고 |
+| 전략 | Best Asset | TF | Sharpe | CAGR | G0~G5 | 상태 |
+|------|-----------|-----|--------|------|:-----:|------|
+| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | All P | G5 PASS, Paper Trading 대기 |
+| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | All P | G5 PASS, Paper Trading 대기 |
+
+### Pipeline CLI
+
+전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
+
+```bash
+# 전략 현황 요약
+uv run python main.py pipeline status
+
+# 전체 전략 표 (Gate 진행도 포함)
+uv run python main.py pipeline table
+
+# 전략 목록 (필터링)
+uv run python main.py pipeline list --status ACTIVE
+uv run python main.py pipeline list --gate G2 --verdict PASS
+
+# 전략 상세
+uv run python main.py pipeline show ctrend
+
+# Dashboard 자동 생성
+uv run python main.py pipeline report
+```

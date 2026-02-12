@@ -1,0 +1,105 @@
+meta:
+  name: ctrend
+  display_name: CTREND
+  category: ML 앙상블 (Technical aggregate)
+  timeframe: 1D
+  short_mode: FULL
+  status: ACTIVE
+  created_at: '2026-02-10'
+  retired_at: null
+  economic_rationale: 다수 기술적 지표의 앙상블 합산으로 개별 지표 노이즈를 상쇄하고 공통 방향성 추출
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 22
+      max_score: 30
+  G1:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 2.05
+      cagr: 97.8
+      mdd: 27.7
+  G2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 1.78
+      oos_sharpe: 1.78
+      decay: 33.7
+  G3:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 4/4 파라미터 고원 + ±20% 안정
+  G4:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 'WFA PASS, PBO 60% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)'
+  G5:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 2.82
+      cagr: 173.8
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 2.05
+  cagr: 97.8
+  mdd: 27.7
+  trades: 288
+  profit_factor: 1.6
+- symbol: BTC/USDT
+  sharpe: 1.7
+  cagr: 72.5
+  mdd: 31.7
+  trades: 304
+  profit_factor: 1.71
+- symbol: BNB/USDT
+  sharpe: 1.59
+  cagr: 73.0
+  mdd: 33.9
+  trades: 347
+  profit_factor: 1.59
+- symbol: ETH/USDT
+  sharpe: 1.53
+  cagr: 64.1
+  mdd: 41.5
+  trades: 321
+  profit_factor: 1.37
+- symbol: DOGE/USDT
+  sharpe: 0.83
+  cagr: 29.9
+  mdd: 64.6
+  trades: 365
+  profit_factor: 1.44
+decisions:
+- date: '2026-02-10'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-10'
+  gate: G1
+  verdict: PASS
+  rationale: SOL/USDT Sharpe 2.05, CAGR +97.8%, MDD -27.7%, 288 trades
+- date: '2026-02-10'
+  gate: G2
+  verdict: PASS
+  rationale: OOS Sharpe 1.78, Decay 33.7%, Overfit Prob 20.2%
+- date: '2026-02-10'
+  gate: G3
+  verdict: PASS
+  rationale: 4/4 파라미터 고원 + ±20% 안정. vol_target 거의 평탄, alpha 전 범위 안정
+- date: '2026-02-10'
+  gate: G4
+  verdict: PASS
+  rationale: WFA PASS (OOS 1.49, Decay 39%, Consist 67%). PBO 60% 경로 B PASS (전 fold
+    OOS 양수 + MC p=0.000)
+- date: '2026-02-10'
+  gate: G5
+  verdict: PASS
+  rationale: EDA Sharpe 2.82 vs VBT 2.05. 수익 부호 일치. Trades 72 (PM threshold 필터링)

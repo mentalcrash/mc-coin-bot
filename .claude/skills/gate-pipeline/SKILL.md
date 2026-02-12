@@ -55,14 +55,15 @@ ls src/strategy/{name_underscore}/
 
 `name_underscore`는 `strategy_name`의 하이픈을 언더스코어로 변환 (e.g., `ac-regime` → `ac_regime`).
 
-### 0-2. 스코어카드 존재 + G0B PASS
+### 0-2. YAML 메타데이터 + G0B PASS
 
 ```bash
-# 스코어카드 파일 존재 확인
-cat docs/scorecard/{strategy_name}.md
-# G0B [PASS] 확인 — "G0B" 행에서 PASS 키워드 존재
+# YAML 파일 존재 확인 (Single Source of Truth)
+cat strategies/{strategy_name}.yaml
+# gates 섹션에서 G0B: status: PASS 확인
 ```
 
+YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
 G0B PASS가 없으면 중단: "G0B 미통과 전략입니다. `/verify-strategy`를 먼저 실행하세요."
 
 ### 0-3. Silver 데이터 존재
@@ -171,7 +172,18 @@ Cost = maker 0.04% + taker 0.08% + slippage 0.10%  (편도 ~0.22%)
 | MDD | -27.7% | ? |
 | Trades | 288 | ? |
 
-### 문서 갱신
+### YAML 갱신 (필수)
+
+Gate 스크립트가 자동 갱신하지만, 수동 실행 시:
+
+```bash
+uv run python main.py pipeline record {strategy_name} \
+  --gate G1 --verdict PASS \
+  --detail "sharpe={best_sharpe}" --detail "cagr={best_cagr}" \
+  --rationale "{Best Asset} Sharpe X.XX, CAGR +XX.X%"
+```
+
+### 스코어카드 갱신 (선택)
 
 스코어카드에 다음 섹션 추가/갱신:
 
@@ -475,55 +487,62 @@ uv run python -m src.cli.backtest validate \
 
 Gate FAIL 시 다음을 순차 실행한다.
 
-### F-1. 스코어카드에 FAIL 기록
-
-- 해당 Gate의 상세 결과 + FAIL 사유 기록
-- 상태를 `폐기 (Gate N FAIL)` 로 변경
-- 의사결정 기록에 FAIL 판정 + 근거 추가
-
-### F-2. 스코어카드 이동
+### F-1. YAML 갱신 (필수 — Single Source of Truth)
 
 ```bash
-# fail/ 디렉토리 존재 확인
-mkdir -p docs/scorecard/fail/
+uv run python main.py pipeline record {strategy_name} \
+  --gate {GN} --verdict FAIL \
+  --rationale "{구체적 FAIL 사유}"
+```
 
-# 스코어카드를 fail/ 디렉토리로 이동
+> `pipeline record`가 FAIL 시 자동으로 status → RETIRED 변경.
+
+### F-2. 스코어카드 이동 (선택)
+
+```bash
+mkdir -p docs/scorecard/fail/
 mv docs/scorecard/{strategy_name}.md docs/scorecard/fail/{strategy_name}.md
 ```
 
-### F-3. Dashboard 갱신 (`docs/strategy/dashboard.md`)
+### F-3. Dashboard 자동 생성
 
-1. **"검증중 전략" 테이블**에서 해당 전략 행 제거
-2. **해당 Gate 실패 섹션**에 새 행 추가:
-   - Gate 1 실패 → "Gate 1 실패" 섹션
-   - Gate 2 실패 → "Gate 2 실패 — IS/OOS 과적합" 섹션
-   - Gate 3 실패 → "Gate 3 실패 — 파라미터 불안정" 섹션
-   - Gate 4 실패 → "Gate 4 실패 — WFA 심층검증" 섹션
-3. 행 형식은 해당 섹션의 기존 행과 일치시킨다
+```bash
+uv run python main.py pipeline report
+```
+
+> YAML 기반으로 dashboard.md를 자동 생성. 수동 편집 불필요.
 
 ### F-4. 최종 리포트 출력
 
-Step 10의 리포트 형식으로 출력한다.
+리포트 형식으로 출력한다.
 
 ---
 
 ## Step S: 성공 처리 (G4 PASS)
 
-### S-1. 스코어카드 완성
+### S-1. YAML 갱신 (필수)
 
-- Gate 4까지 전체 결과 기록 완료
-- 상태는 `검증중` 유지 (G5 EDA Parity 대기)
-- G5 검증 기간은 **2년** (2024-01-01 ~ 2025-12-31). 성능 평가가 아닌 구현 정합성 검증이므로 전체 6년 불필요.
+Gate 4 PASS 기록:
 
-### S-2. Dashboard 갱신 (`docs/strategy/dashboard.md`)
+```bash
+uv run python main.py pipeline record {strategy_name} \
+  --gate G4 --verdict PASS \
+  --detail "wfa_oos_sharpe={X.XX}" --detail "pbo={XX}" \
+  --rationale "WFA/CPCV/PBO/DSR 모두 PASS"
+```
 
-- "검증중 전략" 테이블의 해당 행에 Gate 진행 상태 갱신
-- `G1` ~ `G4` 컬럼에 P/F 추가
-- `다음 단계` → `G5 EDA Parity`
+상태는 `TESTING` 유지 (G5 EDA Parity 대기).
+G5 검증 기간은 **2년** (2024-01-01 ~ 2025-12-31). 성능 평가가 아닌 구현 정합성 검증이므로 전체 6년 불필요.
+
+### S-2. Dashboard 자동 생성
+
+```bash
+uv run python main.py pipeline report
+```
 
 ### S-3. 최종 리포트 출력
 
-Step 10의 리포트 형식으로 출력한다.
+리포트 형식으로 출력한다.
 
 ---
 
@@ -571,8 +590,8 @@ Step 10의 리포트 형식으로 출력한다.
   PIPELINE SUMMARY
   최종 판정: [G4 PASS / G{N} FAIL]
   다음 단계: {G5 EDA Parity / 폐기}
-  스코어카드: docs/scorecard/{path}.md (갱신 완료)
-  대시보드:   docs/strategy/dashboard.md (갱신 완료)
+  YAML:       strategies/{strategy_name}.yaml (갱신 완료)
+  대시보드:   docs/strategy/dashboard.md (pipeline report 자동 생성)
 ============================================================
 ```
 

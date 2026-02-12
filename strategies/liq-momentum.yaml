@@ -1,0 +1,65 @@
+meta:
+  name: liq-momentum
+  display_name: Liq-Momentum
+  category: Liquidity-Adjusted Momentum
+  timeframe: 1H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: Amihud illiquidity + relative volume으로 유동성 상태를 분류하고, 저유동성 환경에서
+    모멘텀 conviction을 확대하여 정보 비대칭 프리미엄을 포착
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime,
+        W4 Turnover)
+  G1:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.93 ~ -2.78)
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: -3.07
+  cagr: -75.5
+  mdd: 100.0
+  trades: 11810
+  profit_factor: 0.76
+- symbol: SOL/USDT
+  sharpe: -3.13
+  cagr: -70.0
+  mdd: 99.9
+  trades: 9472
+  profit_factor: 0.83
+- symbol: BNB/USDT
+  sharpe: -4.9
+  cagr: -84.3
+  mdd: 100.0
+  trades: 10839
+  profit_factor: 0.82
+- symbol: ETH/USDT
+  sharpe: -5.02
+  cagr: -85.3
+  mdd: 100.0
+  trades: 11256
+  profit_factor: 0.8
+- symbol: BTC/USDT
+  sharpe: -6.48
+  cagr: -90.3
+  mdd: 100.0
+  trades: 10588
+  profit_factor: 0.71
+decisions:
+- date: '2026-02-10'
+  gate: G0B
+  verdict: PASS
+  rationale: 44 tests PASS, shift(1) lookahead 방지, vectorized ops, Pydantic frozen
+    config, model_validator
+- date: '2026-02-10'
+  gate: G1
+  verdict: FAIL
+  rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-3.07~-6.48)'

@@ -1,0 +1,65 @@
+meta:
+  name: adx-regime
+  display_name: ADX Regime
+  category: 하이브리드
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-10'
+  retired_at: '2026-02-10'
+  economic_rationale: ADX가 높은 구간(강추세)에서는 모멘텀이, 낮은 구간(횡보)에서는 평균회귀가 유효하다.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      score: 24
+      max_score: 30
+  G2:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      sharpe: -0.68
+      oos_sharpe: -0.68
+      decay: 146.3
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.94
+  cagr: 23.06
+  mdd: 33.86
+  trades: 331
+  profit_factor: 1.52
+- symbol: ETH/USDT
+  sharpe: 0.81
+  cagr: 19.64
+  mdd: 34.58
+  trades: 349
+  profit_factor: 1.62
+- symbol: DOGE/USDT
+  sharpe: 0.69
+  cagr: 21.32
+  mdd: 45.05
+  trades: 362
+  profit_factor: 1.36
+- symbol: BTC/USDT
+  sharpe: 0.55
+  cagr: 11.44
+  mdd: 36.77
+  trades: 425
+  profit_factor: 1.34
+- symbol: BNB/USDT
+  sharpe: 0.49
+  cagr: 10.38
+  mdd: 53.93
+  trades: 449
+  profit_factor: 1.32
+decisions:
+- date: '2026-02-09'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-09'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.68, Decay 146.3%

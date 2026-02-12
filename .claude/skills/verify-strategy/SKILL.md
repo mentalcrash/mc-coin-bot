@@ -306,9 +306,35 @@ FAIL 사유는 아니나 반드시 기록:
 
 ## 문서 갱신
 
-검증 완료 후 **판정 결과에 따라** 스코어카드와 대시보드를 갱신한다.
+검증 완료 후 **판정 결과에 따라** YAML 메타데이터를 갱신한다 (Single Source of Truth).
 
-### 스코어카드 갱신 (`docs/scorecard/{strategy_name}.md`)
+### YAML 갱신 (필수 — `strategies/{strategy_name}.yaml`)
+
+**PASS 시**:
+
+```bash
+uv run python main.py pipeline record {strategy_name} \
+  --gate G0B --verdict PASS \
+  --rationale "C1-C7 전항목 PASS. Warning N건"
+```
+
+**FAIL 시**:
+
+```bash
+uv run python main.py pipeline record {strategy_name} \
+  --gate G0B --verdict FAIL \
+  --rationale "{C항목} FAIL: {사유}"
+```
+
+> G0B FAIL은 폐기가 아닌 **수정 후 재검증**. `pipeline record`의 auto-retire를 방지하려면 YAML에서 수동으로 status를 IMPLEMENTED로 복원한다.
+
+### Dashboard 자동 생성
+
+```bash
+uv run python main.py pipeline report
+```
+
+### 스코어카드 갱신 (선택 — `docs/scorecard/{strategy_name}.md`)
 
 스코어카드가 이미 존재해야 한다 (`/implement-strategy`에서 생성).
 
@@ -339,26 +365,6 @@ G0B 코드검증 [FAIL] {C항목}: {사유 요약}
 
 ```markdown
 | {날짜} | G0B | FAIL | {C항목} FAIL: {사유}. 수정 후 재검증 필요 |
-```
-
-> G0B FAIL은 폐기가 아닌 **수정 후 재검증**. 스코어카드를 fail/로 이동하지 않는다.
-
-### Dashboard 갱신 (`docs/strategy/dashboard.md`)
-
-**PASS 시**:
-
-해당 전략의 비고/상태에 G0B PASS 기록. gate-pipeline 대기 상태로 전환:
-
-```markdown
-| {전략명} | {TF} | {ShortMode} | {G0A}/30 | P | — | G0B PASS, G1 대기 |
-```
-
-**FAIL 시**:
-
-비고에 FAIL 사유 기록:
-
-```markdown
-| {전략명} | {TF} | {ShortMode} | {G0A}/30 | F | — | G0B FAIL: {C항목} |
 ```
 
 ---

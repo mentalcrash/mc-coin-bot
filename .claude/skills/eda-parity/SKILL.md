@@ -90,18 +90,20 @@ ls src/strategy/{name_underscore}/
 # config.py, preprocessor.py, signal.py, strategy.py 존재 확인
 ```
 
-### 0-2. 스코어카드 존재 + G4 PASS
+### 0-2. YAML 메타데이터 + G4 PASS
 
 ```bash
-cat docs/scorecard/{strategy_name}.md
-# Gate 진행 현황에서 G4 [PASS] 확인
+# YAML 확인 (Single Source of Truth)
+cat strategies/{strategy_name}.yaml
+# gates 섹션에서 G4: status: PASS 확인
 ```
 
+YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
 G4 PASS가 없으면 중단: "G4 미통과 전략입니다. `/gate-pipeline`을 먼저 실행하세요."
 
 ### 0-3. Best Asset + TF 추출
 
-스코어카드에서 다음 변수를 추출:
+YAML 메타데이터에서 다음 변수를 추출:
 
 - `best_asset`: Best Asset 심볼 (예: `SOL/USDT`)
 - `best_tf`: 타임프레임 (예: `1D`, `4h`)
@@ -458,7 +460,23 @@ grep -n "circuit\|close_all\|close.*price" src/eda/oms.py src/eda/portfolio_mana
 
 ## Step 7: 문서 갱신
 
-### 7-1. 스코어카드 갱신
+### 7-0. YAML 갱신 (필수 — Single Source of Truth)
+
+```bash
+uv run python main.py pipeline record {strategy_name} \
+  --gate G5 --verdict PASS \
+  --detail "eda_sharpe={X.XX}" --detail "vbt_sharpe={X.XX}" \
+  --rationale "EDA Parity PASS. 수익 부호 일치, Sharpe 편차 XX%"
+```
+
+PASS 시 status를 ACTIVE로 전환:
+
+```bash
+# YAML에서 status를 직접 수정하거나 Python으로:
+# store.update_status(name, StrategyStatus.ACTIVE)
+```
+
+### 7-1. 스코어카드 갱신 (선택)
 
 스코어카드에 **Gate 5 상세** 섹션을 추가한다 (CTREND ctrend.md:152-172 패턴):
 
@@ -499,20 +517,14 @@ G5 EDA검증   [PASS/FAIL] Sharpe X.XX, CAGR +XX.X%, 수익 부호 일치/불일
 | {날짜} | G5 | PASS/FAIL | EDA Sharpe X.XX vs VBT X.XX. 수익 부호 일치. Trades N (PM threshold 필터링). Live Ready 7/7 |
 ```
 
-### 7-4. Dashboard 갱신 (`docs/strategy/dashboard.md`)
+### 7-4. Dashboard 자동 생성
 
-**PASS 시**:
+```bash
+uv run python main.py pipeline report
+```
 
-1. "검증중 전략" 테이블의 Gate 컬럼에 `G5` → `P` 추가
-2. 비고에 "G5 EDA Parity PASS" 추가
-3. "활성 전략" 섹션으로 이동
-4. `> G5 EDA Parity PASS: ...` 설명 추가
-
-**FAIL 시**:
-
-1. "검증중 전략" 테이블의 `G5` → `F` 추가
-2. 비고에 FAIL 사유 기록
-3. **스코어카드 이동하지 않음** (G5 FAIL은 코드 수정 후 재시도 가능)
+> YAML 기반으로 dashboard.md를 자동 생성. 수동 편집 불필요.
+> G5 FAIL은 코드 수정 후 재시도 가능 — 스코어카드를 fail/로 이동하지 않는다.
 
 ---
 
@@ -616,8 +628,8 @@ G5 EDA검증   [PASS/FAIL] Sharpe X.XX, CAGR +XX.X%, 수익 부호 일치/불일
   Live Readiness: [PASS / WARNING / FAIL]
   최종 판정: [PASS / CONDITIONAL PASS / FAIL]
   다음 단계: [G6 Paper Trading / 코드 수정 후 G5 재시도 / 폐기]
-  스코어카드: docs/scorecard/{strategy_name}.md (갱신 완료)
-  대시보드:   docs/strategy/dashboard.md (갱신 완료)
+  YAML:       strategies/{strategy_name}.yaml (갱신 완료)
+  대시보드:   docs/strategy/dashboard.md (pipeline report 자동 생성)
 ============================================================
 ```
 
