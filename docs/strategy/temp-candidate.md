@@ -189,3 +189,157 @@ skew = returns.rolling(skew_window).skew()
 - 구현 복잡도: 4/5 (skewness rolling 계산 약간 복잡)
 - 용량 수용: 3/5 (12H + skewness filter → 거래 감소)
 - 레짐 독립성: 3/5 (강한 횡보에서 약화)
+
+---
+
+## 2026-02-12 — Strategy Discovery Session (1H/30m TF, Event-Driven Intraday)
+
+> **테마**: 레이턴시 비민감 + 선택적 진입 (개인 투자자 최적화)
+> **핵심 교훈**: 1m~1h에서 비용 drag이 핵심 제약 → 연 30~80건 이벤트 기반 전략만 생존 가능
+
+### 후보 #5: Abnormal Day Momentum (`abnorm-mom`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Event-Driven Momentum |
+| **타임프레임** | 1H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 26/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 비정상 수익률일(abnormal day)을 조기 감지하면 당일~익일 momentum continuation을 포착할 수 있다.
+
+**경제적 논거**: 대규모 price move는 information arrival을 반영하며, 크립토 24/7 시장에서 정보 소화에 시간이 걸려 일중/익일 continuation이 발생한다. Caporale & Plastun (2020)이 BTC/ETH/LTC에서 직접 검증: abnormal day의 hourly return이 일반일 대비 유의하게 크고, dynamic trigger로 당일 중 조기 감지 가능.
+
+**사용 지표**: `rolling_std(daily_returns, 20d)`, `cum_intraday_ret = close / day_open - 1`
+
+**시그널 생성 로직**:
+
+```
+daily_ret_std = std(daily_returns, 20)     # 20일 rolling
+threshold = 1.5 * daily_ret_std            # dynamic
+
+cum_ret = (close / day_open) - 1           # 매 1H bar 계산
+
+if hours_elapsed >= 8:
+    if cum_ret > threshold:   → LONG
+    if cum_ret < -threshold:  → SHORT (HEDGE_ONLY)
+
+Exit: 익일 종료 또는 trailing ATR stop
+```
+
+**CTREND 상관 예측**: 낮음 (event-driven intraday ≠ ML ensemble daily)
+
+**예상 거래 빈도**: 30~60건/년
+
+**차별화 포인트**: "Abnormal day detection → intraday momentum" 접근은 54개 전략 중 최초. QD-Mom(이전 bar return 방향)과 근본적으로 다름 — ADM은 누적 intraday return이 동적 임계값을 초과하는지 감지. 매일 거래하지 않고 비정상일에만 진입하므로 noise 과적합 위험 극저.
+
+**출처**: Caporale & Plastun (2020) "Momentum effects in the cryptocurrency market after one-day abnormal returns" (Financial Markets and Portfolio Management)
+
+**Gate 0 상세 점수**:
+
+- 경제적 논거: 4/5 (Caporale & Plastun, crypto 직접 검증, BTC/ETH/LTC)
+- 참신성: 5/5 (abnormal day detection 완전 미시도)
+- 데이터 확보: 5/5 (OHLCV only, rolling std)
+- 구현 복잡도: 5/5 (rolling std + threshold + cum return)
+- 용량 수용: 3/5 (30-60건/년, 비용 효율적이나 희소)
+- 레짐 독립성: 4/5 (abnormal events는 모든 레짐에서 발생)
+
+---
+
+### 후보 #6: Volume Shock Dual-Mode (`vol-shock`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Event-Driven (Volume Microstructure) |
+| **타임프레임** | 1H |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 25/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 비정상 거래량 급증 시 bar return의 부호에 따라 continuation(informed buying) vs reversal(panic liquidation)을 구분하여 매매한다.
+
+**경제적 논거**: Volume spike + positive return = informed buying → continuation (Kyle 1985, Continuous Auctions). Volume spike + negative return = panic liquidation → overreaction → bounce (crypto liquidation cascades). 이 두 메커니즘은 경제적으로 서로 다르며, 방향에 따른 차별적 대응이 단일 모드(reversal only) 전략보다 우월하다.
+
+**사용 지표**: `vol_ratio = volume / rolling_median(volume, 48)`, `bar_ret = (close - open) / open`
+
+**시그널 생성 로직**:
+
+```
+vol_ratio = volume / rolling_median(volume, 48)
+bar_ret = (close - open) / open
+ret_threshold = rolling_std(returns, 48) * 1.0
+
+if vol_ratio > 3.0:
+    if bar_ret > ret_threshold:      → LONG (informed continuation)
+    if bar_ret < -ret_threshold:     → LONG (panic reversal, 다음 bar)
+    # HEDGE_ONLY SHORT: symmetric logic for negative shocks
+
+Exit: 4-8h trailing ATR stop
+```
+
+**CTREND 상관 예측**: 낮음 (volume-event ≠ ML feature ensemble)
+
+**예상 거래 빈도**: 40~80건/년
+
+**차별화 포인트**: Vol-Climax(4H, 재검증 대기)는 reversal only. VSDM은 bar return 부호에 따라 continuation vs reversal을 dual-mode로 구분하는 최초 전략. 또한 1H TF에서의 적용은 미시도.
+
+**출처**: Kyle (1985) "Continuous Auctions and Insider Trading" + crypto liquidation cascade 연구 (2024-2025 다수)
+
+**Gate 0 상세 점수**:
+
+- 경제적 논거: 4/5 (informed trading + liquidation cascades, Kyle 1985)
+- 참신성: 4/5 (dual-mode, Vol-Climax는 reversal only)
+- 데이터 확보: 5/5 (OHLCV volume)
+- 구현 복잡도: 5/5 (volume ratio + return sign + threshold)
+- 용량 수용: 3/5 (40-80건/년)
+- 레짐 독립성: 4/5 (volume shocks는 모든 레짐에서 발생)
+
+---
+
+### 후보 #7: Intraday Overextension Reversal (`intraday-or`)
+
+| 항목 | 내용 |
+|------|------|
+| **카테고리** | Intraday Mean Reversion (Range-Normalized) |
+| **타임프레임** | 30m |
+| **ShortMode** | HEDGE_ONLY |
+| **Gate 0 점수** | 25/30 |
+| **상태** | 🔵 후보 |
+
+**핵심 가설**: 일중 누적 수익률이 "정상 일일 범위"(rolling ATR)의 80%를 초과하면, 과잉반응으로 평균회귀가 발생한다.
+
+**경제적 논거**: Intraday overextension은 noise trader overreaction + leveraged liquidation cascade의 결과. Wen et al. (2022)이 크립토에서 intraday reversal 패턴을 확인. 일일 ATR 대비 비율 정규화로 모든 변동성 레짐에서 adaptive하게 작동. BB-RSI(가격 레벨 기반 밴드)와 근본적으로 다른 접근: 수익률 vs 범위 비율 기반.
+
+**사용 지표**: `cum_intraday_ret = close / day_open - 1`, `daily_range = rolling_mean(high - low, 20)`
+
+**시그널 생성 로직**:
+
+```
+daily_range = rolling_mean(daily_high - daily_low, 20)  # 20d ATR
+cum_ret = (close / day_open) - 1
+overext = abs(cum_ret * day_open) / daily_range
+
+if overext > 0.80:
+    if cum_ret > 0:  → SHORT (HEDGE_ONLY, overextended up)
+    if cum_ret < 0:  → LONG  (overextended down, reversal)
+
+Exit: day_open 복귀 (VWAP proxy) 또는 max 6h hold
+```
+
+**CTREND 상관 예측**: 매우 낮음 (counter-trend MR ≠ trend-following ML)
+
+**예상 거래 빈도**: 40~80건/년
+
+**차별화 포인트**: "cum_intraday_ret / rolling_daily_range" 비율은 54개 전략 중 미사용. BB-RSI(가격 레벨 대비 밴드)와 근본적으로 다름 — 이 전략은 수익률 크기를 일일 범위로 정규화하여 "오늘 얼마나 많이 움직였는가?"를 측정. ATR 정규화로 고/저변동성 레짐 자동 적응.
+
+**출처**: Wen, Bouri, Xu, Zhao (2022) "Intraday return predictability in the cryptocurrency markets" (North American Journal of Economics and Finance)
+
+**Gate 0 상세 점수**:
+
+- 경제적 논거: 4/5 (intraday overreaction, Wen et al. 크립토 실증)
+- 참신성: 5/5 (cum_ret / daily_range 비율 완전 미시도)
+- 데이터 확보: 5/5 (OHLCV only)
+- 구현 복잡도: 4/5 (daily range tracking + intraday cum ret)
+- 용량 수용: 3/5 (40-80건/년)
+- 레짐 독립성: 4/5 (ATR 정규화로 자동 적응)
