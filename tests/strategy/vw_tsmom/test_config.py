@@ -118,7 +118,7 @@ class TestVWTSMOMConfig:
         assert config_4h.lookback == 24
 
         # 알 수 없는 타임프레임은 기본값
-        config_unknown = VWTSMOMConfig.for_timeframe("2h")
+        config_unknown = VWTSMOMConfig.for_timeframe("7h")
         assert config_unknown.annualization_factor == 8760.0
         assert config_unknown.lookback == 24
 

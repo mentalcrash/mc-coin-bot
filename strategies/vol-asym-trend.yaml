@@ -1,0 +1,25 @@
+meta:
+  name: vol-asym-trend
+  display_name: Volatility Asymmetry Trend
+  category: Realized Skewness
+  timeframe: 6H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: 상승/하락 수익률의 변동성 비율(방향축 vol 분해)로 추세 방향 포착. semivariance MR이 아닌
+    trend 방향
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

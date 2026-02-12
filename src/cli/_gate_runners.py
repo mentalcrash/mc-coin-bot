@@ -170,6 +170,8 @@ GATE3_WEIGHT_PAIRS: dict[str, dict[str, str]] = {
 _TF_MAP: dict[str, str] = {
     "1D": "1D",
     "4H": "4h",
+    "3H": "3h",
+    "2H": "2h",
     "1H": "1h",
     "12H": "12h",
     "6H": "6h",

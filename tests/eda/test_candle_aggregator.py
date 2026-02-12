@@ -68,7 +68,7 @@ class TestTimeframeToSeconds:
 
     def test_unsupported_raises(self) -> None:
         with pytest.raises(ValueError, match="Unsupported timeframe"):
-            _timeframe_to_seconds("3h")
+            _timeframe_to_seconds("7h")
 
 
 # =========================================================================

@@ -96,7 +96,7 @@ class TestForTimeframe:
 
     def test_for_timeframe_unknown(self) -> None:
         """Unknown timeframe uses default 365.0."""
-        config = StochMomConfig.for_timeframe("3h")
+        config = StochMomConfig.for_timeframe("7h")
         assert config.annualization_factor == 365.0
 
     def test_for_timeframe_with_overrides(self) -> None:
