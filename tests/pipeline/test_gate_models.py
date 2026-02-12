@@ -45,7 +45,7 @@ class TestScoringModels:
         try:
             item.name = "changed"  # type: ignore[misc]
             raise AssertionError("Should be frozen")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 
@@ -129,7 +129,7 @@ class TestGateCriteria:
         try:
             gate.gate_id = "G1"  # type: ignore[misc]
             raise AssertionError("Should be frozen")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def test_model_dump_roundtrip(self) -> None:

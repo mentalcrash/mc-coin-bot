@@ -107,7 +107,7 @@ class TestGateCriteriaStore:
     def test_cache_hit(self, gate_store: GateCriteriaStore) -> None:
         gate_store.load_all()
         # Second call should use cache
-        assert gate_store._cache is not None  # noqa: SLF001
+        assert gate_store._cache is not None
         gates = gate_store.load_all()
         assert len(gates) == 2
 

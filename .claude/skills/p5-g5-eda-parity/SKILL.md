@@ -56,7 +56,7 @@ VBT는 **이상적 벡터화 실행** (전 데이터 한 번에), EDA는 **실�
 | 인수 | 필수 | 설명 | 예시 |
 |------|:----:|------|------|
 | `strategy_name` | O | registry key (kebab-case) | `ctrend` |
-| `--symbol SYMBOL` | X | 검증 심볼 (기본: 스코어카드 Best Asset) | `SOL/USDT` |
+| `--symbol SYMBOL` | X | 검증 심볼 (기본: YAML Best Asset) | `SOL/USDT` |
 | `--period` | X | 검증 기간 (기본: `1y`) | `1y`, `2y` |
 
 ### 검증 기간 결정 규칙
@@ -98,7 +98,7 @@ cat strategies/{strategy_name}.yaml
 # gates 섹션에서 G4: status: PASS 확인
 ```
 
-YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
+YAML이 없으면 `uv run python main.py pipeline create`로 생성.
 G4 PASS가 없으면 중단: "G4 미통과 전략입니다. `/p4-g1g4-gate`를 먼저 실행하세요."
 
 ### 0-3. Best Asset + TF 추출
@@ -150,7 +150,7 @@ backtest:
 strategy:
   name: {strategy_name}
   params:
-    # 스코어카드/기존 config에서 복사
+    # YAML 메타데이터/기존 config에서 복사
     ...
 
 portfolio:
@@ -171,7 +171,7 @@ portfolio:
 
 ### 0-6. max_leverage_cap 확인
 
-전략 스코어카드 또는 config에서 `max_leverage_cap` 값을 확인한다.
+전략 YAML 메타데이터 또는 config에서 `max_leverage_cap` 값을 확인한다.
 Tier 7 전략 등 `max_leverage_cap` 커스텀 값이 있으면 반드시 반영.
 
 ### 0-7. 실행 모드 결정
@@ -213,7 +213,7 @@ uv run python -m src.cli.backtest run {strategy_name} {best_asset} \
 | Win Rate (%) | `vbt_winrate` | 승률 |
 | Profit Factor | `vbt_pf` | 총이익/총손실 |
 
-> **주의**: G5 검증 기간은 G1 전체 기간(6년)보다 짧으므로, VBT 지표가 G1 스코어카드와 다를 수 있다.
+> **주의**: G5 검증 기간은 G1 전체 기간(6년)보다 짧으므로, VBT 지표가 G1 결과와 다를 수 있다.
 > 이는 정상이며, **동일 기간 VBT vs EDA 비교**가 핵심이다.
 
 ---
@@ -454,7 +454,7 @@ grep -n "circuit\|close_all\|close.*price" src/eda/oms.py src/eda/portfolio_mana
 | **CONDITIONAL PASS** | Parity PASS **AND** Live Readiness 1~2개 WARNING (non-critical) |
 | **FAIL** | Parity FAIL **OR** Live Readiness critical 항목 FAIL |
 
-> **CONDITIONAL PASS**: 스코어카드에 WARNING 항목을 기록하고, G6 Paper Trading 전에 수정 권고.
+> **CONDITIONAL PASS**: YAML에 WARNING 항목을 기록하고, G6 Paper Trading 전에 수정 권고.
 
 ---
 
@@ -476,36 +476,7 @@ PASS 시 status를 ACTIVE로 전환:
 # store.update_status(name, StrategyStatus.ACTIVE)
 ```
 
-### 7-1. 스코어카드 갱신 (선택)
-
-스코어카드에 **Gate 5 상세** 섹션을 추가한다 (CTREND ctrend.md:152-172 패턴):
-
-```markdown
-### Gate 5 상세 (EDA Parity, {best_asset} {best_tf}, {fast_mode_label})
-
-| 지표 | VBT | EDA | 편차 | 기준 | 판정 |
-|------|-----|-----|------|------|------|
-| Sharpe | X.XX | X.XX | +XX.X% | 수익 부호 일치 | **PASS** |
-| CAGR | +XX.X% | +XX.X% | +XX.X% | 부호 일치 | **PASS** |
-| MDD | XX.X% | XX.X% | XX.X% | — | 양호/주의 |
-| Trades | N | N | -XX.X% | — | 주의/양호 |
-| Win Rate | XX.X% | XX.X% | — | — | — |
-| Profit Factor | X.XX | X.XX | — | — | — |
-
-**Gate 5 판정**: **PASS/FAIL** ({사유})
-
-**분석**:
-
-- **{괴리 원인 1}**: ...
-- **{괴리 원인 2}**: ...
-- **실행 모드**: {fast mode / standard mode} ({이유})
-
-**Live Readiness**: {7/7 PASS} — L1~L7 전 항목 통과
-
-**참고**: {추가 관찰 사항}
-```
-
-### 7-2. Gate 진행 현황 갱신
+### 7-1. Gate 진행 현황 갱신
 
 ```
 G5 EDA검증   [PASS/FAIL] Sharpe X.XX, CAGR +XX.X%, 수익 부호 일치/불일치
@@ -560,7 +531,7 @@ uv run python main.py pipeline report
 ```
 
 > YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
-> G5 FAIL은 코드 수정 후 재시도 가능 — 스코어카드를 fail/로 이동하지 않는다.
+> G5 FAIL은 코드 수정 후 재시도 가능.
 
 ---
 
@@ -675,5 +646,4 @@ uv run python main.py pipeline report
 
 - [references/parity-criteria.md](references/parity-criteria.md) — Parity 정량 기준 + 괴리 원인 카탈로그
 - [references/live-readiness-checklist.md](references/live-readiness-checklist.md) — 라이브 준비 7항목 상세 검증 패턴
-- [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (G5 선례)
 - `pipeline report` — 전략 상황판 (CLI)

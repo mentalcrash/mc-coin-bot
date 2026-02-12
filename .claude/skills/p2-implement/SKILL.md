@@ -67,7 +67,7 @@ cat strategies/{strategy_name}.yaml
 | 카테고리 | O | 코드 docstring |
 | 타임프레임 | O | `annualization_factor` 결정 |
 | ShortMode | O | signal.py 분기 로직 |
-| Gate 0 점수 | O | 스코어카드 기록 |
+| Gate 0 점수 | O | YAML 메타데이터 기록 |
 | 핵심 가설 | O | 코드 docstring + 주석 |
 | 사용 지표 | O | preprocessor.py 구현 |
 | 시그널 생성 로직 | O | signal.py 구현 |
@@ -688,7 +688,7 @@ uv run pytest --tb=short -q
 
 ---
 
-## Step 9: YAML 메타데이터 업데이트 + 스코어카드 생성
+## Step 9: YAML 메타데이터 업데이트
 
 ### 9-1. YAML 메타데이터 업데이트 (필수)
 
@@ -701,11 +701,6 @@ uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTE
 ```
 
 > parameters 추가가 필요하면 YAML 직접 편집 (config.py의 기본값과 동일하므로 보통 불필요).
-
-### 9-2. 스코어카드 파일 생성 (선택)
-
-[docs/scorecard/template.md](../../../docs/scorecard/template.md) 템플릿을 기반으로 초기 스코어카드를 생성한다.
-스코어카드는 사람이 읽는 문서이며, YAML이 프로그래매틱 관리의 주체이다.
 
 ---
 

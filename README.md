@@ -249,14 +249,11 @@ uv run python main.py ingest bulk-download --top 100 --year 2024 --year 2025
 uv run python main.py ingest info
 ```
 
-### 일괄 백테스트 & 스코어카드
+### 일괄 백테스트
 
 ```bash
 # 전 전략 일괄 백테스트 (50 전략 x 5 자산)
 uv run python scripts/bulk_backtest.py
-
-# 스코어카드 자동 생성
-uv run python scripts/generate_scorecards.py
 ```
 
 ### 배포 (Docker Compose + Coolify)

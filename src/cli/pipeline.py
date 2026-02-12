@@ -8,7 +8,6 @@ Commands:
     - record: Gate 결과 기록
     - update-status: 전략 상태 변경
     - report: Dashboard 자동 생성
-    - migrate: Markdown → YAML 마이그레이션
     - table: 모든 전략 현황 표
 """
 
@@ -67,7 +66,7 @@ def status() -> None:
     records = store.load_all()
 
     if not records:
-        console.print("[yellow]No strategies found. Run 'pipeline migrate' first.[/yellow]")
+        console.print("[yellow]No strategies found.[/yellow]")
         return
 
     counts: dict[StrategyStatus, int] = {}
@@ -283,15 +282,6 @@ def report(
         renderer.render()
 
 
-@app.command()
-def migrate() -> None:
-    """Markdown → YAML 마이그레이션."""
-    from src.pipeline.migrate import run_migration
-
-    run_migration()
-    console.print("[green]Migration complete.[/green]")
-
-
 @app.command(name="table")
 def full_table() -> None:
     """모든 전략의 현황을 Gate 진행도 표로 출력."""
@@ -299,7 +289,7 @@ def full_table() -> None:
     records = store.load_all()
 
     if not records:
-        console.print("[yellow]No strategies found. Run 'pipeline migrate' first.[/yellow]")
+        console.print("[yellow]No strategies found.[/yellow]")
         return
 
     # Sort: ACTIVE first, then by name

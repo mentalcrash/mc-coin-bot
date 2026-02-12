@@ -3,7 +3,7 @@ name: p4-g1g4-gate
 description: >
   G0B PASS 전략의 G1~G4 순차 검증 파이프라인. 시니어 퀀트 관점에서 백테스트(G1),
   IS/OOS(G2), 파라미터 안정성(G3), WFA/CPCV/PBO/DSR(G4)을 실행하고
-  스코어카드/대시보드를 자동 갱신한다. FAIL 시 즉시 중단 + 폐기 처리.
+  대시보드를 자동 갱신한다. FAIL 시 즉시 중단 + 폐기 처리.
   사용 시점: (1) G0B PASS 전략의 본격 검증,
   (2) "gate", "pipeline", "G1", "검증 파이프라인" 요청 시,
   (3) 여러 전략을 순차적으로 Gate 검증할 때.
@@ -38,7 +38,7 @@ argument-hint: <strategy-name> [--from g1|g2|g3|g4]
 | 인수 | 필수 | 설명 | 예시 |
 |------|:----:|------|------|
 | `strategy_name` | O | registry key (kebab-case) | `ac-regime` |
-| `--from gN` | X | 시작 Gate (기본: g1). 이전 Gate 결과는 스코어카드에서 복원 | `--from g2` |
+| `--from gN` | X | 시작 Gate (기본: g1). 이전 Gate 결과는 YAML에서 복원 | `--from g2` |
 
 ---
 
@@ -78,7 +78,7 @@ ls data/silver/BTC_USDT_1D.parquet data/silver/ETH_USDT_1D.parquet \
 
 ### 0-4. --from 복원 (해당 시)
 
-`--from g2` 등 지정 시, 스코어카드에서 이전 Gate 결과를 파싱하여 Best Asset 등 변수를 복원한다.
+`--from g2` 등 지정 시, YAML 메타데이터에서 이전 Gate 결과를 파싱하여 Best Asset 등 변수를 복원한다.
 
 ```
 --from g2 → G1 결과에서 Best Asset 추출
@@ -183,16 +183,6 @@ uv run python main.py pipeline record {strategy_name} \
   --rationale "{Best Asset} Sharpe X.XX, CAGR +XX.X%"
 ```
 
-### 스코어카드 갱신 (선택)
-
-스코어카드에 다음 섹션 추가/갱신:
-
-1. **성과 요약** 섹션: 에셋별 비교 표 (CTREND ctrend.md:24-31 패턴)
-2. **Best Asset 핵심 지표** 표 (CTREND ctrend.md:34-46 패턴)
-3. **Gate 진행 현황**: `G1 백테스트 [PASS/FAIL] {Best Asset} Sharpe X.XX, CAGR +XX.X%, MDD -XX.X%`
-4. **Gate 1 상세** 섹션 추가 (CTREND ctrend.md:184-191 패턴)
-5. **의사결정 기록** 행 추가
-
 **FAIL → Step F (실패 처리)**
 **PASS → Step 2**
 
@@ -250,25 +240,6 @@ uv run python -m src.cli.backtest validate \
 3. **역방향 과적합 탐지**: OOS > IS이면 (Decay 음수), 데이터 분할 문제 또는 레짐 특성 분석 필요
 
 4. **OOS MDD 확인**: OOS 구간의 MDD가 IS 대비 2배 이상 증가하면 경고
-
-### 문서 갱신
-
-스코어카드에 다음 추가:
-
-1. **Gate 2 상세** 섹션 (CTREND ctrend.md:169-182 패턴):
-
-   ```markdown
-   ### Gate 2 상세 (IS/OOS 70/30, {best_asset})
-
-   | 지표 | IS (70%) | OOS (30%) | 기준 | 판정 |
-   |------|----------|-----------|------|------|
-   | Sharpe | X.XX | X.XX | OOS > 0.3 | PASS/FAIL |
-   | Decay | — | XX.X% | < 50% | PASS/FAIL |
-   ...
-   ```
-
-2. **Gate 진행 현황** 갱신: `G2 IS/OOS [PASS/FAIL] OOS Sharpe X.XX, Decay XX.X%`
-3. **의사결정 기록** 행 추가
 
 **FAIL → Step F (실패 처리)**
 **PASS → Step 3**
@@ -361,25 +332,6 @@ uv run python scripts/gate3_param_sweep.py {strategy_name}
 | alpha | 9/10 (0.1~1.0) | 1.77~2.05 |
 | vol_target | 10/10 (0.15~0.60) | 2.05~2.06 |
 
-### 문서 갱신
-
-스코어카드에 다음 추가:
-
-1. **Gate 3 상세** 섹션 (CTREND ctrend.md:62-83 패턴):
-
-   ```markdown
-   ### Gate 3 상세 (파라미터 안정성, {best_asset} 1D)
-
-   | 파라미터 | 기본값 | Best Sharpe | 고원 | 고원 범위 | ±20% Sharpe | 판정 |
-   |---------|--------|-------------|:---:|----------|-------------|:---:|
-   | param1 | XX | X.XX | N/M | min~max | X.XX~X.XX | PASS |
-   ...
-   ```
-
-2. **분석** + **핵심 관찰** 서브섹션
-3. **Gate 진행 현황** 갱신: `G3 파라미터 [PASS/FAIL] N/N 파라미터 고원 + ±20% 안정`
-4. **의사결정 기록** 행 추가
-
 **FAIL → Step F (실패 처리)**
 **PASS → Step 4**
 
@@ -466,18 +418,6 @@ uv run python -m src.cli.backtest validate \
 
 5. **MC 95% CI 하한**: CI 하한 > 0이면 Sharpe가 통계적으로 양수
 
-### 문서 갱신
-
-스코어카드에 다음 추가:
-
-1. **Gate 4 상세** 섹션 (CTREND ctrend.md:85-146 패턴):
-   - WFA 서브섹션: fold별 표 + 판정 표
-   - CPCV 서브섹션: fold별 IS/OOS Sharpe 표
-   - PBO/DSR/MC 서브섹션: 판정 표
-   - Gate 4 종합 판정 + 분석 + 핵심 관찰
-2. **Gate 진행 현황** 갱신
-3. **의사결정 기록** 행 추가
-
 **FAIL → Step F (실패 처리)**
 **PASS → Step S (성공 처리)**
 
@@ -528,14 +468,7 @@ uv run python main.py pipeline lessons-add \
 
 > **기존 교훈과 겹치면 추가하지 않는다.** `lessons-list` 검색 후 판단.
 
-### F-3. 스코어카드 이동 (선택)
-
-```bash
-mkdir -p docs/scorecard/fail/
-mv docs/scorecard/{strategy_name}.md docs/scorecard/fail/{strategy_name}.md
-```
-
-### F-4. Dashboard 자동 생성
+### F-3. Dashboard 자동 생성
 
 ```bash
 uv run python main.py pipeline report
@@ -632,5 +565,4 @@ uv run python main.py pipeline report
 
 - [references/gate-criteria.md](references/gate-criteria.md) — Gate별 정량 기준 + CLI 명령 표
 - [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) — 시니어 퀀트 해석 패턴
-- [docs/scorecard/ctrend.md](../../../docs/scorecard/ctrend.md) — CTREND 스코어카드 (참조 선례)
 - `pipeline report` — 전략 상황판 (CLI)

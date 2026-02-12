@@ -339,39 +339,6 @@ uv run python main.py pipeline record {strategy_name} \
 uv run python main.py pipeline report
 ```
 
-### 스코어카드 갱신 (선택 — `docs/scorecard/{strategy_name}.md`)
-
-스코어카드가 이미 존재해야 한다 (`/p2-implement`에서 생성).
-
-**PASS 시**:
-
-1. Gate 진행 현황에서 G0B 행 추가/갱신:
-
-```
-G0 아이디어  [PASS] XX/30점
-G0B 코드검증 [PASS] C1-C7 전항목 PASS, Warning N건
-```
-
-2. 의사결정 기록에 행 추가:
-
-```markdown
-| {날짜} | G0B | PASS | C1-C7 전항목 PASS. Warning: {W항목 요약}. 다음: /p4-g1g4-gate |
-```
-
-**FAIL 시**:
-
-1. Gate 진행 현황 갱신:
-
-```
-G0B 코드검증 [FAIL] {C항목}: {사유 요약}
-```
-
-2. 의사결정 기록에 행 추가:
-
-```markdown
-| {날짜} | G0B | FAIL | {C항목} FAIL: {사유}. 수정 후 재검증 필요 |
-```
-
 ---
 
 ## 교훈 기록 (FAIL 시)

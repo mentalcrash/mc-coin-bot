@@ -193,7 +193,7 @@ def main() -> None:
                 )
                 strategy_results.append(entry)
             else:
-                logger.error(f"  -> FAILED")
+                logger.error("  -> FAILED")
 
         all_results[strategy_name] = strategy_results
         print_strategy_results(strategy_name, strategy_results)

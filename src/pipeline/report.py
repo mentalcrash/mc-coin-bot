@@ -60,8 +60,7 @@ class DashboardGenerator:
             "# 전략 상황판 (Strategy Dashboard)\n\n"
             f"> {total}개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. "
             f"(활성 {active} + 폐기 {retired})\n"
-            "> 개별 스코어카드는 [docs/scorecard/](../scorecard/)에, "
-            "Gate 기준은 `pipeline gates-list/gates-show`로 확인."
+            "> Gate 기준은 `pipeline gates-list/gates-show`로 확인."
         )
 
     def _pipeline_diagram(self) -> str:
@@ -143,8 +142,6 @@ class DashboardGenerator:
 
         for r in sorted(active, key=lambda x: -(x.best_sharpe or 0)):
             best = max(r.asset_performance, key=lambda a: a.sharpe) if r.asset_performance else None
-            scorecard_link = f"[**{r.meta.display_name}**](../scorecard/{r.meta.name}.md)"
-
             if best:
                 gates_str = " | ".join(
                     _gate_letter(r, gid)
@@ -153,7 +150,7 @@ class DashboardGenerator:
                 note = _extract_note(r)
                 cagr = f"+{best.cagr:.1f}%" if best.cagr > 0 else f"{best.cagr:.1f}%"
                 row = (
-                    f"| {scorecard_link} | {best.symbol} | {r.meta.timeframe} | "
+                    f"| **{r.meta.display_name}** | {best.symbol} | {r.meta.timeframe} | "
                     + f"{best.sharpe:.2f} | {cagr} | -{best.mdd:.1f}% | {best.trades} | "
                     + f"{gates_str} | {note} |"
                 )
@@ -250,7 +247,7 @@ class DashboardGenerator:
             "|------|--------|------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
             note = _fail_rationale(r, GateId.G4)
             lines.append(f"| {link} | {sharpe} | {note} |")
@@ -263,7 +260,7 @@ class DashboardGenerator:
             "|------|--------|------|",
         ]
         for r in records:
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
             note = _fail_rationale(r, GateId.G3)
             lines.append(f"| {link} | {sharpe} | {note} |")
@@ -276,7 +273,7 @@ class DashboardGenerator:
             "|------|--------|-----------|-------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
             g2 = r.gates.get(GateId.G2)
             oos = f"{g2.details.get('oos_sharpe', '-')}" if g2 else "-"
@@ -291,7 +288,7 @@ class DashboardGenerator:
             "|------|--------|------|------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             best = max(r.asset_performance, key=lambda a: a.sharpe) if r.asset_performance else None
             sharpe = f"{best.sharpe:.2f}" if best else "-"
             cagr = (
@@ -310,7 +307,7 @@ class DashboardGenerator:
             "|------|--------|------|------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             best = max(r.asset_performance, key=lambda a: a.sharpe) if r.asset_performance else None
             sharpe = f"{best.sharpe:.2f}" if best else "-"
             cagr = (
@@ -329,7 +326,7 @@ class DashboardGenerator:
             "|------|---------|------|",
         ]
         for r in records:
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             g0 = r.gates.get(GateId.G0A)
             score = f"{g0.details.get('score', '?')}/30" if g0 else "-"
             note = _fail_rationale(r, GateId.G1)
@@ -343,7 +340,7 @@ class DashboardGenerator:
             "|------|--------|------|",
         ]
         for r in records:
-            link = f"[{r.meta.display_name}](../scorecard/fail/{r.meta.name}.md)"
+            link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
             note = _fail_rationale(r, GateId.G1)
             lines.append(f"| {link} | {sharpe} | {note} |")
