@@ -23,7 +23,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 2) 소스 레이어
 COPY README.md ./
 COPY src/ src/
-COPY main.py ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
@@ -41,11 +40,6 @@ WORKDIR /app
 # Builder에서 .venv만 복사
 COPY --from=builder --chown=bot:bot /app/.venv /app/.venv
 COPY --from=builder --chown=bot:bot /app/src /app/src
-COPY --from=builder --chown=bot:bot /app/main.py /app/main.py
-
-# Config & healthcheck 복사
-COPY --chown=bot:bot config/ /app/config/
-COPY --chown=bot:bot scripts/healthcheck.py /app/scripts/healthcheck.py
 
 # 데이터/로그 디렉토리 (volume mount 대상)
 RUN mkdir -p /app/data /app/logs && chown -R bot:bot /app/data /app/logs
@@ -59,10 +53,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
 EXPOSE 8000
 
 USER bot
-
-# Health check (HTTP 서버 없이 프로세스 상태 확인)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ["python", "scripts/healthcheck.py"]
 
 # ENTRYPOINT + CMD 분리 → 모드 오버라이드 가능
 # 기본: mc-bot (pyproject.toml [project.scripts] 진입점)
