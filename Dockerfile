@@ -23,7 +23,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 2) 소스 레이어
 COPY README.md ./
 COPY src/ src/
-COPY main.py ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
@@ -41,7 +40,6 @@ WORKDIR /app
 # Builder에서 .venv만 복사
 COPY --from=builder --chown=bot:bot /app/.venv /app/.venv
 COPY --from=builder --chown=bot:bot /app/src /app/src
-COPY --from=builder --chown=bot:bot /app/main.py /app/main.py
 
 # Config & healthcheck 복사
 COPY --chown=bot:bot config/ /app/config/
