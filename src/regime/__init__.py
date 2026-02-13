@@ -32,8 +32,10 @@ from src.regime.config import (
 )
 from src.regime.detector import RegimeDetector, RegimeState, add_regime_columns
 from src.regime.ensemble import EnsembleRegimeDetector, add_ensemble_regime_columns
+from src.regime.service import EnrichedRegimeState, RegimeService, RegimeServiceConfig
 
 __all__ = [
+    "EnrichedRegimeState",
     "EnsembleRegimeDetector",
     "EnsembleRegimeDetectorConfig",
     "HMMDetectorConfig",
@@ -42,6 +44,8 @@ __all__ = [
     "RegimeDetector",
     "RegimeDetectorConfig",
     "RegimeLabel",
+    "RegimeService",
+    "RegimeServiceConfig",
     "RegimeState",
     "VolStructureDetectorConfig",
     "add_ensemble_regime_columns",

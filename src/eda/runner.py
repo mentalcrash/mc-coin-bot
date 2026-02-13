@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from src.eda.ports import DataFeedPort, ExecutorPort
     from src.models.backtest import PerformanceMetrics
     from src.portfolio.config import PortfolioManagerConfig
+    from src.regime.service import RegimeService, RegimeServiceConfig
     from src.strategy.base import BaseStrategy
 
 
@@ -60,6 +61,7 @@ class EDARunner:
         queue_size: int = 10000,
         *,
         fast_mode: bool = False,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._config = config
@@ -68,6 +70,7 @@ class EDARunner:
         self._queue_size = queue_size
         self._target_timeframe = target_timeframe
         self._fast_mode = fast_mode
+        self._regime_config = regime_config
 
         # feed/executor 생성
         self._feed: DataFeedPort = HistoricalDataFeed(
@@ -93,6 +96,7 @@ class EDARunner:
         queue_size: int = 10000,
         *,
         fast_mode: bool = False,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> EDARunner:
         """어댑터를 직접 주입하여 Runner를 생성합니다 (내부용)."""
         instance = object.__new__(cls)
@@ -105,6 +109,7 @@ class EDARunner:
         instance._queue_size = queue_size
         instance._target_timeframe = target_timeframe
         instance._fast_mode = fast_mode
+        instance._regime_config = regime_config
         instance._bus = None
         instance._analytics = None
         instance._pm = None
@@ -122,6 +127,7 @@ class EDARunner:
         queue_size: int = 10000,
         *,
         fast_mode: bool = False,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> EDARunner:
         """백테스트용 Runner 생성.
 
@@ -138,6 +144,7 @@ class EDARunner:
             asset_weights=asset_weights,
             queue_size=queue_size,
             fast_mode=fast_mode,
+            regime_config=regime_config,
         )
 
     @classmethod
@@ -149,6 +156,8 @@ class EDARunner:
         config: PortfolioManagerConfig,
         initial_capital: float = 10000.0,
         asset_weights: dict[str, float] | None = None,
+        *,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> EDARunner:
         """Shadow 모드 Runner 생성.
 
@@ -162,6 +171,7 @@ class EDARunner:
             config=config,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
+            regime_config=regime_config,
         )
 
     async def run(self) -> PerformanceMetrics:
@@ -177,6 +187,9 @@ class EDARunner:
         feed = self._feed
         executor = self._executor
 
+        # RegimeService 생성 + 사전계산 (regime_config가 있을 때만)
+        regime_service = self._create_regime_service()
+
         # fast_mode: signal pre-computation (전체 데이터로 한번에 시그널 계산)
         strategy_engine_kwargs: dict[str, object] = {
             "target_timeframe": self._target_timeframe,
@@ -185,6 +198,8 @@ class EDARunner:
             precomputed = self._precompute_signals()
             if precomputed:
                 strategy_engine_kwargs["precomputed_signals"] = precomputed
+        if regime_service is not None:
+            strategy_engine_kwargs["regime_service"] = regime_service
 
         strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
@@ -222,6 +237,9 @@ class EDARunner:
             bus.subscribe(EventType.BAR, executor_bar_handler)
 
         # 2. 모든 컴포넌트 등록 (순서 중요)
+        # RegimeService는 StrategyEngine 앞에 등록 (BAR 처리 시 regime 먼저 업데이트)
+        if regime_service is not None:
+            await regime_service.register(bus)
         await strategy_engine.register(bus)
         await pm.register(bus)
         await rm.register(bus)
@@ -263,6 +281,41 @@ class EDARunner:
         )
 
         return metrics
+
+    def _create_regime_service(self) -> RegimeService | None:
+        """RegimeService 생성 + 전체 데이터 사전 계산.
+
+        regime_config가 None이면 None을 반환합니다.
+
+        Returns:
+            RegimeService 또는 None
+        """
+        if self._regime_config is None:
+            return None
+
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.regime.service import RegimeService
+
+        regime_service = RegimeService(self._regime_config)
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return regime_service
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            regime_service.precompute(data.symbol, df_tf["close"])  # type: ignore[arg-type]
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                regime_service.precompute(sym, df_tf["close"])  # type: ignore[arg-type]
+
+        return regime_service
 
     def _precompute_signals(self) -> dict[str, object] | None:
         """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.
