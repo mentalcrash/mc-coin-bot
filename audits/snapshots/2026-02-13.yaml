@@ -1,0 +1,83 @@
+date: '2026-02-13'
+git_sha: c833ff2
+auditor: claude
+scope:
+- architecture
+- risk-safety
+- code-quality
+- data-pipeline
+- testing-ops
+metrics:
+  test_count: 3072
+  test_pass_rate: 1.0
+  lint_errors: 0
+  type_errors: 0
+  coverage_pct: 0.78
+module_health:
+- module: src/eda
+  health: green
+  coverage_pct: 0.89
+  notes: EventBus flush pattern stabilized
+- module: src/strategy
+  health: green
+  coverage_pct: 0.92
+  notes: 38 strategies, 1H TF 4 retired
+- module: src/exchange
+  health: yellow
+  coverage_pct: 0.65
+  notes: LiveExecutor assert crash risk
+- module: src/data
+  health: green
+  coverage_pct: 0.85
+  notes: Medallion architecture stable
+- module: src/pipeline
+  health: green
+  coverage_pct: 0.90
+  notes: YAML stores consolidated
+- module: src/notification
+  health: green
+  coverage_pct: 0.80
+  notes: Discord bot + formatters
+- module: src/core
+  health: green
+  coverage_pct: 0.88
+  notes: EventBus, events stable
+- module: src/models
+  health: green
+  coverage_pct: 0.95
+  notes: Pydantic V2 models
+strategy_summary:
+  total: 50
+  active: 5
+  testing: 8
+  candidate: 12
+  retired: 25
+new_findings:
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+- 10
+new_actions:
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+grades:
+  architecture: B+
+  risk_safety: C+
+  code_quality: A+
+  data_pipeline: B
+  testing_ops: B-
+  overall: B
+summary: |
+  EDA architecture, security, code quality excellent.
+  10 CRITICAL findings in live trading safety.
+  OMS idempotency persistence, cash negative guard need immediate fix.

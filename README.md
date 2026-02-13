@@ -367,3 +367,33 @@ uv run mcbot pipeline lessons-add \
 ```
 
 카테고리: `strategy-design`, `risk-management`, `market-structure`, `data-resolution`, `pipeline-process`, `meta-analysis`
+
+### 아키텍처 감사 (Audit)
+
+정기적인 아키텍처/보안/코드 품질 감사 결과를 `audits/` 디렉토리에 구조화된 YAML로 관리합니다.
+스냅샷(시계열 건강 지표), 발견사항(상태 추적), 액션 아이템(생명주기 관리)의 3종 데이터를 저장합니다.
+
+```bash
+# 스냅샷 관리
+uv run mcbot audit list                        # 모든 스냅샷 목록
+uv run mcbot audit show 2026-02-13             # 특정 스냅샷 상세
+uv run mcbot audit latest                      # 최신 스냅샷
+
+# 발견사항 관리
+uv run mcbot audit findings                    # 전체 발견사항
+uv run mcbot audit findings --status open      # 미해결 발견사항
+uv run mcbot audit findings --severity critical # CRITICAL 발견사항
+uv run mcbot audit finding-show 1              # 발견사항 상세
+
+# 액션 아이템 관리
+uv run mcbot audit actions                     # 전체 액션 목록
+uv run mcbot audit actions --priority P0       # 긴급 액션
+uv run mcbot audit action-show 1               # 액션 상세
+
+# 트렌드 & 상태 변경
+uv run mcbot audit trend                       # 스냅샷간 지표 추이
+uv run mcbot audit resolve-finding 1           # 발견사항 해결 처리
+uv run mcbot audit update-action 1 --status completed  # 액션 완료 처리
+```
+
+심각도: `critical`, `high`, `medium`, `low` | 우선순위: `P0`(즉시), `P1`(1주), `P2`(2주), `P3`(백로그)

@@ -1,0 +1,21 @@
+id: 4
+title: PositionReconciler no auto-correction
+severity: high
+category: risk-safety
+status: open
+location: src/eda/reconciler.py
+description: |
+  PositionReconciler detects drift between exchange and PM positions
+  but only logs warnings without auto-correction. 5% drift threshold
+  is detection-only.
+impact: |
+  Position drift accumulates silently in live mode.
+  Manual intervention required.
+proposed_fix: Add optional auto-correction mode with configurable threshold.
+effort: 3h
+related_actions: []
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- live-trading
+- reconciliation

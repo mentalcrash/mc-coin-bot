@@ -1,0 +1,22 @@
+id: 1
+title: OMS order idempotency memory-only
+severity: critical
+category: risk-safety
+status: open
+location: src/eda/oms.py:56
+description: |
+  _processed_orders is an in-memory set only.
+  After process crash and restart, previous order records are lost,
+  potentially causing duplicate orders on the exchange.
+impact: |
+  Duplicate orders after crash in live mode, potential fund loss.
+proposed_fix: Persist _processed_orders to SQLite. Restore from DB on restart.
+effort: 2h
+related_actions:
+- 1
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- live-trading
+- persistence
+- idempotency

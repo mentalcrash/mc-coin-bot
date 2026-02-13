@@ -1,0 +1,20 @@
+id: 10
+title: No graceful degradation for Discord bot failure
+severity: medium
+category: risk-safety
+status: open
+location: src/notification/bot.py
+description: |
+  If Discord bot connection fails, the notification queue backs up
+  but trading continues without operator awareness.
+  No fallback notification channel.
+impact: |
+  Operator misses critical alerts during Discord outage.
+proposed_fix: Add fallback to webhook or log file alerts.
+effort: 2h
+related_actions: []
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- notification
+- reliability

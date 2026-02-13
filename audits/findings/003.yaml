@@ -1,0 +1,21 @@
+id: 3
+title: LiveExecutor assert statements in production path
+severity: critical
+category: risk-safety
+status: open
+location: src/eda/executors.py
+description: |
+  LiveExecutor uses assert statements for critical validations.
+  Running with python -O strips all asserts, silently skipping checks.
+impact: |
+  Production deployment with optimization flags would bypass
+  critical safety checks.
+proposed_fix: Replace assert with explicit if/raise ValueError or custom exceptions.
+effort: 1h
+related_actions:
+- 3
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- live-trading
+- safety

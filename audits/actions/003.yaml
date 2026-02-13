@@ -1,0 +1,22 @@
+id: 3
+title: Replace assert with explicit exceptions in LiveExecutor
+priority: P0
+status: pending
+phase: A
+assigned_to: null
+related_findings:
+- 3
+description: |
+  Replace all assert statements in LiveExecutor with explicit
+  if/raise patterns using appropriate exception types.
+estimated_effort: 1h
+created_at: '2026-02-13'
+started_at: null
+completed_at: null
+verification: |
+  1. grep -r "assert " src/eda/executors.py returns 0 matches
+  2. All existing tests still pass
+  3. New tests verify exception raising
+tags:
+- live-trading
+- safety

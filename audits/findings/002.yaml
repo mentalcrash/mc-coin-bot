@@ -1,0 +1,21 @@
+id: 2
+title: PM cash balance can go negative
+severity: critical
+category: risk-safety
+status: open
+location: src/eda/portfolio_manager.py
+description: |
+  PortfolioManager does not guard against cash going negative
+  when opening new positions. Insufficient funds check is missing.
+impact: |
+  Negative cash balance in live mode could trigger margin call or
+  unintended leverage.
+proposed_fix: Add pre-trade cash sufficiency check in PM before order emission.
+effort: 1h
+related_actions:
+- 2
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- live-trading
+- risk-management

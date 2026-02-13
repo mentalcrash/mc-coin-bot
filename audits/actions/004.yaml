@@ -1,0 +1,21 @@
+id: 4
+title: Add jitter to BinanceFuturesClient retry backoff
+priority: P1
+status: pending
+phase: B
+assigned_to: null
+related_findings:
+- 6
+description: |
+  Add random jitter (0-50%) to exponential backoff delay
+  in _retry_with_backoff to prevent thundering herd.
+estimated_effort: 30m
+created_at: '2026-02-13'
+started_at: null
+completed_at: null
+verification: |
+  1. pytest -k test_retry_backoff passes
+  2. Verify jitter range in retry delays
+tags:
+- live-trading
+- reliability

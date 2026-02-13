@@ -1,0 +1,21 @@
+id: 8
+title: No data staleness detection in LiveDataFeed
+severity: high
+category: data-pipeline
+status: open
+location: src/eda/live_data_feed.py
+description: |
+  LiveDataFeed does not detect stale data (e.g., WebSocket disconnect
+  without error). If exchange stops sending updates, system trades
+  on outdated prices.
+impact: |
+  Trading on stale prices in live mode.
+proposed_fix: Add heartbeat/staleness check with configurable timeout.
+effort: 2h
+related_actions:
+- 6
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- live-trading
+- data-quality

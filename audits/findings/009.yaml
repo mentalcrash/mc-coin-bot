@@ -1,0 +1,20 @@
+id: 9
+title: EventBus queue overflow silent drop
+severity: medium
+category: architecture
+status: open
+location: src/core/event_bus.py
+description: |
+  BAR events use put_nowait (DROPPABLE). When queue is full,
+  events are silently dropped with only a log warning.
+  No metric or alert for dropped events.
+impact: |
+  Missed bars in high-frequency scenarios without operator awareness.
+proposed_fix: Add dropped event counter metric for monitoring.
+effort: 1h
+related_actions: []
+discovered_at: '2026-02-13'
+resolved_at: null
+tags:
+- architecture
+- monitoring
