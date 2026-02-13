@@ -117,7 +117,7 @@ TF 적합: 4H, 1H
 
 ## 3. Carry / Yield (캐리)
 
-### 3-A. Funding Rate Carry — 폐기 (데이터 부재)
+### 3-A. Funding Rate Carry — ✅ 사용 가능 (DerivativesDataService)
 
 ```
 경제적 논거: 영구선물 funding rate는 레버리지 수요를 반영.
@@ -126,11 +126,34 @@ TF 적합: 4H, 1H
 지표:
   - Funding rate 8h 이동 평균
   - Funding rate z-score
-상태: 폐기 (funding_rate 데이터 미확보, 인프라 투자 미진행)
-TF 적합: 8H, 1D
+  - Avg funding rate (rolling lookback)
+상태: ✅ 인프라 완비 (DerivativesDataService)
+데이터: data/silver/{SYMBOL}/{YEAR}_deriv.parquet → funding_rate 컬럼
+활용 패턴:
+  - MarketDataService.get(include_derivatives=True)
+  - DerivativesDataService.enrich() / .precompute()
+  - 참조 구현: src/strategy/funding_carry/
+TF 적합: 1D (8h FR → 1D merge_asof)
+경제적 검증: funding rate > +0.05% → 시장 과열 → 숏 캐리
+             funding rate < -0.03% → 과매도 → 롱 캐리
+학술 검증: 2020-2024 연 15-25% 리턴 (비용 차감 후)
 ```
 
-### 3-B. Basis Spread (Spot-Futures)
+### 3-B. OI Divergence — Live 전용 (백테스팅 제한)
+
+```
+경제적 논거: OI 증가 + 가격 상승 = 신규 롱 유입 (추세 지속).
+             OI 감소 + 가격 상승 = 숏 청산 (추세 약화).
+지표:
+  - OI 변화율 + 가격 변화율 조합
+  - OI divergence (가격과 OI 방향 불일치)
+상태: 인프라 구축 완료 (DerivativesDataService), Binance 30일 히스토리 제한
+활용: Live 모드에서 OI 변화 + 가격 변화 조합 필터로 사용 가능
+백테스팅: 최근 30일만 가능 (불충분)
+TF 적합: 4H, 1D
+```
+
+### 3-C. Basis Spread (Spot-Futures)
 
 ```
 경제적 논거: 선물 프리미엄은 시장 심리를 반영.
@@ -139,7 +162,7 @@ TF 적합: 8H, 1D
 지표:
   - (futures_price - spot_price) / spot_price
   - Annualized basis
-상태: 데이터 확보 필요 (futures OHLCV)
+상태: 데이터 미확보 (futures OHLCV)
 TF 적합: 1D
 ```
 
@@ -294,7 +317,8 @@ GitHub: shep-analytics/gt_score
 실적: 2025년 funding rate 연 수익률 19.26% (전년 14.39% 대비 +34%)
       Cross-platform arbitrage로 추가 3-5% 연간 수익.
       자본 유입 전년 대비 215% 증가.
-주의: funding_rate 데이터 확보 필요 (현재 PENDING 상태).
+상태: ✅ 데이터 확보 완료. 백테스팅 즉시 가능.
+      DerivativesDataService + MarketDataService.get(include_derivatives=True) 사용.
 ```
 
 ---
@@ -306,7 +330,14 @@ GitHub: shep-analytics/gt_score
 > RegimeService 공유 인프라 구축 완료 — 레짐 적응형 전략 설계 가능.
 
 ```
-0순위: 기존 전략의 레짐 적응형 확장 (RegimeService 활용) ★ NEW
+0순위: Funding Rate 기반 전략 (Carry, Contrarian, Regime Filter) ★ NEW
+       — DerivativesDataService 인프라 완비, 학술 검증 (연 15-25% 리턴)
+       — 기존 funding-carry 전략 재시도 가능 (G0 25/30, 데이터 부재로 폐기 → 인프라 구축 완료)
+       — FR z-score, FR momentum, FR regime 등 파생 전략 가능
+       — 기존 전략에 FR을 추가 필터로 사용 (극단 FR 시 진입 억제 등)
+       — 참조 구현: src/strategy/funding_carry/
+
+0.5순위: 기존 전략의 레짐 적응형 확장 (RegimeService 활용)
        — RegimeService가 6개 컬럼(regime_label, p_trending/ranging/volatile,
          trend_direction, trend_strength)을 자동 주입
        — 기존 alpha 소스 + 레짐 확률 가중 vol_target/threshold 조절
@@ -342,5 +373,5 @@ GitHub: shep-analytics/gt_score
    - FX Session Decomposition — 크립토 24/7 비적합
    - Hour-of-day Seasonality — noise 과적합
    - Amihud 1H Liquidity Regime — 과빈번 전환
-   - Carry/Pairs — 데이터 인프라 부재
+   - Copula Pairs — pair_close 데이터 인프라 부재
 ```

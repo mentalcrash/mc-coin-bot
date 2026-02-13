@@ -202,6 +202,79 @@ def calculate_volatility_scalar(
 
 ---
 
+## 2.5 Derivatives-Aware Preprocessor Template
+
+Derivatives 데이터를 사용하는 전략의 preprocessor 템플릿.
+참조 구현: `src/strategy/funding_carry/preprocessor.py`
+
+```python
+"""{StrategyDisplayName} 전처리 모듈 (Derivatives).
+
+OHLCV + Derivatives 데이터에서 전략 feature를 계산한다.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pandas as pd
+
+if TYPE_CHECKING:
+    from src.strategy.{name_snake}.config import {StrategyConfig}
+
+from src.strategy.tsmom.preprocessor import (
+    calculate_returns,
+    calculate_realized_volatility,
+    calculate_volatility_scalar,
+)
+
+_REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume", "funding_rate"})
+
+
+def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
+    """{StrategyDisplayName} feature 계산 (Derivatives 포함)."""
+    missing = _REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        msg = f"Missing required columns: {missing}"
+        raise ValueError(msg)
+
+    df = df.copy()
+
+    close: pd.Series = df["close"]  # type: ignore[assignment]
+
+    # --- Returns ---
+    returns = calculate_returns(close)
+    df["returns"] = returns
+
+    # --- Realized Volatility ---
+    realized_vol = calculate_realized_volatility(
+        returns,
+        window=config.vol_window,
+        annualization_factor=config.annualization_factor,
+    )
+    df["realized_vol"] = realized_vol
+
+    # --- Vol Scalar ---
+    df["vol_scalar"] = calculate_volatility_scalar(
+        realized_vol,
+        vol_target=config.vol_target,
+        min_volatility=config.min_volatility,
+    )
+
+    # --- Derivatives Feature ---
+    funding_rate: pd.Series = df["funding_rate"]  # type: ignore[assignment]
+    funding_rate = funding_rate.ffill()  # merge_asof 후 NaN 처리
+    df["avg_funding_rate"] = funding_rate.rolling(config.lookback).mean()
+    rolling_mean = df["avg_funding_rate"].rolling(config.zscore_window).mean()
+    rolling_std = df["avg_funding_rate"].rolling(config.zscore_window).std()
+    df["funding_zscore"] = (df["avg_funding_rate"] - rolling_mean) / rolling_std.clip(lower=1e-10)
+
+    return df
+```
+
+---
+
 ## 3. signal.py Template
 
 ```python
@@ -516,6 +589,7 @@ class {StrategyClass}(BaseStrategy):
 
     @property
     def required_columns(self) -> list[str]:
+        # Derivatives 전략: ["close", "high", "low", "volume", "funding_rate"] 등 추가
         return ["open", "high", "low", "close", "volume"]
 
     @property

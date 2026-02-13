@@ -4,7 +4,7 @@ description: >
   Gate 0 Phase B 전략 코드 검증. 새 전략 구현 완료 후 백테스트 실행 전에 수행하는 필수 관문.
   시니어 퀀트 개발자 관점에서 look-ahead bias, 데이터 누수, 시그널 로직 결함, 포지션 사이징 오류,
   비용 모델 누락, 진입/청산 로직 모순 등 7가지 Critical 항목(C1-C7)과 5가지 Warning 항목(W1-W5)을
-  검증하여 PASS/FAIL 판정을 내린다.
+  검증하여 PASS/FAIL 판정을 내린다. Derivatives 데이터 사용 전략은 W6(NaN 처리)도 점검.
   사용 시점: (1) 새 전략 구현 완료 후 Gate 1 백테스트 전,
   (2) 전략 코드 수정 후 재검증,
   (3) "검증", "verify", "audit", "코드 검사" 요청 시,
@@ -217,6 +217,10 @@ FAIL 사유는 아니나 반드시 기록:
 | W3 | Regime Concentration | 특정 레짐(2020-2021 상승장)에 수익 집중 가능성 |
 | W4 | Turnover | 연간 회전율이 비용 대비 합리적인가 |
 | W5 | Correlation | 기존 활성 전략과 수익률 상관 < 0.7 |
+| W6 | Derivatives NaN | funding_rate 등 derivatives 컬럼 ffill() 처리 여부 |
+
+**W6 상세**: Derivatives 컬럼 사용 시 `merge_asof` 후 첫 구간 NaN 미처리 시 시그널 왜곡 가능.
+`required_columns`에 derivatives 컬럼 포함 여부 확인. `ffill()` 적용 여부 검증.
 
 > 상세: [references/warning-checklist.md](references/warning-checklist.md)
 
@@ -288,6 +292,9 @@ FAIL 사유는 아니나 반드시 기록:
        (세부 사항)
 
   [W5] Correlation             : [OK / WARNING]
+       (세부 사항)
+
+  [W6] Derivatives NaN         : [OK / WARNING / N/A]
        (세부 사항)
 
 ------------------------------------------------------------

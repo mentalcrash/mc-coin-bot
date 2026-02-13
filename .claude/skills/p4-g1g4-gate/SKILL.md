@@ -107,6 +107,13 @@ uv run mcbot backtest run {strategy_name} {SYMBOL} \
 
 5개 심볼: `BTC/USDT`, `ETH/USDT`, `BNB/USDT`, `SOL/USDT`, `DOGE/USDT`
 
+### Derivatives 전략 주의사항
+
+전략의 `required_columns`에 OHLCV 외 컬럼(funding_rate 등)이 있으면:
+1. Silver _deriv 파일 존재 확인: `ls data/silver/{SYMBOL}/*_deriv.parquet`
+2. 백테스트 시 `include_derivatives=True` 필요 (현재 CLI 미지원 → 코드 직접 실행)
+3. Funding Rate만 전 기간 백테스팅 가능 (OI/LS/Taker는 30일 제한)
+
 > 또는 `scripts/bulk_backtest.py` 패턴으로 Python API 직접 호출하여 한 번에 실행.
 > 스크립트 방식이 더 빠르고 JSON으로 결과를 수집할 수 있다.
 

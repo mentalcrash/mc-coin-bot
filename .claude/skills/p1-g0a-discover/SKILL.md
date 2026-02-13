@@ -107,7 +107,13 @@ allowed-tools:
 6. 대안 데이터 시그널 (Alternative Data)
    - On-chain: whale flow, exchange net flow
    - Social sentiment: fear/greed aggregation
-   - Funding rate carry (PENDING 상태 — 데이터 확보 시)
+
+7. Derivatives Data (크립토 선물 고유) ★ NEW
+   - Funding Rate: 8h 간격, 전체 히스토리 가용, 백테스팅 가능
+     → ✅ DerivativesDataService 인프라 완비
+     → 참조 구현: src/strategy/funding_carry/
+   - OI/LS Ratio/Taker Ratio: Binance 30일 제한, Live 전용 (백테스팅 불가)
+   - MarketDataService.get(include_derivatives=True)로 OHLCV 자동 병합
 ```
 
 참고: [references/idea-sources.md](references/idea-sources.md)
@@ -159,7 +165,8 @@ allowed-tools:
 
   [3] 데이터 확보 (Data Availability)          : _/5
       OHLCV만으로 구현 가능?
-      1=외부API필수, 3=파생계산, 5=OHLCV직접
+      1=외부API필수, 3=파생계산, 4=Derivatives(Silver), 5=OHLCV직접
+      (Derivatives: funding_rate 등 Silver _deriv 파일에서 로드)
 
   [4] 구현 복잡도 (Implementation Complexity)  : _/5
       4-파일 구조에 맞는가?
@@ -336,6 +343,8 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 10. CTREND와의 상관관계 예측: 낮음/중간/높음
 11. 레짐 활용 여부: 없음 / 패턴A(확률가중) / 패턴B(조건부필터) / 패턴C(방향가중)
     → 활용 시: 어떤 컬럼을, 어떤 파라미터에 적용하는지 명시
+12. 데이터 요구사항: OHLCV only / Derivatives 필요 (funding_rate / open_interest / etc.)
+13. 백테스팅 데이터 가용성: 전 기간 가용 / 30일 제한 / 미확보
 ```
 
 **CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
@@ -597,5 +606,7 @@ Step 4.5의 절차를 따른다.
 - [ ] TF 적합성 확인 (비용 영향 포함)
 - [ ] CTREND와의 예상 상관관계 평가됨
 - [ ] 설계 문서 10개 항목 모두 작성됨
+- [ ] Derivatives 데이터 필요 시 Silver _deriv 파일 존재 확인
+- [ ] 백테스팅 가능 데이터인지 확인 (funding_rate: O, OI/LS/Taker: X)
 - [ ] **`pipeline create` 실행하여 YAML 생성됨** (Gate 0A PASS 시 필수)
 - [ ] **`pipeline report` 실행하여 dashboard 갱신됨**
