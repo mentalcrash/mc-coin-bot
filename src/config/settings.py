@@ -180,6 +180,40 @@ class IngestionSettings(BaseSettings):
         safe_symbol = symbol.replace("/", "_")
         return self.silver_dir / safe_symbol / f"{year}.parquet"
 
+    def get_bronze_deriv_path(self, symbol: str, year: int) -> Path:
+        """Bronze Derivatives Parquet 파일 경로 생성.
+
+        Args:
+            symbol: 거래 심볼 (예: "BTC/USDT")
+            year: 연도
+
+        Returns:
+            Bronze Derivatives Parquet 파일 경로
+
+        Example:
+            >>> settings.get_bronze_deriv_path("BTC/USDT", 2025)
+            PosixPath('data/bronze/BTC_USDT/2025_deriv.parquet')
+        """
+        safe_symbol = symbol.replace("/", "_")
+        return self.bronze_dir / safe_symbol / f"{year}_deriv.parquet"
+
+    def get_silver_deriv_path(self, symbol: str, year: int) -> Path:
+        """Silver Derivatives Parquet 파일 경로 생성.
+
+        Args:
+            symbol: 거래 심볼 (예: "BTC/USDT")
+            year: 연도
+
+        Returns:
+            Silver Derivatives Parquet 파일 경로
+
+        Example:
+            >>> settings.get_silver_deriv_path("BTC/USDT", 2025)
+            PosixPath('data/silver/BTC_USDT/2025_deriv.parquet')
+        """
+        safe_symbol = symbol.replace("/", "_")
+        return self.silver_dir / safe_symbol / f"{year}_deriv.parquet"
+
     def ensure_directories(self) -> None:
         """필요한 디렉토리들을 생성.
 

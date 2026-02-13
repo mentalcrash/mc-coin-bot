@@ -171,8 +171,12 @@ unfixable = []
 "src/pipeline/audit_models.py" = ["TC003"]
 # Audit CLI: Path는 typer 런타임 annotation 필요
 "src/cli/audit.py" = ["TC003"]
+# Derivatives models: Decimal은 Pydantic field annotation 런타임 필요
+"src/models/derivatives.py" = ["TC003"]
 # Pipeline report: StrategyStore 런타임 필요
 "src/pipeline/report.py" = ["TC001"]
+# Health models: datetime은 Pydantic field annotation 런타임 필요
+"src/notification/health_models.py" = ["TC003"]
 # 스크립트는 로거 설정 후 import, 매직넘버, print 허용
 "scripts/**/*" = ["E402", "PLR2004", "RUF001", "RUF002", "RUF003", "TRY300", "T201"]
 

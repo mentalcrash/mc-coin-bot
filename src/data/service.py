@@ -63,7 +63,12 @@ class MarketDataService:
         self.settings = settings or get_settings()
         self.silver_processor = silver_processor or SilverProcessor(self.settings)
 
-    def get(self, request: MarketDataRequest) -> MarketDataSet:
+    def get(
+        self,
+        request: MarketDataRequest,
+        *,
+        include_derivatives: bool = False,
+    ) -> MarketDataSet:
         """데이터 요청 처리.
 
         1. 요청된 기간에 해당하는 연도별 Silver 데이터 로드
@@ -163,6 +168,11 @@ class MarketDataService:
             logger.debug("[5/6] 리샘플링: 불필요 (이미 1m)")
             resampled = filtered
 
+        # 5.5. Derivatives enrichment (선택적)
+        resampled = self._maybe_enrich_derivatives(
+            resampled, request, include_derivatives
+        )
+
         # 6. 실제 데이터 범위 추출
         logger.debug("[6/6] MarketDataSet 생성...")
         actual_start: datetime = resampled.index[0].to_pydatetime()  # type: ignore[union-attr]
@@ -195,6 +205,31 @@ class MarketDataService:
             end=actual_end,
             ohlcv=resampled,
         )
+
+    def _maybe_enrich_derivatives(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+        include: bool,
+    ) -> pd.DataFrame:
+        """Derivatives enrichment (선택적).
+
+        Args:
+            df: 리샘플링된 OHLCV DataFrame
+            request: 데이터 요청
+            include: True면 enrichment 수행
+
+        Returns:
+            원본 또는 enriched DataFrame
+        """
+        if not include:
+            return df
+        from src.data.derivatives_service import DerivativesDataService
+
+        deriv_service = DerivativesDataService(self.settings)
+        result = deriv_service.enrich(df, request.symbol, request.start, request.end)
+        logger.debug("Derivatives enrichment applied")
+        return result
 
     def _resample(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """OHLCV 데이터 리샘플링.
@@ -250,6 +285,8 @@ class MarketDataService:
         timeframe: str,
         start: datetime,
         end: datetime,
+        *,
+        include_derivatives: bool = False,
     ) -> MultiSymbolData:
         """여러 심볼의 Silver 데이터를 일괄 로드.
 
@@ -277,7 +314,7 @@ class MarketDataService:
                 start=start,
                 end=end,
             )
-            data = self.get(request)
+            data = self.get(request, include_derivatives=include_derivatives)
             ohlcv[symbol] = data.ohlcv
 
         # 실제 데이터의 공통 시작/종료 시각 결정

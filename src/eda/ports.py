@@ -6,6 +6,7 @@ structural subtyping으로 기존 구현체가 자동으로 만족합니다.
 Ports:
     - DataFeedPort: 데이터 피드 인터페이스 (HistoricalDataFeed, LiveDataFeed)
     - ExecutorPort: 주문 실행기 인터페이스 (BacktestExecutor, ShadowExecutor, LiveExecutor)
+    - DerivativesProviderPort: 파생상품 데이터 제공 인터페이스
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from src.core.event_bus import EventBus
     from src.core.events import FillEvent, OrderRequestEvent
 
@@ -53,5 +56,37 @@ class ExecutorPort(Protocol):
 
         Returns:
             체결 결과 (None이면 체결 실패)
+        """
+        ...
+
+
+@runtime_checkable
+class DerivativesProviderPort(Protocol):
+    """파생상품 데이터 제공 인터페이스.
+
+    Backtest: DerivativesDataService 기반 precomputed 데이터
+    Live: LiveDerivativesFeed 기반 REST polling 데이터
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """DataFrame에 derivatives 컬럼 추가 (precomputed merge_asof).
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            derivatives 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_derivatives_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 derivatives 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
         """
         ...
