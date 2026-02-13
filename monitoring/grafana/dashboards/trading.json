@@ -14,7 +14,7 @@
         "type": "query",
         "includeAll": true,
         "multi": true,
-        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
       }
     ]
   },
