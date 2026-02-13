@@ -107,6 +107,8 @@ class DiscordBotService:
                 ChannelRoute.TRADE_LOG: self._config.trade_log_channel_id,
                 ChannelRoute.ALERTS: self._config.alerts_channel_id,
                 ChannelRoute.DAILY_REPORT: self._config.daily_report_channel_id,
+                ChannelRoute.HEARTBEAT: self._config.heartbeat_channel_id,
+                ChannelRoute.MARKET_REGIME: self._config.regime_channel_id,
             }
             for route, ch_id in channel_map.items():
                 if ch_id is not None:
