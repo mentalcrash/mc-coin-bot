@@ -11,13 +11,19 @@ Commands:
     - trend: 스냅샷간 지표 추이
     - resolve-finding: 발견사항 해결 처리
     - update-action: 액션 상태 변경
+    - add-finding: 새 발견사항 생성
+    - add-action: 새 액션 아이템 생성
+    - create-snapshot: YAML 파일로 스냅샷 생성
 """
 
 from __future__ import annotations
 
+from datetime import date
+from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -26,6 +32,7 @@ from src.pipeline.audit_models import (
     ActionItem,
     ActionPriority,
     ActionStatus,
+    AuditCategory,
     AuditSeverity,
     AuditSnapshot,
     Finding,
@@ -169,8 +176,6 @@ def findings(
             raise typer.Exit(code=1) from None
         records = store.findings_by_severity(sev)
     elif category:
-        from src.pipeline.audit_models import AuditCategory
-
         try:
             cat = AuditCategory(category)
         except ValueError:
@@ -398,6 +403,117 @@ def update_action(
         console.print(f"[red]Action not found: {action_id}[/red]")
         raise typer.Exit(code=1) from None
     console.print(f"[green]Action #{action_id} → {new_status}[/green]")
+
+
+# ─── Write Commands ──────────────────────────────────────────────────
+
+
+@app.command(name="add-finding")
+def add_finding(
+    title: Annotated[str, typer.Option("--title", help="Finding title")],
+    severity: Annotated[str, typer.Option("--severity", help="critical|high|medium|low")],
+    category: Annotated[str, typer.Option("--category", help="architecture|risk-safety|...")],
+    location: Annotated[str, typer.Option("--location", help="File location")] = "",
+    description: Annotated[str, typer.Option("--description", help="Description")] = "",
+    impact: Annotated[str, typer.Option("--impact", help="Impact description")] = "",
+    proposed_fix: Annotated[str, typer.Option("--proposed-fix", help="Proposed fix")] = "",
+    effort: Annotated[str, typer.Option("--effort", help="Estimated effort")] = "",
+    tag: Annotated[list[str] | None, typer.Option("--tag", help="Tags (repeatable)")] = None,
+) -> None:
+    """새 발견사항 생성."""
+    try:
+        sev = AuditSeverity(severity)
+    except ValueError:
+        console.print(f"[red]Invalid severity: {severity}[/red]")
+        raise typer.Exit(code=1) from None
+
+    try:
+        cat = AuditCategory(category)
+    except ValueError:
+        console.print(f"[red]Invalid category: {category}[/red]")
+        raise typer.Exit(code=1) from None
+
+    store = AuditStore()
+    new_id = store.next_finding_id()
+
+    finding = Finding(
+        id=new_id,
+        title=title,
+        severity=sev,
+        category=cat,
+        location=location,
+        description=description,
+        impact=impact,
+        proposed_fix=proposed_fix,
+        effort=effort,
+        discovered_at=date.today(),
+        tags=tag or [],
+    )
+    store.save_finding(finding)
+    console.print(f"[green]Finding #{new_id} created.[/green]")
+
+
+@app.command(name="add-action")
+def add_action(
+    title: Annotated[str, typer.Option("--title", help="Action title")],
+    priority: Annotated[str, typer.Option("--priority", help="P0|P1|P2|P3")],
+    phase: Annotated[str, typer.Option("--phase", help="Phase (e.g. A, B)")] = "",
+    description: Annotated[str, typer.Option("--description", help="Description")] = "",
+    effort: Annotated[str, typer.Option("--effort", help="Estimated effort")] = "",
+    verification: Annotated[str, typer.Option("--verification", help="Verification criteria")] = "",
+    finding: Annotated[list[int] | None, typer.Option("--finding", help="Related finding IDs")] = None,
+    tag: Annotated[list[str] | None, typer.Option("--tag", help="Tags (repeatable)")] = None,
+) -> None:
+    """새 액션 아이템 생성."""
+    try:
+        pri = ActionPriority(priority)
+    except ValueError:
+        console.print(f"[red]Invalid priority: {priority}[/red]")
+        raise typer.Exit(code=1) from None
+
+    store = AuditStore()
+    new_id = store.next_action_id()
+
+    action = ActionItem(
+        id=new_id,
+        title=title,
+        priority=pri,
+        phase=phase,
+        description=description,
+        estimated_effort=effort,
+        verification=verification,
+        related_findings=finding or [],
+        created_at=date.today(),
+        tags=tag or [],
+    )
+    store.save_action(action)
+    console.print(f"[green]Action #{new_id} created.[/green]")
+
+
+@app.command(name="create-snapshot")
+def create_snapshot(
+    from_yaml: Annotated[Path, typer.Option("--from-yaml", help="Snapshot YAML file path")],
+) -> None:
+    """YAML 파일로 감사 스냅샷 생성."""
+    if not from_yaml.exists():
+        console.print(f"[red]File not found: {from_yaml}[/red]")
+        raise typer.Exit(code=1) from None
+
+    try:
+        raw = yaml.safe_load(from_yaml.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        console.print(f"[red]Invalid YAML: {e}[/red]")
+        raise typer.Exit(code=1) from None
+
+    try:
+        snapshot = AuditSnapshot(**raw)
+    except Exception as e:
+        console.print(f"[red]Invalid snapshot data: {e}[/red]")
+        raise typer.Exit(code=1) from None
+
+    store = AuditStore()
+    store.save_snapshot(snapshot)
+    console.print(f"[green]Snapshot {snapshot.date} created.[/green]")
 
 
 # ─── Display helpers ─────────────────────────────────────────────────

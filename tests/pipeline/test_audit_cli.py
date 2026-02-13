@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from src.cli.audit import app
@@ -284,3 +285,186 @@ class TestStatusChangeCommands:
     def test_update_action_invalid_status(self, populated_store: AuditStore) -> None:
         result = runner.invoke(app, ["update-action", "1", "--status", "invalid"])
         assert result.exit_code == 1
+
+
+# ─── Write Commands ──────────────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("_patch_store")
+class TestAddFinding:
+    def test_add_finding_minimal(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "add-finding",
+                "--title", "Test finding",
+                "--severity", "low",
+                "--category", "architecture",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Finding #1 created" in result.output
+
+    def test_add_finding_full(self, populated_store: AuditStore) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "add-finding",
+                "--title", "New finding",
+                "--severity", "high",
+                "--category", "risk-safety",
+                "--location", "src/eda/oms.py:100",
+                "--description", "Some desc",
+                "--impact", "Data loss",
+                "--proposed-fix", "Add guard",
+                "--effort", "2h",
+                "--tag", "live-trading",
+                "--tag", "persistence",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Finding #2 created" in result.output
+
+        # Verify saved data
+        f = populated_store.load_finding(2)
+        assert f.title == "New finding"
+        assert f.severity == AuditSeverity.HIGH
+        assert f.category == AuditCategory.RISK_SAFETY
+        assert f.location == "src/eda/oms.py:100"
+        assert f.tags == ["live-trading", "persistence"]
+
+    def test_add_finding_invalid_severity(self) -> None:
+        result = runner.invoke(
+            app,
+            ["add-finding", "--title", "X", "--severity", "invalid", "--category", "architecture"],
+        )
+        assert result.exit_code == 1
+        assert "Invalid severity" in result.output
+
+    def test_add_finding_invalid_category(self) -> None:
+        result = runner.invoke(
+            app,
+            ["add-finding", "--title", "X", "--severity", "low", "--category", "invalid"],
+        )
+        assert result.exit_code == 1
+        assert "Invalid category" in result.output
+
+    def test_add_finding_auto_id(self, populated_store: AuditStore) -> None:
+        """Auto ID increments from existing findings."""
+        result = runner.invoke(
+            app,
+            ["add-finding", "--title", "Second", "--severity", "medium", "--category", "code-quality"],
+        )
+        assert result.exit_code == 0
+        assert "Finding #2 created" in result.output
+
+
+@pytest.mark.usefixtures("_patch_store")
+class TestAddAction:
+    def test_add_action_minimal(self) -> None:
+        result = runner.invoke(
+            app,
+            ["add-action", "--title", "Test action", "--priority", "P2"],
+        )
+        assert result.exit_code == 0
+        assert "Action #1 created" in result.output
+
+    def test_add_action_full(self, populated_store: AuditStore) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "add-action",
+                "--title", "Fix OMS",
+                "--priority", "P0",
+                "--phase", "A",
+                "--description", "Add persistence",
+                "--effort", "4h",
+                "--verification", "OMS survives restart",
+                "--finding", "1",
+                "--tag", "live-trading",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Action #2 created" in result.output
+
+        a = populated_store.load_action(2)
+        assert a.title == "Fix OMS"
+        assert a.priority == ActionPriority.P0
+        assert a.phase == "A"
+        assert a.related_findings == [1]
+        assert a.tags == ["live-trading"]
+
+    def test_add_action_invalid_priority(self) -> None:
+        result = runner.invoke(
+            app,
+            ["add-action", "--title", "X", "--priority", "P9"],
+        )
+        assert result.exit_code == 1
+        assert "Invalid priority" in result.output
+
+    def test_add_action_auto_id(self, populated_store: AuditStore) -> None:
+        result = runner.invoke(
+            app,
+            ["add-action", "--title", "Second action", "--priority", "P3"],
+        )
+        assert result.exit_code == 0
+        assert "Action #2 created" in result.output
+
+
+@pytest.mark.usefixtures("_patch_store")
+class TestCreateSnapshot:
+    def test_create_snapshot_from_yaml(self, audit_dir: Path, tmp_path: Path) -> None:
+        yaml_content = {
+            "date": "2026-02-14",
+            "git_sha": "abc1234",
+            "auditor": "claude",
+            "scope": ["architecture"],
+            "metrics": {
+                "test_count": 3100,
+                "test_pass_rate": 1.0,
+                "lint_errors": 0,
+                "type_errors": 0,
+                "coverage_pct": 0.80,
+            },
+            "strategy_summary": {"total": 50, "active": 5},
+            "grades": {"overall": "B+", "architecture": "A"},
+            "summary": "Test snapshot",
+        }
+        yaml_path = tmp_path / "snapshot.yaml"
+        yaml_path.write_text(
+            yaml.dump(yaml_content, default_flow_style=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["create-snapshot", "--from-yaml", str(yaml_path)])
+        assert result.exit_code == 0
+        assert "Snapshot 2026-02-14 created" in result.output
+
+        # Verify saved
+        store = AuditStore(base_dir=audit_dir)
+        s = store.load_snapshot("2026-02-14")
+        assert s.git_sha == "abc1234"
+        assert s.metrics.test_count == 3100
+
+    def test_create_snapshot_file_not_found(self, tmp_path: Path) -> None:
+        result = runner.invoke(app, ["create-snapshot", "--from-yaml", str(tmp_path / "nonexistent.yaml")])
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_create_snapshot_invalid_yaml(self, tmp_path: Path) -> None:
+        bad_path = tmp_path / "bad.yaml"
+        bad_path.write_text("{{invalid yaml", encoding="utf-8")
+
+        result = runner.invoke(app, ["create-snapshot", "--from-yaml", str(bad_path)])
+        assert result.exit_code == 1
+
+    def test_create_snapshot_invalid_data(self, tmp_path: Path) -> None:
+        bad_data_path = tmp_path / "bad_data.yaml"
+        bad_data_path.write_text(
+            yaml.dump({"date": "not-a-date", "grades": {"overall": 123}}),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["create-snapshot", "--from-yaml", str(bad_data_path)])
+        assert result.exit_code == 1
+        assert "Invalid snapshot data" in result.output
