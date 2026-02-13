@@ -1,0 +1,16 @@
+id: 28
+title: Skewness 기반 시그널은 윈도우 크기에 극도로 민감
+body: 'skew-mom G3: skew_window plateau 10%(30에서만 Sharpe 1.24, 25=0.79, 40=0.31).
+  Skewness는 고차 적률(3rd moment)로 표본 변동성이 크며, 윈도우가 작으면 noise, 크면 lag. 특정 윈도우에서만 작동하는
+  것은 edge가 아닌 data fit. 고차 적률 기반 전략은 파라미터 안정성 확보가 본질적으로 어려움.'
+category: strategy-design
+tags:
+- skewness
+- higher-moment
+- parameter-sensitivity
+- overfitting
+strategies:
+- skew-mom
+timeframes:
+- 1D
+added_at: '2026-02-13'

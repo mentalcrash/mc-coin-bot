@@ -4,9 +4,9 @@ meta:
   category: Normalized Trend Following
   timeframe: 6H
   short_mode: HEDGE_ONLY
-  status: CANDIDATE
+  status: RETIRED
   created_at: '2026-02-13'
-  retired_at: null
+  retired_at: '2026-02-13'
   economic_rationale: ATR 정규화 모멘텀으로 변동성 레짐에 무관한 시그널 강도 추출. (close - SMA) / ATR 기반
     추세추종
 parameters: {}
@@ -17,9 +17,58 @@ gates:
     details:
       score: 24
       max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  G1:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      sharpe: 1.32
+      cagr: 52.3
+      mdd: 37.0
+  G2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      oos_sharpe: 1.48
+      decay: -14.3
+      overfit_prob: 0.0
+  G3:
+    status: FAIL
+    date: '2026-02-13'
+    details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-13'
   gate: G0A
   verdict: PASS
   rationale: 24/30점
+- date: '2026-02-13'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 적용 확인, 벡터화 완전, vol-scalar safe division,
+    ShortMode 3분기 완비
+- date: '2026-02-13'
+  gate: G1
+  verdict: PASS
+  rationale: DOGE/USDT Sharpe 1.32, CAGR +52.3%, MDD 37.0%, 745 trades. SOL 0.91 양호
+- date: '2026-02-13'
+  gate: G2
+  verdict: PASS
+  rationale: OOS Sharpe 1.48 > IS 1.29 (역Decay -14.3%), Overfit Prob 0%. OOS 구간에서
+    더 강한 성과
+- date: '2026-02-13'
+  gate: G3
+  verdict: FAIL
+  rationale: 3/4 파라미터 PASS (atr_period 90%, entry_threshold 60%, vol_target 100%).
+    sma_period 50% < 60% 기준 미달. baseline 30 근처에서만 peak, 넓은 고원 미형성

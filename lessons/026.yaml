@@ -1,0 +1,19 @@
+id: 26
+title: 2-3H TF regime-gated/multi-scale 전략 = noise 과적합 + 과빈번 거래
+body: 'cft-2h(2H, Sharpe -0.5~-1.8), vmsm(3H, Sharpe -0.5~-2.4): 전 에셋 Sharpe 음수. 연
+  1900-2700건 거래. Regime detection(conviction filter, multi-scale momentum)이 2-3H에서
+  noise를 signal로 오인. BTC의 persistent trend를 포착하지 못하고 매 bar 방향 전환(whipsaw). 4H 이하 TF에서
+  regime-gated 접근은 레짐 전환 신호의 SNR 부족.'
+category: strategy-design
+tags:
+- regime
+- whipsaw
+- 2H
+- 3H
+- noise
+strategies:
+- cft-2h
+- vmsm
+timeframes:
+- 2H
+added_at: '2026-02-13'
