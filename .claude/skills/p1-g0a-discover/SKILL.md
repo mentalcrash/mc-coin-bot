@@ -46,14 +46,14 @@ allowed-tools:
 
 ```
 1. 파이프라인 현황 확인 (필수 — CLI 사용)
-   uv run python main.py pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
-   uv run python main.py pipeline table     # 전체 전략 Gate 진행도
+   uv run mcbot pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
+   uv run mcbot pipeline table     # 전체 전략 Gate 진행도
 
 2. 교훈 데이터 참조 (필수 — 실패 반복 방지)
-   uv run python main.py pipeline lessons-list              # 전체 교훈 목록
-   uv run python main.py pipeline lessons-list --tf {TF}    # 타겟 TF 관련 교훈 필터
-   uv run python main.py pipeline lessons-list -c strategy-design   # 전략 설계 교훈
-   uv run python main.py pipeline lessons-list -c market-structure  # 시장 구조 교훈
+   uv run mcbot pipeline lessons-list              # 전체 교훈 목록
+   uv run mcbot pipeline lessons-list --tf {TF}    # 타겟 TF 관련 교훈 필터
+   uv run mcbot pipeline lessons-list -c strategy-design   # 전략 설계 교훈
+   uv run mcbot pipeline lessons-list -c market-structure  # 시장 구조 교훈
    # → 교훈에서 명시된 안티패턴/실패 유형을 아이디어 생성 시 반드시 회피
 
 3. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
@@ -63,11 +63,11 @@ allowed-tools:
    - 1m→aggregation: EDA 전용 (CandleAggregator 활용)
 
 4. 현재 포트폴리오 구성 확인
-   uv run python main.py pipeline list --status ACTIVE   # 활성 전략
+   uv run mcbot pipeline list --status ACTIVE   # 활성 전략
    # G5 도달까지: G1 통과율 ~50%, G2 통과율 ~20%, G4 통과율 ~5%
 
 5. 폐기 전략 실패 패턴 확인 (필수)
-   uv run python main.py pipeline list --status RETIRED   # YAML 기반 동적 조회
+   uv run mcbot pipeline list --status RETIRED   # YAML 기반 동적 조회
    references/discarded-strategies.md의 "실패 패턴 요약" 섹션 참조
    동일 접근법 재시도 금지
 ```
@@ -187,9 +187,9 @@ allowed-tools:
 ```
 0. 교훈 데이터 매칭 (최우선 — 프로그래매틱 검색)
    # 아이디어 관련 교훈이 있는지 확인
-   uv run python main.py pipeline lessons-list --tf {TF}        # 타겟 TF 교훈
-   uv run python main.py pipeline lessons-list -s {관련전략}     # 유사 전략 교훈
-   uv run python main.py pipeline lessons-list -t {키워드}       # 태그 검색
+   uv run mcbot pipeline lessons-list --tf {TF}        # 타겟 TF 교훈
+   uv run mcbot pipeline lessons-list -s {관련전략}     # 유사 전략 교훈
+   uv run mcbot pipeline lessons-list -t {키워드}       # 태그 검색
    # 교훈이 명시하는 안티패턴과 아이디어가 일치하면 → 즉시 폐기 또는 수정
    # 예: lessons-list --tf 1H → "FX Session ≠ Crypto", "BVC 근사 한계" 등 확인
 
@@ -267,7 +267,7 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 Gate 0 PASS인 아이디어를 `pipeline create` CLI로 YAML에 등록한다.
 
 ```bash
-uv run python main.py pipeline create {strategy-name} \
+uv run mcbot pipeline create {strategy-name} \
   --display-name "{DisplayName}" \
   --category "{Category}" \
   --timeframe "{TF}" \
@@ -317,7 +317,7 @@ uv run python main.py pipeline create {strategy-name} \
 Gate 0 PASS인 아이디어는 `pipeline create` CLI로 YAML을 생성한다:
 
 ```bash
-uv run python main.py pipeline create {registry-name} \
+uv run mcbot pipeline create {registry-name} \
   --display-name "{Display Name}" \
   --category "{카테고리}" \
   --timeframe {TF} \
@@ -327,7 +327,7 @@ uv run python main.py pipeline create {registry-name} \
 ```
 
 - `strategies/{registry-name}.yaml` 생성 (status: CANDIDATE, G0A: PASS)
-- 생성 후 Dashboard 갱신: `uv run python main.py pipeline report`
+- 생성 후 Dashboard 갱신: `uv run mcbot pipeline report`
 
 ### Step 5: 구현 위임
 
@@ -348,7 +348,7 @@ uv run python main.py pipeline create {registry-name} \
 ```bash
 # 5개 에셋, 6년 데이터 (Gate 1 표준)
 for symbol in BTC/USDT ETH/USDT BNB/USDT SOL/USDT DOGE/USDT; do
-  uv run python -m src.cli.backtest run {strategy-name} $symbol \
+  uv run mcbot backtest run {strategy-name} $symbol \
     --start 2020-01-01 --end 2025-12-31
 done
 ```
@@ -394,9 +394,9 @@ GT-Score = (mu * ln(z) * r^2) / sigma_d
 
 ```
 현재 포트폴리오 커버리지를 동적으로 확인:
-  uv run python main.py pipeline status         # 전체 상태 카운트
-  uv run python main.py pipeline list --status RETIRED   # 폐기 전략 카테고리 확인
-  uv run python main.py pipeline list --status ACTIVE    # 활성 전략 확인
+  uv run mcbot pipeline status         # 전체 상태 카운트
+  uv run mcbot pipeline list --status RETIRED   # 폐기 전략 카테고리 확인
+  uv run mcbot pipeline list --status ACTIVE    # 활성 전략 확인
 
 미탐색 영역 (판단 영역 — 폐기 전략 카테고리와 대조하여 확인):
   - Behavioral Finance — Disposition effect, anchoring

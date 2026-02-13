@@ -79,7 +79,7 @@ class MyStrategy(BaseStrategy):
 
 CLI에서 자동 조회:
 ```bash
-python -m src.cli.backtest strategies
+uv run mcbot backtest strategies
 ```
 
 ## Log Returns

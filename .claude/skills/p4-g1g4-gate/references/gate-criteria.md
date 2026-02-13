@@ -59,11 +59,11 @@
 
 ```bash
 # 개별 실행 (5회)
-uv run python -m src.cli.backtest run {strategy} BTC/USDT --start 2020-01-01 --end 2025-12-31
-uv run python -m src.cli.backtest run {strategy} ETH/USDT --start 2020-01-01 --end 2025-12-31
-uv run python -m src.cli.backtest run {strategy} BNB/USDT --start 2020-01-01 --end 2025-12-31
-uv run python -m src.cli.backtest run {strategy} SOL/USDT --start 2020-01-01 --end 2025-12-31
-uv run python -m src.cli.backtest run {strategy} DOGE/USDT --start 2020-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} BTC/USDT --start 2020-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} ETH/USDT --start 2020-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} BNB/USDT --start 2020-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} SOL/USDT --start 2020-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} DOGE/USDT --start 2020-01-01 --end 2025-12-31
 
 # 일괄 실행 (bulk_backtest.py 패턴 — Python API 직접 호출)
 uv run python scripts/bulk_backtest.py
@@ -92,7 +92,7 @@ Decay (%) = (1 - OOS_Sharpe / IS_Sharpe) × 100
 ### CLI 명령
 
 ```bash
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m quick \
@@ -172,14 +172,14 @@ Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS (PBO < 8
 
 ```bash
 # Phase A: WFA
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m milestone \
   -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
 
 # Phase B: CPCV + PBO + DSR + Monte Carlo
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m final \

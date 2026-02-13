@@ -697,7 +697,7 @@ uv run pytest --tb=short -q
 
 ```bash
 # status 변경: CANDIDATE → IMPLEMENTED
-uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTED
+uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
 ```
 
 > parameters 추가가 필요하면 YAML 직접 편집 (config.py의 기본값과 동일하므로 보통 불필요).
@@ -709,7 +709,7 @@ uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTE
 ### 10-1. Pipeline CLI로 Dashboard 자동 생성
 
 ```bash
-uv run python main.py pipeline report
+uv run mcbot pipeline report
 ```
 
 > YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
@@ -718,7 +718,7 @@ uv run python main.py pipeline report
 ### 10-2. YAML 상태 갱신
 
 ```bash
-uv run python main.py pipeline update-status {strategy_name} --status IMPLEMENTED
+uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
 ```
 
 ---

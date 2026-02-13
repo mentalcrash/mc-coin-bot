@@ -46,6 +46,7 @@ dependencies = [
 
 [project.scripts]
 mc-bot = "src.live.main:app"
+mcbot = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]

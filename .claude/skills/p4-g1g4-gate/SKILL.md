@@ -63,7 +63,7 @@ cat strategies/{strategy_name}.yaml
 # gates 섹션에서 G0B: status: PASS 확인
 ```
 
-YAML이 없으면 `uv run python main.py pipeline migrate`로 생성.
+YAML이 없으면 `uv run mcbot pipeline migrate`로 생성.
 G0B PASS가 없으면 중단: "G0B 미통과 전략입니다. `/p3-g0b-verify`를 먼저 실행하세요."
 
 ### 0-3. Silver 데이터 존재
@@ -101,7 +101,7 @@ ls data/silver/BTC_USDT_1D.parquet data/silver/ETH_USDT_1D.parquet \
 
 ```bash
 # 각 심볼별 실행
-uv run python -m src.cli.backtest run {strategy_name} {SYMBOL} \
+uv run mcbot backtest run {strategy_name} {SYMBOL} \
   --start 2020-01-01 --end 2025-12-31 --capital 100000
 ```
 
@@ -177,7 +177,7 @@ Cost = maker 0.04% + taker 0.08% + slippage 0.10%  (편도 ~0.22%)
 Gate 스크립트가 자동 갱신하지만, 수동 실행 시:
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate G1 --verdict PASS \
   --detail "sharpe={best_sharpe}" --detail "cagr={best_cagr}" \
   --rationale "{Best Asset} Sharpe X.XX, CAGR +XX.X%"
@@ -195,7 +195,7 @@ uv run python main.py pipeline record {strategy_name} \
 Best Asset에 대해 IS/OOS 검증을 실행한다:
 
 ```bash
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy_name} \
   --symbols {best_asset} \
   -m quick \
@@ -344,7 +344,7 @@ uv run python scripts/gate3_param_sweep.py {strategy_name}
 **Phase A: WFA (Walk-Forward Analysis)**
 
 ```bash
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy_name} \
   --symbols {best_asset} \
   -m milestone \
@@ -354,7 +354,7 @@ uv run python -m src.cli.backtest validate \
 **Phase B: CPCV + PBO + DSR + Monte Carlo**
 
 ```bash
-uv run python -m src.cli.backtest validate \
+uv run mcbot backtest validate \
   -s {strategy_name} \
   --symbols {best_asset} \
   -m final \
@@ -430,7 +430,7 @@ Gate FAIL 시 다음을 순차 실행한다.
 ### F-1. YAML 갱신 (필수 — Single Source of Truth)
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate {GN} --verdict FAIL \
   --rationale "{구체적 FAIL 사유}"
 ```
@@ -443,13 +443,13 @@ FAIL 사유가 **기존 교훈에 없는 새로운 패턴**이면 교훈 데이�
 
 ```bash
 # 1. 기존 교훈에 유사 패턴이 있는지 확인
-uv run python main.py pipeline lessons-list -c strategy-design
-uv run python main.py pipeline lessons-list -c market-structure
-uv run python main.py pipeline lessons-list -t {관련키워드}
-uv run python main.py pipeline lessons-list --tf {TF}
+uv run mcbot pipeline lessons-list -c strategy-design
+uv run mcbot pipeline lessons-list -c market-structure
+uv run mcbot pipeline lessons-list -t {관련키워드}
+uv run mcbot pipeline lessons-list --tf {TF}
 
 # 2. 새로운 패턴이면 교훈 추가
-uv run python main.py pipeline lessons-add \
+uv run mcbot pipeline lessons-add \
   --title "{실패 패턴 한줄 요약}" \
   --body "{구체적 사유: 에셋별 Sharpe, MDD, FAIL 근거, 구조적 원인}" \
   -c {category} \
@@ -471,7 +471,7 @@ uv run python main.py pipeline lessons-add \
 ### F-3. Dashboard 자동 생성
 
 ```bash
-uv run python main.py pipeline report
+uv run mcbot pipeline report
 ```
 
 > YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.
@@ -489,7 +489,7 @@ uv run python main.py pipeline report
 Gate 4 PASS 기록:
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate G4 --verdict PASS \
   --detail "wfa_oos_sharpe={X.XX}" --detail "pbo={XX}" \
   --rationale "WFA/CPCV/PBO/DSR 모두 PASS"
@@ -501,7 +501,7 @@ G5 검증 기간은 **2년** (2024-01-01 ~ 2025-12-31). 성능 평가가 아닌 
 ### S-2. Dashboard 자동 생성
 
 ```bash
-uv run python main.py pipeline report
+uv run mcbot pipeline report
 ```
 
 ### S-3. 최종 리포트 출력

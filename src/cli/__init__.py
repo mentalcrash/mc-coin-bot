@@ -3,8 +3,52 @@
 Available subcommands:
     - ingest: Data ingestion pipeline (Bronze -> Silver)
     - backtest: Strategy backtesting and optimization
+    - eda: EDA (Event-Driven Architecture) backtesting
+    - pipeline: Strategy pipeline management (YAML)
 
-NOTE: backtest/ingest 모듈은 직접 import하여 사용합니다.
-      (python -m src.cli.backtest 실행 시 __init__.py의 eager import가
-       RuntimeWarning을 유발하므로, 여기서는 import하지 않습니다.)
+Usage:
+    uv run mcbot pipeline table
+    uv run mcbot backtest run tsmom BTC/USDT
+    uv run mcbot eda run tsmom BTC/USDT
+    uv run mcbot ingest bronze BTC/USDT --year 2025
 """
+
+import typer
+
+
+def create_app() -> typer.Typer:
+    """Create the main CLI application with all sub-commands.
+
+    Lazy import를 사용하여 각 서브커맨드 모듈을 필요할 때만 로드합니다.
+    """
+    from src.cli.backtest import app as backtest_app
+    from src.cli.eda import app as eda_app
+    from src.cli.ingest import app as ingest_app
+    from src.cli.pipeline import app as pipeline_app
+
+    main_app = typer.Typer(
+        name="mcbot",
+        help="MC Coin Bot - 2026 Crypto Quant Trading System",
+        no_args_is_help=True,
+    )
+
+    main_app.add_typer(
+        ingest_app, name="ingest", help="Data ingestion pipeline (Bronze/Silver)"
+    )
+    main_app.add_typer(
+        backtest_app, name="backtest", help="Strategy backtesting (VectorBT)"
+    )
+    main_app.add_typer(
+        eda_app, name="eda", help="EDA (Event-Driven Architecture) backtesting"
+    )
+    main_app.add_typer(
+        pipeline_app, name="pipeline", help="Strategy pipeline management (YAML)"
+    )
+
+    return main_app
+
+
+def main() -> None:
+    """Entry point for the ``mcbot`` console script."""
+    app = create_app()
+    app()
