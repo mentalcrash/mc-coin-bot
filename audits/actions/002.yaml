@@ -1,22 +1,27 @@
 id: 2
 title: PM cash sufficiency pre-trade guard
 priority: P0
-status: pending
+status: completed
 phase: A
 assigned_to: null
 related_findings:
 - 2
-description: |
-  Add pre-trade check in PortfolioManager to ensure cash balance
+description: 'Add pre-trade check in PortfolioManager to ensure cash balance
+
   is sufficient before emitting order. Reject order if insufficient.
+
+  '
 estimated_effort: 1h
 created_at: '2026-02-13'
 started_at: null
-completed_at: null
-verification: |
-  1. pytest -k test_pm_cash_guard passes
+completed_at: '2026-02-13'
+verification: '1. pytest -k test_pm_cash_guard passes
+
   2. Order rejected when cash insufficient
+
   3. No negative cash balance possible
+
+  '
 tags:
 - live-trading
 - risk-management

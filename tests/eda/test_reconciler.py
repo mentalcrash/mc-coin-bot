@@ -345,3 +345,94 @@ class TestMultiSymbol:
         drifts = await reconciler.initial_check(pm, client, ["BTC/USDT", "ETH/USDT"])
         assert "BTC/USDT" not in drifts
         assert "ETH/USDT" in drifts
+
+
+class TestAutoCorrection:
+    """Auto-correction 모드 테스트."""
+
+    def test_auto_correct_disabled_by_default(self) -> None:
+        """기본적으로 auto-correction 비활성화."""
+        reconciler = PositionReconciler()
+        assert reconciler.auto_correct_enabled is False
+        assert reconciler.corrections_applied == 0
+
+    def test_auto_correct_enabled(self) -> None:
+        """auto_correct=True로 활성화."""
+        reconciler = PositionReconciler(auto_correct=True)
+        assert reconciler.auto_correct_enabled is True
+
+    async def test_auto_correct_fixes_size_drift(self) -> None:
+        """drift > 10% 시 PM size를 거래소 기준으로 보정."""
+        # PM: 0.1 BTC, Exchange: 0.15 BTC → 33% drift → 보정
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.1, last_price=50000.0
+            ),
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.15, "side": "long"}]
+        )
+
+        reconciler = PositionReconciler(auto_correct=True)
+        drifts = await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        assert "BTC/USDT" in drifts
+        assert reconciler.corrections_applied == 1
+        assert positions["BTC/USDT"].size == 0.15  # 거래소 기준으로 보정됨
+
+    async def test_no_correction_below_threshold(self) -> None:
+        """drift < 10% 시 보정 안 함."""
+        # PM: 0.1 BTC, Exchange: 0.105 BTC → 4.7% drift → 보정 안 함
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.1, last_price=50000.0
+            ),
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.105, "side": "long"}]
+        )
+
+        reconciler = PositionReconciler(auto_correct=True)
+        drifts = await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        assert "BTC/USDT" in drifts
+        assert reconciler.corrections_applied == 0
+        assert positions["BTC/USDT"].size == 0.1  # 변경 없음
+
+    async def test_no_correction_when_disabled(self) -> None:
+        """auto_correct=False 시 보정 안 함."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.1, last_price=50000.0
+            ),
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.2, "side": "long"}]
+        )
+
+        reconciler = PositionReconciler(auto_correct=False)
+        await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        assert reconciler.corrections_applied == 0
+        assert positions["BTC/USDT"].size == 0.1  # 변경 없음
+
+    async def test_correction_closes_position(self) -> None:
+        """거래소에 포지션 없으면 PM 포지션도 NEUTRAL로 보정."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.1, last_price=50000.0
+            ),
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client([])  # 거래소에 포지션 없음
+
+        reconciler = PositionReconciler(auto_correct=True)
+        drifts = await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        assert "BTC/USDT" in drifts
+        assert reconciler.corrections_applied == 1
+        assert positions["BTC/USDT"].size == 0.0
+        assert positions["BTC/USDT"].direction == Direction.NEUTRAL

@@ -258,6 +258,65 @@ class TestEventBusJSONL:
         assert bus.metrics.events_published == 1
 
 
+class TestEventBusDropMetrics:
+    """이벤트 드롭 메트릭 추적 테스트."""
+
+    async def test_consecutive_drops_tracked(self) -> None:
+        """연속 드롭이 올바르게 추적됨."""
+        bus = EventBus(queue_size=1)
+
+        await bus.publish(_make_bar("A"))  # 큐 가득
+
+        # 연속 드롭
+        for _ in range(5):
+            await bus.publish(_make_bar("X"))
+
+        assert bus.metrics.events_dropped == 5
+        assert bus.metrics._consecutive_drops == 5
+
+    async def test_consecutive_drops_reset_on_success(self) -> None:
+        """성공적인 publish 후 연속 드롭 카운터 리셋."""
+        bus = EventBus(queue_size=2)
+
+        # 큐 채우기
+        await bus.publish(_make_bar("A"))
+        await bus.publish(_make_bar("B"))
+
+        # 드롭 발생
+        await bus.publish(_make_bar("C"))
+        assert bus.metrics._consecutive_drops == 1
+
+        # 큐 비우기 + 성공적 publish
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_signal())  # SIGNAL은 NEVER_DROP → await put
+        await bus.stop()
+        await task
+
+        # SIGNAL publish 성공 → consecutive drops 리셋
+        assert bus.metrics._consecutive_drops == 0
+        assert bus.metrics.events_dropped == 1  # 총 드롭 수는 유지
+
+    async def test_drop_total_persists_across_resets(self) -> None:
+        """총 드롭 수는 연속 카운터 리셋과 무관하게 누적."""
+        bus = EventBus(queue_size=1)
+        await bus.publish(_make_bar("A"))  # 큐 가득
+
+        # 3번 드롭
+        for _ in range(3):
+            await bus.publish(_make_bar("X"))
+
+        assert bus.metrics.events_dropped == 3
+
+        # 큐 비우고 다시 채운 후 추가 드롭
+        task = asyncio.create_task(bus.start())
+        await bus.stop()
+        await task
+
+        await bus.publish(_make_bar("B"))
+        await bus.publish(_make_bar("C"))  # 드롭 (큐 size=1)
+        assert bus.metrics.events_dropped == 4
+
+
 class TestEventBusGracefulStop:
     """Graceful stop 테스트."""
 

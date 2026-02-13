@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 if TYPE_CHECKING:
+    from src.eda.oms import OMS
     from src.eda.persistence.database import Database
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.eda.risk_manager import EDARiskManager
@@ -20,7 +21,11 @@ if TYPE_CHECKING:
 # bot_state 테이블 키 상수
 _KEY_PM_STATE = "pm_state"
 _KEY_RM_STATE = "rm_state"
+_KEY_OMS_STATE = "oms_processed_orders"
 _KEY_LAST_SAVE = "last_save_timestamp"
+
+# OMS processed orders: 최대 보관 개수 (메모리 절약)
+_MAX_PROCESSED_ORDERS = 10000
 
 
 class StateManager:
@@ -71,12 +76,30 @@ class StateManager:
         }
         await self._save_key(_KEY_RM_STATE, json.dumps(state))
 
-    async def save_all(self, pm: EDAPortfolioManager, rm: EDARiskManager) -> None:
-        """PM + RM 상태를 한 번에 저장."""
+    async def save_oms_state(self, oms: OMS) -> None:
+        """OMS 처리 완료 주문 ID를 bot_state에 저장.
+
+        최근 _MAX_PROCESSED_ORDERS 개만 유지하여 메모리 사용을 제한합니다.
+        """
+        processed = list(oms.processed_orders)
+        # 최근 N개만 유지
+        if len(processed) > _MAX_PROCESSED_ORDERS:
+            processed = processed[-_MAX_PROCESSED_ORDERS:]
+        await self._save_key(_KEY_OMS_STATE, json.dumps(processed))
+
+    async def save_all(
+        self,
+        pm: EDAPortfolioManager,
+        rm: EDARiskManager,
+        oms: OMS | None = None,
+    ) -> None:
+        """PM + RM + OMS 상태를 한 번에 저장."""
         await self.save_pm_state(pm)
         await self.save_rm_state(rm)
+        if oms is not None:
+            await self.save_oms_state(oms)
         await self._save_key(_KEY_LAST_SAVE, datetime.now(UTC).isoformat())
-        logger.debug("State saved (PM + RM)")
+        logger.debug("State saved (PM + RM{})", " + OMS" if oms else "")
 
     # =========================================================================
     # 로드
@@ -95,6 +118,14 @@ class StateManager:
         if raw is None:
             return None
         return json.loads(raw)  # type: ignore[no-any-return]
+
+    async def load_oms_state(self) -> set[str] | None:
+        """저장된 OMS 처리 완료 주문 ID를 로드. 없으면 None."""
+        raw = await self._load_key(_KEY_OMS_STATE)
+        if raw is None:
+            return None
+        order_ids: list[str] = json.loads(raw)
+        return set(order_ids)
 
     async def get_last_save_timestamp(self) -> datetime | None:
         """마지막 저장 시각. 없으면 None."""

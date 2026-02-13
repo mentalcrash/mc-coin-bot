@@ -1763,3 +1763,51 @@ class TestBatchOrderProcessing:
         await task
 
         assert len(orders) == 1
+
+
+class TestCashSufficiencyGuard:
+    """PM cash 음수 방지 가드 검증."""
+
+    async def test_sell_order_always_allowed(self) -> None:
+        """SELL(청산) 주문은 현금 부족에도 허용."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+
+        # _has_sufficient_cash 직접 테스트
+        pm._cash = -100.0
+        assert pm._has_sufficient_cash(5000.0, "SELL") is True
+
+    async def test_buy_allowed_when_sufficient_cash(self) -> None:
+        """충분한 현금이 있으면 BUY 허용."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+
+        assert pm._has_sufficient_cash(5000.0, "BUY") is True
+
+    async def test_buy_blocked_when_exceeds_leverage_floor(self) -> None:
+        """레버리지 한도를 초과하는 BUY 차단."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+
+        # max_leverage_cap=2.0 → cash_floor = -(10000*(2-1) + 10) = -10010
+        # cash=10000, notional=25000 → projected = -15000 < -10010 → 차단
+        assert pm._has_sufficient_cash(25000.0, "BUY") is False
+
+    async def test_buy_within_leverage_allowed(self) -> None:
+        """레버리지 범위 내 BUY 허용 (notional > cash but within leverage)."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+
+        # cash=10000, notional=15000 → projected = -5000 > -10010 → 허용
+        assert pm._has_sufficient_cash(15000.0, "BUY") is True
+
+    async def test_cash_guard_blocks_extreme_order(self) -> None:
+        """극단적 notional이 레버리지 한도 초과 시 차단하는 통합 테스트."""
+        config = PortfolioManagerConfig(max_leverage_cap=1.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+
+        # max_leverage_cap=1.0 → cash_floor = -(10000*(1-1) + 10) = -10
+        # notional 직접 테스트: cash=10000, notional=10020 → projected = -20 < -10 → 차단
+        assert pm._has_sufficient_cash(10020.0, "BUY") is False
+        # notional=10005 → projected = -5 > -10 → 허용
+        assert pm._has_sufficient_cash(10005.0, "BUY") is True

@@ -2,19 +2,22 @@ id: 7
 title: Exchange coverage gap for live modules
 severity: medium
 category: testing-ops
-status: open
+status: resolved
 location: src/exchange/
-description: |
-  src/exchange coverage at 65%, below project average.
+description: 'src/exchange coverage at 65%, below project average.
+
   LiveExecutor and BinanceFuturesClient have limited integration tests.
-impact: |
-  Edge cases in live trading path may go undetected.
+
+  '
+impact: 'Edge cases in live trading path may go undetected.
+
+  '
 proposed_fix: Add integration test suite with exchange mocks.
 effort: 4h
 related_actions:
 - 5
 discovered_at: '2026-02-13'
-resolved_at: null
+resolved_at: '2026-02-13'
 tags:
 - testing
 - coverage

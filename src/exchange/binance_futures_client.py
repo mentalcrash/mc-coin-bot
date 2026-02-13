@@ -491,7 +491,9 @@ class BinanceFuturesClient:
                 else:
                     break
 
-        assert last_exc is not None
+        if last_exc is None:
+            msg = "_retry_with_backoff: unexpected state — no exception recorded"
+            raise RuntimeError(msg)
         if is_rate_limit:
             raise RateLimitError(
                 "Rate limit exceeded after retries",

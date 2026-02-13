@@ -1,24 +1,30 @@
 id: 1
 title: OMS + CircuitBreaker state persistence (SQLite)
 priority: P0
-status: pending
+status: completed
 phase: A
 assigned_to: null
 related_findings:
 - 1
 - 5
-description: |
-  Persist OMS._processed_orders and CircuitBreaker state to SQLite.
+description: 'Persist OMS._processed_orders and CircuitBreaker state to SQLite.
+
   StateManager module with single DB file.
+
   Restore on restart to prevent order duplication and CB bypass.
+
+  '
 estimated_effort: 4h
 created_at: '2026-02-13'
 started_at: null
-completed_at: null
-verification: |
-  1. pytest -k test_oms_persistence passes
+completed_at: '2026-02-13'
+verification: '1. pytest -k test_oms_persistence passes
+
   2. Restart after CB trigger retains CB state
+
   3. Restart after order retains processed_orders
+
+  '
 tags:
 - live-trading
 - persistence

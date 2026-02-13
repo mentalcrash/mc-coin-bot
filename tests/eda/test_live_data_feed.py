@@ -529,3 +529,85 @@ class TestStopGraceful:
         # stop() 시 flush_all()로 미완성 1h BarEvent 발행
         tf_bars = [b for b in all_bars if b.timeframe == "1h"]
         assert len(tf_bars) >= 1
+
+
+class TestStalenessDetection:
+    """LiveDataFeed staleness detection 테스트."""
+
+    async def test_stale_symbols_initially_empty(self) -> None:
+        """초기 상태에서 stale 심볼 없음."""
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=60.0,
+        )
+        assert len(feed.stale_symbols) == 0
+
+    async def test_heartbeat_recorded_on_data_received(self) -> None:
+        """데이터 수신 시 heartbeat가 기록됨."""
+        import time
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=60.0,
+        )
+
+        feed._record_heartbeat("BTC/USDT")
+        last = feed._last_received.get("BTC/USDT", 0)
+        assert last > 0
+        assert abs(last - time.monotonic()) < 1.0
+
+    async def test_stale_recovery(self) -> None:
+        """stale 상태에서 데이터 수신 시 복구."""
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=60.0,
+        )
+
+        # 수동으로 stale 상태 설정
+        feed._stale_symbols.add("BTC/USDT")
+        assert "BTC/USDT" in feed.stale_symbols
+
+        # heartbeat → 복구
+        feed._record_heartbeat("BTC/USDT")
+        assert "BTC/USDT" not in feed.stale_symbols
+
+    async def test_staleness_monitor_detects_stale(self) -> None:
+        """staleness monitor가 timeout 초과 시 stale 감지."""
+        import time
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=0.1,  # 매우 짧은 timeout
+        )
+
+        # heartbeat를 과거로 설정 (stale 유발)
+        feed._last_received["BTC/USDT"] = time.monotonic() - 1.0
+
+        # staleness monitor를 짧게 실행
+        feed._shutdown_event = asyncio.Event()
+
+        async def run_monitor() -> None:
+            await feed._staleness_monitor()
+
+        monitor_task = asyncio.create_task(run_monitor())
+        await asyncio.sleep(0.15)  # 첫 체크 발생 대기
+        feed._shutdown_event.set()
+        await monitor_task
+
+        assert "BTC/USDT" in feed.stale_symbols
