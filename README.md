@@ -236,7 +236,7 @@ uv run mcbot backtest diagnose SOL/USDT -s adaptive-breakout -V
 ### 데이터 수집
 
 ```bash
-# Bronze → Silver 파이프라인
+# Bronze → Silver 파이프라인 (OHLCV 1분봉)
 uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
 
 # 데이터 검증
@@ -248,6 +248,45 @@ uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
 # 데이터 상태 확인
 uv run mcbot ingest info
 ```
+
+### 파생상품 데이터 수집
+
+Funding Rate, Open Interest, Long/Short Ratio, Taker Buy/Sell Ratio를 Binance Futures API에서 수집합니다.
+OHLCV와 별도의 Medallion 파이프라인(Bronze → Silver)으로 관리됩니다.
+
+```bash
+# Full Pipeline: Bronze 수집 → Silver 정제 (forward-fill)
+uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
+
+# Bronze만 수집 (원본 데이터)
+uv run mcbot ingest derivatives bronze BTC/USDT --year 2024 --year 2025
+
+# Silver만 처리 (이미 Bronze가 있을 때)
+uv run mcbot ingest derivatives silver BTC/USDT --year 2024
+
+# 멀티 심볼 일괄 수집 (8 Tier-1/2 자산 × 2020-2025, 기존 파일 스킵)
+uv run mcbot ingest derivatives batch
+
+# 특정 심볼/연도만 일괄 수집
+uv run mcbot ingest derivatives batch -s BTC/USDT,ETH/USDT -y 2024 -y 2025
+
+# Dry-run: 대상 목록만 미리보기 (다운로드 없음)
+uv run mcbot ingest derivatives batch --dry-run
+
+# 데이터 상태 확인
+uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
+```
+
+수집 데이터:
+
+| 데이터 | 주기 | 저장 컬럼 |
+|--------|------|-----------|
+| Funding Rate | 8시간 | `funding_rate` |
+| Open Interest | 1시간 | `open_interest` |
+| Long/Short Ratio | 1시간 | `long_short_ratio` |
+| Taker Buy/Sell Ratio | 1시간 | `taker_buy_sell_ratio` |
+
+저장 경로: `data/bronze/{SYMBOL}/{YEAR}_deriv.parquet` → `data/silver/{SYMBOL}/{YEAR}_deriv.parquet`
 
 ### 일괄 백테스트
 
@@ -308,6 +347,8 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
 | `MC_METRICS_PORT` | `8000` | Prometheus metrics 포트 (`0`이면 비활성) |
 | `GRAFANA_PASSWORD` | `admin` | Grafana 관리자 비밀번호 |
+| `DISCORD_HEARTBEAT_CHANNEL_ID` | — | System Heartbeat 채널 ID |
+| `DISCORD_REGIME_CHANNEL_ID` | — | Market Regime Report 채널 ID |
 
 #### 모니터링
 
@@ -328,6 +369,9 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 - `/status`, `/kill`, `/balance` Slash Commands 지원
 - Daily Report (매일 00:00 UTC): equity curve 차트 + 당일 요약
 - Weekly Report (매주 월요일 00:00 UTC): drawdown, 월간 히트맵, PnL 분포 차트 포함
+- **System Heartbeat** (5분): equity, drawdown, 레버리지, CB 상태 — DD 기반 색상 (Green/Yellow/Red)
+- **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio, Taker Ratio → Regime Score (-1.0~+1.0)
+- **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지 (3연속 Sharpe 하락)
 
 ---
 
