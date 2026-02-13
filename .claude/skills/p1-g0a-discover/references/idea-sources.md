@@ -299,20 +299,30 @@ GitHub: shep-analytics/gt_score
 
 ---
 
-## 미탐색 영역 우선순위 (2026-02-10 갱신)
+## 미탐색 영역 우선순위 (2026-02-13 갱신)
 
 > 46개 전략 시도, 45개 폐기 경험을 반영한 우선순위.
 > Microstructure/Session/Seasonality/Liquidity 영역은 실패 확인됨.
+> RegimeService 공유 인프라 구축 완료 — 레짐 적응형 전략 설계 가능.
 
 ```
+0순위: 기존 전략의 레짐 적응형 확장 (RegimeService 활용) ★ NEW
+       — RegimeService가 6개 컬럼(regime_label, p_trending/ranging/volatile,
+         trend_direction, trend_strength)을 자동 주입
+       — 기존 alpha 소스 + 레짐 확률 가중 vol_target/threshold 조절
+       — regime-tsmom이 첫 구현 사례 (확률 가중 패턴)
+       — 주의: 레짐 감지 자체가 alpha 소스가 되면 안 됨 (안티패턴 #9)
+
 1순위: Behavioral Finance (Disposition Effect, Anchoring)
        — 경제적 논거 강함, 미시도, OHLCV 직접 구현 가능
        — 처분 효과: 크립토 retail 지배 시장에서 효과 극대화 가능성
+       — 레짐 적응 가능: volatile 레짐에서 disposition effect 강화
 
 2순위: ML 앙상블 변형 (CTREND 외 다른 모델/피처셋)
        — 유일한 성공 패턴(CTREND) 확장
        — Random Forest, XGBoost, 다른 feature 조합 탐색
        — 주의: CTREND와 높은 상관 시 포트폴리오 가치 제한
+       — 레짐 적응 가능: regime feature를 ML 입력에 추가
 
 3순위: Information Theory (Transfer Entropy, Sample Entropy)
        — 참신성 최고, 완전 미시도 영역

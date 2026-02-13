@@ -32,11 +32,12 @@ allowed-tools:
 
 1. **경제적 논거 우선**: 통계적 패턴만으로는 불충분. "왜 이 edge가 존재하는가?"를 설명할 수 있어야 한다
 2. **참신성 추구**: 이미 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
-3. **전 시장환경 대응**: 특정 레짐(상승장/하락장)에만 작동하는 전략 지양
+3. **전 시장환경 대응**: 특정 레짐에만 작동하는 전략 지양. 단, RegimeService를 통한 적응적 대응은 권장 (아래 참조)
 4. **단일 에셋 전용**: 멀티에셋/횡단면 전략은 범위 밖 (포트폴리오는 PM이 처리)
 5. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode를 검토
 6. **크립토 네이티브 edge**: 전통금융 전략의 단순 포팅은 위험. 크립토 24/7 시장 특성에 맞는 edge 필요 (교훈 #13~#16)
 7. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
+8. **RegimeService 활용**: 공유 레짐 인프라를 활용하여 레짐 적응형 전략 설계 가능 (아래 "레짐 적응형 전략 설계" 섹션 참조)
 
 ## 워크플로우 (7단계)
 
@@ -168,9 +169,9 @@ allowed-tools:
       단일에셋에서 충분한 거래 빈도?
       1=월2건미만, 3=주1-2건, 5=일1건+
 
-  [6] 레짐 독립성 (Regime Independence)        : _/5
-      전 시장환경에서 작동?
-      1=특정레짐전용, 3=2/3레짐, 5=전레짐
+  [6] 레짐 적응성 (Regime Adaptability)         : _/5
+      전 시장환경에서 작동? (RegimeService 적응 포함)
+      1=특정레짐전용(무적응), 3=2/3레짐 or 적응형, 5=전레짐 or 확률가중적응
 
 ──────────────────────────────────────────────────────
   TOTAL: __/30
@@ -218,7 +219,82 @@ allowed-tools:
 → 차별화 불충분 시 아이디어를 수정하거나 폐기한다.
 ```
 
-### Step 4: 전략 설계 — ShortMode + TF 적합성
+### Step 4: 전략 설계 — ShortMode + TF + 레짐 적응
+
+#### 4-0. RegimeService 활용 설계 (신규)
+
+공유 RegimeService가 EDA 전 컴포넌트에 레짐 정보를 투명하게 제공합니다.
+전략은 **자체 레짐 감지 없이** DataFrame에서 레짐 컬럼을 읽어 적응적 동작이 가능합니다.
+
+**사용 가능한 레짐 컬럼 (StrategyEngine이 자동 주입):**
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| `regime_label` | str | 현재 레짐: `"trending"`, `"ranging"`, `"volatile"` |
+| `p_trending` | float | TRENDING 확률 (0~1) |
+| `p_ranging` | float | RANGING 확률 (0~1) |
+| `p_volatile` | float | VOLATILE 확률 (0~1) |
+| `trend_direction` | int | 추세 방향: +1(상승), -1(하락), 0(중립) |
+| `trend_strength` | float | 추세 강도 (0.0~1.0) |
+
+**RegimeService 아키텍처:**
+
+```
+EnsembleRegimeDetector (Rule-Based + HMM + Vol-Structure + MSAR)
+        ↓
+    RegimeService.precompute()  (backtest: vectorized 사전계산)
+    RegimeService._on_bar()     (live: BAR 이벤트 구독 → 증분 업데이트)
+        ↓
+    StrategyEngine._enrich_with_regime()  (DataFrame에 6개 컬럼 자동 추가)
+        ↓
+    strategy.preprocess() / generate_signals()  (컬럼 읽어서 활용)
+```
+
+**레짐 적응형 전략의 3가지 패턴:**
+
+```
+패턴 A. 확률 가중 파라미터 적응 (Probability-Weighted)
+   — 레짐 확률로 vol_target/threshold 등을 연속적으로 조절
+   — 예: adaptive_vol_target = p_trending*0.40 + p_ranging*0.15 + p_volatile*0.10
+   — 장점: 부드러운 전환, 레짐 전환 시 whipsaw 최소
+   — 예시: regime-tsmom (기존 구현)
+
+패턴 B. 레짐 조건부 필터 (Regime Conditional)
+   — 특정 레짐에서만 시그널 활성화/비활성화
+   — 예: trending + trend_direction=+1 → 롱 시그널만 허용
+   — 예: volatile → 포지션 축소 또는 시그널 억제
+   — 장점: 명확한 논리, 디버깅 용이
+
+패턴 C. 방향 가중 시그널 (Direction-Weighted)
+   — trend_direction/trend_strength로 시그널 방향/강도 가중
+   — 예: strength *= trend_strength (추세 강도에 비례)
+   — 예: direction과 trend_direction 일치 시 conviction 부여
+   — 장점: 추세 방향 정보 활용
+```
+
+**레짐 활용 vs 레짐 의존 — 핵심 구분:**
+
+```
+✅ 올바른 사용: 레짐을 "오버레이/필터"로 사용
+   — 기존 alpha 소스(momentum, MR 등)가 독립적으로 존재
+   — 레짐은 포지션 사이징 조절, 시그널 강도 감쇄에만 사용
+   — regime_service=None이면 기본 동작 (backward compatible)
+
+❌ 잘못된 사용: 레짐 감지 자체가 alpha 소스
+   — 레짐 전환을 매매 시그널로 직접 사용
+   — ADX/HMM/Hurst/AC/VR 등 7개 전략 전멸의 교훈 (안티패턴 #9)
+   — 레짐 정보만으로 시장 방향 예측 불가
+```
+
+**설계 시 레짐 활용 결정 체크리스트:**
+
+```
+1. 기존 alpha 소스가 레짐과 독립적인가? → 예: 진행
+2. 레짐 없이도 시그널이 생성되는가? → 예: 진행
+3. 레짐은 "어떻게 거래할지"를 조절하는가? (not "무엇을 거래할지") → 예: 진행
+4. regime_service=None 시 graceful fallback이 있는가? → 예: 진행
+→ 4개 모두 "예"이면 레짐 적응형 설계 적합
+```
 
 #### 4-A. ShortMode 결정 매트릭스
 
@@ -258,6 +334,8 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 8. 예상 거래 빈도: ___/년
 9. 예상 Sharpe 범위: ___
 10. CTREND와의 상관관계 예측: 낮음/중간/높음
+11. 레짐 활용 여부: 없음 / 패턴A(확률가중) / 패턴B(조건부필터) / 패턴C(방향가중)
+    → 활용 시: 어떤 컬럼을, 어떤 파라미터에 적용하는지 명시
 ```
 
 **CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
@@ -300,7 +378,7 @@ uv run mcbot pipeline create {strategy-name} \
 - 데이터 확보: _/5
 - 구현 복잡도: _/5
 - 용량 수용: _/5
-- 레짐 독립성: _/5
+- 레짐 적응성: _/5
 
 ---
 ```
@@ -441,7 +519,7 @@ GT-Score = (mu * ln(z) * r^2) / sigma_d
   ShortMode    : [DISABLED / HEDGE_ONLY / FULL]
   예상 빈도    : [거래/년]
   Gate 0 점수  : [__/30]
-  레짐 독립성  : [전 레짐 / 2-3 레짐]
+  레짐 적응    : [없음 / 패턴A 확률가중 / 패턴B 조건부 / 패턴C 방향가중]
   CTREND 상관  : [낮음 / 중간 / 높음]
   출처         : [논문/블로그/독자적]
   ──────────────────────────────────────────────────
@@ -500,9 +578,11 @@ Step 4.5의 절차를 따른다.
    - VPIN-Flow (1D, 거래 0건), Flow-Imbalance (1H, Sharpe 음수) 연속 실패
    - L2 order book 또는 tick data 없이는 진정한 flow 시그널 불가
 
-9. 레짐 감지 자체를 전략으로 사용 (신규)
+9. 레짐 감지 자체를 전략으로 사용
    - ADX, HMM, Hurst, AC, VR, Entropy 등 7개 전략 전멸
    - 레짐 감지는 "필터/오버레이"로만 사용, 독립 alpha 소스 아님
+   - ✅ 올바른 사용: RegimeService 컬럼으로 기존 alpha의 강도/사이징 조절
+   - ❌ 잘못된 사용: regime 전환을 매수/매도 시그널로 직접 사용
 ```
 
 ## 체크리스트
