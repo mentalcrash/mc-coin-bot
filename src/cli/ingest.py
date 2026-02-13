@@ -34,6 +34,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from src.cli.ingest_derivatives import app as derivatives_app
 from src.config.settings import get_settings
 from src.core.logger import setup_logger
 from src.data.bronze import BronzeStorage
@@ -50,6 +51,9 @@ app = typer.Typer(
     help="CCXT Binance Data Ingestion Pipeline (Medallion Architecture)",
     no_args_is_help=True,
 )
+
+# Derivatives sub-command 등록
+app.add_typer(derivatives_app, name="derivatives")
 
 
 def _display_settings() -> None:

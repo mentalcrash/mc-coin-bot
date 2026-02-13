@@ -498,6 +498,140 @@ class BinanceFuturesClient:
         min_notional = self.get_min_notional(symbol)
         return notional_usd >= min_notional
 
+    # =========================================================================
+    # Data Fetch Methods (read-only, derivatives data)
+    # =========================================================================
+
+    async def fetch_funding_rate_history(
+        self,
+        symbol: str,
+        *,
+        since: int | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Funding Rate 히스토리 조회 (CCXT native).
+
+        Args:
+            symbol: Futures 심볼 (예: "BTC/USDT:USDT")
+            since: 시작 시각 (Unix ms), None이면 최신
+            limit: 최대 건수 (max 500)
+
+        Returns:
+            Funding rate 레코드 리스트
+        """
+        futures_symbol = self.to_futures_symbol(symbol)
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = await self.exchange.fetch_funding_rate_history(  # type: ignore[assignment]
+                futures_symbol, since=since, limit=limit
+            )
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_open_interest_history(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Open Interest 히스토리 조회 (Binance-specific endpoint).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT") — 자동 변환됨
+            period: 기간 ("5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d")
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수 (max 500, Binance default 30)
+
+        Returns:
+            OI 레코드 리스트
+        """
+        # Binance-specific endpoint는 "BTCUSDT" 형식 필요
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_openinteresthist(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_long_short_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Global Long/Short Account Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            LS Ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_globallongshortaccountratio(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_taker_buy_sell_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Taker Buy/Sell Volume Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            Taker ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_takerlongshortratio(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
     @staticmethod
     def to_futures_symbol(symbol: str) -> str:
         """Spot 심볼 → Futures 심볼 변환.

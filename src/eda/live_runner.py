@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
+    from src.notification.health_scheduler import HealthCheckScheduler
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
     from src.portfolio.config import PortfolioManagerConfig
@@ -69,6 +70,7 @@ class _DiscordTasks:
     queue_task: asyncio.Task[None]
     bot_task: asyncio.Task[None]
     report_scheduler: ReportScheduler | None = None
+    health_scheduler: HealthCheckScheduler | None = None
 
 
 class LiveMode(StrEnum):
@@ -135,6 +137,7 @@ class LiveRunner:
         self._client: BinanceClient | None = None
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
+        self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
 
     @classmethod
     def paper(
@@ -249,6 +252,11 @@ class LiveRunner:
         runner._client = client
         runner._futures_client = futures_client
         runner._symbols = symbols
+
+        # Live 모드에서 DerivativesFeed 자동 생성
+        from src.eda.derivatives_feed import LiveDerivativesFeed
+
+        runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
         return runner
 
     async def run(self) -> None:
@@ -274,10 +282,14 @@ class LiveRunner:
             # RegimeService (선택적)
             regime_service = self._create_regime_service()
 
+            # DerivativesFeed 라이프사이클 (Live 모드)
+            derivatives_provider = await self._start_derivatives_feed()
+
             strategy_engine = StrategyEngine(
                 self._strategy,
                 target_timeframe=self._target_timeframe,
                 regime_service=regime_service,
+                derivatives_provider=derivatives_provider,
             )
             pm = EDAPortfolioManager(
                 config=self._config,
@@ -373,6 +385,9 @@ class LiveRunner:
             feed_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await feed_task
+
+            # DerivativesFeed 종료
+            await self._stop_derivatives_feed()
 
             await pm.flush_pending_signals()
             await bus.flush()
@@ -471,7 +486,22 @@ class LiveRunner:
         )
         await report_scheduler.start()
 
-        logger.info("Discord Bot + NotificationEngine + ReportScheduler enabled")
+        # HealthCheckScheduler 생성 + 시작
+        from src.notification.health_scheduler import HealthCheckScheduler
+
+        health_scheduler = HealthCheckScheduler(
+            queue=notification_queue,
+            pm=pm,
+            rm=rm,
+            analytics=analytics,
+            feed=self._feed,
+            bus=bus,
+            futures_client=self._futures_client,
+            symbols=self._symbols,
+        )
+        await health_scheduler.start()
+
+        logger.info("Discord Bot + NotificationEngine + ReportScheduler + HealthCheckScheduler enabled")
 
         return _DiscordTasks(
             bot_service=bot_service,
@@ -479,13 +509,16 @@ class LiveRunner:
             queue_task=queue_task,
             bot_task=bot_task,
             report_scheduler=report_scheduler,
+            health_scheduler=health_scheduler,
         )
 
     @staticmethod
     async def _shutdown_discord(tasks: _DiscordTasks | None) -> None:
-        """Discord Bot/Queue/ReportScheduler 정리."""
+        """Discord Bot/Queue/ReportScheduler/HealthCheckScheduler 정리."""
         if tasks is None:
             return
+        if tasks.health_scheduler is not None:
+            await tasks.health_scheduler.stop()
         if tasks.report_scheduler is not None:
             await tasks.report_scheduler.stop()
         await tasks.notification_queue.stop()
@@ -631,6 +664,22 @@ class LiveRunner:
         return asyncio.create_task(
             self._periodic_reconciliation(reconciler, pm, rm, self._futures_client, self._symbols)
         )
+
+    async def _stop_derivatives_feed(self) -> None:
+        """DerivativesFeed 종료 (설정된 경우)."""
+        if self._derivatives_feed is not None:
+            await self._derivatives_feed.stop()
+
+    async def _start_derivatives_feed(self) -> Any:
+        """DerivativesFeed 시작 (설정된 경우).
+
+        Returns:
+            DerivativesProvider 또는 None
+        """
+        if self._derivatives_feed is None:
+            return None
+        await self._derivatives_feed.start()
+        return self._derivatives_feed
 
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.

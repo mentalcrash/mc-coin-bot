@@ -26,6 +26,8 @@ from src.eda.risk_manager import EDARiskManager
 from src.eda.strategy_engine import StrategyEngine
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from src.data.market_data import MarketDataSet, MultiSymbolData
     from src.eda.ports import DataFeedPort, ExecutorPort
     from src.models.backtest import PerformanceMetrics
@@ -190,6 +192,9 @@ class EDARunner:
         # RegimeService 생성 + 사전계산 (regime_config가 있을 때만)
         regime_service = self._create_regime_service()
 
+        # Derivatives provider (선택적)
+        derivatives_provider = self._create_derivatives_provider()
+
         # fast_mode: signal pre-computation (전체 데이터로 한번에 시그널 계산)
         strategy_engine_kwargs: dict[str, object] = {
             "target_timeframe": self._target_timeframe,
@@ -200,6 +205,8 @@ class EDARunner:
                 strategy_engine_kwargs["precomputed_signals"] = precomputed
         if regime_service is not None:
             strategy_engine_kwargs["regime_service"] = regime_service
+        if derivatives_provider is not None:
+            strategy_engine_kwargs["derivatives_provider"] = derivatives_provider
 
         strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
@@ -316,6 +323,52 @@ class EDARunner:
                 regime_service.precompute(sym, df_tf["close"])  # type: ignore[arg-type]
 
         return regime_service
+
+    def _create_derivatives_provider(self) -> object | None:
+        """BacktestDerivativesProvider 생성 (Silver _deriv 있을 때만).
+
+        Returns:
+            BacktestDerivativesProvider 또는 None
+        """
+        from src.data.derivatives_service import DerivativesDataService
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.eda.derivatives_feed import BacktestDerivativesProvider
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+        deriv_service = DerivativesDataService()
+        precomputed: dict[str, pd.DataFrame] = {}
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            deriv = deriv_service.precompute(
+                data.symbol, df_tf.index, data.start, data.end  # type: ignore[arg-type]
+            )
+            if not deriv.empty and not deriv.dropna(how="all").empty:
+                precomputed[data.symbol] = deriv
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                deriv = deriv_service.precompute(
+                    sym, df_tf.index, data.start, data.end  # type: ignore[arg-type]
+                )
+                if not deriv.empty and not deriv.dropna(how="all").empty:
+                    precomputed[sym] = deriv
+
+        if not precomputed:
+            return None
+
+        logger.info(
+            "Derivatives provider created for {} symbols",
+            len(precomputed),
+        )
+        return BacktestDerivativesProvider(precomputed)
 
     def _precompute_signals(self) -> dict[str, object] | None:
         """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.
