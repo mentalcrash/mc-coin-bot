@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from ccxt.base.errors import BadRequest as CcxtBadRequest, ExchangeError as CcxtExchangeError
 from loguru import logger
 
 from src.config.settings import IngestionSettings, get_settings
@@ -98,9 +99,7 @@ class DerivativesFetcher:
         since = start_ts
 
         while since < end_ts:
-            raw = await self._client.fetch_funding_rate_history(
-                symbol, since=since, limit=500
-            )
+            raw = await self._client.fetch_funding_rate_history(symbol, since=since, limit=500)
             if not raw:
                 break
 
@@ -157,9 +156,18 @@ class DerivativesFetcher:
         page_limit = 30
 
         while since < end_ts:
-            raw = await self._client.fetch_open_interest_history(
-                symbol, period=period, since=since, limit=page_limit
-            )
+            try:
+                raw = await self._client.fetch_open_interest_history(
+                    symbol, period=period, since=since, limit=page_limit
+                )
+            except (CcxtBadRequest, CcxtExchangeError) as e:
+                logger.warning(
+                    "OI history unavailable for {} (startTime={}): {} — Binance only provides last 30 days",
+                    symbol,
+                    since,
+                    str(e)[:80],
+                )
+                break
             if not raw:
                 break
 
@@ -170,11 +178,9 @@ class DerivativesFetcher:
                 records.append(
                     OpenInterestRecord(
                         symbol=symbol,
-                        timestamp=ts,
+                        timestamp=datetime.fromtimestamp(ts / 1000, tz=UTC),
                         sum_open_interest=Decimal(str(item.get("sumOpenInterest", 0))),
-                        sum_open_interest_value=Decimal(
-                            str(item.get("sumOpenInterestValue", 0))
-                        ),
+                        sum_open_interest_value=Decimal(str(item.get("sumOpenInterestValue", 0))),
                     )
                 )
 
@@ -215,9 +221,18 @@ class DerivativesFetcher:
         page_limit = 30
 
         while since < end_ts:
-            raw = await self._client.fetch_long_short_ratio(
-                symbol, period=period, since=since, limit=page_limit
-            )
+            try:
+                raw = await self._client.fetch_long_short_ratio(
+                    symbol, period=period, since=since, limit=page_limit
+                )
+            except (CcxtBadRequest, CcxtExchangeError) as e:
+                logger.warning(
+                    "LS ratio history unavailable for {} (startTime={}): {} — Binance only provides last 30 days",
+                    symbol,
+                    since,
+                    str(e)[:80],
+                )
+                break
             if not raw:
                 break
 
@@ -228,7 +243,7 @@ class DerivativesFetcher:
                 records.append(
                     LongShortRatioRecord(
                         symbol=symbol,
-                        timestamp=ts,
+                        timestamp=datetime.fromtimestamp(ts / 1000, tz=UTC),
                         long_account=Decimal(str(item.get("longAccount", 0))),
                         short_account=Decimal(str(item.get("shortAccount", 0))),
                         long_short_ratio=Decimal(str(item.get("longShortRatio", 0))),
@@ -272,9 +287,18 @@ class DerivativesFetcher:
         page_limit = 30
 
         while since < end_ts:
-            raw = await self._client.fetch_taker_buy_sell_ratio(
-                symbol, period=period, since=since, limit=page_limit
-            )
+            try:
+                raw = await self._client.fetch_taker_buy_sell_ratio(
+                    symbol, period=period, since=since, limit=page_limit
+                )
+            except (CcxtBadRequest, CcxtExchangeError) as e:
+                logger.warning(
+                    "Taker ratio history unavailable for {} (startTime={}): {} — Binance only provides last 30 days",
+                    symbol,
+                    since,
+                    str(e)[:80],
+                )
+                break
             if not raw:
                 break
 
@@ -285,7 +309,7 @@ class DerivativesFetcher:
                 records.append(
                     TakerRatioRecord(
                         symbol=symbol,
-                        timestamp=ts,
+                        timestamp=datetime.fromtimestamp(ts / 1000, tz=UTC),
                         buy_vol=Decimal(str(item.get("buyVol", 0))),
                         sell_vol=Decimal(str(item.get("sellVol", 0))),
                         buy_sell_ratio=Decimal(str(item.get("buySellRatio", 0))),

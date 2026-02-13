@@ -163,7 +163,9 @@ class BinanceFuturesClient:
     def _record_success(self) -> None:
         """API 호출 성공 → 실패 카운터 리셋."""
         if self._consecutive_failures > 0:
-            logger.debug("API recovery: consecutive failures reset from {}", self._consecutive_failures)
+            logger.debug(
+                "API recovery: consecutive failures reset from {}", self._consecutive_failures
+            )
         self._consecutive_failures = 0
 
     def _record_failure(self) -> None:
@@ -559,7 +561,7 @@ class BinanceFuturesClient:
             }
             if since is not None:
                 params["startTime"] = since
-            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_openinteresthist(params)  # type: ignore[assignment,attr-defined]
+            result: list[dict[str, Any]] = await self.exchange.fapidata_get_openinteresthist(params)  # type: ignore[assignment,attr-defined]
             return result
 
         return await self._retry_with_backoff(_do_fetch)
@@ -593,7 +595,9 @@ class BinanceFuturesClient:
             }
             if since is not None:
                 params["startTime"] = since
-            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_globallongshortaccountratio(params)  # type: ignore[assignment,attr-defined]
+            result: list[
+                dict[str, Any]
+            ] = await self.exchange.fapidata_get_globallongshortaccountratio(params)  # type: ignore[assignment,attr-defined]
             return result
 
         return await self._retry_with_backoff(_do_fetch)
@@ -627,7 +631,9 @@ class BinanceFuturesClient:
             }
             if since is not None:
                 params["startTime"] = since
-            result: list[dict[str, Any]] = await self.exchange.fapipublic_get_futures_data_takerlongshortratio(params)  # type: ignore[assignment,attr-defined]
+            result: list[dict[str, Any]] = await self.exchange.fapidata_get_takerlongshortratio(
+                params
+            )  # type: ignore[assignment,attr-defined]
             return result
 
         return await self._retry_with_backoff(_do_fetch)
