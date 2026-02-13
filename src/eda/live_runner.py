@@ -339,10 +339,14 @@ class LiveRunner:
             if state_mgr:
                 save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm))
 
-            # 주기적 uptime 갱신 task
+            # 주기적 메트릭 갱신 task (uptime + EventBus + exchange health)
             uptime_task: asyncio.Task[None] | None = None
             if metrics_exporter is not None:
-                uptime_task = asyncio.create_task(self._periodic_uptime_update(metrics_exporter))
+                uptime_task = asyncio.create_task(
+                    self._periodic_metrics_update(
+                        metrics_exporter, bus, self._futures_client
+                    )
+                )
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
             reconciler_task = await self._setup_reconciler(pm, rm)
@@ -730,28 +734,60 @@ class LiveRunner:
     async def _setup_metrics(self, bus: EventBus) -> MetricsExporter | None:
         """Prometheus MetricsExporter 초기화 (선택적).
 
+        bot_info, trading_mode_enum을 설정합니다.
+
         Returns:
             MetricsExporter 또는 None (비활성 시)
         """
         if self._metrics_port <= 0:
             return None
 
-        from src.monitoring.metrics import MetricsExporter
+        from src.monitoring.metrics import (
+            MetricsExporter,
+            PrometheusApiCallback,
+            PrometheusWsCallback,
+            bot_info,
+            trading_mode_enum,
+        )
 
         exporter = MetricsExporter(port=self._metrics_port)
         await exporter.register(bus)
         exporter.start_server()
+
+        # Meta 메트릭 설정
+        bot_info.info(
+            {
+                "version": "0.1.0",
+                "mode": self._mode.value,
+                "exchange": "binance",
+                "strategy": self._strategy.name,
+            }
+        )
+        trading_mode_enum.state(self._mode.value)
+
+        # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
+        if self._futures_client is not None:
+            self._futures_client.set_metrics_callback(PrometheusApiCallback())
+
+        # LiveDataFeed에 WS 상태 콜백 주입
+        self._feed.set_ws_callback(PrometheusWsCallback())
+
         return exporter
 
     @staticmethod
-    async def _periodic_uptime_update(
+    async def _periodic_metrics_update(
         exporter: MetricsExporter,
+        bus: EventBus,
+        futures_client: BinanceFuturesClient | None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime gauge를 갱신."""
+        """주기적으로 uptime + EventBus + exchange health 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
+            exporter.update_eventbus_metrics(bus)
+            if futures_client is not None:
+                exporter.update_exchange_health(futures_client.consecutive_failures)
 
     @staticmethod
     async def _periodic_reconciliation(

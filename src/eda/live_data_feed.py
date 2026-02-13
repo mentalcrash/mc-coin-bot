@@ -40,6 +40,7 @@ from src.eda.data_feed import validate_bar
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
     from src.exchange.binance_client import BinanceClient
+    from src.monitoring.metrics import WsStatusCallback
 
 # Reconnection 상수
 _INITIAL_RECONNECT_DELAY = 1.0
@@ -67,6 +68,7 @@ class LiveDataFeed:
         target_timeframe: str,
         client: BinanceClient,
         staleness_timeout: float = _DEFAULT_STALENESS_TIMEOUT,
+        ws_status_callback: WsStatusCallback | None = None,
     ) -> None:
         self._symbols = symbols
         self._target_tf = target_timeframe
@@ -78,15 +80,19 @@ class LiveDataFeed:
         self._staleness_timeout = staleness_timeout
         self._last_received: dict[str, float] = {}  # symbol → monotonic timestamp
         self._stale_symbols: set[str] = set()
+        # WS 상태 콜백 (선택적)
+        self._ws_callback = ws_status_callback
 
     async def start(self, bus: EventBus) -> None:
         """심볼별 WebSocket 스트림 시작. stop() 호출까지 실행."""
         import time
 
-        # 초기 heartbeat 설정
+        # 초기 heartbeat 설정 + WS 연결 상태 초기화
         now = time.monotonic()
         for sym in self._symbols:
             self._last_received[sym] = now
+            if self._ws_callback is not None:
+                self._ws_callback.on_ws_status(sym, connected=True)
 
         stream_tasks = [
             asyncio.create_task(self._stream_symbol(sym, bus, stagger_delay=i * 0.5))
@@ -131,6 +137,14 @@ class LiveDataFeed:
     def stale_symbols(self) -> set[str]:
         """현재 stale 상태인 심볼."""
         return self._stale_symbols
+
+    def set_ws_callback(self, callback: WsStatusCallback) -> None:
+        """WS 상태 콜백 설정.
+
+        Args:
+            callback: WsStatusCallback 구현체
+        """
+        self._ws_callback = callback
 
     def _record_heartbeat(self, symbol: str) -> None:
         """심볼 데이터 수신 시 heartbeat 기록."""
@@ -197,6 +211,8 @@ class LiveDataFeed:
                 if was_disconnected:
                     logger.info("{} WebSocket reconnected", symbol)
                     was_disconnected = False
+                    if self._ws_callback is not None:
+                        self._ws_callback.on_ws_status(symbol, connected=True)
 
                 if not ohlcvs:
                     continue
@@ -217,6 +233,8 @@ class LiveDataFeed:
                 last_candle_ts = current_ts
 
             except (ccxt_sync.NetworkError, OSError) as exc:
+                if not was_disconnected and self._ws_callback is not None:
+                    self._ws_callback.on_ws_status(symbol, connected=False)
                 was_disconnected = True
                 logger.warning(
                     "{} WebSocket disconnected ({}), reconnecting in {:.0f}s",

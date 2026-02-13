@@ -3,18 +3,27 @@
 EventBus subscriber로 실시간 메트릭을 수집하고,
 prometheus_client HTTP 서버를 통해 /metrics endpoint로 노출합니다.
 
+Layers:
+    1. Order Execution — 주문 지연시간/슬리피지/수수료
+    2. Position & PnL — 포지션/잔고/레버리지
+    3. Exchange API — API 호출/지연시간/WS 상태
+    4. Bot Health — uptime/heartbeat/EventBus 상태
+    5. Meta — Info/Enum (봇 메타데이터/모드)
+
 Rules Applied:
     - EDA 패턴: EventBus subscribe
     - Prometheus naming: mcbot_ prefix
+    - ApiMetricsCallback: Protocol (관심사 분리)
 """
 
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from loguru import logger
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Enum, Gauge, Histogram, Info
 
 from src.core.events import (
     AnyEvent,
@@ -23,6 +32,10 @@ from src.core.events import (
     CircuitBreakerEvent,
     EventType,
     FillEvent,
+    HeartbeatEvent,
+    OrderAckEvent,
+    OrderRejectedEvent,
+    OrderRequestEvent,
     PositionUpdateEvent,
     RiskAlertEvent,
     SignalEvent,
@@ -32,7 +45,7 @@ if TYPE_CHECKING:
     from src.core.event_bus import EventBus
 
 # ==========================================================================
-# Gauges
+# Layer 2: Position & PnL — Gauges (기존)
 # ==========================================================================
 equity_gauge = Gauge("mcbot_equity_usdt", "Current account equity")
 drawdown_gauge = Gauge("mcbot_drawdown_pct", "Current drawdown percentage")
@@ -41,14 +54,228 @@ position_count_gauge = Gauge("mcbot_open_positions", "Number of open positions")
 position_size_gauge = Gauge("mcbot_position_size", "Position size", ["symbol"])
 uptime_gauge = Gauge("mcbot_uptime_seconds", "Bot uptime in seconds")
 
+# Layer 2: Position & PnL — 신규
+position_notional_gauge = Gauge(
+    "mcbot_position_notional_usdt", "Position notional value", ["symbol"]
+)
+unrealized_pnl_gauge = Gauge("mcbot_unrealized_pnl_usdt", "Unrealized PnL", ["symbol"])
+realized_pnl_counter = Counter(
+    "mcbot_realized_pnl_usdt_total", "Cumulative realized PnL", ["symbol"]
+)
+aggregate_leverage_gauge = Gauge(
+    "mcbot_aggregate_leverage", "Portfolio aggregate leverage ratio"
+)
+margin_used_gauge = Gauge("mcbot_margin_used_usdt", "Margin currently in use")
+
 # ==========================================================================
-# Counters
+# Layer 1: Order Execution — 기존 Counter
 # ==========================================================================
 fills_counter = Counter("mcbot_fills", "Total fills executed", ["symbol", "side"])
 signals_counter = Counter("mcbot_signals", "Total signals generated", ["symbol"])
 bars_counter = Counter("mcbot_bars", "Total bars processed", ["timeframe"])
 cb_triggered_counter = Counter("mcbot_circuit_breaker", "Circuit breaker activations")
 risk_alerts_counter = Counter("mcbot_risk_alerts", "Risk alerts", ["level"])
+
+# Layer 1: Order Execution — 신규
+orders_counter = Counter(
+    "mcbot_orders_total",
+    "Order counts by status",
+    ["symbol", "side", "order_type", "status"],
+)
+order_latency_histogram = Histogram(
+    "mcbot_order_latency_seconds",
+    "Order request to fill latency",
+    ["symbol"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+)
+slippage_histogram = Histogram(
+    "mcbot_slippage_bps",
+    "Slippage in basis points",
+    ["symbol", "side"],
+    buckets=(0, 1, 2, 5, 10, 20, 50, 100),
+)
+order_rejected_counter = Counter(
+    "mcbot_order_rejected_total",
+    "Rejected order counts by reason",
+    ["symbol", "reason"],
+)
+fees_counter = Counter("mcbot_fees_usdt_total", "Cumulative fees in USDT", ["symbol"])
+
+# ==========================================================================
+# Layer 3: Exchange API
+# ==========================================================================
+exchange_api_calls_counter = Counter(
+    "mcbot_exchange_api_calls_total",
+    "Exchange API call counts",
+    ["endpoint", "status"],
+)
+exchange_api_latency_histogram = Histogram(
+    "mcbot_exchange_api_latency_seconds",
+    "Exchange API response latency",
+    ["endpoint"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+exchange_ws_connected_gauge = Gauge(
+    "mcbot_exchange_ws_connected",
+    "WebSocket connection status (1=connected, 0=disconnected)",
+    ["symbol"],
+)
+exchange_consecutive_failures_gauge = Gauge(
+    "mcbot_exchange_consecutive_failures",
+    "Consecutive API failure count",
+)
+
+# ==========================================================================
+# Layer 4: Bot Health
+# ==========================================================================
+heartbeat_timestamp_gauge = Gauge(
+    "mcbot_heartbeat_timestamp", "Last heartbeat Unix timestamp"
+)
+errors_counter = Counter(
+    "mcbot_errors_total", "Error counts by component", ["component", "error_type"]
+)
+eventbus_queue_depth_gauge = Gauge(
+    "mcbot_eventbus_queue_depth", "EventBus pending event count"
+)
+eventbus_events_dropped_counter = Counter(
+    "mcbot_eventbus_events_dropped_total", "EventBus dropped events"
+)
+eventbus_handler_errors_counter = Counter(
+    "mcbot_eventbus_handler_errors_total", "EventBus handler errors"
+)
+
+# ==========================================================================
+# Meta
+# ==========================================================================
+bot_info = Info("mcbot", "Bot metadata")
+trading_mode_enum = Enum(
+    "mcbot_trading_mode",
+    "Current trading mode",
+    states=["backtest", "paper", "shadow", "live"],
+)
+
+
+# ==========================================================================
+# _PendingOrder — 주문 추적용 내부 dataclass
+# ==========================================================================
+@dataclass
+class _PendingOrder:
+    """주문 요청→체결 추적용 임시 데이터."""
+
+    symbol: str
+    side: str
+    order_type: str
+    request_time: float  # time.monotonic()
+    expected_price: float | None = None  # 슬리피지 기준가
+
+
+# ==========================================================================
+# ApiMetricsCallback — 거래소 API 계측 Protocol
+# ==========================================================================
+@runtime_checkable
+class ApiMetricsCallback(Protocol):
+    """거래소 API 호출 메트릭 콜백 Protocol.
+
+    BinanceFuturesClient에 주입하여 관심사 분리.
+    """
+
+    def on_api_call(self, endpoint: str, duration: float, status: str) -> None:
+        """API 호출 결과 기록.
+
+        Args:
+            endpoint: API endpoint 이름 (예: "create_order")
+            duration: 호출 소요 시간 (초)
+            status: "success" | "retry" | "failure"
+        """
+        ...
+
+
+class PrometheusApiCallback:
+    """Prometheus 기반 API 메트릭 콜백 구현."""
+
+    def on_api_call(self, endpoint: str, duration: float, status: str) -> None:
+        """API 호출 결과를 Prometheus 메트릭으로 기록."""
+        exchange_api_calls_counter.labels(endpoint=endpoint, status=status).inc()
+        exchange_api_latency_histogram.labels(endpoint=endpoint).observe(duration)
+
+
+# ==========================================================================
+# WsStatusCallback — WebSocket 상태 콜백
+# ==========================================================================
+@runtime_checkable
+class WsStatusCallback(Protocol):
+    """WebSocket 연결 상태 콜백 Protocol."""
+
+    def on_ws_status(self, symbol: str, *, connected: bool) -> None:
+        """WS 연결 상태 변경.
+
+        Args:
+            symbol: 거래 심볼
+            connected: 연결 상태
+        """
+        ...
+
+
+class PrometheusWsCallback:
+    """Prometheus 기반 WS 상태 콜백 구현."""
+
+    def on_ws_status(self, symbol: str, *, connected: bool) -> None:
+        """WS 연결 상태를 Prometheus gauge로 기록."""
+        exchange_ws_connected_gauge.labels(symbol=symbol).set(1 if connected else 0)
+
+
+# ==========================================================================
+# Rejection reason 분류
+# ==========================================================================
+_REJECTION_REASON_MAP: dict[str, str] = {
+    "leverage": "leverage_exceeded",
+    "max_positions": "max_positions",
+    "order_size": "order_size_exceeded",
+    "circuit_breaker": "circuit_breaker",
+    "circuit breaker": "circuit_breaker",
+}
+
+
+def _categorize_reason(reason: str) -> str:
+    """거부 사유 문자열 → 표준 카테고리.
+
+    Args:
+        reason: OrderRejectedEvent.reason 원본 문자열
+
+    Returns:
+        표준화된 거부 사유 (매칭 실패 시 "other")
+    """
+    lower = reason.lower()
+    for keyword, category in _REJECTION_REASON_MAP.items():
+        if keyword in lower:
+            return category
+    return "other"
+
+
+def _calculate_slippage_bps(expected_price: float, fill_price: float) -> float:
+    """기대가 vs 체결가 차이를 basis points로 계산.
+
+    Args:
+        expected_price: 기준가 (bar close 또는 limit price)
+        fill_price: 실제 체결가
+
+    Returns:
+        슬리피지 (basis points, 항상 양수). 기대가 0이면 0.0
+    """
+    if expected_price <= 0:
+        return 0.0
+    return abs(fill_price - expected_price) / expected_price * 10000
+
+
+# ==========================================================================
+# MetricsExporter
+# ==========================================================================
+@dataclass
+class _EventBusSnapshot:
+    """EventBus 메트릭 이전 스냅샷 (delta 계산용)."""
+
+    events_dropped: int = 0
+    handler_errors: int = 0
 
 
 class MetricsExporter:
@@ -61,6 +288,9 @@ class MetricsExporter:
     def __init__(self, port: int = 8000) -> None:
         self._port = port
         self._start_time = time.monotonic()
+        self._pending_orders: dict[str, _PendingOrder] = {}
+        self._last_bar_close: dict[str, float] = {}
+        self._eventbus_snapshot = _EventBusSnapshot()
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록.
@@ -75,6 +305,10 @@ class MetricsExporter:
         bus.subscribe(EventType.CIRCUIT_BREAKER, self._on_cb)
         bus.subscribe(EventType.RISK_ALERT, self._on_risk_alert)
         bus.subscribe(EventType.POSITION_UPDATE, self._on_position)
+        bus.subscribe(EventType.ORDER_REQUEST, self._on_order_request)
+        bus.subscribe(EventType.ORDER_ACK, self._on_order_ack)
+        bus.subscribe(EventType.ORDER_REJECTED, self._on_order_rejected)
+        bus.subscribe(EventType.HEARTBEAT, self._on_heartbeat)
         logger.info("MetricsExporter registered to EventBus")
 
     def start_server(self) -> None:
@@ -91,16 +325,74 @@ class MetricsExporter:
         """Uptime gauge 갱신."""
         uptime_gauge.set(time.monotonic() - self._start_time)
 
+    def update_eventbus_metrics(self, bus: EventBus) -> None:
+        """EventBus 내부 메트릭을 Prometheus로 export (delta 방식).
+
+        Args:
+            bus: EventBus 인스턴스
+        """
+        eventbus_queue_depth_gauge.set(bus.queue_size)
+
+        # Delta 방식: 이전 스냅샷 대비 증가분만 counter에 반영
+        current_dropped = bus.metrics.events_dropped
+        delta_dropped = current_dropped - self._eventbus_snapshot.events_dropped
+        if delta_dropped > 0:
+            eventbus_events_dropped_counter.inc(delta_dropped)
+        self._eventbus_snapshot.events_dropped = current_dropped
+
+        current_errors = bus.metrics.handler_errors
+        delta_errors = current_errors - self._eventbus_snapshot.handler_errors
+        if delta_errors > 0:
+            eventbus_handler_errors_counter.inc(delta_errors)
+        self._eventbus_snapshot.handler_errors = current_errors
+
+    def update_exchange_health(self, consecutive_failures: int) -> None:
+        """거래소 API 연속 실패 횟수 갱신.
+
+        Args:
+            consecutive_failures: 현재 연속 실패 횟수
+        """
+        exchange_consecutive_failures_gauge.set(consecutive_failures)
+
+    # ------------------------------------------------------------------
+    # Event handlers
+    # ------------------------------------------------------------------
     async def _on_balance(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent → equity/cash/drawdown gauges."""
+        """BalanceUpdateEvent → equity/cash/margin gauges."""
         assert isinstance(event, BalanceUpdateEvent)
         equity_gauge.set(event.total_equity)
         cash_gauge.set(event.available_cash)
+        margin_used_gauge.set(event.total_margin_used)
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent → fills counter."""
+        """FillEvent → fills counter + latency + slippage + fees."""
         assert isinstance(event, FillEvent)
         fills_counter.labels(symbol=event.symbol, side=event.side).inc()
+
+        # 수수료 추적
+        if event.fee > 0:
+            fees_counter.labels(symbol=event.symbol).inc(event.fee)
+
+        # pending order 매칭 → latency + slippage
+        pending = self._pending_orders.pop(event.client_order_id, None)
+        if pending is not None:
+            # 주문 지연시간
+            latency = time.monotonic() - pending.request_time
+            order_latency_histogram.labels(symbol=event.symbol).observe(latency)
+
+            # orders_total (filled)
+            orders_counter.labels(
+                symbol=pending.symbol,
+                side=pending.side,
+                order_type=pending.order_type,
+                status="filled",
+            ).inc()
+
+            # 슬리피지 계산
+            expected = pending.expected_price
+            if expected is not None and expected > 0:
+                bps = _calculate_slippage_bps(expected, event.fill_price)
+                slippage_histogram.labels(symbol=event.symbol, side=event.side).observe(bps)
 
     async def _on_signal(self, event: AnyEvent) -> None:
         """SignalEvent → signals counter."""
@@ -108,9 +400,10 @@ class MetricsExporter:
         signals_counter.labels(symbol=event.symbol).inc()
 
     async def _on_bar(self, event: AnyEvent) -> None:
-        """BarEvent → bars counter."""
+        """BarEvent → bars counter + last_bar_close 갱신."""
         assert isinstance(event, BarEvent)
         bars_counter.labels(timeframe=event.timeframe).inc()
+        self._last_bar_close[event.symbol] = event.close
 
     async def _on_cb(self, event: AnyEvent) -> None:
         """CircuitBreakerEvent → CB counter."""
@@ -123,6 +416,65 @@ class MetricsExporter:
         risk_alerts_counter.labels(level=event.alert_level).inc()
 
     async def _on_position(self, event: AnyEvent) -> None:
-        """PositionUpdateEvent → position gauges."""
+        """PositionUpdateEvent → position gauges + notional + unrealized PnL."""
         assert isinstance(event, PositionUpdateEvent)
         position_size_gauge.labels(symbol=event.symbol).set(event.size)
+        notional = abs(event.size * event.avg_entry_price)
+        position_notional_gauge.labels(symbol=event.symbol).set(notional)
+        unrealized_pnl_gauge.labels(symbol=event.symbol).set(event.unrealized_pnl)
+
+        # 실현 손익 (체결 시 PM이 발행하는 realized_pnl > 0이면 누적)
+        if event.realized_pnl != 0:
+            realized_pnl_counter.labels(symbol=event.symbol).inc(abs(event.realized_pnl))
+
+    async def _on_order_request(self, event: AnyEvent) -> None:
+        """OrderRequestEvent → pending 등록 + 기준가 저장."""
+        assert isinstance(event, OrderRequestEvent)
+
+        # 기준가 결정: 지정가 주문은 order.price, 시장가는 last bar close
+        if event.price is not None:
+            expected_price = event.price
+        else:
+            expected_price = self._last_bar_close.get(event.symbol)
+
+        self._pending_orders[event.client_order_id] = _PendingOrder(
+            symbol=event.symbol,
+            side=event.side,
+            order_type=event.order_type,
+            request_time=time.monotonic(),
+            expected_price=expected_price,
+        )
+
+    async def _on_order_ack(self, event: AnyEvent) -> None:
+        """OrderAckEvent → orders_total (ack) 증가."""
+        assert isinstance(event, OrderAckEvent)
+        # ACK는 접수 확인일 뿐 — pending은 유지 (fill 시 제거)
+        pending = self._pending_orders.get(event.client_order_id)
+        if pending is not None:
+            orders_counter.labels(
+                symbol=pending.symbol,
+                side=pending.side,
+                order_type=pending.order_type,
+                status="ack",
+            ).inc()
+
+    async def _on_order_rejected(self, event: AnyEvent) -> None:
+        """OrderRejectedEvent → rejected counter + orders_total (rejected)."""
+        assert isinstance(event, OrderRejectedEvent)
+        reason_category = _categorize_reason(event.reason)
+        order_rejected_counter.labels(symbol=event.symbol, reason=reason_category).inc()
+
+        # pending 있으면 orders_total도 기록 후 제거
+        pending = self._pending_orders.pop(event.client_order_id, None)
+        if pending is not None:
+            orders_counter.labels(
+                symbol=pending.symbol,
+                side=pending.side,
+                order_type=pending.order_type,
+                status="rejected",
+            ).inc()
+
+    async def _on_heartbeat(self, event: AnyEvent) -> None:
+        """HeartbeatEvent → heartbeat timestamp gauge."""
+        assert isinstance(event, HeartbeatEvent)
+        heartbeat_timestamp_gauge.set(event.timestamp.timestamp())
