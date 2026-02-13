@@ -1,0 +1,25 @@
+meta:
+  name: dvr-mom
+  display_name: Vol-Efficiency Momentum
+  category: Volatility Decomposition × Momentum
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: Parkinson(High-Low) vol과 Close-to-Close vol 비율로 바 내부 효율성 측정.
+    비율 낮으면 방향성 바(추세 확인), 높으면 혼조 바(리스크 축소). Vol ratio를 모멘텀 conviction 필터로 사용.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 27
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 27/30점

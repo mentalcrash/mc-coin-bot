@@ -1,0 +1,25 @@
+meta:
+  name: skew-mom
+  display_name: Skew-Gated Momentum
+  category: Higher-Order Moment × Momentum
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-13'
+  retired_at: null
+  economic_rationale: 수익률 분포 비대칭성(skewness)으로 모멘텀 방향 지속 가능성 예측. 양의 skew + 상승 모멘텀 =
+    상방 tail 가능성 확인, 음의 skew 전환 = 크래시 전조. Asym-Semivar-MR과 정반대 해석(순추세 확인).
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      score: 25
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-13'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
