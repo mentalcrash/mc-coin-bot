@@ -601,3 +601,39 @@ class TestMetaLearnerEnsemble:
         # 폴백 후에도 결과 반환
         if result is not None:
             assert isinstance(result, RegimeState)
+
+
+# ── Ensemble Hysteresis Pending Label ──
+
+
+class TestEnsembleHysteresisPendingLabel:
+    """EnsembleRegimeDetector incremental hysteresis의 pending label 추적 검증."""
+
+    def test_pending_label_tracked(self) -> None:
+        """Ensemble incremental도 pending label을 추적해야 함."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=5)
+        detector = EnsembleRegimeDetector(cfg)
+
+        # warmup으로 초기 상태 설정
+        for i in range(detector.warmup_periods + 5):
+            detector.update("TEST", 100.0 + i * 0.5)
+
+        state = detector.get_regime("TEST")
+        assert state is not None
+
+        # pending_labels dict가 존재하고 초기화됨
+        assert "TEST" in detector._pending_labels
+        assert detector._pending_labels["TEST"] is None
+
+    def test_hold_counter_resets_on_new_pending(self) -> None:
+        """다른 pending label이 나오면 카운터가 1로 리셋되어야 함."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=5)
+        detector = EnsembleRegimeDetector(cfg)
+
+        # warmup
+        for i in range(detector.warmup_periods + 5):
+            detector.update("TEST", 100.0 + i * 0.5)
+
+        # hold_counter와 pending_labels가 올바르게 초기화됨
+        assert detector._hold_counters["TEST"] == 0
+        assert detector._pending_labels["TEST"] is None

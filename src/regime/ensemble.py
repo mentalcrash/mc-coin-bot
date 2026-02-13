@@ -83,14 +83,12 @@ _MIN_META_CLASSES = 2
 def _collect_detector_probs(
     detector_dfs: list[tuple[str, pd.DataFrame, float]],
     n: int,
-    index: pd.Index,  # type: ignore[type-arg]
 ) -> tuple[npt.NDArray[floating[Any]], npt.NDArray[floating[Any]], npt.NDArray[floating[Any]]]:
     """감지기별 확률을 가중 평균.
 
     Args:
         detector_dfs: (name, df, weight) 튜플 리스트
         n: bar 수
-        index: 시리즈 인덱스
 
     Returns:
         (p_trending, p_ranging, p_volatile) numpy arrays
@@ -209,6 +207,7 @@ class EnsembleRegimeDetector:
 
         # Incremental hysteresis state per symbol
         self._hold_counters: dict[str, int] = {}
+        self._pending_labels: dict[str, RegimeLabel | None] = {}
         self._states: dict[str, RegimeState] = {}
 
     @property
@@ -288,7 +287,6 @@ class EnsembleRegimeDetector:
         p_trending, p_ranging, p_volatile = _collect_detector_probs(
             detector_results,
             n,
-            closes.index,
         )
 
         regime_labels = _apply_hard_labels(
@@ -478,6 +476,37 @@ class EnsembleRegimeDetector:
 
     # ── Incremental API ──
 
+    def _blend_detector_states(
+        self,
+        rule_state: RegimeState,
+        hmm_state: RegimeState | None,
+        vol_state: RegimeState | None,
+        msar_state: RegimeState | None,
+    ) -> dict[str, float]:
+        """감지기 상태를 가중 블렌딩하여 확률 dict 반환."""
+        cfg = self._config
+        total_weight = 0.0
+        bt, br, bv = 0.0, 0.0, 0.0
+
+        for state, weight in (
+            (rule_state, cfg.weight_rule_based),
+            (hmm_state, cfg.weight_hmm),
+            (vol_state, cfg.weight_vol_structure),
+            (msar_state, cfg.weight_msar),
+        ):
+            if state is not None:
+                bt += weight * state.probabilities["trending"]
+                br += weight * state.probabilities["ranging"]
+                bv += weight * state.probabilities["volatile"]
+                total_weight += weight
+
+        if total_weight > 0:
+            bt /= total_weight
+            br /= total_weight
+            bv /= total_weight
+
+        return {"trending": bt, "ranging": br, "volatile": bv}
+
     def update(self, symbol: str, close: float) -> RegimeState | None:
         """Bar 단위 incremental 업데이트.
 
@@ -514,70 +543,39 @@ class EnsembleRegimeDetector:
             return None
 
         # Weighted blending
-        total_weight = 0.0
-        bt = 0.0
-        br = 0.0
-        bv = 0.0
-
-        # Rule-Based (항상 참여)
-        w = cfg.weight_rule_based
-        bt += w * rule_state.probabilities["trending"]
-        br += w * rule_state.probabilities["ranging"]
-        bv += w * rule_state.probabilities["volatile"]
-        total_weight += w
-
-        # HMM
-        if hmm_state is not None:
-            w = cfg.weight_hmm
-            bt += w * hmm_state.probabilities["trending"]
-            br += w * hmm_state.probabilities["ranging"]
-            bv += w * hmm_state.probabilities["volatile"]
-            total_weight += w
-
-        # Vol-Structure
-        if vol_state is not None:
-            w = cfg.weight_vol_structure
-            bt += w * vol_state.probabilities["trending"]
-            br += w * vol_state.probabilities["ranging"]
-            bv += w * vol_state.probabilities["volatile"]
-            total_weight += w
-
-        # MSAR
-        if msar_state is not None:
-            w = cfg.weight_msar
-            bt += w * msar_state.probabilities["trending"]
-            br += w * msar_state.probabilities["ranging"]
-            bv += w * msar_state.probabilities["volatile"]
-            total_weight += w
-
-        # Normalize
-        if total_weight > 0:
-            bt /= total_weight
-            br /= total_weight
-            bv /= total_weight
-
-        # Hard label
-        probs = {"trending": bt, "ranging": br, "volatile": bv}
+        probs = self._blend_detector_states(rule_state, hmm_state, vol_state, msar_state)
         raw_label = RegimeLabel(max(probs, key=probs.get))  # type: ignore[arg-type]
 
-        # Hysteresis
+        # Hysteresis (matches vectorized apply_hysteresis: same pending label required)
         if symbol not in self._hold_counters:
             self._hold_counters[symbol] = 0
+            self._pending_labels[symbol] = None
 
         prev_state = self._states.get(symbol)
         if prev_state is not None and raw_label != prev_state.label:
-            self._hold_counters[symbol] += 1
-            if self._hold_counters[symbol] < cfg.min_hold_bars:
+            pending = self._pending_labels[symbol]
+            if raw_label == pending:
+                # Same pending label — increment counter
+                self._hold_counters[symbol] += 1
+                if self._hold_counters[symbol] >= cfg.min_hold_bars:
+                    label = raw_label
+                    bars_held = 1
+                    self._hold_counters[symbol] = 0
+                    self._pending_labels[symbol] = None
+                else:
+                    label = prev_state.label
+                    bars_held = prev_state.bars_held + 1
+            else:
+                # New pending label — reset counter to 1
+                self._pending_labels[symbol] = raw_label
+                self._hold_counters[symbol] = 1
                 label = prev_state.label
                 bars_held = prev_state.bars_held + 1
-            else:
-                label = raw_label
-                bars_held = 1
-                self._hold_counters[symbol] = 0
         else:
             label = raw_label
             bars_held = (prev_state.bars_held + 1) if prev_state is not None else 1
             self._hold_counters[symbol] = 0
+            self._pending_labels[symbol] = None
 
         state = RegimeState(
             label=label,

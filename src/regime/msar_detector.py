@@ -1,12 +1,13 @@
 """MSAR (Markov-Switching AutoRegression) Regime Detector.
 
-statsmodels MarkovAutoregression을 사용하여 AR 계수 기반으로
+statsmodels MarkovAutoregression을 사용하여 레짐별 분산(variance) 기반으로
 TRENDING/RANGING/VOLATILE 레짐을 분류합니다.
 
-Regime 매핑:
-    - AR 계수 합이 양수 + 큼 → TRENDING (momentum persistence)
-    - AR 계수 합이 음수/작음 + 저분산 → RANGING (mean-reversion)
-    - 고분산 → VOLATILE
+Regime 매핑 (분산 기준 정렬):
+    - 최저 분산 → RANGING (저변동, 횡보)
+    - 중간 분산 → TRENDING (적정 변동, 방향성)
+    - 최고 분산 → VOLATILE (고변동, 위기)
+    - 2-regime 모드: 최저 → TRENDING, 최고 → VOLATILE
 
 Rules Applied:
     - #12 Data Engineering: ML training은 Zero Loop Policy 예외

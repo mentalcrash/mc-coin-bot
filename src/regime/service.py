@@ -270,11 +270,13 @@ class RegimeService:
         if not new_cols:
             return df
 
+        # 원본 df를 변경하지 않도록 copy
+        result = df.copy()
         for col in new_cols:
             if col in regime_subset.columns:
-                df[col] = regime_subset[col].to_numpy()
+                result[col] = regime_subset[col].to_numpy()
 
-        return df
+        return result
 
     # ── Live: Warmup ──
 
@@ -360,8 +362,11 @@ class RegimeService:
             .iloc[-1]
         )
 
-        # rolling std for normalization
-        std = float(returns_series.std())
+        # rolling std for normalization (match vectorized: window=direction_window)
+        window = min(cfg.direction_window, len(returns_series))
+        min_periods = max(2, window // 2)
+        rolling_std = returns_series.rolling(window=window, min_periods=min_periods).std()
+        std = float(rolling_std.iloc[-1])
         if std <= 0 or math.isnan(std):
             return 0, 0.0
 

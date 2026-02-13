@@ -474,3 +474,77 @@ class TestWarmup:
 
         assert "BTC/USDT" in service._close_buffers
         assert len(service._close_buffers["BTC/USDT"]) > 0
+
+
+# ── Direction Std Parity ──
+
+
+class TestDirectionStdParity:
+    """Incremental direction std가 vectorized rolling std와 일치하는지 검증."""
+
+    def test_direction_uses_rolling_std(self) -> None:
+        """_compute_direction_from_buffer가 전체 버퍼 std가 아닌 rolling std를 사용."""
+        from collections import deque
+
+        config = RegimeServiceConfig(direction_window=10)
+        service = RegimeService(config)
+
+        # direction_window + 5 크기의 버퍼 생성
+        rng = np.random.default_rng(42)
+        n = config.direction_window + 5
+        prices = 100.0 * np.exp(np.cumsum(rng.normal(0.001, 0.01, n)))
+        buf: deque[float] = deque(prices.tolist(), maxlen=n)
+
+        direction, strength = service._compute_direction_from_buffer(buf)
+
+        # Vectorized 방식으로 동일 계산
+        log_returns = np.diff(np.log(np.array(buf)))
+        returns_series = pd.Series(log_returns)
+        window = config.direction_window
+        rolling_std = returns_series.rolling(
+            window=window, min_periods=max(2, window // 2)
+        ).std()
+        expected_std = float(rolling_std.iloc[-1])
+
+        ema_momentum = float(
+            returns_series.ewm(span=window, adjust=False).mean().iloc[-1]
+        )
+        expected_normalized = ema_momentum / expected_std
+
+        if abs(expected_normalized) > config.direction_threshold:
+            expected_direction = 1 if expected_normalized > 0 else -1
+            expected_strength = min(abs(expected_normalized), 1.0)
+        else:
+            expected_direction = 0
+            expected_strength = 0.0
+
+        assert direction == expected_direction
+        assert abs(strength - expected_strength) < 1e-10
+
+
+# ── enrich_dataframe Copy Safety ──
+
+
+class TestEnrichDataFrameCopy:
+    """enrich_dataframe가 원본 DataFrame을 변경하지 않는지 검증."""
+
+    def test_original_df_not_mutated(self) -> None:
+        """enrich_dataframe 호출 후 원본 df에 regime 컬럼이 없어야 함."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.precompute("BTC/USDT", closes)
+
+        df = pd.DataFrame(
+            {"close": closes, "volume": 1000.0},
+            index=closes.index,
+        )
+        original_cols = list(df.columns)
+
+        result = service.enrich_dataframe(df, "BTC/USDT")
+
+        # 원본은 변경 없음
+        assert list(df.columns) == original_cols
+        assert "regime_label" not in df.columns
+
+        # 결과에는 regime 컬럼 존재
+        assert "regime_label" in result.columns
