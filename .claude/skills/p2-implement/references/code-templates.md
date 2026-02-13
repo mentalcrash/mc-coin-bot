@@ -309,6 +309,170 @@ def _compute_direction(
 
 ---
 
+## 3.5 Regime-Adaptive signal.py Template (해당 시)
+
+RegimeService 자동 주입 컬럼을 활용하는 signal.py 추가 패턴.
+기본 signal.py Template의 확장이며, 레짐 적응형 전략에만 적용.
+
+```python
+"""{StrategyDisplayName} 시그널 생성 (레짐 적응형).
+
+RegimeService가 주입하는 regime 컬럼을 활용하여
+vol_target/threshold 등을 레짐 확률에 따라 적응적으로 조절합니다.
+regime 컬럼이 없으면 기본 config.vol_target으로 fallback합니다.
+
+Shift(1) Rule: 모든 feature + regime 컬럼에 shift(1) 적용.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pandas as pd
+
+from src.strategy.types import StrategySignals
+
+if TYPE_CHECKING:
+    from src.strategy.{name_snake}.config import {StrategyConfig}, ShortMode
+
+
+# RegimeService가 주입하는 컬럼 목록
+_REGIME_COLUMNS = ("p_trending", "p_ranging", "p_volatile", "regime_label",
+                   "trend_direction", "trend_strength")
+
+
+def _has_regime_columns(df: pd.DataFrame) -> bool:
+    """DataFrame에 regime 컬럼이 있는지 확인."""
+    return "p_trending" in df.columns
+
+
+def _compute_adaptive_vol_target(
+    df: pd.DataFrame,
+    config: {StrategyConfig},
+) -> pd.Series:
+    """레짐 확률 가중 adaptive vol_target 계산.
+
+    regime 컬럼이 없으면 config.vol_target 상수 반환.
+    """
+    if not _has_regime_columns(df):
+        return pd.Series(config.vol_target, index=df.index)
+
+    p_trending = df["p_trending"].shift(1).fillna(1 / 3)
+    p_ranging = df["p_ranging"].shift(1).fillna(1 / 3)
+    p_volatile = df["p_volatile"].shift(1).fillna(1 / 3)
+
+    adaptive: pd.Series = (  # type: ignore[assignment]
+        p_trending * config.trending_vol_target
+        + p_ranging * config.ranging_vol_target
+        + p_volatile * config.volatile_vol_target
+    )
+    return adaptive
+
+
+def generate_signals(df: pd.DataFrame, config: {StrategyConfig}) -> StrategySignals:
+    """{StrategyDisplayName} 시그널 생성 (레짐 적응형)."""
+    from src.strategy.{name_snake}.config import ShortMode
+
+    # --- Regime-Adaptive Vol Target ---
+    adaptive_vol_target = _compute_adaptive_vol_target(df, config)
+
+    # --- Vol Scalar (adaptive) ---
+    realized_vol = df["realized_vol"].shift(1)
+    clamped_vol = realized_vol.clip(lower=config.min_volatility)
+    vol_scalar = adaptive_vol_target / clamped_vol
+
+    # --- Strategy-Specific Signal Logic ---
+    # feature_a = df["{feature_a}"].shift(1)
+    # long_signal = ...
+    # short_signal = ...
+
+    # --- Direction (ShortMode 분기) ---
+    # direction = _compute_direction(...)
+
+    # --- Strength ---
+    # strength = direction.astype(float) * vol_scalar.fillna(0)
+
+    # ... (이하 기본 signal.py Template과 동일)
+```
+
+### 레짐 적응형 config.py 추가 필드
+
+```python
+    # --- 레짐별 적응적 파라미터 (RegimeService 자동 주입 컬럼 활용) ---
+    trending_vol_target: float = Field(
+        default=0.40, ge=0.05, le=1.0,
+        description="trending 레짐에서의 vol_target (공격적)",
+    )
+    ranging_vol_target: float = Field(
+        default=0.15, ge=0.0, le=1.0,
+        description="ranging 레짐에서의 vol_target (보수적)",
+    )
+    volatile_vol_target: float = Field(
+        default=0.10, ge=0.0, le=1.0,
+        description="volatile 레짐에서의 vol_target (초보수)",
+    )
+```
+
+### 레짐 적응형 test_signal.py 추가 테스트
+
+```python
+class TestRegimeAdaptation:
+    """RegimeService 컬럼 활용 테스트."""
+
+    def test_with_regime_columns(
+        self, preprocessed_df: pd.DataFrame, config: {StrategyConfig}
+    ) -> None:
+        """regime 컬럼이 있을 때 adaptive vol_target 사용."""
+        df = preprocessed_df.copy()
+        df["p_trending"] = 0.8
+        df["p_ranging"] = 0.1
+        df["p_volatile"] = 0.1
+        df["regime_label"] = "trending"
+        df["trend_direction"] = 1
+        df["trend_strength"] = 0.7
+        signals = generate_signals(df, config)
+        assert len(signals.entries) == len(df)
+
+    def test_without_regime_columns(
+        self, preprocessed_df: pd.DataFrame, config: {StrategyConfig}
+    ) -> None:
+        """regime 컬럼 없이도 fallback으로 정상 작동."""
+        signals = generate_signals(preprocessed_df, config)
+        assert len(signals.entries) == len(preprocessed_df)
+
+    def test_trending_more_aggressive(
+        self, preprocessed_df: pd.DataFrame
+    ) -> None:
+        """trending에서 더 높은 평균 |strength| 확인."""
+        config_default = {StrategyConfig}()
+        df_trending = preprocessed_df.copy()
+        df_trending["p_trending"] = 1.0
+        df_trending["p_ranging"] = 0.0
+        df_trending["p_volatile"] = 0.0
+        df_trending["regime_label"] = "trending"
+        df_trending["trend_direction"] = 1
+        df_trending["trend_strength"] = 0.8
+
+        df_volatile = preprocessed_df.copy()
+        df_volatile["p_trending"] = 0.0
+        df_volatile["p_ranging"] = 0.0
+        df_volatile["p_volatile"] = 1.0
+        df_volatile["regime_label"] = "volatile"
+        df_volatile["trend_direction"] = 0
+        df_volatile["trend_strength"] = 0.0
+
+        sig_t = generate_signals(df_trending, config_default)
+        sig_v = generate_signals(df_volatile, config_default)
+
+        # trending의 평균 |strength|가 volatile보다 커야 함
+        avg_t = sig_t.strength.abs().mean()
+        avg_v = sig_v.strength.abs().mean()
+        assert avg_t >= avg_v
+```
+
+---
+
 ## 4. strategy.py Template
 
 ```python

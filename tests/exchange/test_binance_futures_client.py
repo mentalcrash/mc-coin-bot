@@ -772,3 +772,104 @@ class TestRetry:
                 invalid, max_retries=3, base_backoff=0.01
             )
         assert call_count == 1  # 재시도 없이 즉시 실패
+
+
+class TestRetryAssertReplacement:
+    """_retry_with_backoff assert→if/raise 변환 검증."""
+
+    @pytest.mark.asyncio
+    async def test_ddos_protection_retried(self) -> None:
+        """DDoSProtection도 재시도됨."""
+        import ccxt as ccxt_sync
+
+        call_count = 0
+
+        async def ddos_then_ok() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ccxt_sync.DDoSProtection("cloudflare")
+            return "ok"
+
+        result = await BinanceFuturesClient._retry_with_backoff(
+            ddos_then_ok, max_retries=3, base_backoff=0.01
+        )
+        assert result == "ok"
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_request_timeout_retried(self) -> None:
+        """RequestTimeout도 재시도됨."""
+        import ccxt as ccxt_sync
+
+        call_count = 0
+
+        async def timeout_then_ok() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ccxt_sync.RequestTimeout("timeout")
+            return "ok"
+
+        result = await BinanceFuturesClient._retry_with_backoff(
+            timeout_then_ok, max_retries=3, base_backoff=0.01
+        )
+        assert result == "ok"
+        assert call_count == 2
+
+
+class TestCloseIdempotent:
+    """close() 멱등성 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_close_when_not_initialized(self) -> None:
+        """초기화 전 close() 호출 시 에러 없음."""
+        settings = _make_settings()
+        client = BinanceFuturesClient(settings)
+        await client.close()  # exchange is None → no-op
+
+    @pytest.mark.asyncio
+    async def test_close_handles_exception(self) -> None:
+        """close() 중 exception 발생 시에도 안전 종료."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.close = AsyncMock(side_effect=Exception("ws error"))
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as _client:
+                _ = _client  # __aexit__ → close() → exception → 무시
+
+        assert True  # No exception propagated
+
+
+class TestSetupAccountEdgeCases:
+    """setup_account() 엣지 케이스."""
+
+    @pytest.mark.asyncio
+    async def test_setup_multiple_symbols(self) -> None:
+        """여러 심볼 한 번에 설정."""
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                await client.setup_account(["BTC/USDT", "ETH/USDT"], leverage=2)
+
+        assert mock_exchange.set_leverage.call_count == 2
+        assert mock_exchange.set_margin_mode.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_hedge_mode_error_non_no_need(self) -> None:
+        """Hedge Mode 설정 실패 시 OrderExecutionError."""
+        import ccxt as ccxt_sync
+
+        settings = _make_settings()
+        mock_exchange = _make_mock_exchange()
+        mock_exchange.set_position_mode = AsyncMock(
+            side_effect=ccxt_sync.ExchangeError("Permission denied")
+        )
+
+        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+            async with BinanceFuturesClient(settings) as client:
+                with pytest.raises(OrderExecutionError, match="Hedge Mode"):
+                    await client.setup_account(["BTC/USDT"])

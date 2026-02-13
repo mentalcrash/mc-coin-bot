@@ -1,0 +1,62 @@
+groups:
+  - name: mc-coin-bot
+    rules:
+      # 1. 낙폭 10% 초과 — 1분 유지
+      - alert: HighDrawdown
+        expr: mcbot_drawdown_pct > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High drawdown detected ({{ $value | printf \"%.1f\" }}%)"
+          description: "Portfolio drawdown has exceeded 10% for over 1 minute. Current: {{ $value | printf \"%.1f\" }}%"
+
+      # 2. 거래소 API 5회 연속 실패
+      - alert: APIUnhealthy
+        expr: mcbot_exchange_consecutive_failures >= 5
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Exchange API unhealthy ({{ $value }} consecutive failures)"
+          description: "Binance API has failed {{ $value }} consecutive times. Order execution may be blocked."
+
+      # 3. 이벤트 드롭 발생
+      - alert: EventsDropped
+        expr: rate(mcbot_eventbus_events_dropped_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EventBus events being dropped"
+          description: "Events are being dropped due to queue backpressure. Rate: {{ $value | printf \"%.2f\" }}/s"
+
+      # 4. WebSocket 끊김 — 2분 이상
+      - alert: WSDisconnected
+        expr: mcbot_exchange_ws_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WebSocket disconnected for {{ $labels.symbol }}"
+          description: "WebSocket connection for {{ $labels.symbol }} has been down for over 2 minutes. Market data feed interrupted."
+
+      # 5. 슬리피지 P95 > 20bp
+      - alert: HighSlippage
+        expr: histogram_quantile(0.95, rate(mcbot_slippage_bps_bucket[15m])) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High slippage detected (P95: {{ $value | printf \"%.1f\" }} bps)"
+          description: "Order execution slippage P95 exceeds 20 basis points. Execution quality may be degraded."
+
+      # 6. EventBus 큐 50% 이상 사용
+      - alert: QueueCongestion
+        expr: mcbot_eventbus_queue_depth > 5000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EventBus queue congested ({{ $value }} events pending)"
+          description: "EventBus queue depth exceeds 5000 (50% of default 10000). Backpressure risk."

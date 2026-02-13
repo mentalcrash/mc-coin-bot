@@ -2,7 +2,7 @@ meta:
   name: perm-entropy-mom
   display_name: Perm-Entropy-Mom
   category: Momentum (PE conviction scaling)
-  timeframe: 4H (annualization_factor=2190)
+  timeframe: 4H
   short_mode: HEDGE_ONLY
   status: RETIRED
   created_at: '2026-02-10'

@@ -1,13 +1,17 @@
 """Executor 테스트.
 
 BacktestExecutor의 deferred execution, SL/TS 즉시 체결, 수수료 계산을 검증합니다.
+LiveExecutor의 assert→if/raise 변환 검증을 포함합니다.
 """
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
+
 from src.core.events import BarEvent, OrderRequestEvent
-from src.eda.executors import BacktestExecutor
+from src.eda.executors import BacktestExecutor, LiveExecutor
 from src.portfolio.cost_model import CostModel
 
 
@@ -300,3 +304,97 @@ class TestEdgeCases:
         executor.fill_pending(bar3)
         fills2 = executor.drain_fills()
         assert fills2[0].fill_timestamp == ts3
+
+
+class TestLiveExecutorSafetyChecks:
+    """LiveExecutor: assert→if/raise 변환 검증."""
+
+    def _make_live_executor(self) -> LiveExecutor:
+        """Mock BinanceFuturesClient로 LiveExecutor 생성."""
+        mock_client = MagicMock()
+        mock_client.is_api_healthy = True
+        mock_client.consecutive_failures = 0
+        mock_client.to_futures_symbol = MagicMock(return_value="BTC/USDT:USDT")
+        return LiveExecutor(futures_client=mock_client)
+
+    async def test_execute_without_pm_returns_none(self) -> None:
+        """PM 미설정 시 execute()는 None을 반환 (assert 대신)."""
+        executor = self._make_live_executor()
+        # PM 설정하지 않음
+        order = _make_order()
+        fill = await executor.execute(order)
+        assert fill is None
+
+    async def test_resolve_position_side_without_pm_raises(self) -> None:
+        """PM 미설정 시 _resolve_position_side()는 RuntimeError 발생."""
+        executor = self._make_live_executor()
+        # PM 설정하지 않음
+        order = _make_order()
+        with pytest.raises(RuntimeError, match="PM set"):
+            executor._resolve_position_side(order)
+
+    async def test_execute_single_without_pm_raises(self) -> None:
+        """PM 미설정 시 _execute_single()은 RuntimeError 발생."""
+        executor = self._make_live_executor()
+        # PM 설정하지 않음
+        order = _make_order()
+        with pytest.raises(RuntimeError, match="PM set"):
+            await executor._execute_single(
+                order=order,
+                futures_symbol="BTC/USDT:USDT",
+                position_side="LONG",
+                reduce_only=False,
+            )
+
+    async def test_execute_with_pm_set_proceeds(self) -> None:
+        """PM 설정 시 정상 실행 (API unhealthy 케이스에서 None 반환)."""
+        executor = self._make_live_executor()
+        executor._client.is_api_healthy = False
+        mock_pm = MagicMock()
+        executor.set_pm(mock_pm)
+        order = _make_order()
+        fill = await executor.execute(order)
+        assert fill is None  # API unhealthy → None
+
+    async def test_parse_fill_static_method(self) -> None:
+        """_parse_fill은 정상 CCXT 응답에서 FillEvent 생성."""
+        order = _make_order()
+        result: dict[str, object] = {
+            "average": 50000.0,
+            "filled": 0.2,
+            "status": "closed",
+            "fee": {"cost": 5.0, "currency": "USDT"},
+        }
+        fill = LiveExecutor._parse_fill(order, result, requested_amount=0.2)
+        assert fill is not None
+        assert fill.fill_price == 50000.0
+        assert fill.fill_qty == 0.2
+        assert fill.fee == 5.0
+
+    async def test_parse_fill_invalid_price_returns_none(self) -> None:
+        """_parse_fill: price=0이면 None."""
+        order = _make_order()
+        result: dict[str, object] = {"average": 0, "filled": 0.2}
+        fill = LiveExecutor._parse_fill(order, result)
+        assert fill is None
+
+    async def test_confirm_order_closed_status_returns_immediately(self) -> None:
+        """_confirm_order: status=closed이면 재확인 없이 즉시 반환."""
+        executor = self._make_live_executor()
+        result: dict[str, object] = {"status": "closed", "id": "123"}
+        confirmed = await executor._confirm_order(result, "BTC/USDT:USDT")
+        assert confirmed["status"] == "closed"
+
+    async def test_execute_with_pm_and_healthy_api(self) -> None:
+        """PM 설정 + API healthy 시 _resolve_position_side 호출."""
+        executor = self._make_live_executor()
+        mock_pm = MagicMock()
+        mock_pm.positions = {}
+        executor.set_pm(mock_pm)
+
+        # _execute_single을 mock하여 호출 여부 확인
+        executor._execute_single = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+        order = _make_order()
+        await executor.execute(order)
+        executor._execute_single.assert_called_once()

@@ -28,11 +28,15 @@ type EventHandler = Callable[[AnyEvent], Awaitable[None]]
 # Backpressure: 드롭 가능 이벤트의 publish timeout (초)
 _DROPPABLE_PUBLISH_TIMEOUT = 0.01
 
+# 연속 drop 경고 임계값
+_DROP_ALERT_THRESHOLD = 10
+
 
 class EventBusMetrics:
     """EventBus 런타임 메트릭."""
 
     __slots__ = (
+        "_consecutive_drops",
         "events_dispatched",
         "events_dropped",
         "events_published",
@@ -46,6 +50,23 @@ class EventBusMetrics:
         self.events_dropped: int = 0
         self.handler_errors: int = 0
         self.max_queue_depth: int = 0
+        self._consecutive_drops: int = 0
+
+    def record_drop(self) -> None:
+        """이벤트 드롭 기록 + 연속 드롭 임계값 경고."""
+        self.events_dropped += 1
+        self._consecutive_drops += 1
+        if self._consecutive_drops >= _DROP_ALERT_THRESHOLD:
+            logger.critical(
+                "ALERT: {} consecutive events dropped (total dropped: {}). Queue may be permanently congested.",
+                self._consecutive_drops,
+                self.events_dropped,
+            )
+
+    def record_publish(self) -> None:
+        """이벤트 발행 성공 기록 + 연속 드롭 카운터 리셋."""
+        self.events_published += 1
+        self._consecutive_drops = 0
 
     def snapshot(self) -> dict[str, int]:
         """현재 메트릭 스냅샷."""
@@ -109,17 +130,18 @@ class EventBus:
             try:
                 self._queue.put_nowait(event)
             except asyncio.QueueFull:
-                self.metrics.events_dropped += 1
+                self.metrics.record_drop()
                 logger.warning(
-                    "Event dropped (queue full): type={} id={}",
+                    "Event dropped (queue full): type={} id={} (total dropped: {})",
                     event_type,
                     event.event_id,
+                    self.metrics.events_dropped,
                 )
                 return
         else:
             await self._queue.put(event)
 
-        self.metrics.events_published += 1
+        self.metrics.record_publish()
 
         # 최대 큐 깊이 추적
         self.metrics.max_queue_depth = max(self.metrics.max_queue_depth, self._queue.qsize())

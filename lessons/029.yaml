@@ -1,0 +1,16 @@
+id: 29
+title: 4H conviction-scalar 전략의 G1 Sharpe 상한 ~0.8
+body: R2/VWAP-spread 등 연속 conviction scalar(0~1) 기반 전략은 4H 크립토에서 Best Sharpe 0.78~0.84에
+  수렴. 이진 방향 결정 + vol-target이 alpha의 핵심이며, conviction 세분화는 노이즈만 추가. trend-quality-mom(DOGE
+  Sharpe 0.84), vwap-trend-cross(DOGE Sharpe 0.78) 동시 FAIL.
+category: strategy-design
+tags:
+- conviction-scaling
+- 4H
+- trend-quality
+- VWAP
+strategies:
+- trend-quality-mom
+timeframes:
+- 4H
+added_at: '2026-02-13'

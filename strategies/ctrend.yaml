@@ -46,6 +46,18 @@ gates:
     details:
       sharpe: 2.82
       cagr: 173.8
+  G0B:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1(W3)
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 2.05
@@ -103,3 +115,8 @@ decisions:
   gate: G5
   verdict: PASS
   rationale: EDA Sharpe 2.82 vs VBT 2.05. 수익 부호 일치. Trades 72 (PM threshold 필터링)
+- date: '2026-02-13'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. shift(1) 적용 확인, rolling window ML training 정상, vol_scalar
+    0-div 방어, annualization 365, ShortMode 3분기 확인. Warning 1건(W3 regime concentration).

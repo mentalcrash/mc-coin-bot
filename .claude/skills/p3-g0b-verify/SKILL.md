@@ -318,7 +318,7 @@ FAIL 사유는 아니나 반드시 기록:
 **PASS 시**:
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate G0B --verdict PASS \
   --detail "C1=PASS" --detail "C2=PASS" --detail "C3=PASS" \
   --detail "C4=PASS" --detail "C5=PASS" --detail "C6=PASS" --detail "C7=PASS" \
@@ -331,7 +331,7 @@ uv run python main.py pipeline record {strategy_name} \
 **FAIL 시**:
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate G0B --verdict FAIL --no-retire \
   --rationale "{C항목} FAIL: {사유}"
 ```
@@ -341,7 +341,7 @@ uv run python main.py pipeline record {strategy_name} \
 ### Dashboard 자동 생성
 
 ```bash
-uv run python main.py pipeline report
+uv run mcbot pipeline report
 ```
 
 ---
@@ -362,11 +362,11 @@ uv run python main.py pipeline report
 
 ```bash
 # 1. 기존 교훈 확인 (중복 방지)
-uv run python main.py pipeline lessons-list -c strategy-design
-uv run python main.py pipeline lessons-list -t {관련키워드}
+uv run mcbot pipeline lessons-list -c strategy-design
+uv run mcbot pipeline lessons-list -t {관련키워드}
 
 # 2. 새로운 패턴이면 교훈 추가
-uv run python main.py pipeline lessons-add \
+uv run mcbot pipeline lessons-add \
   --title "{결함 패턴 제목}" \
   --body "{구체적 설명 + 영향 + 방지법}" \
   -c strategy-design \

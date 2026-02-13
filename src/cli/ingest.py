@@ -121,8 +121,8 @@ def bronze(
     """Fetch raw OHLCV data from Binance and save to Bronze layer.
 
     Example:
-        python -m src.cli.ingest bronze BTC/USDT --year 2025
-        python -m src.cli.ingest bronze ETH/USDT -y 2024 -y 2025
+        uv run mcbot ingest bronze BTC/USDT --year 2025
+        uv run mcbot ingest bronze ETH/USDT -y 2024 -y 2025
     """
     # 로거 설정
     settings = get_settings()
@@ -168,8 +168,8 @@ def silver(
     """Process Bronze data with gap-filling and save to Silver layer.
 
     Example:
-        python -m src.cli.ingest silver BTC/USDT --year 2025
-        python -m src.cli.ingest silver BTC/USDT -y 2024 -y 2025 --skip-validation
+        uv run mcbot ingest silver BTC/USDT --year 2025
+        uv run mcbot ingest silver BTC/USDT -y 2024 -y 2025 --skip-validation
     """
     settings = get_settings()
     setup_logger(
@@ -244,7 +244,7 @@ def pipeline(
     """Run full pipeline: Bronze (fetch) → Silver (gap-fill).
 
     Example:
-        python -m src.cli.ingest pipeline BTC/USDT --year 2025
+        uv run mcbot ingest pipeline BTC/USDT --year 2025
     """
     settings = get_settings()
     setup_logger(
@@ -294,7 +294,7 @@ def validate(
     """Validate a Parquet file for data integrity.
 
     Example:
-        python -m src.cli.ingest validate data/silver/BTC_USDT/2025.parquet
+        uv run mcbot ingest validate data/silver/BTC_USDT/2025.parquet
     """
     if not path.exists():
         console.print(f"[bold red]Error:[/bold red] File not found: {path}")
@@ -634,16 +634,16 @@ def bulk_download(
 
     Example:
         # Download top 100 symbols for 2023-2025 (default)
-        python main.py ingest bulk-download
+        uv run mcbot ingest bulk-download
 
         # Download top 10 symbols for specific years
-        python main.py ingest bulk-download --top 10 -y 2024 -y 2025
+        uv run mcbot ingest bulk-download --top 10 -y 2024 -y 2025
 
         # Preview target symbols without downloading
-        python main.py ingest bulk-download --top 100 --dry-run
+        uv run mcbot ingest bulk-download --top 100 --dry-run
 
         # Re-download (don't skip existing files)
-        python main.py ingest bulk-download --no-skip-existing
+        uv run mcbot ingest bulk-download --no-skip-existing
     """
     # 로거 설정
     settings = get_settings()

@@ -1,13 +1,16 @@
 """PositionReconciler — 거래소 vs PM 포지션 교차 검증.
 
 주기적으로 거래소의 실제 포지션과 PM의 내부 상태를 비교하여
-불일치를 감지합니다. 자동 수정 없음 (safety-first), drift 경고만 발행.
+불일치를 감지합니다. Optional auto-correction 모드로 PM 상태를
+거래소 기준으로 보정할 수 있습니다.
 
 Usage:
     reconciler = PositionReconciler()
     await reconciler.initial_check(pm, futures_client, symbols)
     # periodic loop (LiveRunner에서 관리)
     await reconciler.periodic_check(pm, futures_client, symbols)
+    # auto-correction 활성화 (LIVE 모드 전용)
+    reconciler = PositionReconciler(auto_correct=True)
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from loguru import logger
 from src.models.types import Direction
 
 if TYPE_CHECKING:
-    from src.eda.portfolio_manager import EDAPortfolioManager
+    from src.eda.portfolio_manager import EDAPortfolioManager, Position
     from src.exchange.binance_futures_client import BinanceFuturesClient
 
 # Position drift 임계값 (2%): 이 이상 차이나면 CRITICAL
@@ -29,9 +32,31 @@ _DRIFT_THRESHOLD = 0.02
 _BALANCE_DRIFT_THRESHOLD = 0.05  # 5%: CRITICAL
 _BALANCE_WARN_THRESHOLD = 0.02  # 2%: WARNING
 
+# Auto-correction 임계값: drift가 이 이상이면 PM 상태를 거래소 기준으로 보정
+_AUTO_CORRECT_THRESHOLD = 0.10  # 10%
+
 
 class PositionReconciler:
-    """거래소 vs PM 포지션 교차 검증."""
+    """거래소 vs PM 포지션 교차 검증.
+
+    Args:
+        auto_correct: True 시 drift > 10% 인 포지션의 PM size를 거래소 기준으로 보정.
+                      기본 False (safety-first: 경고만 발행).
+    """
+
+    def __init__(self, *, auto_correct: bool = False) -> None:
+        self._auto_correct = auto_correct
+        self._corrections_applied: int = 0
+
+    @property
+    def auto_correct_enabled(self) -> bool:
+        """Auto-correction 활성화 여부."""
+        return self._auto_correct
+
+    @property
+    def corrections_applied(self) -> int:
+        """적용된 auto-correction 횟수."""
+        return self._corrections_applied
 
     async def initial_check(
         self,
@@ -148,6 +173,9 @@ class PositionReconciler:
     ) -> list[str]:
         """거래소 vs PM 포지션 비교.
 
+        auto_correct 활성화 시 drift > _AUTO_CORRECT_THRESHOLD 인 포지션의
+        PM size를 거래소 기준으로 보정합니다.
+
         Returns:
             불일치가 발견된 심볼 리스트
         """
@@ -184,7 +212,59 @@ class PositionReconciler:
             if self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info):
                 drifts.append(symbol)
 
+                # Auto-correction: PM size를 거래소 기준으로 보정
+                if self._auto_correct and pm_pos is not None:
+                    ex_size = self._get_exchange_size(pm_dir, ex_info)
+                    self._apply_correction(pm_pos, ex_size, pm_dir, ex_info)
+
         return drifts
+
+    def _get_exchange_size(
+        self, pm_dir: Direction, ex_info: dict[str, float]
+    ) -> float:
+        """PM 방향에 맞는 거래소 포지션 크기 반환."""
+        if pm_dir == Direction.LONG:
+            return ex_info["long_size"]
+        if pm_dir == Direction.SHORT:
+            return ex_info["short_size"]
+        return ex_info["long_size"] + ex_info["short_size"]
+
+    def _apply_correction(
+        self,
+        pm_pos: Position,
+        ex_size: float,
+        pm_dir: Direction,
+        ex_info: dict[str, float],
+    ) -> None:
+        """PM 포지션 크기를 거래소 기준으로 보정.
+
+        drift가 _AUTO_CORRECT_THRESHOLD 이상일 때만 보정합니다.
+        """
+        pm_size = pm_pos.size
+        max_size = max(pm_size, ex_size)
+        if max_size <= 0:
+            return
+
+        drift_ratio = abs(pm_size - ex_size) / max_size
+        if drift_ratio < _AUTO_CORRECT_THRESHOLD:
+            return
+
+        old_size = pm_pos.size
+        pm_pos.size = ex_size
+
+        # 포지션이 0이 되었으면 NEUTRAL로 설정
+        if ex_size <= 0:
+            pm_pos.direction = Direction.NEUTRAL
+            pm_pos.avg_entry_price = 0.0
+
+        self._corrections_applied += 1
+        logger.warning(
+            "PositionReconciler AUTO-CORRECT: {} size {:.6f} → {:.6f} (drift {:.1%})",
+            pm_pos.symbol,
+            old_size,
+            ex_size,
+            drift_ratio,
+        )
 
     @staticmethod
     def _check_symbol_drift(

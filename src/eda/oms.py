@@ -73,6 +73,23 @@ class OMS:
         """총 거부 건수."""
         return self._total_rejected
 
+    @property
+    def processed_orders(self) -> set[str]:
+        """처리된 주문 ID 집합 (StateManager 접근용)."""
+        return self._processed_orders
+
+    def restore_processed_orders(self, order_ids: set[str]) -> None:
+        """저장된 주문 ID를 복원 (재시작 시 중복 방지).
+
+        Args:
+            order_ids: StateManager에서 로드한 주문 ID 집합
+        """
+        self._processed_orders = order_ids
+        logger.info(
+            "OMS: restored {} processed order IDs from persistence",
+            len(order_ids),
+        )
+
     async def _on_order_request(self, event: AnyEvent) -> None:
         """validated 주문 처리."""
         assert isinstance(event, OrderRequestEvent)

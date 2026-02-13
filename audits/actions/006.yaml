@@ -1,0 +1,29 @@
+id: 6
+title: LiveDataFeed staleness detection
+priority: P1
+status: completed
+phase: B
+assigned_to: null
+related_findings:
+- 8
+description: 'Add heartbeat/staleness detection to LiveDataFeed.
+
+  If no data received for configurable timeout (default 60s),
+
+  emit warning event and optionally halt trading.
+
+  '
+estimated_effort: 2h
+created_at: '2026-02-13'
+started_at: null
+completed_at: '2026-02-13'
+verification: '1. pytest -k test_staleness_detection passes
+
+  2. Warning emitted after timeout
+
+  3. Trading halt configurable
+
+  '
+tags:
+- live-trading
+- data-quality

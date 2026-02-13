@@ -388,8 +388,8 @@ def run(
     config의 symbols 개수로 단일/멀티에셋을 자동 판별합니다.
 
     Example:
-        uv run python -m src.cli.backtest run config/default.yaml
-        uv run python -m src.cli.backtest run config/default.yaml --report --verbose
+        uv run mcbot backtest run config/default.yaml
+        uv run mcbot backtest run config/default.yaml --report --verbose
     """
     from src.config.config_loader import build_strategy, load_config
 
@@ -689,7 +689,7 @@ def strategies() -> None:
     Shows registered strategies with their descriptions and recommended settings.
 
     Example:
-        uv run python -m src.cli.backtest strategies
+        uv run mcbot backtest strategies
     """
     available = list_strategies()
 
@@ -750,8 +750,8 @@ def optimize(
     """Run parameter optimization for VW-TSMOM strategy.
 
     Example:
-        uv run python -m src.cli.backtest optimize BTC/USDT --year 2024 --year 2025
-        uv run python -m src.cli.backtest optimize BTC/USDT -c 50000 --top 5
+        uv run mcbot backtest optimize BTC/USDT --year 2024 --year 2025
+        uv run mcbot backtest optimize BTC/USDT -c 50000 --top 5
     """
     # 로깅 설정 (WARNING 레벨로 최소화)
     setup_logger(console_level="WARNING")
@@ -1161,8 +1161,8 @@ def diagnose(
         - adaptive-breakout: Breakout detection analysis (ATR Threshold, Channel)
 
     Example:
-        uv run python -m src.cli.backtest diagnose BTC/USDT -s tsmom -y 2024 -y 2025
-        uv run python -m src.cli.backtest diagnose BTC/USDT -s adaptive-breakout -y 2024
+        uv run mcbot backtest diagnose BTC/USDT -s tsmom -y 2024 -y 2025
+        uv run mcbot backtest diagnose BTC/USDT -s adaptive-breakout -y 2024
     """
     import numpy as np
     import pandas as pd
@@ -1585,9 +1585,9 @@ def validate(
     Validates strategy using IS/OOS, Walk-Forward, or CPCV+DSR+PBO.
 
     Example:
-        uv run python -m src.cli.backtest validate -m quick
-        uv run python -m src.cli.backtest validate -m milestone --symbols BTC/USDT,ETH/USDT
-        uv run python -m src.cli.backtest validate -m final -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+        uv run mcbot backtest validate -m quick
+        uv run mcbot backtest validate -m milestone --symbols BTC/USDT,ETH/USDT
+        uv run mcbot backtest validate -m final -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
     """
     from src.backtest.validation import TieredValidator, ValidationLevel, generate_validation_report
 

@@ -72,7 +72,7 @@ class CostModel:
 
 ```bash
 # Generate QuantStats HTML report
-python -m src.cli.backtest run tsmom BTC/USDT \
+uv run mcbot backtest run tsmom BTC/USDT \
     --start 2024-01-01 \
     --end 2025-12-31 \
     --report

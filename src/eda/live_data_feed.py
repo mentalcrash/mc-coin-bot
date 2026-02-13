@@ -2,6 +2,7 @@
 
 CCXT Pro watch_ohlcv()를 사용하여 실시간 1m 캔들을 수신하고,
 CandleAggregator로 target TF candle을 집계합니다.
+심볼별 staleness detection으로 stale data 거래를 방지합니다.
 
 데이터 흐름:
     watch_ohlcv(symbol, "1m")
@@ -20,6 +21,7 @@ Rules Applied:
     - DataFeedPort: structural subtyping 만족
     - CandleAggregator 재사용: 1m → target TF 집계
     - validate_bar 재사용: OHLCV 데이터 품질 검증
+    - Staleness Detection: 심볼별 heartbeat 타임스탬프 추적
 """
 
 from __future__ import annotations
@@ -38,10 +40,14 @@ from src.eda.data_feed import validate_bar
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
     from src.exchange.binance_client import BinanceClient
+    from src.monitoring.metrics import WsStatusCallback
 
 # Reconnection 상수
 _INITIAL_RECONNECT_DELAY = 1.0
 _MAX_RECONNECT_DELAY = 60.0
+
+# Staleness detection: 마지막 수신 후 이 시간(초) 초과 시 stale 경고
+_DEFAULT_STALENESS_TIMEOUT = 120.0  # 2분 (1m 캔들 2개 미수신)
 
 
 class LiveDataFeed:
@@ -61,6 +67,8 @@ class LiveDataFeed:
         symbols: list[str],
         target_timeframe: str,
         client: BinanceClient,
+        staleness_timeout: float = _DEFAULT_STALENESS_TIMEOUT,
+        ws_status_callback: WsStatusCallback | None = None,
     ) -> None:
         self._symbols = symbols
         self._target_tf = target_timeframe
@@ -68,19 +76,36 @@ class LiveDataFeed:
         self._aggregator = CandleAggregator(target_timeframe)
         self._bars_emitted: int = 0
         self._shutdown_event = asyncio.Event()
+        # Staleness detection
+        self._staleness_timeout = staleness_timeout
+        self._last_received: dict[str, float] = {}  # symbol → monotonic timestamp
+        self._stale_symbols: set[str] = set()
+        # WS 상태 콜백 (선택적)
+        self._ws_callback = ws_status_callback
 
     async def start(self, bus: EventBus) -> None:
         """심볼별 WebSocket 스트림 시작. stop() 호출까지 실행."""
+        import time
+
+        # 초기 heartbeat 설정 + WS 연결 상태 초기화
+        now = time.monotonic()
+        for sym in self._symbols:
+            self._last_received[sym] = now
+            if self._ws_callback is not None:
+                self._ws_callback.on_ws_status(sym, connected=True)
+
         stream_tasks = [
             asyncio.create_task(self._stream_symbol(sym, bus, stagger_delay=i * 0.5))
             for i, sym in enumerate(self._symbols)
         ]
+        staleness_task = asyncio.create_task(self._staleness_monitor())
 
         # shutdown_event 대기 task — stop() 호출 시 stream tasks를 cancel
         async def _wait_shutdown() -> None:
             await self._shutdown_event.wait()
             for t in stream_tasks:
                 t.cancel()
+            staleness_task.cancel()
 
         shutdown_task = asyncio.create_task(_wait_shutdown())
 
@@ -88,6 +113,7 @@ class LiveDataFeed:
             await asyncio.gather(*stream_tasks, return_exceptions=True)
         finally:
             shutdown_task.cancel()
+            staleness_task.cancel()
             # 미완성 캔들 flush
             for completed in self._aggregator.flush_all():
                 await bus.publish(completed)
@@ -106,6 +132,53 @@ class LiveDataFeed:
     def bars_emitted(self) -> int:
         """발행된 총 BarEvent 수."""
         return self._bars_emitted
+
+    @property
+    def stale_symbols(self) -> set[str]:
+        """현재 stale 상태인 심볼."""
+        return self._stale_symbols
+
+    def set_ws_callback(self, callback: WsStatusCallback) -> None:
+        """WS 상태 콜백 설정.
+
+        Args:
+            callback: WsStatusCallback 구현체
+        """
+        self._ws_callback = callback
+
+    def _record_heartbeat(self, symbol: str) -> None:
+        """심볼 데이터 수신 시 heartbeat 기록."""
+        import time
+
+        self._last_received[symbol] = time.monotonic()
+        if symbol in self._stale_symbols:
+            self._stale_symbols.discard(symbol)
+            logger.info("{} data feed recovered from stale state", symbol)
+
+    async def _staleness_monitor(self) -> None:
+        """주기적으로 심볼별 데이터 수신 시간을 확인하여 stale 경고."""
+        import time
+
+        _check_interval = min(self._staleness_timeout / 2, 30.0)
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=_check_interval)
+                break  # shutdown event set
+            except TimeoutError:
+                pass  # timeout → staleness check 수행
+
+            now = time.monotonic()
+            for sym in self._symbols:
+                last = self._last_received.get(sym, now)
+                elapsed = now - last
+                if elapsed > self._staleness_timeout and sym not in self._stale_symbols:
+                    self._stale_symbols.add(sym)
+                    logger.critical(
+                        "STALE DATA: {} no data for {:.0f}s (threshold={:.0f}s). Trading on outdated prices!",
+                        sym,
+                        elapsed,
+                        self._staleness_timeout,
+                    )
 
     async def _stream_symbol(
         self, symbol: str, bus: EventBus, *, stagger_delay: float = 0.0
@@ -138,10 +211,13 @@ class LiveDataFeed:
                 if was_disconnected:
                     logger.info("{} WebSocket reconnected", symbol)
                     was_disconnected = False
+                    if self._ws_callback is not None:
+                        self._ws_callback.on_ws_status(symbol, connected=True)
 
                 if not ohlcvs:
                     continue
 
+                self._record_heartbeat(symbol)
                 latest = ohlcvs[-1]
                 current_ts = int(latest[0])
 
@@ -157,6 +233,8 @@ class LiveDataFeed:
                 last_candle_ts = current_ts
 
             except (ccxt_sync.NetworkError, OSError) as exc:
+                if not was_disconnected and self._ws_callback is not None:
+                    self._ws_callback.on_ws_status(symbol, connected=False)
                 was_disconnected = True
                 logger.warning(
                     "{} WebSocket disconnected ({}), reconnecting in {:.0f}s",

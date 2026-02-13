@@ -48,33 +48,33 @@ uv run pytest -k "test_tsmom"
 
 ```bash
 # Bronze layer: raw data from Binance
-python main.py ingest bronze BTC/USDT --year 2024 --year 2025
+uv run mcbot ingest bronze BTC/USDT --year 2024 --year 2025
 
 # Silver layer: gap filling
-python main.py ingest silver BTC/USDT --year 2024 --year 2025
+uv run mcbot ingest silver BTC/USDT --year 2024 --year 2025
 
 # Full pipeline: Bronze → Silver
-python main.py ingest pipeline BTC/USDT --year 2024 --year 2025
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
 
 # Validate data integrity
-python main.py ingest validate BTC/USDT --year 2025
+uv run mcbot ingest validate BTC/USDT --year 2025
 ```
 
 ## Backtest
 
 ```bash
 # List available strategies
-python -m src.cli.backtest strategies
+uv run mcbot backtest strategies
 
 # Strategy info
-python -m src.cli.backtest info tsmom
+uv run mcbot backtest info tsmom
 
 # Run backtest
-python -m src.cli.backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
+uv run mcbot backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
 
 # Parameter sweep
-python -m src.cli.backtest sweep tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
+uv run mcbot backtest sweep tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31
 
 # Generate QuantStats report
-python -m src.cli.backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31 --report
+uv run mcbot backtest run tsmom BTC/USDT --start 2024-01-01 --end 2025-12-31 --report
 ```

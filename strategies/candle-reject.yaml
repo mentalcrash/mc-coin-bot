@@ -2,7 +2,7 @@ meta:
   name: candle-reject
   display_name: Candle-Reject
   category: Mean Reversion (Candlestick rejection wick reversal)
-  timeframe: 4H (annualization_factor=2190)
+  timeframe: 4H
   short_mode: HEDGE_ONLY
   status: RETIRED
   created_at: '2026-02-10'

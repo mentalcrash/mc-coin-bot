@@ -10,6 +10,7 @@ from uuid import uuid4
 from src.core.event_bus import EventBus
 from src.core.events import (
     AnyEvent,
+    BarEvent,
     CircuitBreakerEvent,
     EventType,
     FillEvent,
@@ -319,3 +320,81 @@ class TestCircuitBreakerClose:
         # 마지막 fill은 SELL (청산)
         close_fill = fills[-1]
         assert close_fill.side == "SELL"
+
+
+class TestOMSPersistence:
+    """OMS 상태 저장/복구 테스트."""
+
+    def test_processed_orders_property(self) -> None:
+        """processed_orders 프로퍼티가 내부 set을 반환."""
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        oms = OMS(executor)
+        assert isinstance(oms.processed_orders, set)
+        assert len(oms.processed_orders) == 0
+
+    def test_restore_processed_orders(self) -> None:
+        """restore_processed_orders로 주문 ID 복원."""
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        oms = OMS(executor)
+
+        saved_ids = {"order-1", "order-2", "order-3"}
+        oms.restore_processed_orders(saved_ids)
+
+        assert oms.processed_orders == saved_ids
+
+    async def test_restored_orders_prevent_duplicates(self) -> None:
+        """복원된 주문 ID는 중복 실행 방지."""
+        cost_model = CostModel.zero()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+                correlation_id=uuid4(),
+                source="test",
+            )
+        )
+
+        oms = OMS(executor)
+
+        # 이미 처리된 주문 ID 복원
+        oms.restore_processed_orders({"dup-order-1"})
+
+        bus = EventBus(queue_size=100)
+        fills: list[FillEvent] = []
+
+        async def fill_handler(event: AnyEvent) -> None:
+            if isinstance(event, FillEvent):
+                fills.append(event)
+
+        bus.subscribe(EventType.FILL, fill_handler)
+        await oms.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # 복원된 ID로 주문 → 중복 차단
+        dup_order = OrderRequestEvent(
+            client_order_id="dup-order-1",
+            symbol="BTC/USDT",
+            side="BUY",
+            target_weight=0.5,
+            notional_usd=5000.0,
+            price=50000.0,
+            validated=True,
+            correlation_id=uuid4(),
+            source="test",
+        )
+        await bus.publish(dup_order)
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        assert len(fills) == 0  # 중복 주문 → 실행 안 됨
+        assert oms.total_rejected == 1

@@ -1,0 +1,18 @@
+id: 25
+title: 15m TF 전략 = 크립토 OHLCV 기반 구조적 사형선고
+body: rv-jump-cont/vol-compress-brk/vol-impulse-mom 3종 모두 전 에셋 Sharpe -3.6~-13.4,
+  MDD 91-100%. 연간 거래 2700-8300건 × 편도 ~0.22% 비용 = 연 6-18% 비용 drag. 15m에서 OHLCV 기반 alpha는
+  비용 대비 edge 생성 불가. tick/L2 data 없이 15m 이하 전략은 시도 자체가 무의미.
+category: market-structure
+tags:
+- 15m
+- cost-drag
+- overtrading
+- microstructure
+strategies:
+- rv-jump-cont
+- vol-compress-brk
+- vol-impulse-mom
+timeframes:
+- 15m
+added_at: '2026-02-13'

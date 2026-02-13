@@ -250,6 +250,7 @@ config.local.yml
 *.db-wal
 *.sqlite
 backtest_results/
+results/
 reports/
 
 # ----------------------------------------

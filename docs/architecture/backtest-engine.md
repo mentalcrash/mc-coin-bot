@@ -516,37 +516,37 @@ src/
 ```bash
 # === 단일에셋 백테스트 ===
 # 기본 백테스트
-uv run python -m src.cli.backtest run BTC/USDT --year 2024 --year 2025
+uv run mcbot backtest run BTC/USDT --year 2024 --year 2025
 
 # 리포트 생성
-uv run python -m src.cli.backtest run BTC/USDT -y 2024 --report
+uv run mcbot backtest run BTC/USDT -y 2024 --report
 
 # 초기 자본 변경
-uv run python -m src.cli.backtest run BTC/USDT -c 50000 --report
+uv run mcbot backtest run BTC/USDT -c 50000 --report
 
 # 파라미터 최적화
-uv run python -m src.cli.backtest optimize BTC/USDT -y 2024 -y 2025
+uv run mcbot backtest optimize BTC/USDT -y 2024 -y 2025
 
 # 정보 출력
-uv run python -m src.cli.backtest info
+uv run mcbot backtest info
 
 # === 멀티에셋 백테스트 ===
 # 8-asset EW 포트폴리오
-uv run python -m src.cli.backtest run-multi -s tsmom -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+uv run mcbot backtest run-multi -s tsmom -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
 
 # 커스텀 심볼 + 자본
-uv run python -m src.cli.backtest run-multi --symbols BTC/USDT,ETH/USDT -c 50000
+uv run mcbot backtest run-multi --symbols BTC/USDT,ETH/USDT -c 50000
 
 # 멀티에셋 + 검증
-uv run python -m src.cli.backtest run-multi --validation quick
+uv run mcbot backtest run-multi --validation quick
 
 # === 과적합 검증 ===
 # QUICK (IS/OOS)
-uv run python -m src.cli.backtest validate -m quick
+uv run mcbot backtest validate -m quick
 
 # MILESTONE (Walk-Forward)
-uv run python -m src.cli.backtest validate -m milestone
+uv run mcbot backtest validate -m milestone
 
 # FINAL (CPCV + DSR + PBO)
-uv run python -m src.cli.backtest validate -m final
+uv run mcbot backtest validate -m final
 ```

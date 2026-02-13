@@ -138,6 +138,7 @@ class RegimeDetector:
         self._buffers: dict[str, deque[float]] = {}
         self._states: dict[str, RegimeState] = {}
         self._hold_counters: dict[str, int] = {}
+        self._pending_labels: dict[str, RegimeLabel | None] = {}
 
     @property
     def config(self) -> RegimeDetectorConfig:
@@ -280,6 +281,7 @@ class RegimeDetector:
         if symbol not in self._buffers:
             self._buffers[symbol] = deque(maxlen=max_buf)
             self._hold_counters[symbol] = 0
+            self._pending_labels[symbol] = None
 
         buf = self._buffers[symbol]
         buf.append(close)
@@ -327,21 +329,32 @@ class RegimeDetector:
         probs = {"trending": p_trending, "ranging": p_ranging, "volatile": p_volatile}
         raw_label = RegimeLabel(max(probs, key=probs.get))  # type: ignore[arg-type]
 
-        # Hysteresis
+        # Hysteresis (matches vectorized apply_hysteresis: same pending label required)
         prev_state = self._states.get(symbol)
         if prev_state is not None and raw_label != prev_state.label:
-            self._hold_counters[symbol] += 1
-            if self._hold_counters[symbol] < cfg.min_hold_bars:
+            pending = self._pending_labels[symbol]
+            if raw_label == pending:
+                # Same pending label — increment counter
+                self._hold_counters[symbol] += 1
+                if self._hold_counters[symbol] >= cfg.min_hold_bars:
+                    label = raw_label
+                    bars_held = 1
+                    self._hold_counters[symbol] = 0
+                    self._pending_labels[symbol] = None
+                else:
+                    label = prev_state.label
+                    bars_held = prev_state.bars_held + 1
+            else:
+                # New pending label — reset counter to 1
+                self._pending_labels[symbol] = raw_label
+                self._hold_counters[symbol] = 1
                 label = prev_state.label
                 bars_held = prev_state.bars_held + 1
-            else:
-                label = raw_label
-                bars_held = 1
-                self._hold_counters[symbol] = 0
         else:
             label = raw_label
             bars_held = (prev_state.bars_held + 1) if prev_state is not None else 1
             self._hold_counters[symbol] = 0
+            self._pending_labels[symbol] = None
 
         state = RegimeState(
             label=label,

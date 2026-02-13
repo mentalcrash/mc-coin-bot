@@ -263,7 +263,9 @@ class LiveExecutor:
         """
         from src.models.types import Direction
 
-        assert self._pm is not None
+        if self._pm is None:
+            msg = "LiveExecutor._resolve_position_side called without PM set"
+            raise RuntimeError(msg)
         pos = self._pm.positions.get(order.symbol)
         current_dir = pos.direction if pos and pos.is_open else Direction.NEUTRAL
 
@@ -322,7 +324,9 @@ class LiveExecutor:
         Returns:
             FillEvent 또는 실패 시 None
         """
-        assert self._pm is not None
+        if self._pm is None:
+            msg = "LiveExecutor._execute_single called without PM set"
+            raise RuntimeError(msg)
 
         # 수량 계산
         if reduce_only:

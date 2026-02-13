@@ -5,35 +5,44 @@
   "graphTooltip": 1,
   "id": null,
   "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_position_size, symbol)",
+        "name": "symbol",
+        "type": "query",
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      }
+    ]
+  },
   "panels": [
+    {
+      "title": "Row 1: Portfolio & PnL",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
     {
       "title": "Portfolio Value",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "targets": [
-        {
-          "expr": "mcbot_equity_usdt",
-          "legendFormat": "Equity",
-          "refId": "A"
-        }
+        { "expr": "mcbot_equity_usdt", "legendFormat": "Equity", "refId": "A" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD"
-        },
+        "defaults": { "unit": "currencyUSD" },
         "overrides": []
       }
     },
     {
       "title": "Current Drawdown",
       "type": "gauge",
-      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 1 },
       "targets": [
-        {
-          "expr": "mcbot_drawdown_pct",
-          "legendFormat": "Drawdown",
-          "refId": "A"
-        }
+        { "expr": "mcbot_drawdown_pct", "legendFormat": "Drawdown", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -54,17 +63,40 @@
     {
       "title": "Available Cash",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "targets": [
-        {
-          "expr": "mcbot_cash_usdt",
-          "legendFormat": "Cash",
-          "refId": "A"
-        }
+        { "expr": "mcbot_cash_usdt", "legendFormat": "Cash", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Margin Used",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 5 },
+      "targets": [
+        { "expr": "mcbot_margin_used_usdt", "legendFormat": "Margin", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Aggregate Leverage",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_aggregate_leverage", "legendFormat": "Leverage", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1.5 },
+              { "color": "red", "value": 2.5 }
+            ]
+          },
+          "max": 5
         },
         "overrides": []
       }
@@ -72,41 +104,33 @@
     {
       "title": "Open Positions",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 5 },
       "targets": [
-        {
-          "expr": "mcbot_open_positions",
-          "legendFormat": "Positions",
-          "refId": "A"
-        }
+        { "expr": "mcbot_open_positions", "legendFormat": "Positions", "refId": "A" }
       ]
     },
     {
-      "title": "Fills (24h)",
+      "title": "Daily Return",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "targets": [
         {
-          "expr": "increase(mcbot_fills_total[24h])",
-          "legendFormat": "Fills",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "title": "Fills Rate",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 8 },
-      "targets": [
-        {
-          "expr": "rate(mcbot_fills_total[1h])",
-          "legendFormat": "{{symbol}} {{side}}",
+          "expr": "(mcbot_equity_usdt - mcbot_equity_usdt offset 1d) / mcbot_equity_usdt offset 1d * 100",
+          "legendFormat": "Daily %",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": -1 },
+              { "color": "green", "value": 0 }
+            ]
+          }
         },
         "overrides": []
       }
@@ -114,61 +138,221 @@
     {
       "title": "Position Sizes",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 5 },
       "targets": [
-        {
-          "expr": "mcbot_position_size",
-          "legendFormat": "{{symbol}}",
-          "refId": "A"
-        }
+        { "expr": "mcbot_position_size{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Position Notional",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "mcbot_position_notional_usdt{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Unrealized PnL",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
+      "targets": [
+        { "expr": "mcbot_unrealized_pnl_usdt{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Realized PnL (Cumulative)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
+      "targets": [
+        { "expr": "mcbot_realized_pnl_usdt_total{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Row 2: Order Execution",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false
+    },
+    {
+      "title": "Fills (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 18 },
+      "targets": [
+        { "expr": "increase(mcbot_fills_total[24h])", "legendFormat": "Fills", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Fills Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 4, "y": 18 },
+      "targets": [
+        { "expr": "rate(mcbot_fills_total{symbol=~\"$symbol\"}[1h])", "legendFormat": "{{symbol}} {{side}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Order Latency (P50 / P95 / P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 12, "y": 18 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "title": "Slippage Heatmap",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 26 },
+      "targets": [
+        { "expr": "rate(mcbot_slippage_bps_bucket{symbol=~\"$symbol\"}[5m])", "legendFormat": "{{le}}", "refId": "A", "format": "heatmap" }
+      ],
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Oranges" },
+        "yAxis": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Slippage (P50 / P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 26 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_slippage_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P50 bps", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_slippage_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P95 bps", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "title": "Fees (Cumulative)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 26 },
+      "targets": [
+        { "expr": "mcbot_fees_usdt_total{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Order Rejections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 26 },
+      "targets": [
+        { "expr": "rate(mcbot_order_rejected_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "{{symbol}} ({{reason}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Row 3: Exchange API",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "collapsed": false
+    },
+    {
+      "title": "API Calls Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
+      "targets": [
+        { "expr": "rate(mcbot_exchange_api_calls_total[5m])", "legendFormat": "{{endpoint}} ({{status}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "API Latency (P50 / P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 35 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_exchange_api_latency_seconds_bucket[5m]))", "legendFormat": "P50 {{endpoint}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_exchange_api_latency_seconds_bucket[5m]))", "legendFormat": "P95 {{endpoint}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "title": "WS Connection Status",
+      "type": "state-timeline",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 35 },
+      "targets": [
+        { "expr": "mcbot_exchange_ws_connected{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Disconnected", "color": "red" }, "1": { "text": "Connected", "color": "green" } } }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Consecutive API Failures",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 35 },
+      "targets": [
+        { "expr": "mcbot_exchange_consecutive_failures", "legendFormat": "Failures", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Row 4: Bot Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "collapsed": false
+    },
+    {
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 44 },
+      "targets": [
+        { "expr": "mcbot_uptime_seconds / 3600", "legendFormat": "Hours", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "h" }, "overrides": [] }
+    },
+    {
+      "title": "Trading Mode",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 44 },
+      "targets": [
+        { "expr": "mcbot_trading_mode", "legendFormat": "{{mcbot_trading_mode}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Bot Info",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 44 },
+      "targets": [
+        { "expr": "mcbot_info", "legendFormat": "v{{version}} / {{strategy}}", "refId": "A" }
       ]
     },
     {
       "title": "Bars Processed Rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 48 },
       "targets": [
-        {
-          "expr": "rate(mcbot_bars_total[5m])",
-          "legendFormat": "{{timeframe}}",
-          "refId": "A"
-        }
+        { "expr": "rate(mcbot_bars_total[5m])", "legendFormat": "{{timeframe}}", "refId": "A" }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "title": "Uptime",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
-      "targets": [
-        {
-          "expr": "mcbot_uptime_seconds / 3600",
-          "legendFormat": "Hours",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "h"
-        },
-        "overrides": []
-      }
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
     },
     {
       "title": "Circuit Breaker Events",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 44 },
       "targets": [
-        {
-          "expr": "mcbot_circuit_breaker_total",
-          "legendFormat": "CB Events",
-          "refId": "A"
-        }
+        { "expr": "mcbot_circuit_breaker_total", "legendFormat": "CB Events", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -182,15 +366,62 @@
         },
         "overrides": []
       }
+    },
+    {
+      "title": "EventBus Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 48 },
+      "targets": [
+        { "expr": "mcbot_eventbus_queue_depth", "legendFormat": "Queue Depth", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "red", "value": 8000 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Events Dropped Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 44 },
+      "targets": [
+        { "expr": "rate(mcbot_eventbus_events_dropped_total[5m])", "legendFormat": "Dropped/s", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Handler Errors Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 44 },
+      "targets": [
+        { "expr": "rate(mcbot_eventbus_handler_errors_total[5m])", "legendFormat": "Errors/s", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Component Errors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 48 },
+      "targets": [
+        { "expr": "rate(mcbot_errors_total[5m])", "legendFormat": "{{component}} ({{error_type}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
     }
   ],
   "schemaVersion": 39,
   "tags": ["trading", "mc-coin-bot"],
-  "templating": { "list": [] },
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "utc",
   "title": "MC Coin Bot - Trading",
   "uid": "mc-coin-bot-trading",
-  "version": 1
+  "version": 2
 }

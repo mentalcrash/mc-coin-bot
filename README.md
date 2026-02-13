@@ -82,7 +82,7 @@ portfolio:
 ### 새 전략 설정 작성법
 
 1. `config/` 디렉토리에 YAML 파일 생성
-2. `strategy.name`에 등록된 전략 이름 지정 (`uv run python -m src.cli.backtest strategies`로 확인)
+2. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
 3. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
 4. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
 
@@ -135,7 +135,7 @@ sequenceDiagram
     end
 ```
 
-Gate별 상세 기준과 전체 현황은 `uv run python main.py pipeline report`로 확인.
+Gate별 상세 기준과 전체 현황은 `uv run mcbot pipeline report`로 확인.
 
 ---
 
@@ -152,56 +152,56 @@ cp .env.example .env  # API 키 설정
 
 ```bash
 # 등록된 전략 목록
-uv run python -m src.cli.backtest strategies
+uv run mcbot backtest strategies
 
 # 전략 상세 정보
-uv run python -m src.cli.backtest info
+uv run mcbot backtest info
 ```
 
 ### VBT 백테스트
 
 ```bash
 # 단일에셋 백테스트
-uv run python -m src.cli.backtest run config/default.yaml
+uv run mcbot backtest run config/default.yaml
 
 # 멀티에셋 포트폴리오 (config의 symbols 2개 이상)
-uv run python -m src.cli.backtest run-multi config/default.yaml
+uv run mcbot backtest run-multi config/default.yaml
 
 # QuantStats HTML 리포트
-uv run python -m src.cli.backtest run config/default.yaml --report
+uv run mcbot backtest run config/default.yaml --report
 
 # Strategy Advisor 분석
-uv run python -m src.cli.backtest run config/default.yaml --advisor
+uv run mcbot backtest run config/default.yaml --advisor
 
 # Verbose 모드
-uv run python -m src.cli.backtest run config/default.yaml -V
+uv run mcbot backtest run config/default.yaml -V
 ```
 
 ### EDA 백테스트
 
 ```bash
 # EDA 백테스트 (1m 데이터 → target TF 집계, 단일/멀티 자동 판별)
-uv run python main.py eda run config/default.yaml
+uv run mcbot eda run config/default.yaml
 
 # QuantStats 리포트 포함
-uv run python main.py eda run config/default.yaml --report
+uv run mcbot eda run config/default.yaml --report
 
 # Shadow 모드 (시그널 로깅만, 체결 없음)
-uv run python main.py eda run config/default.yaml --mode shadow
+uv run mcbot eda run config/default.yaml --mode shadow
 ```
 
 ### Live Trading
 
 ```bash
 # Paper 모드 — WebSocket 실시간 데이터 + 시뮬레이션 체결
-uv run python main.py eda run-live config/paper.yaml --mode paper
+uv run mcbot eda run-live config/paper.yaml --mode paper
 
 # Shadow 모드 — 시그널 로깅만, 체결 없음
-uv run python main.py eda run-live config/paper.yaml --mode shadow
+uv run mcbot eda run-live config/paper.yaml --mode shadow
 
 # Live 모드 — Binance USDT-M Futures 실주문 (Hedge Mode)
 # ⚠️ 실자금 거래! 확인 프롬프트가 표시됩니다.
-uv run python main.py eda run-live config/paper.yaml --mode live
+uv run mcbot eda run-live config/paper.yaml --mode live
 ```
 
 Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage)로 실행됩니다.
@@ -211,42 +211,42 @@ Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage
 
 ```bash
 # QUICK: IS/OOS Split
-uv run python -m src.cli.backtest validate -m quick
+uv run mcbot backtest validate -m quick
 
 # MILESTONE: Walk-Forward (5-fold)
-uv run python -m src.cli.backtest validate -m milestone
+uv run mcbot backtest validate -m milestone
 
 # FINAL: CPCV + DSR + PBO
-uv run python -m src.cli.backtest validate -m final
+uv run mcbot backtest validate -m final
 
 # 특정 심볼/전략 지정
-uv run python -m src.cli.backtest validate -m quick -s tsmom --symbols BTC/USDT,ETH/USDT
+uv run mcbot backtest validate -m quick -s tsmom --symbols BTC/USDT,ETH/USDT
 ```
 
 ### 시그널 진단
 
 ```bash
 # TSMOM 시그널 파이프라인 분석
-uv run python -m src.cli.backtest diagnose BTC/USDT -s tsmom
+uv run mcbot backtest diagnose BTC/USDT -s tsmom
 
 # Adaptive Breakout 진단
-uv run python -m src.cli.backtest diagnose SOL/USDT -s adaptive-breakout -V
+uv run mcbot backtest diagnose SOL/USDT -s adaptive-breakout -V
 ```
 
 ### 데이터 수집
 
 ```bash
 # Bronze → Silver 파이프라인
-uv run python main.py ingest pipeline BTC/USDT --year 2024 --year 2025
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
 
 # 데이터 검증
-uv run python main.py ingest validate data/silver/BTC_USDT_1m_2025.parquet
+uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
 
 # 상위 N개 심볼 일괄 다운로드
-uv run python main.py ingest bulk-download --top 100 --year 2024 --year 2025
+uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
 
 # 데이터 상태 확인
-uv run python main.py ingest info
+uv run mcbot ingest info
 ```
 
 ### 일괄 백테스트
@@ -339,15 +339,15 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | G5 PASS |
 
 > 50개 전략 중 2개 활성 + 48개 폐기.
-> 상세 현황은 `uv run python main.py pipeline report`로 확인.
+> 상세 현황은 `uv run mcbot pipeline report`로 확인.
 
 전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
 
 ```bash
-uv run python main.py pipeline status   # 현황 요약
-uv run python main.py pipeline table    # 전체 Gate 진행도
-uv run python main.py pipeline show ctrend  # 전략 상세
-uv run python main.py pipeline report   # Dashboard 재생성
+uv run mcbot pipeline status   # 현황 요약
+uv run mcbot pipeline table    # 전체 Gate 진행도
+uv run mcbot pipeline show ctrend  # 전략 상세
+uv run mcbot pipeline report   # Dashboard 재생성
 ```
 
 ### 교훈 관리 (Lessons)
@@ -356,14 +356,44 @@ uv run python main.py pipeline report   # Dashboard 재생성
 카테고리(6종), 태그, 전략, TF별 프로그래매틱 검색이 가능합니다.
 
 ```bash
-uv run python main.py pipeline lessons-list              # 전체 교훈 목록
-uv run python main.py pipeline lessons-list -c strategy-design  # 카테고리 필터
-uv run python main.py pipeline lessons-list -t ML         # 태그 필터
-uv run python main.py pipeline lessons-list -s ctrend     # 관련 전략 필터
-uv run python main.py pipeline lessons-list --tf 1H       # TF 필터
-uv run python main.py pipeline lessons-show 1             # 교훈 상세
-uv run python main.py pipeline lessons-add \
+uv run mcbot pipeline lessons-list              # 전체 교훈 목록
+uv run mcbot pipeline lessons-list -c strategy-design  # 카테고리 필터
+uv run mcbot pipeline lessons-list -t ML         # 태그 필터
+uv run mcbot pipeline lessons-list -s ctrend     # 관련 전략 필터
+uv run mcbot pipeline lessons-list --tf 1H       # TF 필터
+uv run mcbot pipeline lessons-show 1             # 교훈 상세
+uv run mcbot pipeline lessons-add \
   --title "제목" --body "설명" -c strategy-design -t tag1 -t tag2
 ```
 
 카테고리: `strategy-design`, `risk-management`, `market-structure`, `data-resolution`, `pipeline-process`, `meta-analysis`
+
+### 아키텍처 감사 (Audit)
+
+정기적인 아키텍처/보안/코드 품질 감사 결과를 `audits/` 디렉토리에 구조화된 YAML로 관리합니다.
+스냅샷(시계열 건강 지표), 발견사항(상태 추적), 액션 아이템(생명주기 관리)의 3종 데이터를 저장합니다.
+
+```bash
+# 스냅샷 관리
+uv run mcbot audit list                        # 모든 스냅샷 목록
+uv run mcbot audit show 2026-02-13             # 특정 스냅샷 상세
+uv run mcbot audit latest                      # 최신 스냅샷
+
+# 발견사항 관리
+uv run mcbot audit findings                    # 전체 발견사항
+uv run mcbot audit findings --status open      # 미해결 발견사항
+uv run mcbot audit findings --severity critical # CRITICAL 발견사항
+uv run mcbot audit finding-show 1              # 발견사항 상세
+
+# 액션 아이템 관리
+uv run mcbot audit actions                     # 전체 액션 목록
+uv run mcbot audit actions --priority P0       # 긴급 액션
+uv run mcbot audit action-show 1               # 액션 상세
+
+# 트렌드 & 상태 변경
+uv run mcbot audit trend                       # 스냅샷간 지표 추이
+uv run mcbot audit resolve-finding 1           # 발견사항 해결 처리
+uv run mcbot audit update-action 1 --status completed  # 액션 완료 처리
+```
+
+심각도: `critical`, `high`, `medium`, `low` | 우선순위: `P0`(즉시), `P1`(1주), `P2`(2주), `P3`(백로그)

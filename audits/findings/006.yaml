@@ -1,0 +1,23 @@
+id: 6
+title: BinanceFuturesClient retry without jitter
+severity: medium
+category: risk-safety
+status: resolved
+location: src/exchange/binance_futures_client.py
+description: '_retry_with_backoff uses exponential backoff but no jitter.
+
+  Multiple instances retrying simultaneously create thundering herd.
+
+  '
+impact: 'Correlated retries can amplify rate limit issues.
+
+  '
+proposed_fix: Add random jitter (0-50%) to backoff delay.
+effort: 30m
+related_actions:
+- 4
+discovered_at: '2026-02-13'
+resolved_at: '2026-02-13'
+tags:
+- live-trading
+- reliability

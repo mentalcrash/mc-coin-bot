@@ -137,7 +137,7 @@
 
 ```bash
 # 기본 파라미터로 시제품 백테스트 실행
-uv run python -m src.cli.backtest run {전략명} BTC/USDT \
+uv run mcbot backtest run {전략명} BTC/USDT \
   --start 2023-01-01 --end 2025-12-31
 ```
 
@@ -212,7 +212,7 @@ uv run python -m src.cli.backtest run {전략명} BTC/USDT \
 
 ```bash
 # 빠른 검증 모드 (70/30 분할)
-uv run python -m src.cli.backtest validate -m quick
+uv run mcbot backtest validate -m quick
 ```
 
 **진행 절차:**
@@ -514,10 +514,10 @@ else:
 
 ```bash
 # 전진 분석 (구간별 확인)
-uv run python -m src.cli.backtest validate -m milestone
+uv run mcbot backtest validate -m milestone
 
 # 심층 검증 (CPCV + 몬테카를로 + DSR + PBO)
-uv run python -m src.cli.backtest validate -m final
+uv run mcbot backtest validate -m final
 ```
 
 ### 6.7 종합 판정
@@ -580,7 +580,7 @@ uv run python -m src.cli.backtest validate -m final
 
 ```bash
 # 5개 코인 균등 배분 백테스트
-uv run python -m src.cli.backtest run-multi {전략명} \
+uv run mcbot backtest run-multi {전략명} \
   --start 2023-01-01 --end 2025-12-31
 ```
 
@@ -797,7 +797,7 @@ Mom-MR 혼합: 같은 시간대에서 추세+평균회귀 = 신호 상쇄 → �
 
 ```bash
 # 기본 파라미터로 전체 기간 백테스트
-uv run python -m src.cli.backtest run tsmom BTC/USDT \
+uv run mcbot backtest run tsmom BTC/USDT \
   --start 2023-01-01 --end 2025-12-31
 
 # 결과 기록
@@ -808,11 +808,11 @@ uv run python -m src.cli.backtest run tsmom BTC/USDT \
 
 ```bash
 # 되돌아보기 기간 변화 (다른 파라미터는 고정)
-uv run python -m src.cli.backtest sweep tsmom BTC/USDT \
+uv run mcbot backtest sweep tsmom BTC/USDT \
   --lookback 10,15,20,25,30,35,40,45,50,55,60
 
 # 목표 변동성 변화
-uv run python -m src.cli.backtest sweep tsmom BTC/USDT \
+uv run mcbot backtest sweep tsmom BTC/USDT \
   --vol_target 0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50
 ```
 
@@ -1141,41 +1141,41 @@ if cusum_neg < -threshold:
 # → 4개 파일 구조 자동 생성 + 기본 백테스트
 
 # 2단계: 표본 내/외 검증
-uv run python -m src.cli.backtest validate -m quick
+uv run mcbot backtest validate -m quick
 
 # 3단계: 파라미터 스윕
-uv run python -m src.cli.backtest sweep {전략명} BTC/USDT \
+uv run mcbot backtest sweep {전략명} BTC/USDT \
   --param1 값1,값2,값3 --param2 값1,값2,값3
 
 # 4단계: 심층 검증
-uv run python -m src.cli.backtest validate -m milestone  # 전진 분석
-uv run python -m src.cli.backtest validate -m final      # CPCV+PBO+DSR
+uv run mcbot backtest validate -m milestone  # 전진 분석
+uv run mcbot backtest validate -m final      # CPCV+PBO+DSR
 
 # 5단계: 다중 자산
-uv run python -m src.cli.backtest run-multi {전략명}
+uv run mcbot backtest run-multi {전략명}
 
 # 6단계: 모의 거래 (이벤트 기반 실행)
-uv run python main.py eda run config/{전략명}.yaml
+uv run mcbot eda run config/{전략명}.yaml
 
 # 7단계: 실전 배포
-uv run python main.py eda run config/{전략명}.yaml --live
+uv run mcbot eda run config/{전략명}.yaml --live
 ```
 
 ### 15.3 자주 쓰는 CLI 명령어
 
 ```bash
 # 전략 목록 보기
-uv run python -m src.cli.backtest strategies
+uv run mcbot backtest strategies
 
 # 전략 상세 정보
-uv run python -m src.cli.backtest info {전략명}
+uv run mcbot backtest info {전략명}
 
 # 단일 자산 백테스트
-uv run python -m src.cli.backtest run {전략명} {종목} \
+uv run mcbot backtest run {전략명} {종목} \
   --start YYYY-MM-DD --end YYYY-MM-DD
 
 # QuantStats 보고서 생성
-uv run python -m src.cli.backtest run {전략명} {종목} --report
+uv run mcbot backtest run {전략명} {종목} --report
 
 # 코드 감사 (quant-code-audit 기능)
 # → 미래 정보 참조, 비용 모델, 손절/추적 손절 작동 점검

@@ -22,6 +22,7 @@ from src.models.types import Direction
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
+    from src.regime.service import RegimeService
     from src.strategy.base import BaseStrategy
 
 
@@ -55,6 +56,7 @@ class StrategyEngine:
         incremental: bool = False,
         max_buffer_size: int | None = None,
         precomputed_signals: dict[str, object] | None = None,
+        regime_service: RegimeService | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -66,6 +68,7 @@ class StrategyEngine:
         self._incremental = incremental
         self._max_buffer_size = max_buffer_size
         self._precomputed_signals = precomputed_signals
+        self._regime_service = regime_service
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -132,6 +135,10 @@ class StrategyEngine:
             self._buffers[symbol],
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
         )
+
+        # 3.5 Regime 보강 (RegimeService가 있으면 regime 컬럼 추가)
+        if self._regime_service is not None:
+            df = self._enrich_with_regime(df, symbol)
 
         try:
             if self._incremental:
@@ -243,6 +250,24 @@ class StrategyEngine:
             symbol,
             self._warmup,
         )
+
+    def _enrich_with_regime(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """RegimeService로 DataFrame에 regime 컬럼을 추가.
+
+        1. 사전 계산 있으면 timestamp join
+        2. 없으면 현재 state를 전체 행에 broadcast (live fallback)
+        """
+        assert self._regime_service is not None
+        df = self._regime_service.enrich_dataframe(df, symbol)
+
+        # Live fallback: 사전 계산 없으면 현재 state broadcast
+        if "regime_label" not in df.columns:
+            cols = self._regime_service.get_regime_columns(symbol)
+            if cols is not None:
+                for col_name, col_val in cols.items():
+                    df[col_name] = col_val
+
+        return df
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지.

@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
     from src.portfolio.config import PortfolioManagerConfig
+    from src.regime.service import RegimeService, RegimeServiceConfig
     from src.strategy.base import BaseStrategy
 
 from dataclasses import dataclass
@@ -115,6 +116,7 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._feed = feed
@@ -129,6 +131,7 @@ class LiveRunner:
         self._db_path = db_path
         self._discord_config = discord_config
         self._metrics_port = metrics_port
+        self._regime_config = regime_config
         self._client: BinanceClient | None = None
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
@@ -146,6 +149,7 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -162,6 +166,7 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
+            regime_config=regime_config,
         )
         runner._client = client
         runner._symbols = symbols
@@ -180,6 +185,7 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -196,6 +202,7 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
+            regime_config=regime_config,
         )
         runner._client = client
         runner._symbols = symbols
@@ -215,6 +222,7 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
+        regime_config: RegimeServiceConfig | None = None,
     ) -> LiveRunner:
         """Live 모드: LiveDataFeed(Spot) + LiveExecutor(Futures).
 
@@ -236,6 +244,7 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
+            regime_config=regime_config,
         )
         runner._client = client
         runner._futures_client = futures_client
@@ -262,8 +271,13 @@ class LiveRunner:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
 
+            # RegimeService (선택적)
+            regime_service = self._create_regime_service()
+
             strategy_engine = StrategyEngine(
-                self._strategy, target_timeframe=self._target_timeframe
+                self._strategy,
+                target_timeframe=self._target_timeframe,
+                regime_service=regime_service,
             )
             pm = EDAPortfolioManager(
                 config=self._config,
@@ -290,6 +304,9 @@ class LiveRunner:
             state_mgr = await self._restore_state(db, pm, rm)
 
             # 4. 모든 컴포넌트 등록 (순서 중요)
+            # RegimeService는 StrategyEngine 앞에 등록 (BAR 처리 시 regime 먼저 업데이트)
+            if regime_service is not None:
+                await regime_service.register(bus)
             await strategy_engine.register(bus)
             await pm.register(bus)
             await rm.register(bus)
@@ -297,7 +314,7 @@ class LiveRunner:
             await analytics.register(bus)
 
             # 4.5. REST API warmup — WebSocket 시작 전 버퍼 사전 채움
-            await self._warmup_strategy(strategy_engine)
+            await self._warmup_strategy(strategy_engine, regime_service=regime_service)
 
             # 5. TradePersistence 등록 (analytics 이후)
             if db:
@@ -322,10 +339,14 @@ class LiveRunner:
             if state_mgr:
                 save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm))
 
-            # 주기적 uptime 갱신 task
+            # 주기적 메트릭 갱신 task (uptime + EventBus + exchange health)
             uptime_task: asyncio.Task[None] | None = None
             if metrics_exporter is not None:
-                uptime_task = asyncio.create_task(self._periodic_uptime_update(metrics_exporter))
+                uptime_task = asyncio.create_task(
+                    self._periodic_metrics_update(
+                        metrics_exporter, bus, self._futures_client
+                    )
+                )
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
             reconciler_task = await self._setup_reconciler(pm, rm)
@@ -476,10 +497,25 @@ class LiveRunner:
             await tasks.bot_task
         logger.info("Discord Bot stopped")
 
-    async def _warmup_strategy(self, strategy_engine: StrategyEngine) -> None:
+    def _create_regime_service(self) -> RegimeService | None:
+        """RegimeService 생성 (regime_config가 None이면 None)."""
+        if self._regime_config is None:
+            return None
+
+        from src.regime.service import RegimeService
+
+        return RegimeService(self._regime_config)
+
+    async def _warmup_strategy(
+        self,
+        strategy_engine: StrategyEngine,
+        *,
+        regime_service: RegimeService | None = None,
+    ) -> None:
         """REST API로 과거 데이터를 가져와 StrategyEngine 버퍼에 주입.
 
         _client가 None이면 스킵. 심볼별 독립 실행으로 1개 실패해도 나머지 진행.
+        regime_service가 있으면 warmup bars로 regime detector도 초기화합니다.
         """
         if self._client is None:
             logger.warning("No client available, skipping REST API warmup")
@@ -501,6 +537,10 @@ class LiveRunner:
                 )
                 if bars:
                     strategy_engine.inject_warmup(symbol, bars, timestamps)
+                    # RegimeService warmup
+                    if regime_service is not None:
+                        closes = [bar["close"] for bar in bars]
+                        regime_service.warmup(symbol, closes)
                 else:
                     logger.warning("No warmup data fetched for {}", symbol)
             except Exception:
@@ -589,9 +629,7 @@ class LiveRunner:
         reconciler = PositionReconciler()
         await reconciler.initial_check(pm, self._futures_client, self._symbols)
         return asyncio.create_task(
-            self._periodic_reconciliation(
-                reconciler, pm, rm, self._futures_client, self._symbols
-            )
+            self._periodic_reconciliation(reconciler, pm, rm, self._futures_client, self._symbols)
         )
 
     async def _preflight_checks(self) -> float:
@@ -696,28 +734,60 @@ class LiveRunner:
     async def _setup_metrics(self, bus: EventBus) -> MetricsExporter | None:
         """Prometheus MetricsExporter 초기화 (선택적).
 
+        bot_info, trading_mode_enum을 설정합니다.
+
         Returns:
             MetricsExporter 또는 None (비활성 시)
         """
         if self._metrics_port <= 0:
             return None
 
-        from src.monitoring.metrics import MetricsExporter
+        from src.monitoring.metrics import (
+            MetricsExporter,
+            PrometheusApiCallback,
+            PrometheusWsCallback,
+            bot_info,
+            trading_mode_enum,
+        )
 
         exporter = MetricsExporter(port=self._metrics_port)
         await exporter.register(bus)
         exporter.start_server()
+
+        # Meta 메트릭 설정
+        bot_info.info(
+            {
+                "version": "0.1.0",
+                "mode": self._mode.value,
+                "exchange": "binance",
+                "strategy": self._strategy.name,
+            }
+        )
+        trading_mode_enum.state(self._mode.value)
+
+        # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
+        if self._futures_client is not None:
+            self._futures_client.set_metrics_callback(PrometheusApiCallback())
+
+        # LiveDataFeed에 WS 상태 콜백 주입
+        self._feed.set_ws_callback(PrometheusWsCallback())
+
         return exporter
 
     @staticmethod
-    async def _periodic_uptime_update(
+    async def _periodic_metrics_update(
         exporter: MetricsExporter,
+        bus: EventBus,
+        futures_client: BinanceFuturesClient | None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime gauge를 갱신."""
+        """주기적으로 uptime + EventBus + exchange health 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
+            exporter.update_eventbus_metrics(bus)
+            if futures_client is not None:
+                exporter.update_exchange_health(futures_client.consecutive_failures)
 
     @staticmethod
     async def _periodic_reconciliation(

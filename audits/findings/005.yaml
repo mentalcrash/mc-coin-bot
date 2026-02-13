@@ -1,0 +1,24 @@
+id: 5
+title: No circuit breaker persistence
+severity: high
+category: risk-safety
+status: resolved
+location: src/eda/risk_manager.py
+description: 'CircuitBreaker state is in-memory. After restart, the breaker
+
+  resets and trading resumes even if the stop condition still holds.
+
+  '
+impact: 'System stop-loss can be bypassed by restarting the process.
+
+  '
+proposed_fix: Persist CB state to file/DB. Check on startup.
+effort: 2h
+related_actions:
+- 1
+discovered_at: '2026-02-13'
+resolved_at: '2026-02-13'
+tags:
+- live-trading
+- persistence
+- circuit-breaker

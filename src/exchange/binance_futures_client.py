@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from typing import TYPE_CHECKING, Any
 
 import ccxt.pro as ccxt
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from ccxt.pro import binance
+
+    from src.monitoring.metrics import ApiMetricsCallback
 
 # 재시도 가능한 CCXT 예외 타입
 _RETRYABLE_EXCEPTIONS = (ccxt.NetworkError, ccxt.DDoSProtection, ccxt.RequestTimeout)
@@ -57,11 +60,16 @@ class BinanceFuturesClient:
     # API 연속 실패 시 주문 차단
     _MAX_CONSECUTIVE_FAILURES = 5
 
-    def __init__(self, settings: IngestionSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: IngestionSettings | None = None,
+        metrics_callback: ApiMetricsCallback | None = None,
+    ) -> None:
         self._settings = settings or get_settings()
         self._exchange: binance | None = None
         self._initialized = False
         self._consecutive_failures = 0
+        self._metrics_callback = metrics_callback
 
     async def __aenter__(self) -> BinanceFuturesClient:
         await self._initialize()
@@ -167,6 +175,25 @@ class BinanceFuturesClient:
                 self._consecutive_failures,
             )
 
+    def set_metrics_callback(self, callback: ApiMetricsCallback) -> None:
+        """API 메트릭 콜백 설정.
+
+        Args:
+            callback: ApiMetricsCallback 구현체
+        """
+        self._metrics_callback = callback
+
+    def _report_metric(self, endpoint: str, duration: float, status: str) -> None:
+        """API 메트릭 콜백 호출 (콜백이 있을 때만).
+
+        Args:
+            endpoint: API endpoint 이름
+            duration: 호출 소요 시간 (초)
+            status: "success" | "retry" | "failure"
+        """
+        if self._metrics_callback is not None:
+            self._metrics_callback.on_api_call(endpoint, duration, status)
+
     async def setup_account(self, symbols: list[str], *, leverage: int = 1) -> None:
         """계정 설정: Hedge Mode + Cross Margin + 지정 Leverage.
 
@@ -265,31 +292,37 @@ class BinanceFuturesClient:
             )
             return result
 
+        t0 = time.monotonic()
         try:
             result = await self._retry_with_backoff(_do_create)
         except ccxt.InsufficientFunds as e:
             self._record_failure()
+            self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise InsufficientFundsError(
                 "Insufficient funds for order",
                 context={"symbol": symbol, "side": side, "amount": amount, "error": str(e)},
             ) from e
         except ccxt.InvalidOrder as e:
             # InvalidOrder는 로직 에러 → CB 카운트 제외
+            self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise OrderExecutionError(
                 "Invalid order parameters",
                 context={"symbol": symbol, "side": side, "amount": amount, "error": str(e)},
             ) from e
         except ccxt.ExchangeError as e:
             self._record_failure()
+            self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise OrderExecutionError(
                 "Order execution failed",
                 context={"symbol": symbol, "side": side, "error": str(e)},
             ) from e
         except (NetworkError, RateLimitError):
             self._record_failure()
+            self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise
         else:
             self._record_success()
+            self._report_metric("create_order", time.monotonic() - t0, "success")
             return result
 
     async def fetch_positions(self, symbols: list[str] | None = None) -> list[dict[str, Any]]:
@@ -306,7 +339,13 @@ class BinanceFuturesClient:
             result: list[dict[str, Any]] = await self.exchange.fetch_positions(symbols)  # type: ignore[assignment]
             return result
 
-        positions = await self._retry_with_backoff(_do_fetch)
+        t0 = time.monotonic()
+        try:
+            positions = await self._retry_with_backoff(_do_fetch)
+        except Exception:
+            self._report_metric("fetch_positions", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("fetch_positions", time.monotonic() - t0, "success")
         return [p for p in positions if abs(float(p.get("contracts", 0))) > 0]
 
     async def fetch_balance(self) -> dict[str, Any]:
@@ -320,7 +359,14 @@ class BinanceFuturesClient:
             balance: dict[str, Any] = await self.exchange.fetch_balance()  # type: ignore[assignment]
             return balance
 
-        return await self._retry_with_backoff(_do_fetch)
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_fetch)
+        except Exception:
+            self._report_metric("fetch_balance", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("fetch_balance", time.monotonic() - t0, "success")
+        return result
 
     async def cancel_order(self, order_id: str, symbol: str) -> dict[str, Any]:
         """주문 취소.
@@ -337,7 +383,14 @@ class BinanceFuturesClient:
             result: dict[str, Any] = await self.exchange.cancel_order(order_id, symbol)  # type: ignore[assignment]
             return result
 
-        return await self._retry_with_backoff(_do_cancel)
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_cancel)
+        except Exception:
+            self._report_metric("cancel_order", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("cancel_order", time.monotonic() - t0, "success")
+        return result
 
     async def fetch_ticker(self, symbol: str) -> dict[str, Any]:
         """실시간 가격 조회.
@@ -353,7 +406,14 @@ class BinanceFuturesClient:
             result: dict[str, Any] = await self.exchange.fetch_ticker(symbol)  # type: ignore[assignment]
             return result
 
-        return await self._retry_with_backoff(_do_fetch)
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_fetch)
+        except Exception:
+            self._report_metric("fetch_ticker", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("fetch_ticker", time.monotonic() - t0, "success")
+        return result
 
     async def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """미체결 주문 조회.
@@ -369,7 +429,14 @@ class BinanceFuturesClient:
             result: list[dict[str, Any]] = await self.exchange.fetch_open_orders(symbol)  # type: ignore[assignment]
             return result
 
-        return await self._retry_with_backoff(_do_fetch)
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_fetch)
+        except Exception:
+            self._report_metric("fetch_open_orders", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("fetch_open_orders", time.monotonic() - t0, "success")
+        return result
 
     async def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
         """주문 상태 조회.
@@ -386,7 +453,14 @@ class BinanceFuturesClient:
             result: dict[str, Any] = await self.exchange.fetch_order(order_id, symbol)  # type: ignore[assignment]
             return result
 
-        return await self._retry_with_backoff(_do_fetch)
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_fetch)
+        except Exception:
+            self._report_metric("fetch_order", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("fetch_order", time.monotonic() - t0, "success")
+        return result
 
     def get_min_notional(self, symbol: str) -> float:
         """심볼의 MIN_NOTIONAL 값 조회.
@@ -491,7 +565,9 @@ class BinanceFuturesClient:
                 else:
                     break
 
-        assert last_exc is not None
+        if last_exc is None:
+            msg = "_retry_with_backoff: unexpected state — no exception recorded"
+            raise RuntimeError(msg)
         if is_rate_limit:
             raise RateLimitError(
                 "Rate limit exceeded after retries",

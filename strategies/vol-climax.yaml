@@ -2,7 +2,7 @@ meta:
   name: vol-climax
   display_name: Vol-Climax
   category: Mean Reversion (Volume spike capitulation/euphoria reversal)
-  timeframe: 4H (annualization_factor=2190)
+  timeframe: 4H
   short_mode: HEDGE_ONLY
   status: RETIRED
   created_at: '2026-02-10'

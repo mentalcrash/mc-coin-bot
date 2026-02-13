@@ -1,0 +1,16 @@
+id: 30
+title: 볼륨 SMA 크로스 필터의 윈도우 민감도
+body: vol_short_window plateau 40% (10개 중 4개만 80% 이상). 10~20 범위만 유효하고 25+ 급감. 단기/장기
+  볼륨 SMA 비율 필터는 윈도우 설정에 민감하여 과적합 위험. vol_long_window(40) 대비 vol_short_window가 가까워지면
+  필터 무력화. vol-confirm-mom G3 FAIL.
+category: strategy-design
+tags:
+- volume
+- SMA-cross
+- parameter-sensitivity
+- 4H
+strategies:
+- vol-confirm-mom
+timeframes:
+- 4H
+added_at: '2026-02-13'

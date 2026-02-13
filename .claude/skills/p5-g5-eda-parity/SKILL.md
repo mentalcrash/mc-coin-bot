@@ -98,7 +98,7 @@ cat strategies/{strategy_name}.yaml
 # gates 섹션에서 G4: status: PASS 확인
 ```
 
-YAML이 없으면 `uv run python main.py pipeline create`로 생성.
+YAML이 없으면 `uv run mcbot pipeline create`로 생성.
 G4 PASS가 없으면 중단: "G4 미통과 전략입니다. `/p4-g1g4-gate`를 먼저 실행하세요."
 
 ### 0-3. Best Asset + TF 추출
@@ -124,7 +124,7 @@ ls data/silver/{symbol_underscore}_1m.parquet
 ```bash
 # Bronze → Silver 1분봉 파이프라인 실행 안내
 echo "1m data not found. Run:"
-echo "  python main.py ingest pipeline {symbol} --timeframe 1m --year {years}"
+echo "  uv run mcbot ingest pipeline {symbol} --timeframe 1m --year {years}"
 ```
 
 ### 0-5. YAML Config 존재/생성
@@ -197,7 +197,7 @@ grep -rn "ewm(" src/strategy/{name_underscore}/
 ### 실행
 
 ```bash
-uv run python -m src.cli.backtest run {strategy_name} {best_asset} \
+uv run mcbot backtest run {strategy_name} {best_asset} \
   --start {start_date} --end {end_date} --capital 100000
 ```
 
@@ -224,10 +224,10 @@ uv run python -m src.cli.backtest run {strategy_name} {best_asset} \
 
 ```bash
 # fast mode (forward_return/EWM 전략)
-uv run python main.py eda run config/{strategy_name}_g5_{period}.yaml --fast
+uv run mcbot eda run config/{strategy_name}_g5_{period}.yaml --fast
 
 # standard mode (순수 rolling indicator 전략)
-uv run python main.py eda run config/{strategy_name}_g5_{period}.yaml
+uv run mcbot eda run config/{strategy_name}_g5_{period}.yaml
 ```
 
 ### 수집 지표
@@ -252,7 +252,7 @@ EDA 실행이 에러로 실패하면 → **즉시 FAIL**. 에러 로그를 분�
 
 | 원인 | 해결 |
 |------|------|
-| 1m 데이터 부재 | `python main.py ingest pipeline` 실행 |
+| 1m 데이터 부재 | `uv run mcbot ingest pipeline` 실행 |
 | precomputed_signals 오류 | fast_mode 비활성화 또는 전략 코드 수정 |
 | PM/RM config 불일치 | YAML config 검토 |
 | 메모리 부족 | 기간 축소 (2y → 1y) |
@@ -463,7 +463,7 @@ grep -n "circuit\|close_all\|close.*price" src/eda/oms.py src/eda/portfolio_mana
 ### 7-0. YAML 갱신 (필수 — Single Source of Truth)
 
 ```bash
-uv run python main.py pipeline record {strategy_name} \
+uv run mcbot pipeline record {strategy_name} \
   --gate G5 --verdict PASS \
   --detail "eda_sharpe={X.XX}" --detail "vbt_sharpe={X.XX}" \
   --rationale "EDA Parity PASS. 수익 부호 일치, Sharpe 편차 XX%"
@@ -502,11 +502,11 @@ G5 FAIL 시, 새로운 교훈 패턴이 발견되었는지 판단하고 기록�
 
 ```bash
 # 1. FAIL 유형에 해당하는 기존 교훈 확인
-uv run python main.py pipeline lessons-list --tag EDA
-uv run python main.py pipeline lessons-list --category data-resolution
+uv run mcbot pipeline lessons-list --tag EDA
+uv run mcbot pipeline lessons-list --category data-resolution
 
 # 2. 새로운 패턴이면 교훈 추가
-uv run python main.py pipeline lessons-add \
+uv run mcbot pipeline lessons-add \
   --title "{괴리 원인 요약}" \
   --body "{상세 설명: VBT vs EDA 괴리의 구조적 원인과 라이브 영향}" \
   --category {category} \
@@ -527,7 +527,7 @@ uv run python main.py pipeline lessons-add \
 ### 7-5. Dashboard 자동 생성
 
 ```bash
-uv run python main.py pipeline report
+uv run mcbot pipeline report
 ```
 
 > YAML 데이터를 `pipeline report`로 콘솔 확인. `--output FILE`로 파일 저장 가능.

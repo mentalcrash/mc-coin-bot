@@ -46,6 +46,7 @@ dependencies = [
 
 [project.scripts]
 mc-bot = "src.live.main:app"
+mcbot = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -166,6 +167,10 @@ unfixable = []
 "src/pipeline/lesson_models.py" = ["TC003"]
 # Gate models: StrEnum은 Pydantic field annotation 런타임 필요
 "src/pipeline/gate_models.py" = ["TC003"]
+# Audit models: date/StrEnum은 Pydantic field annotation 런타임 필요
+"src/pipeline/audit_models.py" = ["TC003"]
+# Audit CLI: Path는 typer 런타임 annotation 필요
+"src/cli/audit.py" = ["TC003"]
 # Pipeline report: StrategyStore 런타임 필요
 "src/pipeline/report.py" = ["TC001"]
 # 스크립트는 로거 설정 후 import, 매직넘버, print 허용

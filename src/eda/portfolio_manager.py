@@ -40,6 +40,9 @@ _POSITION_ZERO_THRESHOLD = 1e-10
 # ATR 계산 기간 (14-period SMA of True Range)
 _ATR_PERIOD = 14
 
+# Cash safety margin: 총 자본 대비 최소 유지 비율 (음수 방지)
+_MIN_CASH_RATIO = 0.001  # 0.1% of initial capital
+
 
 @dataclass
 class Position:
@@ -233,6 +236,47 @@ class EDAPortfolioManager:
         self._last_executed_targets = {k: float(v) for k, v in let.items()}
 
     # =========================================================================
+    # Cash Sufficiency Check
+    # =========================================================================
+    def _has_sufficient_cash(self, notional: float, side: str) -> bool:
+        """주문 실행에 충분한 현금이 있는지 확인.
+
+        레버리지 거래에서 cash는 정상적으로 음수가 될 수 있음
+        (BUY notional > initial cash). max_leverage_cap을 고려하여
+        cash가 레버리지 한도 이상으로 음수가 되는 것만 방지.
+
+        Args:
+            notional: 주문 명목가치 (USD)
+            side: "BUY" 또는 "SELL"
+
+        Returns:
+            True면 주문 가능
+        """
+        # 청산(SELL) 방향 주문은 현금 반환 → 항상 허용
+        if side == "SELL":
+            return True
+
+        # 레버리지 허용 범위 내 현금 하한 계산
+        # max_leverage_cap=2 일 때 initial=10000이면 notional 최대 20000
+        # → cash 최소 10000 - 20000 = -10000 까지 허용
+        leverage_cap = self._config.max_leverage_cap
+        max_allowed_negative = self._initial_capital * (leverage_cap - 1.0)
+        buffer = self._initial_capital * _MIN_CASH_RATIO
+        cash_floor = -(max_allowed_negative + buffer)
+
+        projected_cash = self._cash - notional
+        if projected_cash < cash_floor:
+            logger.warning(
+                "Cash sufficiency check failed: cash={:.2f}, notional={:.2f}, projected={:.2f}, floor={:.2f}",
+                self._cash,
+                notional,
+                projected_cash,
+                cash_floor,
+            )
+            return False
+        return True
+
+    # =========================================================================
     # Event Handlers
     # =========================================================================
     async def _on_signal(self, event: AnyEvent) -> None:
@@ -315,6 +359,10 @@ class EDAPortfolioManager:
             notional = abs(delta_weight) * equity
             side: str = "BUY" if delta_weight > 0 else "SELL"
 
+            # Cash sufficiency pre-trade guard (음수 방지)
+            if not self._has_sufficient_cash(notional, side):
+                continue
+
             order = OrderRequestEvent(
                 client_order_id=f"batch-{symbol}-{self._order_counter}",
                 symbol=symbol,
@@ -355,12 +403,8 @@ class EDAPortfolioManager:
         bus = self._bus
         assert bus is not None
 
-        # stop-loss 후 같은 bar에서 재진입 방지
-        if symbol in self._stopped_this_bar:
-            return
-
-        # SL/TS close 대기 중 → 재진입 방지
-        if symbol in self._pending_close:
+        # stop-loss 후 같은 bar에서 재진입 방지 / SL/TS close 대기 중 → 재진입 방지
+        if symbol in self._stopped_this_bar or symbol in self._pending_close:
             return
 
         target_weight = self._last_target_weights.get(symbol)
@@ -394,6 +438,10 @@ class EDAPortfolioManager:
             return
 
         side: str = "BUY" if delta_weight > 0 else "SELL"
+
+        # Cash sufficiency pre-trade guard (음수 방지)
+        if not self._has_sufficient_cash(notional, side):
+            return
 
         order = OrderRequestEvent(
             client_order_id=client_order_id,

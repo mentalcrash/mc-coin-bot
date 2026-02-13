@@ -1,0 +1,16 @@
+id: 27
+title: Anchor-Mom TF 축소(12H->3H)는 앵커링 효과를 희석한다
+body: 'atf-3h: anchor-mom(12H G5 PASS)의 3H 적응 시도. SOL Sharpe 0.86으로 Best이나 G1 미달.
+  BTC/ETH/BNB MDD 60-64%. 12H에서 유효한 rolling high nearness 앵커링 효과가 3H에서는 noise에 의해
+  희석. 심리적 앵커는 더 긴 TF에서만 안정적 — TF 축소는 edge 손실.'
+category: strategy-design
+tags:
+- anchoring
+- TF-scaling
+- 3H
+- edge-dilution
+strategies:
+- atf-3h
+timeframes:
+- 3H
+added_at: '2026-02-13'
