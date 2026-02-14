@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import drawdown
 from src.strategy.tsmom import ShortMode, TSMOMConfig, TSMOMStrategy
-from src.strategy.tsmom.preprocessor import calculate_drawdown, preprocess
+from src.strategy.tsmom.preprocessor import preprocess
 from src.strategy.tsmom.signal import generate_signals
 from src.strategy.types import Direction
 
@@ -71,29 +72,29 @@ class TestCalculateDrawdown:
     def test_no_drawdown(self) -> None:
         """상승장에서 드로다운 없음."""
         close = pd.Series([100, 110, 120, 130, 140])
-        drawdown = calculate_drawdown(close)
+        dd_result = drawdown(close)
 
-        assert drawdown.iloc[0] == 0.0  # 첫 날은 0
-        assert all(drawdown == 0.0)  # 계속 상승하면 드로다운 없음
+        assert dd_result.iloc[0] == 0.0  # 첫 날은 0
+        assert all(dd_result == 0.0)  # 계속 상승하면 드로다운 없음
 
     def test_simple_drawdown(self) -> None:
         """단순 드로다운 계산 테스트."""
         close = pd.Series([100, 110, 100, 90, 95])
-        drawdown = calculate_drawdown(close)
+        dd_result = drawdown(close)
 
         # 110이 최고점, 이후 드로다운
-        assert drawdown.iloc[0] == 0.0
-        assert drawdown.iloc[1] == 0.0  # 최고점
-        assert drawdown.iloc[2] == pytest.approx(-10 / 110)  # 100 vs 110
-        assert drawdown.iloc[3] == pytest.approx(-20 / 110)  # 90 vs 110
-        assert drawdown.iloc[4] == pytest.approx(-15 / 110)  # 95 vs 110
+        assert dd_result.iloc[0] == 0.0
+        assert dd_result.iloc[1] == 0.0  # 최고점
+        assert dd_result.iloc[2] == pytest.approx(-10 / 110)  # 100 vs 110
+        assert dd_result.iloc[3] == pytest.approx(-20 / 110)  # 90 vs 110
+        assert dd_result.iloc[4] == pytest.approx(-15 / 110)  # 95 vs 110
 
     def test_deep_drawdown(self) -> None:
         """깊은 드로다운 테스트 (-20%)."""
         close = pd.Series([100, 120, 96])  # 120 → 96 = -20%
-        drawdown = calculate_drawdown(close)
+        dd_result = drawdown(close)
 
-        assert drawdown.iloc[2] == pytest.approx(-0.20)
+        assert dd_result.iloc[2] == pytest.approx(-0.20)
 
 
 class TestGenerateSignalsShortMode:

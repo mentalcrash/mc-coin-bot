@@ -13,95 +13,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
+
+from src.market.indicators import (
+    log_returns,
+    macd,
+    realized_volatility,
+)
 
 if TYPE_CHECKING:
     from src.strategy.mtf_macd.config import MtfMacdConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_macd(
-    close: pd.Series,
-    fast_period: int,
-    slow_period: int,
-    signal_period: int,
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """MACD (Moving Average Convergence Divergence) 계산.
-
-    MACD Line = Fast EMA - Slow EMA
-    Signal Line = EMA(MACD Line, signal_period)
-    Histogram = MACD Line - Signal Line
-
-    Args:
-        close: 종가 Series
-        fast_period: Fast EMA 기간
-        slow_period: Slow EMA 기간
-        signal_period: Signal Line EMA 기간
-
-    Returns:
-        (macd_line, signal_line, histogram) 튜플
-    """
-    fast_ema: pd.Series = close.ewm(span=fast_period, adjust=False).mean()  # type: ignore[assignment]
-    slow_ema: pd.Series = close.ewm(span=slow_period, adjust=False).mean()  # type: ignore[assignment]
-
-    macd_line = fast_ema - slow_ema
-
-    signal_line: pd.Series = macd_line.ewm(span=signal_period, adjust=False).mean()  # type: ignore[assignment]
-
-    histogram = macd_line - signal_line
-
-    return macd_line, signal_line, histogram
-
-
-def calculate_realized_volatility(
-    close: pd.Series,
-    window: int,
-    annualization_factor: float,
-) -> pd.Series:
-    """실현 변동성 계산 (연환산).
-
-    Args:
-        close: 종가 Series
-        window: Rolling 윈도우
-        annualization_factor: 연환산 계수
-
-    Returns:
-        연환산 변동성 Series
-    """
-    log_returns = np.log(close / close.shift(1))
-
-    volatility: pd.Series = log_returns.rolling(window=window, min_periods=window).std() * np.sqrt(
-        annualization_factor
-    )  # type: ignore[assignment]
-
-    return volatility
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float,
-) -> pd.Series:
-    """변동성 스케일러 계산.
-
-    strength = vol_target / realized_vol
-
-    Args:
-        realized_vol: 실현 변동성
-        vol_target: 목표 변동성
-        min_volatility: 최소 변동성 클램프
-
-    Returns:
-        변동성 스케일러 Series
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-
-    # Shift(1): 전봉 변동성 사용 (미래 참조 방지)
-    prev_vol = clamped_vol.shift(1)
-
-    return vol_target / prev_vol
 
 
 def preprocess(df: pd.DataFrame, config: MtfMacdConfig) -> pd.DataFrame:
@@ -146,30 +69,29 @@ def preprocess(df: pd.DataFrame, config: MtfMacdConfig) -> pd.DataFrame:
     close: pd.Series = result["close"]  # type: ignore[assignment]
 
     # 1. MACD 계산
-    macd_line, signal_line, histogram = calculate_macd(
+    macd_line, signal_line, histogram = macd(
         close,
-        fast_period=config.fast_period,
-        slow_period=config.slow_period,
-        signal_period=config.signal_period,
+        fast=config.fast_period,
+        slow=config.slow_period,
+        signal=config.signal_period,
     )
     result["macd_line"] = macd_line
     result["signal_line"] = signal_line
     result["macd_histogram"] = histogram
 
-    # 2. 실현 변동성 계산
-    realized_vol = calculate_realized_volatility(
-        close,
+    # 2. 실현 변동성 계산 (log returns → realized_volatility)
+    returns_series = log_returns(close)
+    rv = realized_volatility(
+        returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
     )
-    result["realized_vol"] = realized_vol
+    result["realized_vol"] = rv
 
-    # 3. 변동성 스케일러
-    result["vol_scalar"] = calculate_volatility_scalar(
-        realized_vol,
-        config.vol_target,
-        config.min_volatility,
-    )
+    # 3. 변동성 스케일러 (shift(1): 전봉 변동성 사용, 미래 참조 방지)
+    clamped_vol = rv.clip(lower=config.min_volatility)
+    prev_vol = clamped_vol.shift(1)
+    result["vol_scalar"] = config.vol_target / prev_vol
 
     # 디버그 로깅
     valid_data = result.dropna()

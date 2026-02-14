@@ -13,92 +13,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
+
+from src.market.indicators import (
+    donchian_channel,
+    log_returns,
+    realized_volatility,
+)
 
 if TYPE_CHECKING:
     from src.strategy.donchian_ensemble.config import DonchianEnsembleConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_donchian_channel(
-    high: pd.Series,
-    low: pd.Series,
-    period: int,
-) -> tuple[pd.Series, pd.Series]:
-    """Donchian Channel 계산.
-
-    Args:
-        high: 고가 Series
-        low: 저가 Series
-        period: lookback 기간
-
-    Returns:
-        (upper, lower) 튜플
-        - upper: period 기간 최고가
-        - lower: period 기간 최저가
-    """
-    upper: pd.Series = high.rolling(  # type: ignore[assignment]
-        window=period,
-        min_periods=period,
-    ).max()
-    lower: pd.Series = low.rolling(  # type: ignore[assignment]
-        window=period,
-        min_periods=period,
-    ).min()
-
-    return upper, lower
-
-
-def calculate_realized_volatility(
-    close: pd.Series,
-    window: int,
-    annualization_factor: float,
-) -> pd.Series:
-    """실현 변동성 계산 (연환산).
-
-    Args:
-        close: 종가 Series
-        window: Rolling 윈도우
-        annualization_factor: 연환산 계수
-
-    Returns:
-        연환산 변동성 Series
-    """
-    log_returns = np.log(close / close.shift(1))
-
-    volatility: pd.Series = log_returns.rolling(  # type: ignore[assignment]
-        window=window,
-        min_periods=window,
-    ).std() * np.sqrt(annualization_factor)
-
-    return volatility
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float,
-) -> pd.Series:
-    """변동성 스케일러 계산 (shift(1) 적용).
-
-    strength = vol_target / realized_vol (전봉 기준)
-
-    Args:
-        realized_vol: 실현 변동성
-        vol_target: 목표 변동성
-        min_volatility: 최소 변동성 클램프
-
-    Returns:
-        변동성 스케일러 Series (shift(1) 적용됨)
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-
-    # Shift(1): 전봉 변동성 사용 (미래 참조 방지)
-    prev_vol = clamped_vol.shift(1)
-
-    return vol_target / prev_vol
 
 
 def preprocess(
@@ -146,24 +72,23 @@ def preprocess(
 
     # 1. 각 lookback에 대한 Donchian Channel 계산
     for lb in config.lookbacks:
-        upper, lower = calculate_donchian_channel(high_series, low_series, lb)
+        upper, _middle, lower = donchian_channel(high_series, low_series, lb)
         result[f"dc_upper_{lb}"] = upper
         result[f"dc_lower_{lb}"] = lower
 
-    # 2. 실현 변동성 계산
-    realized_vol = calculate_realized_volatility(
-        close_series,
+    # 2. 실현 변동성 계산 (log returns → realized_volatility)
+    returns_series = log_returns(close_series)
+    rv = realized_volatility(
+        returns_series,
         window=config.atr_period,
         annualization_factor=config.annualization_factor,
     )
-    result["realized_vol"] = realized_vol
+    result["realized_vol"] = rv
 
-    # 3. 변동성 스케일러
-    result["vol_scalar"] = calculate_volatility_scalar(
-        realized_vol,
-        config.vol_target,
-        config.min_volatility,
-    )
+    # 3. 변동성 스케일러 (shift(1): 전봉 변동성 사용, 미래 참조 방지)
+    clamped_vol = rv.clip(lower=config.min_volatility)
+    prev_vol = clamped_vol.shift(1)
+    result["vol_scalar"] = config.vol_target / prev_vol
 
     # 디버그 로깅
     valid_data = result.dropna()

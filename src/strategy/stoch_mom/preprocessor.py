@@ -22,11 +22,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
 
 if TYPE_CHECKING:
@@ -180,7 +180,7 @@ def preprocess(
     result["sma"] = calculate_sma(close_series, config.sma_period)
 
     # 3. ATR
-    result["atr"] = calculate_atr(
+    result["atr"] = atr(
         high_series,
         low_series,
         close_series,
@@ -188,13 +188,13 @@ def preprocess(
     )
 
     # 4. Log returns
-    result["returns"] = calculate_returns(close_series, use_log=True)
+    result["returns"] = log_returns(close_series)
 
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 5. Realized volatility (annualized)
     vol_window = max(config.k_period, config.sma_period)
-    result["realized_vol"] = calculate_realized_volatility(
+    result["realized_vol"] = realized_volatility(
         returns_series,
         window=vol_window,
         annualization_factor=config.annualization_factor,
@@ -203,7 +203,7 @@ def preprocess(
     realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
 
     # 6. Volatility scalar (vol_target / realized_vol)
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol_series,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,

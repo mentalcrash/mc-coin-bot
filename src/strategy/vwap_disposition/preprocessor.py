@@ -12,12 +12,13 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.strategy.vol_regime.preprocessor import (
-    calculate_atr,
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    simple_returns,
+    volatility_scalar,
 )
 from src.strategy.vwap_disposition.config import VWAPDispositionConfig
 
@@ -140,9 +141,8 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. 수익률 계산
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
+    result["returns"] = (
+        log_returns(close_series) if config.use_log_returns else simple_returns(close_series)
     )
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
@@ -171,7 +171,7 @@ def preprocess(
     result["mom_direction"] = np.sign(mom_sum)
 
     # 6. 실현 변동성
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns_series,
         window=config.mom_lookback,
         annualization_factor=config.annualization_factor,
@@ -179,14 +179,14 @@ def preprocess(
     result["realized_vol"] = realized_vol
 
     # 7. 변동성 스케일러
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 8. ATR 계산
-    result["atr"] = calculate_atr(
+    result["atr"] = atr(
         high_series,
         low_series,
         close_series,
@@ -194,7 +194,7 @@ def preprocess(
     )
 
     # 9. 드로다운 계산
-    result["drawdown"] = calculate_drawdown(close_series)
+    result["drawdown"] = drawdown(close_series)
 
     # 디버그: 지표 통계
     valid_data = result.dropna()

@@ -4,11 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import donchian_channel
 from src.strategy.donchian_ensemble.config import DonchianEnsembleConfig
-from src.strategy.donchian_ensemble.preprocessor import (
-    calculate_donchian_channel,
-    preprocess,
-)
+from src.strategy.donchian_ensemble.preprocessor import preprocess
 
 
 class TestPreprocessColumns:
@@ -80,7 +78,7 @@ class TestDonchianChannel:
         high = pd.Series([10, 12, 11, 13, 9, 15, 14, 16, 12, 11], index=dates, dtype=float)
         low = pd.Series([8, 9, 8, 10, 7, 12, 11, 13, 10, 9], index=dates, dtype=float)
 
-        upper, _lower = calculate_donchian_channel(high, low, period=3)
+        upper, _middle, _lower = donchian_channel(high, low, period=3)
 
         # index 2 (3rd element): max of [10, 12, 11] = 12
         assert upper.iloc[2] == 12.0
@@ -93,7 +91,7 @@ class TestDonchianChannel:
         high = pd.Series([10, 12, 11, 13, 9, 15, 14, 16, 12, 11], index=dates, dtype=float)
         low = pd.Series([8, 9, 8, 10, 7, 12, 11, 13, 10, 9], index=dates, dtype=float)
 
-        _upper, lower = calculate_donchian_channel(high, low, period=3)
+        _upper, _middle, lower = donchian_channel(high, low, period=3)
 
         # index 2: min of [8, 9, 8] = 8
         assert lower.iloc[2] == 8.0
@@ -106,7 +104,7 @@ class TestDonchianChannel:
         high = pd.Series(range(10, 20), index=dates, dtype=float)
         low = pd.Series(range(5, 15), index=dates, dtype=float)
 
-        upper, lower = calculate_donchian_channel(high, low, period=5)
+        upper, _middle, lower = donchian_channel(high, low, period=5)
 
         # index 0~3 (first 4) should be NaN
         assert upper.iloc[:4].isna().all()
@@ -120,7 +118,7 @@ class TestDonchianChannel:
         high: pd.Series = sample_ohlcv["high"]  # type: ignore[assignment]
         low: pd.Series = sample_ohlcv["low"]  # type: ignore[assignment]
 
-        upper, lower = calculate_donchian_channel(high, low, period=20)
+        upper, _middle, lower = donchian_channel(high, low, period=20)
         valid_mask = upper.notna() & lower.notna()
         assert (upper[valid_mask] >= lower[valid_mask]).all()
 

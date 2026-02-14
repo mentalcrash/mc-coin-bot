@@ -6,11 +6,11 @@ OHLCV 데이터에서 다중 ROC + volume gate feature를 계산.
 
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    drawdown,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
 from src.strategy.vmsm.config import VmsmConfig
 
@@ -41,11 +41,11 @@ def preprocess(df: pd.DataFrame, config: VmsmConfig) -> pd.DataFrame:
     volume: pd.Series = df["volume"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -53,7 +53,7 @@ def preprocess(df: pd.DataFrame, config: VmsmConfig) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
@@ -72,6 +72,6 @@ def preprocess(df: pd.DataFrame, config: VmsmConfig) -> pd.DataFrame:
     df["vol_ratio"] = volume / vol_avg_safe
 
     # --- Drawdown (HEDGE_ONLY용) ---
-    df["drawdown"] = calculate_drawdown(close)
+    df["drawdown"] = drawdown(close)
 
     return df

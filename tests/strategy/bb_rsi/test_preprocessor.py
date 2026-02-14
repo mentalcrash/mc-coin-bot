@@ -4,12 +4,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import (
+    atr as calculate_atr,
+    bollinger_bands as calculate_bollinger_bands,
+    rsi as calculate_rsi,
+)
 from src.strategy.bb_rsi.config import BBRSIConfig
 from src.strategy.bb_rsi.preprocessor import (
-    calculate_atr,
     calculate_bb_position,
-    calculate_bollinger_bands,
-    calculate_rsi,
     preprocess,
 )
 

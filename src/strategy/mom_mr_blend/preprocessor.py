@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from src.market.indicators import (
+    log_returns,
+    realized_volatility,
+)
+
 if TYPE_CHECKING:
     from src.strategy.mom_mr_blend.config import MomMrBlendConfig
 
@@ -99,52 +104,6 @@ def calculate_mr_zscore(
     return pd.Series(z, index=deviation.index, name="mr_zscore")
 
 
-def calculate_realized_volatility(
-    close: pd.Series,
-    window: int,
-    annualization_factor: float = 365.0,
-) -> pd.Series:
-    """실현 변동성 계산 (로그 수익률 기반, 연환산).
-
-    Args:
-        close: 종가 시리즈
-        window: Rolling 윈도우 크기
-        annualization_factor: 연환산 계수
-
-    Returns:
-        연환산 변동성 시리즈
-    """
-    log_returns = np.log(close / close.shift(1))
-    rolling_std = log_returns.rolling(window=window, min_periods=window).std()
-    return pd.Series(
-        rolling_std * np.sqrt(annualization_factor),
-        index=close.index,
-        name="realized_vol",
-    )
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float = 0.05,
-) -> pd.Series:
-    """변동성 스케일러 계산 (vol_target / realized_vol).
-
-    shift(1) 적용: 미래 변동성 참조 방지.
-
-    Args:
-        realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성
-        min_volatility: 최소 변동성 클램프
-
-    Returns:
-        변동성 스케일러 시리즈 (shift(1) 적용됨)
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-    scalar = vol_target / clamped_vol
-    return pd.Series(scalar.shift(1), index=realized_vol.index, name="vol_scalar")
-
-
 def preprocess(
     df: pd.DataFrame,
     config: MomMrBlendConfig,
@@ -208,21 +167,19 @@ def preprocess(
         window=config.mr_z_window,
     )
 
-    # 5. 실현 변동성
-    result["realized_vol"] = calculate_realized_volatility(
-        close,
+    # 5. 실현 변동성 (log returns → realized_volatility)
+    returns_series = log_returns(close)
+    rv = realized_volatility(
+        returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
     )
+    result["realized_vol"] = rv
 
-    realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
-
-    # 6. 변동성 스케일러 (shift(1) 내장)
-    result["vol_scalar"] = calculate_volatility_scalar(
-        realized_vol_series,
-        vol_target=config.vol_target,
-        min_volatility=config.min_volatility,
-    )
+    # 6. 변동성 스케일러 (shift(1) 적용: 미래 변동성 참조 방지)
+    clamped_vol = rv.clip(lower=config.min_volatility)
+    scalar = config.vol_target / clamped_vol
+    result["vol_scalar"] = pd.Series(scalar.shift(1), index=rv.index, name="vol_scalar")
 
     # 지표 통계 로깅
     valid_data = result.dropna(subset=["mom_zscore", "mr_zscore"])
