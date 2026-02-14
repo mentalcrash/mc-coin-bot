@@ -493,7 +493,7 @@ class LiveRunner:
             self._setup_executor(bus, pm)
 
             # 3. 상태 복구 (DB 활성 시)
-            state_mgr = await self._restore_state(db, pm, rm)
+            state_mgr = await self._restore_state(db, pm, rm, oms)
 
             # 4. 모든 컴포넌트 등록 + warmup
             await self._register_and_warmup(
@@ -531,7 +531,7 @@ class LiveRunner:
             # 주기적 상태 저장 task
             save_task: asyncio.Task[None] | None = None
             if state_mgr:
-                save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm))
+                save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm, oms))
 
             # 주기적 메트릭 갱신 task (uptime + EventBus + exchange health)
             uptime_task: asyncio.Task[None] | None = None
@@ -582,7 +582,7 @@ class LiveRunner:
 
             # 최종 상태 저장
             if state_mgr:
-                await state_mgr.save_all(pm, rm)
+                await state_mgr.save_all(pm, rm, oms=oms)
                 logger.info("Final state saved")
 
             logger.info("LiveRunner stopped gracefully")
@@ -608,8 +608,9 @@ class LiveRunner:
         db: Database | None,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
+        oms: OMS | None = None,
     ) -> StateManager | None:
-        """DB에서 PM/RM 상태를 복구.
+        """DB에서 PM/RM/OMS 상태를 복구.
 
         Returns:
             StateManager 또는 None (DB 비활성 시)
@@ -628,6 +629,11 @@ class LiveRunner:
         if rm_state:
             rm.restore_state(rm_state)
             logger.info("RM state restored")
+        if oms is not None:
+            oms_state = await state_mgr.load_oms_state()
+            if oms_state:
+                oms.restore_processed_orders(oms_state)
+                logger.info("OMS state restored ({} orders)", len(oms_state))
         return state_mgr
 
     async def _setup_discord(
@@ -1073,13 +1079,14 @@ class LiveRunner:
         state_mgr: StateManager,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
+        oms: OMS | None = None,
         interval: float = _DEFAULT_SAVE_INTERVAL,
     ) -> None:
-        """주기적으로 PM/RM 상태를 저장."""
+        """주기적으로 PM/RM/OMS 상태를 저장."""
         while True:
             await asyncio.sleep(interval)
             try:
-                await state_mgr.save_all(pm, rm)
+                await state_mgr.save_all(pm, rm, oms=oms)
             except Exception:
                 logger.exception("Periodic state save failed")
 
