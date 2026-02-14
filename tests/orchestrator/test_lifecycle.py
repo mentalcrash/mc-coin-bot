@@ -541,3 +541,87 @@ class TestIntegration:
 
         # 기하 복리로 계산하면 모든 월이 손실 → 6개월 연속 손실 → RETIRED
         assert pod.state == LifecycleState.RETIRED
+
+
+# ── TestDistributionDrift ───────────────────────────────────────
+
+
+class TestDistributionDrift:
+    def test_set_and_get_distribution_result(self) -> None:
+        """Distribution detector 설정 + evaluate 후 결과 조회."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 50)
+
+        mgr = _make_manager()
+        mgr.set_distribution_reference(pod.pod_id, [0.005] * 200, window_size=40)
+
+        # Evaluate triggers _check_degradation → dist_detector.update
+        mgr.evaluate(pod)
+
+        result = mgr.get_distribution_result(pod.pod_id)
+        assert result is not None
+        # Same distribution → should not drift
+        from src.monitoring.anomaly.distribution import DriftSeverity
+
+        assert result.severity == DriftSeverity.NORMAL
+
+    def test_dist_result_none_without_detector(self) -> None:
+        """Detector 미설정 → None."""
+        mgr = _make_manager()
+        assert mgr.get_distribution_result("nonexistent") is None
+
+    def test_dist_serialization(self) -> None:
+        """to_dict/restore_from_dict에 dist_detector 포함."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 5)
+
+        mgr = _make_manager()
+        mgr.set_distribution_reference(pod.pod_id, [0.005] * 100)
+        mgr.evaluate(pod)
+
+        state = mgr.to_dict()
+        assert "dist_detector" in state[pod.pod_id]
+
+
+# ── TestConformalRANSAC ─────────────────────────────────────────
+
+
+class TestConformalRANSAC:
+    def test_set_and_get_ransac_result(self) -> None:
+        """RANSAC detector 설정 + evaluate 후 결과 조회."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 50)
+
+        mgr = _make_manager()
+        mgr.set_ransac_params(pod.pod_id, window_size=100, alpha=0.05)
+
+        mgr.evaluate(pod)
+
+        result = mgr.get_ransac_result(pod.pod_id)
+        assert result is not None
+        from src.monitoring.anomaly.conformal_ransac import DecaySeverity
+
+        # min_samples=60 > 50 returns → NORMAL (min samples 미달)
+        # But actually the latest return is fed, so only 1 sample
+        assert result.severity == DecaySeverity.NORMAL
+
+    def test_ransac_result_none_without_detector(self) -> None:
+        """Detector 미설정 → None."""
+        mgr = _make_manager()
+        assert mgr.get_ransac_result("nonexistent") is None
+
+    def test_ransac_serialization(self) -> None:
+        """to_dict/restore_from_dict에 ransac_detector 포함."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 5)
+
+        mgr = _make_manager()
+        mgr.set_ransac_params(pod.pod_id)
+        mgr.evaluate(pod)
+
+        state = mgr.to_dict()
+        assert "ransac_detector" in state[pod.pod_id]

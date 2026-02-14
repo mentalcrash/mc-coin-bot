@@ -17,8 +17,11 @@ Rules Applied:
 from __future__ import annotations
 
 from collections import OrderedDict
-from contextlib import contextmanager, nullcontext
-from typing import Any, Generator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 from loguru import logger
 
@@ -31,8 +34,10 @@ _trace_module: Any = None
 _trace_api: Any = None
 
 try:
-    from opentelemetry import trace as _otel_trace  # type: ignore[import-not-found]
-    from opentelemetry import context as _otel_context  # type: ignore[import-not-found]
+    from opentelemetry import (  # type: ignore[import-not-found]
+        context as _otel_context,
+        trace as _otel_trace,
+    )
 
     _otel_available = True
     _trace_module = _otel_trace
@@ -81,7 +86,9 @@ def setup_tracing(
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
                 OTLPSpanExporter,
             )
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import-not-found]
+            from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
+                BatchSpanProcessor,
+            )
 
             exporter = OTLPSpanExporter(endpoint=endpoint)
             provider.add_span_processor(BatchSpanProcessor(exporter))
@@ -149,7 +156,7 @@ def trade_cycle_span(
     symbol: str,
     strategy: str,
     correlation_id: str | None = None,
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """주문 lifecycle root span.
 
     StrategyEngine._on_bar()에서 시그널 생성 시 root span을 시작하고,
@@ -184,7 +191,7 @@ def trade_cycle_span(
 def component_span(
     name: str,
     attributes: dict[str, str | float | int] | None = None,
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """컴포넌트별 child span.
 
     PM, RM, OMS, Executor에서 correlation_id를 통해
@@ -211,7 +218,7 @@ def component_span_with_context(
     name: str,
     correlation_id: str | None = None,
     attributes: dict[str, str | float | int] | None = None,
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """Parent context를 복원한 뒤 child span 생성.
 
     correlation_id로 TraceContextStore에서 parent context를 조회하여

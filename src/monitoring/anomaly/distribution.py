@@ -128,12 +128,14 @@ class DistributionDriftDetector:
         # KS 2-sample test
         from scipy.stats import ks_2samp
 
-        stat, p_value = ks_2samp(self._reference_returns, self._recent_returns)
+        ks_result: Any = ks_2samp(self._reference_returns, self._recent_returns)
+        stat_val = float(ks_result.statistic)
+        p_val = float(ks_result.pvalue)
 
         # Severity 판정
-        if p_value < self._p_value_critical:
+        if p_val < self._p_value_critical:
             severity = DriftSeverity.CRITICAL
-        elif p_value < self._p_value_warning:
+        elif p_val < self._p_value_warning:
             severity = DriftSeverity.WARNING
         else:
             severity = DriftSeverity.NORMAL
@@ -142,8 +144,8 @@ class DistributionDriftDetector:
 
         return DriftCheckResult(
             severity=severity,
-            ks_statistic=float(stat),
-            p_value=float(p_value),
+            ks_statistic=stat_val,
+            p_value=p_val,
             recent_n=len(self._recent_returns),
             drifted=drifted,
         )

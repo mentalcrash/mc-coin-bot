@@ -442,12 +442,7 @@ class LiveRunner:
         from src.eda.persistence.database import Database
         from src.eda.persistence.trade_persistence import TradePersistence
 
-        # 0a. OTel tracing 초기화 (MC_OTEL_ENDPOINT 환경변수 설정 시)
-        import os
-
-        otel_endpoint = os.environ.get("MC_OTEL_ENDPOINT")
-        if otel_endpoint:
-            setup_tracing(endpoint=otel_endpoint)
+        self._init_tracing()
 
         # 0. LIVE 모드 Pre-flight checks → 거래소 잔고로 capital override
         capital = self._initial_capital
@@ -679,6 +674,9 @@ class LiveRunner:
                 await orch_persistence.save(self._orchestrator)
             logger.info("Final state saved")
 
+        # OTel tracing 종료
+        shutdown_tracing()
+
         logger.info("LiveRunner stopped gracefully")
 
     @staticmethod
@@ -693,6 +691,15 @@ class LiveRunner:
     def request_shutdown(self) -> None:
         """외부에서 shutdown 요청 (테스트용)."""
         self._shutdown_event.set()
+
+    @staticmethod
+    def _init_tracing() -> None:
+        """OTel tracing 초기화 (MC_OTEL_ENDPOINT 환경변수 설정 시)."""
+        import os
+
+        otel_endpoint = os.environ.get("MC_OTEL_ENDPOINT")
+        if otel_endpoint:
+            setup_tracing(endpoint=otel_endpoint)
 
     async def _restore_orchestrator_state(self, state_mgr: Any) -> Any:
         """Orchestrator 상태를 복구합니다.

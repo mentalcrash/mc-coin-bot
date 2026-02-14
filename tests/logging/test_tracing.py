@@ -42,21 +42,27 @@ class TestNoOpWhenUnavailable:
 
     def test_trade_cycle_span_noop(self) -> None:
         """OTel unavailable → trade_cycle_span이 None yield."""
-        with patch("src.logging.tracing._otel_available", False):
-            with trade_cycle_span("BTC/USDT", "tsmom", "abc-123") as span:
-                assert span is None
+        with (
+            patch("src.logging.tracing._otel_available", False),
+            trade_cycle_span("BTC/USDT", "tsmom", "abc-123") as span,
+        ):
+            assert span is None
 
     def test_component_span_noop(self) -> None:
         """OTel unavailable → component_span이 None yield."""
-        with patch("src.logging.tracing._otel_available", False):
-            with component_span("pm.process_signal") as span:
-                assert span is None
+        with (
+            patch("src.logging.tracing._otel_available", False),
+            component_span("pm.process_signal") as span,
+        ):
+            assert span is None
 
     def test_component_span_with_context_noop(self) -> None:
         """OTel unavailable → component_span_with_context가 None yield."""
-        with patch("src.logging.tracing._otel_available", False):
-            with component_span_with_context("rm.check", "corr-id") as span:
-                assert span is None
+        with (
+            patch("src.logging.tracing._otel_available", False),
+            component_span_with_context("rm.check", "corr-id") as span,
+        ):
+            assert span is None
 
 
 class TestTraceContextStore:
@@ -129,9 +135,9 @@ class TestSpanCreation:
             patch("src.logging.tracing._otel_available", True),
             patch("src.logging.tracing.get_tracer", return_value=mock_tracer),
             patch("src.logging.tracing._trace_api", None),
+            trade_cycle_span("BTC/USDT", "tsmom", "corr-123") as span,
         ):
-            with trade_cycle_span("BTC/USDT", "tsmom", "corr-123") as span:
-                assert span is mock_span
+            assert span is mock_span
 
     def test_component_span_creates_span(self) -> None:
         """OTel available 시 component span 생성."""
@@ -143,9 +149,9 @@ class TestSpanCreation:
         with (
             patch("src.logging.tracing._otel_available", True),
             patch("src.logging.tracing.get_tracer", return_value=mock_tracer),
+            component_span("pm.process_signal", {"symbol": "BTC/USDT"}) as span,
         ):
-            with component_span("pm.process_signal", {"symbol": "BTC/USDT"}) as span:
-                assert span is mock_span
+            assert span is mock_span
 
 
 class TestSetupTracing:

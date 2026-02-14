@@ -18,7 +18,7 @@ import pandas as pd
 from loguru import logger
 
 from src.core.events import AnyEvent, BarEvent, EventType, RiskAlertEvent, SignalEvent
-from src.logging.tracing import _trace_context_store, trade_cycle_span
+from src.logging.tracing import trade_cycle_span
 from src.models.types import Direction
 
 if TYPE_CHECKING:

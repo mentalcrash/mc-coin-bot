@@ -26,6 +26,7 @@ from src.core.events import (
     OrderRequestEvent,
 )
 from src.exchange.binance_futures_client import BinanceFuturesClient
+from src.logging.tracing import component_span_with_context
 
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager
@@ -210,6 +211,12 @@ class LiveExecutor:
         Returns:
             체결 결과 (에러 시 None)
         """
+        corr_id = str(order.correlation_id) if order.correlation_id else None
+        with component_span_with_context("exchange.create_order", corr_id, {"symbol": order.symbol}):
+            return await self._execute_inner(order)
+
+    async def _execute_inner(self, order: OrderRequestEvent) -> FillEvent | None:
+        """execute 본체 (tracing span 내부)."""
         if self._pm is None:
             logger.error("LiveExecutor: PM not set, cannot execute order {}", order.client_order_id)
             return None

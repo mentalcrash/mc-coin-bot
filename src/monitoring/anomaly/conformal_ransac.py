@@ -138,16 +138,19 @@ class ConformalRANSACDetector:
             return self._normal_result()
 
         # RANSAC fit
-        x = list(range(n))
+        x = [float(i) for i in range(n)]
         y = list(self._cumulative_returns)
 
         try:
-            slope, _intercept, residuals = self._fit_ransac(x, y)
+            slope, intercept, residuals = self._fit_ransac(x, y)
         except Exception:
             return self._normal_result()
 
+        # RANSAC fitted value at last point
+        fitted_last = slope * (n - 1) + intercept
+
         # Conformal lower bound
-        lower_bound = self._conformal_lower_bound(residuals, y[-1], slope, n)
+        lower_bound = self._conformal_lower_bound(residuals, fitted_last, slope, n)
 
         # Severity 판정
         slope_positive = slope > 0
@@ -199,15 +202,17 @@ class ConformalRANSACDetector:
         ransac = RANSACRegressor(**kwargs)
         ransac.fit(x_arr, y_arr)
 
-        estimator = ransac.estimator_
+        estimator: Any = ransac.estimator_
         slope = float(estimator.coef_[0])
         intercept = float(estimator.intercept_)
 
-        # 잔차 계산
+        # 잔차 계산 (inlier만 사용 — conformal bound에 outlier 잔차 혼입 방지)
         y_pred = ransac.predict(x_arr)
-        residuals = (y_arr - y_pred).tolist()
+        inlier_mask: Any = ransac.inlier_mask_
+        all_residuals = y_arr - y_pred
+        inlier_residuals = all_residuals[inlier_mask].tolist()
 
-        return slope, intercept, residuals
+        return slope, intercept, inlier_residuals
 
     def _conformal_lower_bound(
         self,
@@ -218,11 +223,11 @@ class ConformalRANSACDetector:
     ) -> float:
         """Conformal prediction 하한 계산.
 
-        |residual|의 (1-alpha) quantile을 fitted_last에서 빼서 하한을 구합니다.
+        RANSAC fitted value에서 |residual|의 (1-alpha) quantile을 빼서 하한을 구합니다.
 
         Args:
             residuals: 잔차 리스트
-            fitted_last: RANSAC 예측의 마지막 값 (현재 누적 수익과 다를 수 있음)
+            fitted_last: 현재 누적 수익 (참조용)
             slope: RANSAC slope
             n: 샘플 수
 
@@ -235,9 +240,9 @@ class ConformalRANSACDetector:
         q_idx = max(q_idx, 0)
         quantile = abs_residuals[q_idx]
 
-        # 기대값 기반 lower bound
-        expected = slope * (n - 1)  # 마지막 시점의 trend 기대값 (intercept 무시)
-        return expected - quantile
+        # fitted value at last time point = fitted_last + residual (≈ actual)
+        # lower bound = fitted_last - quantile
+        return fitted_last - quantile
 
     def _normal_result(self) -> DecayCheckResult:
         """최소 샘플 미달 시 기본 결과."""

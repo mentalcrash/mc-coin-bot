@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 
 import pytest
@@ -80,13 +79,13 @@ class TestCriticalBothConditions:
     """slope ≤ 0 AND level breach → CRITICAL."""
 
     def test_both_conditions_critical(self) -> None:
-        detector = ConformalRANSACDetector(min_samples=30, window_size=150)
-        # 초반 약한 양의 수익
-        for _ in range(40):
-            detector.update(0.002)
-        # 장기 하락 → slope 음전환 + level breach
-        for _ in range(110):
-            result = detector.update(-0.01)
+        detector = ConformalRANSACDetector(min_samples=30, window_size=200)
+        # Phase 1: 완만한 하락 (tight fit) → RANSAC이 완만 하락 trend 학습
+        for _ in range(140):
+            detector.update(-0.001)
+        # Phase 2: 급격한 추가 하락 → RANSAC fitted line 아래로 추락 (구조적 붕괴)
+        for _ in range(60):
+            result = detector.update(-0.05)
 
         assert result.severity == DecaySeverity.CRITICAL
         assert result.slope_positive is False
@@ -161,7 +160,7 @@ class TestWindowEviction:
 
     def test_window_eviction(self) -> None:
         detector = ConformalRANSACDetector(min_samples=10, window_size=30)
-        for i in range(50):
+        for _ in range(50):
             detector.update(0.001)
 
         assert len(detector._daily_returns) == 30
