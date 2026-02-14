@@ -2,8 +2,8 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-50개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
-현재 **2개 전략 G5 PASS** (CTREND, Anchor-Mom) — Paper Trading(G6) 대기 중.
+74개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
+현재 **2개 전략 ACTIVE** (CTREND, Anchor-Mom), **8개 CANDIDATE** — Paper Trading(G6) 대기 중.
 
 ---
 
@@ -124,49 +124,13 @@ strategy:
 ## 전략 파이프라인
 
 전략은 **아이디어 발굴(G0A)** → **실전 배포(G7)** 까지 8단계 Gate를 순차 통과해야 합니다.
-각 Gate에서 FAIL 시 즉시 폐기. 50개 전략 중 **2개 G5 PASS** (CTREND, Anchor-Mom).
+각 Gate에서 FAIL 시 즉시 폐기. 74개 전략 중 **2개 ACTIVE + 8개 CANDIDATE + 64개 RETIRED**.
 
-```mermaid
-sequenceDiagram
-    participant U as User (Architect)
-    participant C as Claude (Engineer)
-    participant S as System (CI/Backtest)
-
-    rect rgb(240, 248, 255)
-    Note over U,S: Phase 1 — 발굴 & 구현
-    U->>C: /p1-g0a-discover
-    C-->>U: 후보 전략 (6항목 ≥ 18/30)
-    U->>C: /p2-implement
-    C->>S: 4-file 코드 + 테스트 생성
-    U->>C: /p3-g0b-verify
-    C-->>U: Critical 7항목 검증 PASS/FAIL
-    end
-
-    rect rgb(255, 248, 240)
-    Note over U,S: Phase 2 — 백테스트 검증 (G1~G4)
-    U->>C: /p4-g1g4-gate
-    C->>S: G1: 5코인 × 6년 백테스트
-    S-->>C: Sharpe > 1.0, CAGR > 20%?
-    C->>S: G2: IS/OOS 70/30 Split
-    S-->>C: Decay < 50%?
-    C->>S: G3: 파라미터 ±20% Sweep
-    S-->>C: 고원 존재?
-    C->>S: G4: WFA + CPCV + PBO + DSR
-    S-->>C: WFA OOS ≥ 0.5, DSR > 0.95?
-    Note right of S: FAIL 시 즉시 폐기
-    end
-
-    rect rgb(240, 255, 240)
-    Note over U,S: Phase 3 — 라이브 전환
-    U->>C: /p5-g5-eda-parity
-    C->>S: VBT vs EDA 수익 비교
-    S-->>C: 부호 일치, 편차 < 20%?
-    C->>S: G6: Paper Trading (2주+)
-    S-->>C: 시그널 일치 > 90%?
-    C->>S: G7: Live 배포
-    S-->>U: 3개월 이동 Sharpe > 0.3
-    end
-```
+| Phase | Gates | 검증 내용 |
+|-------|-------|----------|
+| 발굴 & 구현 | G0A → G0B | 전략 후보 선정, Critical 7항목 코드 검증 |
+| 백테스트 검증 | G1 → G4 | 5코인×6년, IS/OOS, 파라미터 Sweep, WFA+CPCV+PBO+DSR |
+| 라이브 전환 | G5 → G7 | VBT↔EDA Parity, Paper Trading(2주+), Live 배포 |
 
 Gate별 상세 기준과 전체 현황은 `uv run mcbot pipeline report`로 확인.
 
@@ -184,190 +148,78 @@ cp .env.example .env  # API 키 설정
 ### 전략 목록 확인
 
 ```bash
-# 등록된 전략 목록
-uv run mcbot backtest strategies
-
-# 전략 상세 정보
-uv run mcbot backtest info
+uv run mcbot backtest strategies      # 등록된 전략 목록
+uv run mcbot backtest info            # 전략 상세 정보
 ```
 
-### VBT 백테스트
+### 백테스트
+
+> **VBT**: Vectorized 고속 백테스트 (탐색용) / **EDA**: Event-Driven (라이브 동일 코드, 최종 검증)
 
 ```bash
-# 단일에셋 백테스트
+# VBT 백테스트 (단일에셋 / 멀티에셋은 config의 symbols 수로 자동 판별)
 uv run mcbot backtest run config/default.yaml
 
-# 멀티에셋 포트폴리오 (config의 symbols 2개 이상)
-uv run mcbot backtest run-multi config/default.yaml
-
-# QuantStats HTML 리포트
-uv run mcbot backtest run config/default.yaml --report
-
-# Strategy Advisor 분석
-uv run mcbot backtest run config/default.yaml --advisor
-
-# Verbose 모드
-uv run mcbot backtest run config/default.yaml -V
-```
-
-### EDA 백테스트
-
-```bash
-# EDA 백테스트 (1m 데이터 → target TF 집계, 단일/멀티 자동 판별)
+# EDA 백테스트 (1m 데이터 → target TF 집계)
 uv run mcbot eda run config/default.yaml
 
-# QuantStats 리포트 포함
-uv run mcbot eda run config/default.yaml --report
-
-# Shadow 모드 (시그널 로깅만, 체결 없음)
-uv run mcbot eda run config/default.yaml --mode shadow
+# 옵션: --report (QuantStats HTML), --advisor (Strategy Advisor), -V (Verbose)
 ```
 
 ### Live Trading
 
 ```bash
-# Paper 모드 — WebSocket 실시간 데이터 + 시뮬레이션 체결
-uv run mcbot eda run-live config/paper.yaml --mode paper
-
-# Shadow 모드 — 시그널 로깅만, 체결 없음
-uv run mcbot eda run-live config/paper.yaml --mode shadow
-
-# Live 모드 — Binance USDT-M Futures 실주문 (Hedge Mode)
-# ⚠️ 실자금 거래! 확인 프롬프트가 표시됩니다.
-uv run mcbot eda run-live config/paper.yaml --mode live
+uv run mcbot eda run-live config/paper.yaml --mode paper    # Paper — 시뮬레이션 체결
+uv run mcbot eda run-live config/paper.yaml --mode shadow   # Shadow — 시그널 로깅만
+uv run mcbot eda run-live config/paper.yaml --mode live     # Live — Binance 실주문 ⚠️
 ```
 
 Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage)로 실행됩니다.
 60초마다 거래소 포지션과 PM 상태를 교차 검증(PositionReconciler)하며, 불일치 시 경고만 발행합니다(자동 수정 없음).
 
-### 과적합 검증
-
-```bash
-# QUICK: IS/OOS Split
-uv run mcbot backtest validate -m quick
-
-# MILESTONE: Walk-Forward (5-fold)
-uv run mcbot backtest validate -m milestone
-
-# FINAL: CPCV + DSR + PBO
-uv run mcbot backtest validate -m final
-
-# 특정 심볼/전략 지정
-uv run mcbot backtest validate -m quick -s tsmom --symbols BTC/USDT,ETH/USDT
-```
-
-### 시그널 진단
-
-```bash
-# TSMOM 시그널 파이프라인 분석
-uv run mcbot backtest diagnose BTC/USDT -s tsmom
-
-# Adaptive Breakout 진단
-uv run mcbot backtest diagnose SOL/USDT -s adaptive-breakout -V
-```
-
-### 데이터 수집
-
-```bash
-# Bronze → Silver 파이프라인 (OHLCV 1분봉)
-uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
-
-# 데이터 검증
-uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
-
-# 상위 N개 심볼 일괄 다운로드
-uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
-
-# 데이터 상태 확인
-uv run mcbot ingest info
-```
-
-### 파생상품 데이터 수집
-
-Funding Rate, Open Interest, Long/Short Ratio, Taker Buy/Sell Ratio를 Binance Futures API에서 수집합니다.
-OHLCV와 별도의 Medallion 파이프라인(Bronze → Silver)으로 관리됩니다.
-
-```bash
-# Full Pipeline: Bronze 수집 → Silver 정제 (forward-fill)
-uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-
-# Bronze만 수집 (원본 데이터)
-uv run mcbot ingest derivatives bronze BTC/USDT --year 2024 --year 2025
-
-# Silver만 처리 (이미 Bronze가 있을 때)
-uv run mcbot ingest derivatives silver BTC/USDT --year 2024
-
-# 멀티 심볼 일괄 수집 (8 Tier-1/2 자산 × 2020-2025, 기존 파일 스킵)
-uv run mcbot ingest derivatives batch
-
-# 특정 심볼/연도만 일괄 수집
-uv run mcbot ingest derivatives batch -s BTC/USDT,ETH/USDT -y 2024 -y 2025
-
-# Dry-run: 대상 목록만 미리보기 (다운로드 없음)
-uv run mcbot ingest derivatives batch --dry-run
-
-# 데이터 상태 확인
-uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
-```
-
-수집 데이터:
-
-| 데이터 | 주기 | 저장 컬럼 |
-|--------|------|-----------|
-| Funding Rate | 8시간 | `funding_rate` |
-| Open Interest | 1시간 | `open_interest` |
-| Long/Short Ratio | 1시간 | `long_short_ratio` |
-| Taker Buy/Sell Ratio | 1시간 | `taker_buy_sell_ratio` |
-
-저장 경로: `data/bronze/{SYMBOL}/{YEAR}_deriv.parquet` → `data/silver/{SYMBOL}/{YEAR}_deriv.parquet`
-
 ### 일괄 백테스트
 
 ```bash
-# 전 전략 일괄 백테스트 (50 전략 x 5 자산)
-uv run python scripts/bulk_backtest.py
+uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
 ```
 
-### 배포 (Docker Compose + Coolify)
+---
 
-3개 서비스(트레이딩 봇, Prometheus, Grafana)를 `docker-compose.yml`로 한 번에 실행합니다.
+## 데이터 수집
 
-#### 서비스 구성
-
-| 서비스 | 이미지 | 포트 | 설명 |
-|--------|--------|------|------|
-| `mc-bot` | 로컬 빌드 | `8000` | 트레이딩 봇 + Prometheus metrics endpoint (`/metrics`) |
-| `prometheus` | `prom/prometheus:v2.54.0` | `9090` | 메트릭 수집 + 저장 (10초 간격 스크래핑) |
-| `grafana` | `grafana/grafana:11.4.0` | `3000` | 대시보드 시각화 (자동 프로비저닝) |
-
-#### 실행
+### OHLCV (1분봉)
 
 ```bash
-# 전체 스택 실행 (빌드 포함)
-docker compose up --build -d
-
-# 로그 확인
-docker compose logs -f mc-bot
-
-# 중지
-docker compose down
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025   # Bronze → Silver
+uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
+uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
+uv run mcbot ingest info                                          # 데이터 상태
 ```
 
-#### 개별 Docker 실행 (모니터링 없이)
+### 파생상품 데이터
+
+Funding Rate, Open Interest, Long/Short Ratio, Taker Buy/Sell Ratio를 수집합니다.
 
 ```bash
-# Docker 빌드 (multi-stage, uv 기반)
-docker build -t mc-coin-bot:latest .
-
-# 단독 실행
-docker run --env-file .env \
-  -e MC_EXECUTION_MODE=paper \
-  -e MC_CONFIG_PATH=config/paper.yaml \
-  -e MC_INITIAL_CAPITAL=10000 \
-  mc-coin-bot:latest
+uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
+uv run mcbot ingest derivatives batch                # 8 Tier-1/2 자산 일괄 수집
+uv run mcbot ingest derivatives batch --dry-run      # 대상 목록 미리보기
+uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
 ```
 
-#### 환경 변수
+---
+
+## 배포 (Docker Compose + Coolify)
+
+3개 서비스(트레이딩 봇, Prometheus, Grafana)를 `docker-compose.yml`로 실행합니다.
+
+```bash
+docker compose up --build -d      # 전체 스택 실행
+docker compose logs -f mc-bot     # 로그 확인
+docker compose down               # 중지
+```
+
+### 환경 변수
 
 DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실행 모드를 제어합니다.
 
@@ -376,35 +228,17 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | `MC_EXECUTION_MODE` | `paper` | 실행 모드 (`paper` / `shadow` / `live`) |
 | `MC_CONFIG_PATH` | `config/paper.yaml` | YAML 설정 파일 경로 |
 | `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 (USD) |
-| `MC_DB_PATH` | `data/trading.db` | SQLite 경로 |
-| `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
 | `MC_METRICS_PORT` | `8000` | Prometheus metrics 포트 (`0`이면 비활성) |
-| `GRAFANA_PASSWORD` | `admin` | Grafana 관리자 비밀번호 |
-| `DISCORD_HEARTBEAT_CHANNEL_ID` | — | System Heartbeat 채널 ID |
-| `DISCORD_REGIME_CHANNEL_ID` | — | Market Regime Report 채널 ID |
 
-#### 모니터링
+Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 
-**Prometheus** (`http://localhost:9090`)
-- `mcbot_equity_usdt` — 현재 자산 (USD)
-- `mcbot_drawdown_pct` — 현재 drawdown (%)
-- `mcbot_fills_total` — 체결 수 (symbol, side별)
-- `mcbot_open_positions` — 오픈 포지션 수
-- `mcbot_uptime_seconds` — 봇 가동 시간
+### 모니터링 & 알림
 
-**Grafana** (`http://localhost:3000`, 초기 비밀번호: `admin`)
-- `monitoring/grafana/dashboards/trading.json`에 프로비저닝된 10-패널 대시보드 포함
-- Equity curve, Drawdown gauge, Position sizes, Fills rate 등 실시간 모니터링
-- Grafana Alert Rules로 Discord webhook 알림 설정 가능 (MDD > 15%, Bot down 등)
-
-**Discord 알림**
-- 체결, Circuit Breaker, 리스크 알림을 실시간으로 Discord 채널에 전송
-- `/status`, `/kill`, `/balance` Slash Commands 지원
-- Daily Report (매일 00:00 UTC): equity curve 차트 + 당일 요약
-- Weekly Report (매주 월요일 00:00 UTC): drawdown, 월간 히트맵, PnL 분포 차트 포함
-- **System Heartbeat** (5분): equity, drawdown, 레버리지, CB 상태 — DD 기반 색상 (Green/Yellow/Red)
-- **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio, Taker Ratio → Regime Score (-1.0~+1.0)
-- **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지 (3연속 Sharpe 하락)
+- **Prometheus** (`localhost:9090`) + **Grafana** (`localhost:3000`) — 상세: [`docs/monitoring.md`](docs/monitoring.md)
+- **Discord 알림**: 체결, Circuit Breaker, 리스크 알림 실시간 전송 + `/status`, `/kill`, `/balance` Slash Commands
+- **System Heartbeat** (1시간): equity, drawdown, 레버리지, CB 상태
+- **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio → Regime Score
+- **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지
 
 ---
 
@@ -412,65 +246,53 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 
 | 전략 | Best Asset | TF | Sharpe | CAGR | 상태 |
 |------|-----------|-----|--------|------|------|
-| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | G5 PASS |
-| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | G5 PASS |
+| **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | ACTIVE |
+| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | ACTIVE |
 
-> 50개 전략 중 2개 활성 + 48개 폐기.
+> 74개 전략: 2 ACTIVE + 8 CANDIDATE + 64 RETIRED.
 > 상세 현황은 `uv run mcbot pipeline report`로 확인.
 
-전략 메타데이터는 `strategies/*.yaml`에서 YAML로 관리됩니다.
-
 ```bash
-uv run mcbot pipeline status   # 현황 요약
-uv run mcbot pipeline table    # 전체 Gate 진행도
-uv run mcbot pipeline show ctrend  # 전략 상세
-uv run mcbot pipeline report   # Dashboard 재생성
+uv run mcbot pipeline status          # 현황 요약
+uv run mcbot pipeline table           # 전체 Gate 진행도
+uv run mcbot pipeline show ctrend     # 전략 상세
 ```
 
-### 교훈 관리 (Lessons)
+---
 
-50개 전략 평가 과정에서 축적된 22개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
-카테고리(6종), 태그, 전략, TF별 프로그래매틱 검색이 가능합니다.
+## 운영 도구
 
-```bash
-uv run mcbot pipeline lessons-list              # 전체 교훈 목록
-uv run mcbot pipeline lessons-list -c strategy-design  # 카테고리 필터
-uv run mcbot pipeline lessons-list -t ML         # 태그 필터
-uv run mcbot pipeline lessons-list -s ctrend     # 관련 전략 필터
-uv run mcbot pipeline lessons-list --tf 1H       # TF 필터
-uv run mcbot pipeline lessons-show 1             # 교훈 상세
-uv run mcbot pipeline lessons-add \
-  --title "제목" --body "설명" -c strategy-design -t tag1 -t tag2
-```
-
-카테고리: `strategy-design`, `risk-management`, `market-structure`, `data-resolution`, `pipeline-process`, `meta-analysis`
-
-### 아키텍처 감사 (Audit)
-
-정기적인 아키텍처/보안/코드 품질 감사 결과를 `audits/` 디렉토리에 구조화된 YAML로 관리합니다.
-스냅샷(시계열 건강 지표), 발견사항(상태 추적), 액션 아이템(생명주기 관리)의 3종 데이터를 저장합니다.
+### 과적합 검증
 
 ```bash
-# 스냅샷 관리
-uv run mcbot audit list                        # 모든 스냅샷 목록
-uv run mcbot audit show 2026-02-13             # 특정 스냅샷 상세
-uv run mcbot audit latest                      # 최신 스냅샷
-
-# 발견사항 관리
-uv run mcbot audit findings                    # 전체 발견사항
-uv run mcbot audit findings --status open      # 미해결 발견사항
-uv run mcbot audit findings --severity critical # CRITICAL 발견사항
-uv run mcbot audit finding-show 1              # 발견사항 상세
-
-# 액션 아이템 관리
-uv run mcbot audit actions                     # 전체 액션 목록
-uv run mcbot audit actions --priority P0       # 긴급 액션
-uv run mcbot audit action-show 1               # 액션 상세
-
-# 트렌드 & 상태 변경
-uv run mcbot audit trend                       # 스냅샷간 지표 추이
-uv run mcbot audit resolve-finding 1           # 발견사항 해결 처리
-uv run mcbot audit update-action 1 --status completed  # 액션 완료 처리
+uv run mcbot backtest validate -m quick       # IS/OOS Split
+uv run mcbot backtest validate -m milestone   # Walk-Forward (5-fold)
+uv run mcbot backtest validate -m final       # CPCV + DSR + PBO
 ```
 
-심각도: `critical`, `high`, `medium`, `low` | 우선순위: `P0`(즉시), `P1`(1주), `P2`(2주), `P3`(백로그)
+### 시그널 진단
+
+```bash
+uv run mcbot backtest diagnose BTC/USDT -s tsmom
+```
+
+### 교훈 관리
+
+74개 전략 평가 과정에서 축적된 30개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+
+```bash
+uv run mcbot pipeline lessons-list                      # 전체 교훈 목록
+uv run mcbot pipeline lessons-list -c strategy-design   # 카테고리/태그/전략/TF 필터
+uv run mcbot pipeline lessons-show 1                    # 교훈 상세
+```
+
+### 아키텍처 감사
+
+정기적인 아키텍처/보안/코드 품질 감사 결과를 `audits/`에 관리합니다.
+
+```bash
+uv run mcbot audit latest                               # 최신 스냅샷
+uv run mcbot audit findings --status open               # 미해결 발견사항
+uv run mcbot audit actions --priority P0                # 긴급 액션
+uv run mcbot audit trend                                # 지표 추이
+```
