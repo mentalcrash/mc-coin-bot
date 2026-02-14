@@ -1,0 +1,147 @@
+# ==============================================================================
+# Orchestrator Live Config — CTREND + Anchor-Mom (2 Pods)
+# ==============================================================================
+#
+# 아키텍처 제약:
+#   현재 LiveDataFeed/CandleAggregator는 단일 target TF만 지원합니다.
+#   따라서 모든 Pod은 동일한 TF에서 실행됩니다.
+#
+# TF 선택: 1D
+#   - CTREND (1D): G2H IS=3.68, OOS=2.54 — 주력 전략, 원본 TF 유지
+#   - Anchor-Mom (12H→1D): 기본 파라미터 사용 (G2H는 12H 전용)
+#     annualization_factor를 365로 오버라이드 (12H=730)
+#
+# 에셋 선별 (Sharpe ≥ 1.0 기준):
+#   - CTREND:     BTC(1.70) ETH(1.53) SOL(2.05) BNB(1.59) — DOGE 제외(0.83)
+#   - Anchor-Mom: DOGE(1.36) SOL(1.01) — BNB(0.90) ETH(0.84) BTC(0.58) 제외
+#   - SOL이 양 Pod 공통 → Position Netting 효과 유지
+#
+# 배포 전 필수 검증:
+#   1. uv run mcbot orchestrate backtest config/orchestrator-live.yaml --report
+#   2. uv run mcbot orchestrate paper config/orchestrator-live.yaml -V
+#   3. Paper 24h+ 안정성 확인 후 Live 전환
+#
+# CLI:
+#   Paper : uv run mcbot orchestrate paper config/orchestrator-live.yaml -V
+#   Live  : uv run mcbot orchestrate live  config/orchestrator-live.yaml -V
+# ==============================================================================
+
+backtest:
+  timeframe: "1D"
+  start: "2024-01-01"
+  end: "2025-12-31"
+  capital: 10000.0
+
+orchestrator:
+  # ── Allocation ──────────────────────────────────────────────
+  allocation_method: equal_weight       # 2 Pod → EW로 시작, 데이터 축적 후 risk_parity 전환
+  kelly_fraction: 0.25
+  kelly_confidence_ramp: 180
+
+  # ── Rebalance ───────────────────────────────────────────────
+  rebalance_trigger: hybrid             # calendar + drift
+  rebalance_calendar_days: 7
+  rebalance_drift_threshold: 0.10
+
+  # ── Portfolio Risk ──────────────────────────────────────────
+  max_gross_leverage: 2.0               # 보수적 시작 (아키텍처 기본 3.0)
+  max_portfolio_drawdown: 0.15
+  max_portfolio_volatility: 0.20
+  max_single_pod_risk_pct: 0.60         # 2-Pod이므로 60%까지 허용
+  daily_loss_limit: 0.03
+  cost_bps: 4.0
+
+  # ── Correlation ─────────────────────────────────────────────
+  correlation_lookback: 90
+  correlation_stress_threshold: 0.70
+
+  # ── Lifecycle: Graduation ───────────────────────────────────
+  graduation:
+    min_live_days: 90
+    min_sharpe: 0.8                     # 라이브 초기 Sharpe 기준 완화
+    max_drawdown: 0.20
+    min_trade_count: 20
+    min_calmar: 0.6
+    max_backtest_live_gap: 0.40
+    max_portfolio_correlation: 0.60
+
+  # ── Lifecycle: Retirement ───────────────────────────────────
+  retirement:
+    max_drawdown_breach: 0.25           # MDD > 25% → 즉시 RETIRED
+    consecutive_loss_months: 6
+    rolling_sharpe_floor: 0.3
+    probation_days: 30
+
+  # ── Pods ────────────────────────────────────────────────────
+  pods:
+    # ────────────────────────────────────────────────────────
+    # Pod 1: CTREND — ML 앙상블 (G2H 최적화 파라미터)
+    # Sharpe 2.05 (VBT) / 2.82 (EDA), CAGR 97.8%, G0A-G5+G2H 전 PASS
+    # 에셋: Sharpe ≥ 1.0 — SOL(2.05) BTC(1.70) BNB(1.59) ETH(1.53)
+    # 제외: DOGE(0.83, MDD 64.6%)
+    # ────────────────────────────────────────────────────────
+    - pod_id: pod-ctrend
+      strategy_name: ctrend
+      strategy_params:
+        training_window: 68              # G2H 최적화 (기본 252)
+        prediction_horizon: 12           # G2H 최적화 (기본 5)
+        alpha: 0.6812                    # G2H 최적화 (기본 0.5)
+        vol_window: 24                   # G2H 최적화 (기본 30)
+        vol_target: 0.4772              # G2H 최적화 (기본 0.35)
+        min_volatility: 0.05
+        annualization_factor: 365.0      # 1D
+        short_mode: 2                    # FULL
+      symbols:
+        - SOL/USDT
+        - BTC/USDT
+        - BNB/USDT
+        - ETH/USDT
+      timeframe: "1D"
+      initial_fraction: 0.55            # 주력 전략, 4 에셋
+      max_fraction: 0.70
+      min_fraction: 0.25
+      max_drawdown: 0.20
+      drawdown_warning: 0.15
+      max_leverage: 2.0
+      system_stop_loss: 0.10
+      use_trailing_stop: true
+      trailing_stop_atr_multiplier: 3.0
+      rebalance_threshold: 0.10
+
+    # ────────────────────────────────────────────────────────
+    # Pod 2: Anchor-Mom — Anchored Momentum
+    # Sharpe 1.36 (VBT), CAGR 49.8%, G0A-G5+G2H 전 PASS
+    # 에셋: Sharpe ≥ 1.0 — DOGE(1.36) SOL(1.01)
+    # 제외: BNB(0.90) ETH(0.84) BTC(0.58)
+    # 주의: 원래 12H에서 검증됨. 1D 전환 시 기본 파라미터 사용
+    # ────────────────────────────────────────────────────────
+    - pod_id: pod-anchor-mom
+      strategy_name: anchor-mom
+      strategy_params:
+        nearness_lookback: 60            # 기본값 (12H G2H 29 미적용)
+        mom_lookback: 30                 # 기본값 (12H G2H 51 미적용)
+        strong_nearness: 0.95            # 기본값
+        weak_nearness: 0.85              # 기본값
+        short_nearness: 0.80             # 기본값
+        vol_target: 0.35
+        vol_window: 30
+        min_volatility: 0.05
+        annualization_factor: 365.0      # 1D로 오버라이드 (12H 기본 730)
+        atr_period: 14
+        short_mode: 1                    # HEDGE_ONLY
+        hedge_threshold: -0.07
+        hedge_strength_ratio: 0.8
+      symbols:
+        - DOGE/USDT
+        - SOL/USDT
+      timeframe: "1D"
+      initial_fraction: 0.45            # 보조 전략, 2 에셋
+      max_fraction: 0.55
+      min_fraction: 0.15
+      max_drawdown: 0.20
+      drawdown_warning: 0.15
+      max_leverage: 2.0
+      system_stop_loss: 0.10
+      use_trailing_stop: true
+      trailing_stop_atr_multiplier: 3.0
+      rebalance_threshold: 0.10
