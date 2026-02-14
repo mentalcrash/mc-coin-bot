@@ -12,6 +12,8 @@ from src.pipeline.models import (
     GateId,
     GateResult,
     GateVerdict,
+    RationaleReference,
+    RationaleRefType,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
@@ -231,3 +233,53 @@ class TestAutoTransition:
             rationale="C1 FAIL",
         )
         assert updated.meta.status == StrategyStatus.IMPLEMENTED
+
+
+class TestRationaleFieldsRoundtrip:
+    """rationale_references / rationale_category YAML round-trip."""
+
+    def test_with_rationale_fields(self, store: StrategyStore) -> None:
+        ref = RationaleReference(
+            type=RationaleRefType.PAPER,
+            title="Moskowitz 2012",
+            source="JFE",
+        )
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="rat-test",
+                display_name="Rationale Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.CANDIDATE,
+                created_at=date(2026, 1, 1),
+                rationale_references=[ref],
+                rationale_category="momentum",
+            ),
+        )
+        store.save(record)
+        store._cache.clear()
+        loaded = store.load("rat-test")
+        assert loaded.meta.rationale_category == "momentum"
+        assert len(loaded.meta.rationale_references) == 1
+        assert loaded.meta.rationale_references[0].type == RationaleRefType.PAPER
+        assert loaded.meta.rationale_references[0].title == "Moskowitz 2012"
+
+    def test_without_rationale_fields(self, store: StrategyStore) -> None:
+        """기존 YAML (새 필드 없음) 하위호환."""
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="compat-test",
+                display_name="Compat",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.CANDIDATE,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        store._cache.clear()
+        loaded = store.load("compat-test")
+        assert loaded.meta.rationale_references == []
+        assert loaded.meta.rationale_category is None

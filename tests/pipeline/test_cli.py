@@ -143,7 +143,8 @@ class TestCreateCommand:
         assert result.exit_code == 1
         assert "Already exists" in result.output
 
-    def test_create_default_g0a_score(self, strategies_dir: Path) -> None:
+    def test_create_default_g0a_score_fails(self, strategies_dir: Path) -> None:
+        """score=0 (default) → G0A FAIL verdict."""
         result = runner.invoke(
             app,
             [
@@ -160,10 +161,137 @@ class TestCreateCommand:
             ],
         )
         assert result.exit_code == 0
+        assert "G0A FAIL" in result.output
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("default-score")
         assert record.gates[GateId.G0A].details["score"] == 0
+        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
+
+    def test_create_g0a_below_threshold(self, strategies_dir: Path) -> None:
+        """score=15 < 18 → FAIL verdict, CANDIDATE 유지."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "low-score",
+                "--display-name",
+                "Low Score",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "15",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "G0A FAIL" in result.output
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("low-score")
+        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
+        assert record.meta.status == StrategyStatus.CANDIDATE
+        assert record.decisions[0].verdict == GateVerdict.FAIL
+
+    def test_create_g0a_at_threshold(self, strategies_dir: Path) -> None:
+        """score=18 → PASS."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "threshold-score",
+                "--display-name",
+                "Threshold",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "18",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "G0A FAIL" not in result.output
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("threshold-score")
+        assert record.gates[GateId.G0A].status == GateVerdict.PASS
+
+    def test_create_g0a_invalid_range(self) -> None:
+        """score=35 > 30 → exit(1)."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "invalid-score",
+                "--display-name",
+                "Invalid",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "35",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid G0A score" in result.output
+
+    def test_create_g0a_negative_range(self) -> None:
+        """score=-5 < 0 → exit(1)."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "neg-score",
+                "--display-name",
+                "Neg",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "-5",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid G0A score" in result.output
+
+    def test_create_with_rationale_category(self, strategies_dir: Path) -> None:
+        """--rationale-category 옵션 동작 확인."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "cat-strat",
+                "--display-name",
+                "Cat Strat",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "20",
+                "--rationale-category",
+                "momentum",
+            ],
+        )
+        assert result.exit_code == 0
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("cat-strat")
+        assert record.meta.rationale_category == "momentum"
 
 
 # ─── update-status command ───────────────────────────────────────────
@@ -390,3 +518,103 @@ class TestGatesCommands:
         result = runner.invoke(app, ["gates-show", "G99"])
         assert result.exit_code == 1
         assert "not found" in result.output
+
+
+# ─── retired-analysis command ────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("_patch_store")
+class TestRetiredAnalysis:
+    def _create_strategy(
+        self,
+        name: str,
+        *,
+        g0a_score: int = 22,
+        rationale_category: str | None = None,
+    ) -> None:
+        args = [
+            "create",
+            name,
+            "--display-name",
+            name,
+            "--category",
+            "Test",
+            "--timeframe",
+            "1D",
+            "--short-mode",
+            "DISABLED",
+            "--g0a-score",
+            str(g0a_score),
+        ]
+        if rationale_category:
+            args.extend(["--rationale-category", rationale_category])
+        runner.invoke(app, args)
+
+    def _retire_with_gate(self, name: str, gate: str) -> None:
+        runner.invoke(
+            app,
+            ["update-status", name, "--status", "IMPLEMENTED"],
+        )
+        runner.invoke(
+            app,
+            ["record", name, "--gate", gate, "--verdict", "FAIL", "--rationale", "test"],
+        )
+
+    def test_retired_analysis_gate_distribution(self, strategies_dir: Path) -> None:
+        """Gate별 FAIL 분포 출력."""
+        # G1 FAIL 2개, G2 FAIL 1개
+        for i in range(3):
+            self._create_strategy(f"ret-{i}", rationale_category="momentum")
+        self._retire_with_gate("ret-0", "G1")
+        self._retire_with_gate("ret-1", "G1")
+        self._retire_with_gate("ret-2", "G2")
+
+        result = runner.invoke(app, ["retired-analysis"])
+        assert result.exit_code == 0
+        assert "G1" in result.output
+        assert "G2" in result.output
+
+    def test_retired_analysis_category_stats(self, strategies_dir: Path) -> None:
+        """카테고리별 집계 출력."""
+        self._create_strategy("cat-a", rationale_category="momentum")
+        self._retire_with_gate("cat-a", "G1")
+
+        result = runner.invoke(app, ["retired-analysis"])
+        assert result.exit_code == 0
+        assert "momentum" in result.output
+
+    def test_retired_analysis_empty(self) -> None:
+        """RETIRED 0개 시 메시지."""
+        result = runner.invoke(app, ["retired-analysis"])
+        assert result.exit_code == 0
+        assert "No RETIRED" in result.output
+
+    def test_create_warns_low_category_success(self, strategies_dir: Path) -> None:
+        """동일 category RETIRED 존재 시 경고 출력."""
+        # RETIRED 전략 생성
+        self._create_strategy("old-mom", g0a_score=20, rationale_category="vol-premium")
+        self._retire_with_gate("old-mom", "G1")
+
+        # 새 전략 생성 — 경고 기대
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "new-mom",
+                "--display-name",
+                "New Mom",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-score",
+                "20",
+                "--rationale-category",
+                "vol-premium",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "WARNING" in result.output
+        assert "vol-premium" in result.output

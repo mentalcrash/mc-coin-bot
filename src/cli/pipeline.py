@@ -157,6 +157,10 @@ def show(name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")]
     _print_strategy_detail(record)
 
 
+_G0A_MAX_SCORE = 30
+_G0A_PASS_THRESHOLD = 18
+
+
 @app.command()
 def create(
     name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")],
@@ -166,12 +170,29 @@ def create(
     short_mode: Annotated[str, typer.Option("--short-mode", help="DISABLED|HEDGE_ONLY|FULL")],
     rationale: Annotated[str, typer.Option("--rationale", "-r", help="경제적 논거")] = "",
     g0a_score: Annotated[int, typer.Option("--g0a-score", help="Gate 0A 점수")] = 0,
+    rationale_category: Annotated[
+        str | None, typer.Option("--rationale-category", help="학술 근거 카테고리")
+    ] = None,
 ) -> None:
     """새 전략 YAML 생성 (CANDIDATE 상태)."""
     store = StrategyStore()
     if store.exists(name):
         console.print(f"[red]Already exists: {name}[/red]")
         raise typer.Exit(code=1)
+
+    # G0A 점수 범위 검증
+    if g0a_score < 0 or g0a_score > _G0A_MAX_SCORE:
+        console.print(
+            f"[red]Invalid G0A score: {g0a_score} (valid range: 0~{_G0A_MAX_SCORE})[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    # G0A verdict 결정
+    verdict = GateVerdict.PASS if g0a_score >= _G0A_PASS_THRESHOLD else GateVerdict.FAIL
+
+    # 동일 rationale_category RETIRED 전략 경고
+    if rationale_category:
+        _warn_low_category_success(store, rationale_category)
 
     today = date.today()
     record_obj = StrategyRecord(
@@ -184,25 +205,56 @@ def create(
             status=StrategyStatus.CANDIDATE,
             created_at=today,
             economic_rationale=rationale,
+            rationale_category=rationale_category,
         ),
         gates={
             GateId.G0A: GateResult(
-                status=GateVerdict.PASS,
+                status=verdict,
                 date=today,
-                details={"score": g0a_score, "max_score": 30},
+                details={"score": g0a_score, "max_score": _G0A_MAX_SCORE},
             ),
         },
         decisions=[
             Decision(
                 date=today,
                 gate=GateId.G0A,
-                verdict=GateVerdict.PASS,
-                rationale=f"{g0a_score}/30점",
+                verdict=verdict,
+                rationale=f"{g0a_score}/{_G0A_MAX_SCORE}점",
             ),
         ],
     )
     store.save(record_obj)
-    console.print(f"[green]Created: strategies/{name}.yaml (CANDIDATE)[/green]")
+
+    if verdict == GateVerdict.FAIL:
+        console.print(
+            f"[yellow]Created: strategies/{name}.yaml (CANDIDATE) — G0A FAIL ({g0a_score}/{_G0A_MAX_SCORE})[/yellow]"
+        )
+    else:
+        console.print(f"[green]Created: strategies/{name}.yaml (CANDIDATE)[/green]")
+
+
+def _warn_low_category_success(store: StrategyStore, category: str) -> None:
+    """동일 rationale_category의 RETIRED 전략이 있으면 경고."""
+    all_records = store.load_all()
+    retired_same = [
+        r
+        for r in all_records
+        if r.meta.status == StrategyStatus.RETIRED and r.meta.rationale_category == category
+    ]
+    active_same = [
+        r
+        for r in all_records
+        if r.meta.status == StrategyStatus.ACTIVE and r.meta.rationale_category == category
+    ]
+    if retired_same:
+        total = len(retired_same) + len(active_same)
+        success_rate = len(active_same) / total * 100 if total > 0 else 0
+        names = ", ".join(r.meta.name for r in retired_same[:3])
+        msg = (
+            f"[yellow]WARNING: '{category}' 카테고리 성공률 {success_rate:.0f}% "
+            + f"({len(retired_same)}개 RETIRED: {names})[/yellow]"
+        )
+        console.print(msg)
 
 
 @app.command()
@@ -362,6 +414,86 @@ def full_table() -> None:
     retired = sum(1 for r in records if r.meta.status == StrategyStatus.RETIRED)
     summary = f"\n  [green]ACTIVE: {active}[/green] | [red]RETIRED: {retired}[/red] | Total: {len(records)}"
     console.print(summary)
+
+
+@app.command(name="retired-analysis")
+def retired_analysis() -> None:
+    """RETIRED 전략 실패 패턴 분석."""
+    store = StrategyStore()
+    all_records = store.load_all()
+    retired = [r for r in all_records if r.meta.status == StrategyStatus.RETIRED]
+    active = [r for r in all_records if r.meta.status == StrategyStatus.ACTIVE]
+
+    if not retired:
+        console.print("[yellow]No RETIRED strategies found.[/yellow]")
+        return
+
+    # 1) Gate별 FAIL 분포
+    gate_fail_counts: dict[str, int] = {}
+    for r in retired:
+        fg = r.fail_gate
+        if fg:
+            gate_fail_counts[fg] = gate_fail_counts.get(fg, 0) + 1
+        else:
+            gate_fail_counts["N/A"] = gate_fail_counts.get("N/A", 0) + 1
+
+    total_retired = len(retired)
+    gate_table = Table(title=f"Gate별 FAIL 분포 ({total_retired} RETIRED)")
+    gate_table.add_column("Gate", style="bold")
+    gate_table.add_column("Count", justify="right")
+    gate_table.add_column("%", justify="right")
+
+    for gate, count in sorted(gate_fail_counts.items(), key=lambda x: -x[1]):
+        pct = count / total_retired * 100
+        gate_table.add_row(gate, str(count), f"{pct:.0f}%")
+
+    console.print(gate_table)
+
+    # 2) 카테고리별 성공률
+    cat_retired: dict[str, int] = {}
+    cat_active: dict[str, int] = {}
+    for r in retired:
+        cat = r.meta.rationale_category or "N/A"
+        cat_retired[cat] = cat_retired.get(cat, 0) + 1
+    for r in active:
+        cat = r.meta.rationale_category or "N/A"
+        cat_active[cat] = cat_active.get(cat, 0) + 1
+
+    all_cats = sorted(set(cat_retired) | set(cat_active))
+    if all_cats:
+        cat_table = Table(title="카테고리별 성공률")
+        cat_table.add_column("Category", style="bold")
+        cat_table.add_column("Active", justify="right", style="green")
+        cat_table.add_column("Retired", justify="right", style="red")
+        cat_table.add_column("Rate", justify="right")
+
+        for cat in all_cats:
+            n_active = cat_active.get(cat, 0)
+            n_retired = cat_retired.get(cat, 0)
+            total = n_active + n_retired
+            rate = n_active / total * 100 if total > 0 else 0
+            cat_table.add_row(cat, str(n_active), str(n_retired), f"{rate:.0f}%")
+
+        console.print(cat_table)
+
+    # 3) 최근 실패 Top 10
+    by_date = sorted(retired, key=lambda r: r.meta.retired_at or r.meta.created_at, reverse=True)
+    recent = by_date[:10]
+    recent_table = Table(title="최근 RETIRED Top 10")
+    recent_table.add_column("Name", style="bold")
+    recent_table.add_column("Gate", justify="center")
+    recent_table.add_column("Category")
+    recent_table.add_column("Date")
+
+    for r in recent:
+        recent_table.add_row(
+            r.meta.name,
+            r.fail_gate or "-",
+            r.meta.rationale_category or "-",
+            str(r.meta.retired_at or r.meta.created_at),
+        )
+
+    console.print(recent_table)
 
 
 # ─── Lessons commands ────────────────────────────────────────────────
