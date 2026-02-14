@@ -35,8 +35,10 @@ import src.strategy.breakout  # 전략 등록 side effect
 import src.strategy.candle_conv_mom  # 전략 등록 side effect
 import src.strategy.candle_reject  # 전략 등록 side effect
 import src.strategy.cap_wick_rev  # 전략 등록 side effect
+import src.strategy.carry_cond_mom  # 전략 등록 side effect
 import src.strategy.cascade_mom  # 전략 등록 side effect
 import src.strategy.cft_2h  # 전략 등록 side effect
+import src.strategy.cgo_mom  # 전략 등록 side effect
 import src.strategy.copula_pairs  # 전략 등록 side effect
 import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.dir_vol_trend  # 전략 등록 side effect
@@ -53,8 +55,10 @@ import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
 import src.strategy.hour_season  # 전략 등록 side effect
+import src.strategy.jump_drift_mom  # 전략 등록 side effect
 import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
+import src.strategy.kelt_eff_trend  # 전략 등록 side effect
 import src.strategy.liq_momentum  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mh_roc  # 전략 등록 side effect
@@ -74,6 +78,7 @@ import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.trend_quality_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
+import src.strategy.vardecomp_mom  # 전략 등록 side effect
 import src.strategy.vmsm  # 전략 등록 side effect
 import src.strategy.vol_adaptive  # 전략 등록 side effect
 import src.strategy.vol_asym_trend  # 전략 등록 side effect
@@ -83,6 +88,7 @@ import src.strategy.vol_confirm_mom  # 전략 등록 side effect
 import src.strategy.vol_impulse_mom  # 전략 등록 side effect
 import src.strategy.vol_regime  # 전략 등록 side effect
 import src.strategy.vol_structure  # 전략 등록 side effect
+import src.strategy.vov_mom  # 전략 등록 side effect
 import src.strategy.vpin_flow  # 전략 등록 side effect
 import src.strategy.vr_regime  # 전략 등록 side effect
 import src.strategy.vw_tsmom  # 전략 등록 side effect

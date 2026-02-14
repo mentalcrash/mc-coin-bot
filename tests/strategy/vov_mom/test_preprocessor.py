@@ -33,9 +33,7 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 class TestPreprocess:
-    def test_output_columns(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_output_columns(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         required = {
             "returns",
@@ -49,15 +47,11 @@ class TestPreprocess:
         }
         assert required.issubset(set(result.columns))
 
-    def test_same_length(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_same_length(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         assert len(result) == len(sample_ohlcv_df)
 
-    def test_immutability(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_immutability(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         original = sample_ohlcv_df.copy()
         preprocess(sample_ohlcv_df, config)
         pd.testing.assert_frame_equal(sample_ohlcv_df, original)
@@ -67,9 +61,7 @@ class TestPreprocess:
         with pytest.raises(ValueError, match="Missing required columns"):
             preprocess(df, config)
 
-    def test_vol_scalar_positive(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_vol_scalar_positive(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["vol_scalar"].dropna()
         assert (valid > 0).all()
@@ -83,31 +75,23 @@ class TestPreprocess:
 
 
 class TestVovFeatures:
-    def test_gk_vol_non_negative(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_gk_vol_non_negative(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["gk_vol"].dropna()
         assert (valid >= 0).all()
 
-    def test_vov_non_negative(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_vov_non_negative(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["vov"].dropna()
         assert (valid >= 0).all()
 
-    def test_vov_pct_range(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_vov_pct_range(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["vov_pct"].dropna()
         assert (valid >= 0).all()
         assert (valid <= 1).all()
 
-    def test_price_mom_finite(
-        self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_price_mom_finite(self, sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["price_mom"].dropna()
         assert np.isfinite(valid).all()

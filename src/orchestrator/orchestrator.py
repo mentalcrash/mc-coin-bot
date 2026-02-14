@@ -15,6 +15,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from src.core.event_bus import EventBus
+    from src.notification.orchestrator_engine import OrchestratorNotificationEngine
     from src.orchestrator.allocator import CapitalAllocator
     from src.orchestrator.config import OrchestratorConfig
     from src.orchestrator.lifecycle import LifecycleManager
@@ -70,6 +72,7 @@ class StrategyOrchestrator:
         lifecycle_manager: LifecycleManager | None = None,
         risk_aggregator: RiskAggregator | None = None,
         target_timeframe: str | None = None,
+        notification: OrchestratorNotificationEngine | None = None,
     ) -> None:
         self._config = config
         self._pods = pods
@@ -77,6 +80,7 @@ class StrategyOrchestrator:
         self._lifecycle = lifecycle_manager
         self._risk_aggregator = risk_aggregator
         self._target_timeframe = target_timeframe
+        self._notification: OrchestratorNotificationEngine | None = notification
         self._bus: EventBus | None = None
 
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
@@ -93,10 +97,23 @@ class StrategyOrchestrator:
         # 리밸런스 추적
         self._last_rebalance_ts: datetime | None = None
 
+        # Fire-and-forget notification tasks (prevent GC)
+        self._notification_tasks: set[asyncio.Task[None]] = set()
+
         # History 추적
         self._allocation_history: list[dict[str, object]] = []
         self._lifecycle_events: list[dict[str, object]] = []
         self._risk_contributions_history: list[dict[str, object]] = []
+
+    def set_notification_engine(self, engine: OrchestratorNotificationEngine) -> None:
+        """알림 엔진 주입 (LiveRunner에서 후에 설정)."""
+        self._notification = engine
+
+    def _fire_notification(self, coro: object) -> None:
+        """Fire-and-forget notification coroutine. 참조를 보관하여 GC 방지."""
+        task = asyncio.create_task(coro)  # type: ignore[arg-type]
+        self._notification_tasks.add(task)
+        task.add_done_callback(self._notification_tasks.discard)
 
     # ── EventBus Integration ──────────────────────────────────────
 
@@ -324,6 +341,17 @@ class StrategyOrchestrator:
             alloc_record[pod.pod_id] = pod.capital_fraction
         self._allocation_history.append(alloc_record)
 
+        # Rebalance 알림
+        if self._notification is not None:
+            allocations = {p.pod_id: p.capital_fraction for p in self._pods}
+            self._fire_notification(
+                self._notification.notify_capital_rebalance(
+                    timestamp=str(self._pending_bar_ts),
+                    allocations=allocations,
+                    trigger_reason=self._config.rebalance_trigger.value,
+                )
+            )
+
         # Risk 한도 검사 + history 기록
         self._check_risk_limits(pod_returns)
 
@@ -347,6 +375,15 @@ class StrategyOrchestrator:
                         "timestamp": self._pending_bar_ts,
                     }
                 )
+                if self._notification is not None:
+                    self._fire_notification(
+                        self._notification.notify_lifecycle_transition(
+                            pod_id=pod.pod_id,
+                            from_state=pre_state,
+                            to_state=pod.state.value,
+                            timestamp=str(self._pending_bar_ts),
+                        )
+                    )
 
     def _check_risk_limits(self, pod_returns: pd.DataFrame) -> None:
         """Risk 한도 검사 + risk contributions history 기록."""
@@ -363,6 +400,9 @@ class StrategyOrchestrator:
         )
         for alert in alerts:
             logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
+
+        if alerts and self._notification is not None:
+            self._fire_notification(self._notification.notify_risk_alerts(alerts))
 
         # Risk contributions history 기록
         risk_record: dict[str, object] = {"timestamp": self._pending_bar_ts}

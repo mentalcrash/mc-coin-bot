@@ -43,7 +43,7 @@ _STATUS_COLORS: dict[StrategyStatus, str] = {
     StrategyStatus.RETIRED: "red",
 }
 
-_GATE_DISPLAY = ["G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5", "G6", "G7"]
+_GATE_DISPLAY = ["G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5"]
 
 
 def _gate_badge_colored(record: StrategyRecord, gid: GateId) -> str:

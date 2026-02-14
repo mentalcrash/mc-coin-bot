@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
     from src.orchestrator.config import OrchestratorConfig
+    from src.orchestrator.metrics import OrchestratorMetrics
     from src.orchestrator.orchestrator import StrategyOrchestrator
     from src.portfolio.config import PortfolioManagerConfig
     from src.regime.service import RegimeService, RegimeServiceConfig
@@ -536,7 +537,12 @@ class LiveRunner:
             uptime_task: asyncio.Task[None] | None = None
             if metrics_exporter is not None:
                 uptime_task = asyncio.create_task(
-                    self._periodic_metrics_update(metrics_exporter, bus, self._futures_client)
+                    self._periodic_metrics_update(
+                        metrics_exporter,
+                        bus,
+                        self._futures_client,
+                        getattr(self, "_orchestrator_metrics", None),
+                    )
                 )
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
@@ -686,6 +692,16 @@ class LiveRunner:
             symbols=self._symbols,
         )
         await health_scheduler.start()
+
+        # OrchestratorNotificationEngine (Orchestrator 활성 시)
+        if self._orchestrator is not None:
+            from src.notification.orchestrator_engine import OrchestratorNotificationEngine
+
+            orch_notification = OrchestratorNotificationEngine(
+                notification_queue, self._orchestrator
+            )
+            self._orchestrator.set_notification_engine(orch_notification)
+            await orch_notification.start()
 
         logger.info(
             "Discord Bot + NotificationEngine + ReportScheduler + HealthCheckScheduler enabled"
@@ -1108,6 +1124,16 @@ class LiveRunner:
         # LiveDataFeed에 WS 상태 콜백 주입
         self._feed.set_ws_callback(PrometheusWsCallback())
 
+        # OrchestratorMetrics (Orchestrator 활성 시)
+        if self._orchestrator is not None:
+            from src.orchestrator.metrics import OrchestratorMetrics
+
+            self._orchestrator_metrics: OrchestratorMetrics | None = OrchestratorMetrics(
+                self._orchestrator
+            )
+        else:
+            self._orchestrator_metrics = None
+
         return exporter
 
     @staticmethod
@@ -1115,15 +1141,18 @@ class LiveRunner:
         exporter: MetricsExporter,
         bus: EventBus,
         futures_client: BinanceFuturesClient | None,
+        orchestrator_metrics: OrchestratorMetrics | None = None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime + EventBus + exchange health 메트릭 갱신."""
+        """주기적으로 uptime + EventBus + exchange health + orchestrator 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
             exporter.update_eventbus_metrics(bus)
             if futures_client is not None:
                 exporter.update_exchange_health(futures_client.consecutive_failures)
+            if orchestrator_metrics is not None:
+                orchestrator_metrics.update()
 
     @staticmethod
     async def _periodic_reconciliation(

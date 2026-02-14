@@ -28,16 +28,16 @@ class TestEnums:
     def test_gate_id_values(self) -> None:
         assert GateId.G0A == "G0A"
         assert GateId.G5 == "G5"
-        assert GateId.G7 == "G7"
+        assert GateId.G5 == "G5"
 
     def test_gate_verdict_values(self) -> None:
         assert GateVerdict.PASS == "PASS"
         assert GateVerdict.FAIL == "FAIL"
 
     def test_gate_order_length(self) -> None:
-        assert len(GATE_ORDER) == 10
+        assert len(GATE_ORDER) == 8
         assert GATE_ORDER[0] == GateId.G0A
-        assert GATE_ORDER[-1] == GateId.G7
+        assert GATE_ORDER[-1] == GateId.G5
 
     def test_gate_order_includes_g2h(self) -> None:
         assert GateId.G2H in GATE_ORDER

@@ -19,6 +19,7 @@ from src.notification.discord import (
 )
 from src.notification.engine import NotificationEngine
 from src.notification.models import ChannelRoute, NotificationItem, Severity
+from src.notification.orchestrator_engine import OrchestratorNotificationEngine
 from src.notification.queue import NotificationQueue, SpamGuard
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "NotificationEngine",
     "NotificationItem",
     "NotificationQueue",
+    "OrchestratorNotificationEngine",
     "Severity",
     "SpamGuard",
     "TradingContext",

@@ -1,0 +1,17 @@
+id: 31
+title: Jump-Drift Decomposition 4H 크립토 비적합
+body: 'Realized Variance vs Bipower Variation으로 점프 성분 분리 후 drift 방향 추종하는 전략. 크립토 4H에서
+  전 에셋(BTC/ETH/BNB/SOL/DOGE) Sharpe<0 기록. BTC -2.08로 최악. 원인: (1) BPV 추정이 4H 봉에서 노이즈
+  과다, (2) 크립토의 연속 점프(flash crash, liquidation cascade)가 RV-BPV 분해 가정 위반, (3) 학계 RV-BPV
+  논문은 일봉 이상 저빈도 데이터 기반.'
+category: strategy-design
+tags:
+- jump-drift
+- RV-BPV
+- 4H
+- crypto-noise
+strategies:
+- jump-drift-mom
+timeframes:
+- 4H
+added_at: '2026-02-14'

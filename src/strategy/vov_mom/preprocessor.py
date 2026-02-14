@@ -24,7 +24,6 @@ from src.market.indicators import (
     volatility_scalar,
 )
 
-
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
 
 
@@ -88,7 +87,9 @@ def preprocess(df: pd.DataFrame, config: VovMomConfig) -> pd.DataFrame:
     gk_vol_sq: pd.Series = gk_var.rolling(  # type: ignore[assignment]
         window=config.gk_window, min_periods=config.gk_window
     ).mean()
-    gk_vol = np.sqrt(gk_vol_sq.clip(lower=0))
+    gk_vol: pd.Series = pd.Series(  # type: ignore[no-redef]
+        np.sqrt(gk_vol_sq.clip(lower=0)), index=df.index
+    )
     df["gk_vol"] = gk_vol
 
     # --- VoV (Volatility of Volatility) ---
@@ -103,7 +104,7 @@ def preprocess(df: pd.DataFrame, config: VovMomConfig) -> pd.DataFrame:
     df["vov_pct"] = vov_pct
 
     # --- Price Momentum ---
-    df["price_mom"] = rolling_return(close, window=config.mom_lookback)
+    df["price_mom"] = rolling_return(close, period=config.mom_lookback)
 
     # --- Drawdown (HEDGE_ONLY용) ---
     df["drawdown"] = drawdown(close)

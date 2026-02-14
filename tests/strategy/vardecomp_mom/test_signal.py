@@ -34,16 +34,12 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 @pytest.fixture
-def preprocessed_df(
-    sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig
-) -> pd.DataFrame:
+def preprocessed_df(sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig) -> pd.DataFrame:
     return preprocess(sample_ohlcv_df, config)
 
 
 class TestSignalStructure:
-    def test_output_fields(
-        self, preprocessed_df: pd.DataFrame, config: VardecompMomConfig
-    ) -> None:
+    def test_output_fields(self, preprocessed_df: pd.DataFrame, config: VardecompMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert hasattr(signals, "entries")
         assert hasattr(signals, "exits")
@@ -63,9 +59,7 @@ class TestSignalStructure:
         signals = generate_signals(preprocessed_df, config)
         assert set(signals.direction.unique()).issubset({-1, 0, 1})
 
-    def test_same_length(
-        self, preprocessed_df: pd.DataFrame, config: VardecompMomConfig
-    ) -> None:
+    def test_same_length(self, preprocessed_df: pd.DataFrame, config: VardecompMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         n = len(preprocessed_df)
         assert len(signals.entries) == n

@@ -12,6 +12,7 @@ from src.orchestrator.config import (
 )
 from src.orchestrator.degradation import PageHinkleyDetector
 from src.orchestrator.lifecycle import LifecycleManager
+from src.orchestrator.metrics import OrchestratorMetrics
 from src.orchestrator.models import (
     AllocationMethod,
     LifecycleState,
@@ -40,6 +41,7 @@ __all__ = [
     "LifecycleState",
     "OrchestratedResult",
     "OrchestratorConfig",
+    "OrchestratorMetrics",
     "PageHinkleyDetector",
     "PodConfig",
     "PodPerformance",

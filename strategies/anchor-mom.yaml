@@ -8,7 +8,14 @@ meta:
   created_at: '2026-02-10'
   retired_at: null
   economic_rationale: Rolling high 대비 근접도(nearness)와 모멘텀 방향 결합으로 심리적 앵커링 효과 포착
-parameters: {}
+parameters:
+  nearness_lookback: 29
+  mom_lookback: 51
+  strong_nearness: 0.9691525631074218
+  weak_nearness: 0.8555268835561406
+  short_nearness: 0.5293061129016696
+  vol_window: 12
+  atr_period: 22
 gates:
   G0A:
     status: PASS
@@ -51,6 +58,16 @@ gates:
     details:
       sharpe: 0.44
       cagr: 8.37
+  G2H:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      best_sharpe_is: 1.754
+      default_sharpe_is: 1.441
+      improvement_pct: 21.7
+      oos_sharpe: 0.782
+      n_trials: 100
+      n_completed: 100
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 1.36
@@ -114,3 +131,7 @@ decisions:
   verdict: PASS
   rationale: EDA Sharpe 0.44 vs VBT 0.42. 수익 부호 일치. CAGR 편차 7.4%. Trades 198 (intrabar
     SL/TS). Live Ready 7/7
+- date: '2026-02-14'
+  gate: G2H
+  verdict: PASS
+  rationale: IS Sharpe 1.44→1.75 (+21.7%), OOS=0.78

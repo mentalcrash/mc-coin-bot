@@ -22,7 +22,6 @@ from src.market.indicators import (
     volatility_scalar,
 )
 
-
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume", "funding_rate"})
 
 
@@ -80,7 +79,7 @@ def preprocess(df: pd.DataFrame, config: CarryCondMomConfig) -> pd.DataFrame:
     )
 
     # --- Price Momentum ---
-    price_mom = rolling_return(close, window=config.mom_lookback)
+    price_mom = rolling_return(close, period=config.mom_lookback)
     df["price_mom"] = price_mom
 
     # --- Funding Rate Features ---

@@ -1,0 +1,18 @@
+id: 32
+title: 'Variance Decomposition 모멘텀: G1 PASS→G2 110% Decay 폭발'
+body: 'Semivariance ratio(하방 분산 비중) 기반 모멘텀 필터링. G1에서 SOL Sharpe 1.34, 전 에셋 양수로 유망했으나,
+  IS/OOS 분할 시 IS 1.81→OOS -0.19 (Decay 110%). 2020-2024.03 IS 구간의 강세/약세 순환 패턴에 과적합.
+  2024-2025 OOS에서 var_ratio_threshold 0.55 고정값이 변화된 변동성 구조에 부적합. 교훈: 전 에셋 G1 양수 =
+  과적합 가능성도 의심해야 함. 특히 threshold 기반 필터는 시장 구조 변화에 취약.'
+category: pipeline-process
+tags:
+- variance-decomposition
+- overfitting
+- IS-OOS
+- decay
+- threshold-filter
+strategies:
+- vardecomp-mom
+timeframes:
+- 1D
+added_at: '2026-02-14'
