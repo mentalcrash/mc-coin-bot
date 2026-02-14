@@ -4,10 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import donchian_channel, garman_klass_volatility
 from src.strategy.gk_breakout.config import GKBreakoutConfig
 from src.strategy.gk_breakout.preprocessor import (
-    calculate_donchian_channel,
-    calculate_gk_variance,
     calculate_vol_ratio,
     preprocess,
 )
@@ -45,7 +44,7 @@ class TestGKVariance:
 
     def test_gk_var_positive_for_most(self, sample_ohlcv: pd.DataFrame):
         """GK variance는 대부분 양수 (음수도 가능하지만 대부분 양수)."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -56,7 +55,7 @@ class TestGKVariance:
 
     def test_gk_var_shape(self, sample_ohlcv: pd.DataFrame):
         """출력 길이가 입력과 동일."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -66,7 +65,7 @@ class TestGKVariance:
 
     def test_gk_var_name(self, sample_ohlcv: pd.DataFrame):
         """시리즈 이름이 'gk_var'."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -76,7 +75,7 @@ class TestGKVariance:
 
     def test_gk_var_no_nan(self, sample_ohlcv: pd.DataFrame):
         """유효한 OHLC 데이터에서 NaN 없음."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -99,7 +98,7 @@ class TestVolRatio:
         close = pd.Series(prices)
         open_ = close + np.random.randn(n) * 30
 
-        gk_var = calculate_gk_variance(open_, pd.Series(high), pd.Series(low), close)
+        gk_var = garman_klass_volatility(open_, pd.Series(high), pd.Series(low), close)
         vol_ratio = calculate_vol_ratio(gk_var, lookback=20)
 
         valid = vol_ratio.dropna()
@@ -108,7 +107,7 @@ class TestVolRatio:
 
     def test_vol_ratio_shape(self, sample_ohlcv: pd.DataFrame):
         """출력 길이가 입력과 동일."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -119,7 +118,7 @@ class TestVolRatio:
 
     def test_vol_ratio_name(self, sample_ohlcv: pd.DataFrame):
         """시리즈 이름이 'vol_ratio'."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -130,7 +129,7 @@ class TestVolRatio:
 
     def test_vol_ratio_warmup_nan(self, sample_ohlcv: pd.DataFrame):
         """워밍업 기간에는 NaN."""
-        gk_var = calculate_gk_variance(
+        gk_var = garman_klass_volatility(
             sample_ohlcv["open"],
             sample_ohlcv["high"],
             sample_ohlcv["low"],
@@ -147,24 +146,24 @@ class TestDonchianChannel:
 
     def test_upper_gte_lower(self, sample_ohlcv: pd.DataFrame):
         """upper >= lower 항상 성립."""
-        upper, lower = calculate_donchian_channel(
-            sample_ohlcv["high"], sample_ohlcv["low"], lookback=20
+        upper, _middle, lower = donchian_channel(
+            sample_ohlcv["high"], sample_ohlcv["low"], period=20
         )
         valid_mask = upper.notna() & lower.notna()
         assert (upper[valid_mask] >= lower[valid_mask]).all()
 
     def test_channel_shape(self, sample_ohlcv: pd.DataFrame):
         """출력 길이가 입력과 동일."""
-        upper, lower = calculate_donchian_channel(
-            sample_ohlcv["high"], sample_ohlcv["low"], lookback=20
+        upper, _middle, lower = donchian_channel(
+            sample_ohlcv["high"], sample_ohlcv["low"], period=20
         )
         assert len(upper) == len(sample_ohlcv)
         assert len(lower) == len(sample_ohlcv)
 
     def test_channel_names(self, sample_ohlcv: pd.DataFrame):
         """시리즈 이름 확인."""
-        upper, lower = calculate_donchian_channel(
-            sample_ohlcv["high"], sample_ohlcv["low"], lookback=20
+        upper, _middle, lower = donchian_channel(
+            sample_ohlcv["high"], sample_ohlcv["low"], period=20
         )
         assert upper.name == "dc_upper"
         assert lower.name == "dc_lower"
@@ -172,8 +171,8 @@ class TestDonchianChannel:
     def test_channel_warmup_nan(self, sample_ohlcv: pd.DataFrame):
         """워밍업 기간에는 NaN."""
         lookback = 20
-        upper, _lower = calculate_donchian_channel(
-            sample_ohlcv["high"], sample_ohlcv["low"], lookback=lookback
+        upper, _middle, _lower = donchian_channel(
+            sample_ohlcv["high"], sample_ohlcv["low"], period=lookback
         )
         assert upper.iloc[: lookback - 1].isna().all()
         assert upper.iloc[lookback - 1 :].notna().all()

@@ -23,35 +23,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
+
+from src.market.indicators import (
+    bollinger_bands,
+    log_returns,
+    realized_volatility,
+    squeeze_detect,
+)
 
 if TYPE_CHECKING:
     from src.strategy.ttm_squeeze.config import TtmSqueezeConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_bollinger_bands(
-    close: pd.Series,
-    period: int,
-    std_dev: float,
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Bollinger Bands 계산.
-
-    Args:
-        close: 종가 시리즈
-        period: 이동평균 기간
-        std_dev: 표준편차 배수
-
-    Returns:
-        (bb_upper, bb_middle, bb_lower) 튜플
-    """
-    middle: pd.Series = close.rolling(window=period).mean()  # type: ignore[assignment]
-    std: pd.Series = close.rolling(window=period).std()  # type: ignore[assignment]
-    upper: pd.Series = middle + std_dev * std  # type: ignore[assignment]
-    lower: pd.Series = middle - std_dev * std  # type: ignore[assignment]
-    return upper, middle, lower
 
 
 def calculate_keltner_channels(
@@ -64,6 +48,8 @@ def calculate_keltner_channels(
     """Keltner Channels 계산.
 
     EMA 기반 중심선에 ATR 배수를 더한 채널입니다.
+    NOTE: indicators.keltner_channels는 ema_period/atr_period를 별도로 받지만
+    이 전략은 period를 EMA/ATR 모두에 공유하므로 로컬 구현을 유지합니다.
 
     Args:
         close: 종가 시리즈
@@ -86,35 +72,12 @@ def calculate_keltner_channels(
     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
     # ATR: EMA of True Range
-    atr: pd.Series = true_range.ewm(span=period, adjust=False).mean()  # type: ignore[assignment]
+    atr_val: pd.Series = true_range.ewm(span=period, adjust=False).mean()  # type: ignore[assignment]
 
-    kc_upper: pd.Series = kc_middle + mult * atr  # type: ignore[assignment]
-    kc_lower: pd.Series = kc_middle - mult * atr  # type: ignore[assignment]
+    kc_upper: pd.Series = kc_middle + mult * atr_val  # type: ignore[assignment]
+    kc_lower: pd.Series = kc_middle - mult * atr_val  # type: ignore[assignment]
 
     return kc_upper, kc_middle, kc_lower
-
-
-def calculate_squeeze(
-    bb_upper: pd.Series,
-    bb_lower: pd.Series,
-    kc_upper: pd.Series,
-    kc_lower: pd.Series,
-) -> pd.Series:
-    """Squeeze 상태 감지.
-
-    BB가 KC 안에 있으면 squeeze ON (저변동성 수축 상태).
-
-    Args:
-        bb_upper: BB 상단
-        bb_lower: BB 하단
-        kc_upper: KC 상단
-        kc_lower: KC 하단
-
-    Returns:
-        bool Series (True = squeeze ON)
-    """
-    squeeze_on = (bb_lower > kc_lower) & (bb_upper < kc_upper)
-    return pd.Series(squeeze_on, index=bb_upper.index, name="squeeze_on", dtype=bool)
 
 
 def calculate_momentum(
@@ -159,51 +122,6 @@ def calculate_exit_sma(
     """
     sma: pd.Series = close.rolling(window=period).mean()  # type: ignore[assignment]
     return pd.Series(sma, index=close.index, name="exit_sma")
-
-
-def calculate_realized_volatility(
-    close: pd.Series,
-    window: int,
-    annualization_factor: float,
-) -> pd.Series:
-    """실현 변동성 계산 (로그 수익률 기반, 연환산).
-
-    Args:
-        close: 종가 시리즈
-        window: rolling 윈도우
-        annualization_factor: 연환산 계수
-
-    Returns:
-        연환산 실현 변동성 시리즈
-    """
-    log_returns = np.log(close / close.shift(1))
-    rolling_std = log_returns.rolling(window=window).std()
-    realized_vol: pd.Series = rolling_std * np.sqrt(annualization_factor)  # type: ignore[assignment]
-    return pd.Series(realized_vol, index=close.index, name="realized_vol")
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float,
-) -> pd.Series:
-    """변동성 스케일러 계산 (shift(1) 적용).
-
-    목표 변동성 대비 실현 변동성의 비율을 계산합니다.
-    Shift(1)을 적용하여 미래 참조 편향을 방지합니다.
-
-    Args:
-        realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성
-        min_volatility: 최소 변동성 클램프
-
-    Returns:
-        변동성 스케일러 시리즈 (shift(1) 적용됨)
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-    scalar = vol_target / clamped_vol
-    shifted: pd.Series = scalar.shift(1)  # type: ignore[assignment]
-    return pd.Series(shifted, index=realized_vol.index, name="vol_scalar")
 
 
 def preprocess(
@@ -257,7 +175,7 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. Bollinger Bands 계산
-    bb_upper, _bb_middle, bb_lower = calculate_bollinger_bands(
+    bb_upper, _bb_middle, bb_lower = bollinger_bands(
         close_series,
         period=config.bb_period,
         std_dev=config.bb_std,
@@ -265,7 +183,7 @@ def preprocess(
     result["bb_upper"] = bb_upper
     result["bb_lower"] = bb_lower
 
-    # 2. Keltner Channels 계산
+    # 2. Keltner Channels 계산 (로컬 구현 유지: period 공유 패턴)
     kc_upper, _kc_middle, kc_lower = calculate_keltner_channels(
         close_series,
         high_series,
@@ -277,7 +195,7 @@ def preprocess(
     result["kc_lower"] = kc_lower
 
     # 3. Squeeze 감지
-    result["squeeze_on"] = calculate_squeeze(bb_upper, bb_lower, kc_upper, kc_lower)
+    result["squeeze_on"] = squeeze_detect(bb_upper, bb_lower, kc_upper, kc_lower)
 
     # 4. Momentum 계산
     result["momentum"] = calculate_momentum(
@@ -293,21 +211,20 @@ def preprocess(
         period=config.exit_sma_period,
     )
 
-    # 6. 실현 변동성 계산
-    result["realized_vol"] = calculate_realized_volatility(
-        close_series,
+    # 6. 실현 변동성 계산 (log returns → realized_volatility)
+    returns_series = log_returns(close_series)
+    rv = realized_volatility(
+        returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
     )
+    result["realized_vol"] = rv
 
-    realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
-
-    # 7. 변동성 스케일러 계산 (shift(1) 포함)
-    result["vol_scalar"] = calculate_volatility_scalar(
-        realized_vol_series,
-        vol_target=config.vol_target,
-        min_volatility=config.min_volatility,
-    )
+    # 7. 변동성 스케일러 계산 (shift(1) 적용: 미래 참조 방지)
+    clamped_vol = rv.clip(lower=config.min_volatility)
+    scalar = config.vol_target / clamped_vol
+    shifted: pd.Series = scalar.shift(1)  # type: ignore[assignment]
+    result["vol_scalar"] = pd.Series(shifted, index=rv.index, name="vol_scalar")
 
     # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

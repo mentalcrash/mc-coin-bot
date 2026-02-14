@@ -14,102 +14,43 @@ import logging
 import numpy as np
 import pandas as pd
 
+from src.market.indicators import (
+    atr as calculate_atr,
+    drawdown as calculate_drawdown,
+    log_returns,
+    realized_volatility as calculate_realized_volatility,
+    simple_returns,
+    vol_regime as calculate_vol_regime,
+    volatility_scalar as calculate_volatility_scalar,
+    volume_weighted_returns,
+)
 from src.strategy.vol_regime.config import VolRegimeConfig
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Backward-compat re-exports (used by ~25 downstream strategies)
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "calculate_atr",
+    "calculate_drawdown",
+    "calculate_realized_volatility",
+    "calculate_regime_strength",
+    "calculate_returns",
+    "calculate_vol_regime",
+    "calculate_volatility_scalar",
+    "calculate_vw_momentum",
+    "preprocess",
+]
 
 
 def calculate_returns(
     close: pd.Series,
     use_log: bool = True,
 ) -> pd.Series:
-    """수익률 계산 (로그 또는 단순).
-
-    Args:
-        close: 종가 시리즈
-        use_log: True면 로그 수익률, False면 단순 수익률
-
-    Returns:
-        수익률 시리즈 (첫 값은 NaN)
-    """
-    if len(close) == 0:
-        msg = "Empty Series provided"
-        raise ValueError(msg)
-
-    if use_log:
-        price_ratio = close / close.shift(1)
-        return pd.Series(np.log(price_ratio), index=close.index, name="returns")
-    return close.pct_change()
-
-
-def calculate_realized_volatility(
-    returns: pd.Series,
-    window: int,
-    annualization_factor: float = 365.0,
-    min_periods: int | None = None,
-) -> pd.Series:
-    """실현 변동성 계산 (연환산).
-
-    Args:
-        returns: 수익률 시리즈
-        window: Rolling 윈도우 크기
-        annualization_factor: 연환산 계수 (일봉: 365)
-        min_periods: 최소 관측치 수 (None이면 window 사용)
-
-    Returns:
-        연환산 변동성 시리즈
-    """
-    if min_periods is None:
-        min_periods = window
-
-    rolling_std = returns.rolling(window=window, min_periods=min_periods).std()
-    return rolling_std * np.sqrt(annualization_factor)
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float = 0.05,
-) -> pd.Series:
-    """변동성 스케일러 계산.
-
-    Args:
-        realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성
-        min_volatility: 최소 변동성 클램프
-
-    Returns:
-        변동성 스케일러 시리즈
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-    return vol_target / clamped_vol
-
-
-def calculate_vol_regime(
-    returns: pd.Series,
-    vol_lookback: int,
-    vol_rank_lookback: int,
-    annualization_factor: float,
-) -> pd.Series:
-    """변동성 regime 판별 (percentile rank).
-
-    Rolling 변동성의 percentile rank를 계산하여 현재 변동성이
-    과거 대비 어느 수준인지 0~1 범위로 반환합니다.
-
-    Args:
-        returns: 수익률 시리즈
-        vol_lookback: 변동성 계산 윈도우
-        vol_rank_lookback: Percentile rank 계산 윈도우
-        annualization_factor: 연환산 계수
-
-    Returns:
-        vol_pct 시리즈 (0~1, 1에 가까울수록 고변동성)
-    """
-    vol = returns.rolling(vol_lookback, min_periods=vol_lookback).std() * np.sqrt(
-        annualization_factor
-    )
-    vol_pct = vol.rolling(vol_rank_lookback, min_periods=min(vol_rank_lookback, 60)).rank(pct=True)
-    return pd.Series(vol_pct, index=returns.index, name="vol_regime")
+    """수익률 계산 (로그 또는 단순). Backward-compat wrapper."""
+    return log_returns(close) if use_log else simple_returns(close)
 
 
 def calculate_vw_momentum(
@@ -130,14 +71,7 @@ def calculate_vw_momentum(
     Returns:
         거래량 가중 모멘텀 시리즈
     """
-    log_volume = np.log1p(volume)
-    weighted: pd.Series = (  # type: ignore[assignment]
-        (returns * log_volume).rolling(lookback, min_periods=lookback).sum()
-    )
-    total_vol: pd.Series = log_volume.rolling(  # type: ignore[assignment]
-        lookback, min_periods=lookback
-    ).sum()
-    return weighted / total_vol.replace(0, np.nan)
+    return volume_weighted_returns(returns, volume, window=lookback)
 
 
 def calculate_regime_strength(
@@ -196,46 +130,9 @@ def calculate_regime_strength(
     return strength
 
 
-def calculate_atr(
-    high: pd.Series,
-    low: pd.Series,
-    close: pd.Series,
-    period: int = 14,
-) -> pd.Series:
-    """ATR (Average True Range) 계산.
-
-    Wilder's smoothing(EWM)을 사용한 True Range의 지수이동평균입니다.
-
-    Args:
-        high: 고가 시리즈
-        low: 저가 시리즈
-        close: 종가 시리즈
-        period: 계산 기간
-
-    Returns:
-        ATR 시리즈
-    """
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    return pd.Series(atr, index=close.index, name="atr")
-
-
-def calculate_drawdown(close: pd.Series) -> pd.Series:
-    """롤링 최고점 대비 드로다운 계산.
-
-    Args:
-        close: 종가 시리즈
-
-    Returns:
-        드로다운 시리즈 (항상 0 이하, 예: -0.15 = -15%)
-    """
-    rolling_max = close.expanding().max()
-    drawdown: pd.Series = (close - rolling_max) / rolling_max  # type: ignore[assignment]
-    return pd.Series(drawdown, index=close.index, name="drawdown")
+# ---------------------------------------------------------------------------
+# preprocess
+# ---------------------------------------------------------------------------
 
 
 def preprocess(

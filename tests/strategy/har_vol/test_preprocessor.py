@@ -4,11 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import parkinson_volatility
 from src.strategy.har_vol.config import HARVolConfig
 from src.strategy.har_vol.preprocessor import (
     calculate_har_features,
     calculate_har_forecast,
-    calculate_parkinson_vol,
     calculate_vol_surprise,
     preprocess,
 )
@@ -62,7 +62,7 @@ class TestParkinsonVol:
         high = pd.Series([110.0, 120.0, 115.0])
         low = pd.Series([90.0, 100.0, 105.0])
 
-        result = calculate_parkinson_vol(high, low)
+        result = parkinson_volatility(high, low)
 
         # 수동 계산: sqrt(1/(4*ln2) * ln(H/L)^2)
         expected_0 = np.sqrt(1.0 / (4.0 * np.log(2.0)) * np.log(110.0 / 90.0) ** 2)
@@ -72,7 +72,7 @@ class TestParkinsonVol:
         """Parkinson vol은 항상 양수 (high > low일 때)."""
         high: pd.Series = sample_ohlcv_df["high"]  # type: ignore[assignment]
         low: pd.Series = sample_ohlcv_df["low"]  # type: ignore[assignment]
-        result = calculate_parkinson_vol(high, low)
+        result = parkinson_volatility(high, low)
 
         assert (result.dropna() >= 0).all()
 
@@ -137,7 +137,7 @@ class TestHARForecast:
         high: pd.Series = sample_ohlcv_df["high"]  # type: ignore[assignment]
         low: pd.Series = sample_ohlcv_df["low"]  # type: ignore[assignment]
 
-        parkinson_vol = calculate_parkinson_vol(high, low)
+        parkinson_vol = parkinson_volatility(high, low)
         features = calculate_har_features(
             parkinson_vol,
             daily_w=config.daily_window,
@@ -164,7 +164,7 @@ class TestHARForecast:
         high: pd.Series = sample_ohlcv_df["high"]  # type: ignore[assignment]
         low: pd.Series = sample_ohlcv_df["low"]  # type: ignore[assignment]
 
-        parkinson_vol = calculate_parkinson_vol(high, low)
+        parkinson_vol = parkinson_volatility(high, low)
         features = calculate_har_features(
             parkinson_vol,
             daily_w=config.daily_window,

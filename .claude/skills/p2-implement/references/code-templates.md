@@ -103,15 +103,14 @@ import pandas as pd
 if TYPE_CHECKING:
     from src.strategy.{name_snake}.config import {StrategyConfig}
 
-# 공통 유틸리티 재사용 (중복 구현 금지)
-from src.strategy.tsmom.preprocessor import (
-    calculate_returns,
-    calculate_realized_volatility,
-    calculate_volatility_scalar,
+# 공통 지표 라이브러리 (중복 구현 금지, 패키지 구조)
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
-
-# HEDGE_ONLY 모드 시 drawdown 유틸리티
-# from src.strategy.vol_regime.preprocessor import calculate_drawdown
 
 
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
@@ -144,11 +143,11 @@ def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
     volume: pd.Series = df["volume"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -156,7 +155,7 @@ def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
@@ -182,22 +181,59 @@ def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
     return df
 ```
 
-### preprocessor 유틸리티 함수 시그니처
+### 공통 지표 함수 시그니처 (src/market/indicators/)
+
+패키지 구조로 재구성되었으며, 53개 함수 사용 가능. 주요 함수:
 
 ```python
-# src/strategy/tsmom/preprocessor.py
-def calculate_returns(close: pd.Series, *, use_log: bool = True) -> pd.Series: ...
-def calculate_realized_volatility(
+# Returns
+def log_returns(close: pd.Series) -> pd.Series: ...
+def simple_returns(close: pd.Series) -> pd.Series: ...
+def rolling_return(close: pd.Series, window: int) -> pd.Series: ...
+
+# Volatility
+def realized_volatility(
     returns: pd.Series,
     window: int = 30,
     annualization_factor: float = 365.0,
     min_periods: int | None = None,
 ) -> pd.Series: ...
-def calculate_volatility_scalar(
+def volatility_scalar(
     realized_vol: pd.Series,
     vol_target: float = 0.35,
     min_volatility: float = 0.05,
 ) -> pd.Series: ...
+def parkinson_volatility(high: pd.Series, low: pd.Series, window: int, annualization_factor: float) -> pd.Series: ...
+def garman_klass_volatility(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, window: int, annualization_factor: float) -> pd.Series: ...
+
+# Trend
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series: ...
+def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series: ...
+def sma(close: pd.Series, period: int) -> pd.Series: ...
+def ema(close: pd.Series, period: int) -> pd.Series: ...
+def kama(close: pd.Series, period: int = 10, fast_ema: int = 2, slow_ema: int = 30) -> pd.Series: ...
+
+# Oscillators
+def rsi(close: pd.Series, period: int = 14) -> pd.Series: ...
+def stochastic(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series: ...
+def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[pd.Series, pd.Series, pd.Series]: ...
+
+# Channels
+def bollinger_bands(close: pd.Series, period: int = 20, num_std: float = 2.0) -> tuple[pd.Series, pd.Series, pd.Series]: ...
+def donchian_channel(high: pd.Series, low: pd.Series, period: int) -> tuple[pd.Series, pd.Series]: ...
+
+# Composite
+def drawdown(close: pd.Series) -> pd.Series: ...
+def rolling_zscore(close: pd.Series, window: int) -> pd.Series: ...
+def trend_strength(close: pd.Series, period: int = 20) -> pd.Series: ...
+
+# Derivatives
+def funding_rate_ma(funding_rate: pd.Series, window: int) -> pd.Series: ...
+def funding_zscore(funding_rate: pd.Series, window: int) -> pd.Series: ...
+def oi_momentum(open_interest: pd.Series, window: int) -> pd.Series: ...
+```
+
+전체 목록은 `src/market/indicators/__init__.py` 참조.
 ```
 
 ---
@@ -223,10 +259,10 @@ import pandas as pd
 if TYPE_CHECKING:
     from src.strategy.{name_snake}.config import {StrategyConfig}
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_returns,
-    calculate_realized_volatility,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
 
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume", "funding_rate"})
@@ -244,11 +280,11 @@ def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
     close: pd.Series = df["close"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -256,7 +292,7 @@ def preprocess(df: pd.DataFrame, config: {StrategyConfig}) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,

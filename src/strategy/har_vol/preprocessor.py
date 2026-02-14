@@ -17,41 +17,18 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    log_returns,
+    parkinson_volatility,
+    realized_volatility,
+    volatility_scalar,
 )
 
 if TYPE_CHECKING:
     from src.strategy.har_vol.config import HARVolConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_parkinson_vol(high: pd.Series, low: pd.Series) -> pd.Series:
-    """Parkinson volatility 계산 (range-based estimator).
-
-    High-Low 범위를 사용한 변동성 추정기입니다.
-    Close-to-Close 변동성보다 효율적인 추정이 가능합니다.
-
-    Formula:
-        sqrt(1 / (4 * ln(2)) * ln(high / low)^2)
-
-    Args:
-        high: 고가 시리즈
-        low: 저가 시리즈
-
-    Returns:
-        Parkinson volatility 시리즈
-    """
-    log_hl_ratio = np.log(high / low)
-    return pd.Series(
-        np.sqrt(1.0 / (4.0 * np.log(2.0)) * log_hl_ratio**2),
-        index=high.index,
-        name="parkinson_vol",
-    )
 
 
 def calculate_har_features(
@@ -233,11 +210,11 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. 수익률 계산 (log returns)
-    result["returns"] = calculate_returns(close_series, use_log=True)
+    result["returns"] = log_returns(close_series)
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. Parkinson volatility
-    parkinson_vol = calculate_parkinson_vol(high_series, low_series)
+    parkinson_vol = parkinson_volatility(high_series, low_series)
     result["parkinson_vol"] = parkinson_vol
 
     # 3. HAR features (rv_daily, rv_weekly, rv_monthly)
@@ -263,7 +240,7 @@ def preprocess(
     result["vol_surprise"] = calculate_vol_surprise(parkinson_vol, har_forecast)
 
     # 6. 실현 변동성 (연환산, weekly_window 기반)
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns_series,
         window=config.weekly_window,
         annualization_factor=config.annualization_factor,
@@ -271,14 +248,14 @@ def preprocess(
     result["realized_vol"] = realized_vol
 
     # 7. 변동성 스케일러
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 8. ATR 계산 (Trailing Stop용)
-    result["atr"] = calculate_atr(high_series, low_series, close_series)
+    result["atr"] = atr(high_series, low_series, close_series)
 
     # 디버그: 지표 통계
     valid_data = result.dropna(subset=["vol_surprise"])

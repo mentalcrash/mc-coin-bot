@@ -19,68 +19,20 @@ Rules Applied:
 
 import logging
 
-import numpy as np
 import pandas as pd
 
-from src.strategy.funding_carry.config import FundingCarryConfig
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    funding_rate_ma,
+    funding_zscore,
+    log_returns,
+    realized_volatility,
+    simple_returns,
+    volatility_scalar,
 )
+from src.strategy.funding_carry.config import FundingCarryConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_avg_funding_rate(
-    funding_rate: pd.Series,
-    window: int,
-) -> pd.Series:
-    """평균 펀딩비 계산 (Rolling Mean).
-
-    Args:
-        funding_rate: 펀딩비 시리즈
-        window: Rolling 윈도우 크기
-
-    Returns:
-        평균 펀딩비 시리즈
-
-    Example:
-        >>> avg_fr = calculate_avg_funding_rate(df["funding_rate"], window=3)
-    """
-    result: pd.Series = funding_rate.rolling(  # type: ignore[assignment]
-        window=window, min_periods=window
-    ).mean()
-    return result
-
-
-def calculate_funding_zscore(
-    avg_fr: pd.Series,
-    window: int,
-) -> pd.Series:
-    """펀딩비 Z-score 계산.
-
-    평균 펀딩비를 Rolling 윈도우로 정규화하여 상대적 크기를 측정합니다.
-    Z-score = (avg_fr - rolling_mean) / rolling_std
-
-    Args:
-        avg_fr: 평균 펀딩비 시리즈
-        window: Z-score 정규화 윈도우
-
-    Returns:
-        Z-score 시리즈
-
-    Example:
-        >>> zscore = calculate_funding_zscore(avg_fr, window=90)
-    """
-    rolling_mean = avg_fr.rolling(window=window, min_periods=window).mean()
-    rolling_std = avg_fr.rolling(window=window, min_periods=window).std()
-
-    # 0으로 나누기 방지
-    rolling_std_safe = rolling_std.replace(0, np.nan)
-
-    return (avg_fr - rolling_mean) / rolling_std_safe
 
 
 def preprocess(
@@ -139,15 +91,14 @@ def preprocess(
     funding_rate_series: pd.Series = result["funding_rate"]  # type: ignore[assignment]
 
     # 1. 수익률 계산
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
+    result["returns"] = (
+        log_returns(close_series) if config.use_log_returns else simple_returns(close_series)
     )
 
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. 실현 변동성 계산 (연환산)
-    result["realized_vol"] = calculate_realized_volatility(
+    result["realized_vol"] = realized_volatility(
         returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -156,28 +107,27 @@ def preprocess(
     realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
 
     # 3. 평균 펀딩비 계산
-    result["avg_funding_rate"] = calculate_avg_funding_rate(
+    result["avg_funding_rate"] = funding_rate_ma(
         funding_rate_series,
         window=config.lookback,
     )
 
-    avg_fr_series: pd.Series = result["avg_funding_rate"]  # type: ignore[assignment]
-
     # 4. 펀딩비 Z-score 계산
-    result["funding_zscore"] = calculate_funding_zscore(
-        avg_fr_series,
-        window=config.zscore_window,
+    result["funding_zscore"] = funding_zscore(
+        funding_rate_series,
+        ma_window=config.lookback,
+        zscore_window=config.zscore_window,
     )
 
     # 5. 변동성 스케일러 계산
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol_series,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 6. ATR 계산 (Trailing Stop용 -- 항상 계산)
-    result["atr"] = calculate_atr(high_series, low_series, close_series)
+    result["atr"] = atr(high_series, low_series, close_series)
 
     # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

@@ -4,10 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import atr as calculate_atr, kama as calculate_kama
 from src.strategy.kama.config import KAMAConfig
 from src.strategy.kama.preprocessor import (
-    calculate_atr,
-    calculate_kama,
     preprocess,
 )
 

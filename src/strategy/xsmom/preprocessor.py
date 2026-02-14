@@ -20,45 +20,17 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    log_returns,
+    realized_volatility,
+    rolling_return,
+    simple_returns,
+    volatility_scalar,
 )
 from src.strategy.xsmom.config import XSMOMConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_rolling_return(
-    close: pd.Series,
-    lookback: int,
-    use_log: bool = True,
-) -> pd.Series:
-    """Rolling return 계산 (lookback 기간).
-
-    Args:
-        close: 종가 시리즈
-        lookback: 수익률 계산 기간
-        use_log: True면 로그 수익률, False면 단순 수익률
-
-    Returns:
-        Rolling return 시리즈
-
-    Example:
-        >>> rolling_ret = calculate_rolling_return(df["close"], lookback=21)
-    """
-    if len(close) == 0:
-        msg = "Empty Series provided"
-        raise ValueError(msg)
-
-    if use_log:
-        # 로그 수익률: ln(P_t / P_{t-lookback})
-        price_ratio = close / close.shift(lookback)
-        return pd.Series(np.log(price_ratio), index=close.index, name="rolling_return")
-    # 단순 수익률: (P_t - P_{t-lookback}) / P_{t-lookback}
-    return pd.Series(close.pct_change(lookback), index=close.index, name="rolling_return")
 
 
 def calculate_holding_signal(
@@ -142,15 +114,14 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. 수익률 계산 (1-bar returns, 변동성 계산용)
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
+    result["returns"] = (
+        log_returns(close_series) if config.use_log_returns else simple_returns(close_series)
     )
 
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. 실현 변동성 계산 (연환산)
-    result["realized_vol"] = calculate_realized_volatility(
+    result["realized_vol"] = realized_volatility(
         returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -159,21 +130,21 @@ def preprocess(
     realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
 
     # 3. Rolling return 계산 (lookback 기간)
-    result["rolling_return"] = calculate_rolling_return(
+    result["rolling_return"] = rolling_return(
         close_series,
-        lookback=config.lookback,
+        period=config.lookback,
         use_log=config.use_log_returns,
     )
 
     # 4. 변동성 스케일러 계산
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol_series,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 5. ATR 계산 (Trailing Stop용 -- 항상 계산)
-    result["atr"] = calculate_atr(high_series, low_series, close_series)
+    result["atr"] = atr(high_series, low_series, close_series)
 
     # 디버그: 지표 통계 (NaN 제외)
     valid_data = result.dropna()

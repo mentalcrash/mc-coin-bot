@@ -368,26 +368,32 @@ def sample_ohlcv_with_funding_df() -> pd.DataFrame:
 
 ### 공통 유틸리티 재사용
 
-기존 전략의 preprocessor에서 재사용 가능한 함수:
+공통 지표 라이브러리 `src/market/indicators/` 패키지에서 재사용:
 
 ```python
-# src/strategy/tsmom/preprocessor.py
-from src.strategy.tsmom.preprocessor import (
-    calculate_returns,
-    calculate_realized_volatility,
-    calculate_volatility_scalar,
+# src/market/indicators — 공통 지표 함수 (패키지)
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    simple_returns,
+    volatility_scalar,
 )
 ```
 
-또는 `src/strategy/vol_regime/preprocessor.py`에서:
+**사용 가능한 53개 지표 함수**:
 
-```python
-from src.strategy.vol_regime.preprocessor import (
-    calculate_returns,
-    calculate_drawdown,
-    calculate_atr,
-)
-```
+- **Returns**: log_returns, simple_returns, rolling_return
+- **Volatility**: realized_volatility, volatility_scalar, parkinson_volatility, garman_klass_volatility, vol_regime, volatility_of_volatility, yang_zhang_volatility, vol_percentile_rank
+- **Trend**: atr, adx, sma, ema, efficiency_ratio, kama
+- **Oscillators**: rsi, stochastic, williams_r, cci, roc, macd, momentum
+- **Channels**: bollinger_bands, donchian_channel, keltner_channels
+- **Volume**: obv, volume_weighted_returns, chaikin_money_flow, volume_macd
+- **Composite**: drawdown, rolling_zscore, bb_position, sma_cross, ema_cross, squeeze_detect, hurst_exponent, fractal_dimension, price_acceleration, rsi_divergence, trend_strength, mean_reversion_score
+- **Derivatives**: funding_rate_ma, funding_zscore, oi_momentum, oi_price_divergence, basis_spread, ls_ratio_zscore, liquidation_intensity
+
+전체 시그니처는 `src/market/indicators/__init__.py` 참조.
 
 > 유틸리티가 있으면 반드시 재사용. 중복 구현 금지.
 

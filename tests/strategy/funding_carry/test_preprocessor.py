@@ -4,12 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import funding_rate_ma, funding_zscore
 from src.strategy.funding_carry.config import FundingCarryConfig
-from src.strategy.funding_carry.preprocessor import (
-    calculate_avg_funding_rate,
-    calculate_funding_zscore,
-    preprocess,
-)
+from src.strategy.funding_carry.preprocessor import preprocess
 
 
 @pytest.fixture
@@ -33,13 +30,13 @@ def sample_ohlcv_with_funding() -> pd.DataFrame:
     )
 
 
-class TestCalculateAvgFundingRate:
-    """calculate_avg_funding_rate 함수 테스트."""
+class TestFundingRateMa:
+    """funding_rate_ma 함수 테스트."""
 
     def test_basic_rolling_mean(self) -> None:
         """기본 Rolling Mean 계산."""
         fr = pd.Series([0.001, 0.002, 0.003, 0.004, 0.005])
-        avg_fr = calculate_avg_funding_rate(fr, window=3)
+        avg_fr = funding_rate_ma(fr, window=3)
 
         # window=3이므로 처음 2개는 NaN
         assert pd.isna(avg_fr.iloc[0])
@@ -52,7 +49,7 @@ class TestCalculateAvgFundingRate:
     def test_window_1(self) -> None:
         """window=1일 때 원본 값과 동일."""
         fr = pd.Series([0.001, -0.002, 0.003])
-        avg_fr = calculate_avg_funding_rate(fr, window=1)
+        avg_fr = funding_rate_ma(fr, window=1)
 
         assert avg_fr.iloc[0] == pytest.approx(0.001, rel=1e-6)
         assert avg_fr.iloc[1] == pytest.approx(-0.002, rel=1e-6)
@@ -61,37 +58,37 @@ class TestCalculateAvgFundingRate:
     def test_returns_series(self) -> None:
         """반환 타입이 pd.Series인지 확인."""
         fr = pd.Series([0.001, 0.002, 0.003])
-        avg_fr = calculate_avg_funding_rate(fr, window=2)
+        avg_fr = funding_rate_ma(fr, window=2)
         assert isinstance(avg_fr, pd.Series)
 
 
-class TestCalculateFundingZscore:
-    """calculate_funding_zscore 함수 테스트."""
+class TestFundingZscore:
+    """funding_zscore 함수 테스트."""
 
     def test_zscore_values(self) -> None:
         """Z-score 값 범위 확인."""
         np.random.seed(42)
-        avg_fr = pd.Series(np.random.randn(200) * 0.0003)
-        zscore = calculate_funding_zscore(avg_fr, window=50)
+        fr = pd.Series(np.random.randn(200) * 0.0003)
+        result = funding_zscore(fr, ma_window=3, zscore_window=50)
 
         # NaN 제거 후 Z-score는 대략 -3 ~ 3 범위
-        valid = zscore.dropna()
+        valid = result.dropna()
         assert len(valid) > 0
         assert valid.abs().max() < 10  # 극단값이 아닌지 확인
 
     def test_zscore_nan_for_warmup(self) -> None:
         """워밍업 기간 동안 NaN 반환."""
-        avg_fr = pd.Series(np.random.randn(100) * 0.0003)
-        zscore = calculate_funding_zscore(avg_fr, window=50)
+        fr = pd.Series(np.random.randn(100) * 0.0003)
+        result = funding_zscore(fr, ma_window=3, zscore_window=50)
 
-        # 처음 49개 값은 NaN
-        assert zscore.iloc[:49].isna().all()
+        # ma_window + zscore_window 이전은 NaN
+        assert result.iloc[:49].isna().all()
 
     def test_zscore_returns_series(self) -> None:
         """반환 타입이 pd.Series인지 확인."""
-        avg_fr = pd.Series(np.random.randn(100) * 0.0003)
-        zscore = calculate_funding_zscore(avg_fr, window=50)
-        assert isinstance(zscore, pd.Series)
+        fr = pd.Series(np.random.randn(100) * 0.0003)
+        result = funding_zscore(fr, ma_window=3, zscore_window=50)
+        assert isinstance(result, pd.Series)
 
 
 class TestPreprocess:
