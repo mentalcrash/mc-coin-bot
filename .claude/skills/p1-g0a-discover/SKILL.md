@@ -1,14 +1,8 @@
 ---
 name: p1-g0a-discover
 description: >
-  체계적 알파 리서치 워크플로우로 새 트레이딩 전략 아이디어를 발굴하고 검증한다.
-  타임프레임별 적합 전략 탐색, Long/Short/Hedge 모드 평가, 경제적 논거 검증,
-  폐기 전략 회피, 단일 에셋 전용.
-  사용 시점: (1) 새 전략 아이디어가 필요할 때,
-  (2) "전략 발굴", "전략 탐색", "알파 리서치", "새 전략 찾기" 요청 시,
-  (3) 특정 타임프레임/시장 조건에 맞는 전략을 찾을 때,
-  (4) 학술 논문이나 리서치에서 전략을 포팅할 때,
-  (5) 기존 전략 포트폴리오의 다양성을 높이고 싶을 때.
+  새 트레이딩 전략 아이디어 발굴 + Gate 0A 검증 (IC/스코어카드/YAML 등록).
+  사용 시점: 전략 발굴, 알파 리서치, 전략 탐색 요청 시.
 argument-hint: <timeframe or theme>
 allowed-tools:
   - Bash
@@ -26,19 +20,19 @@ allowed-tools:
 ## 역할
 
 **시니어 크립토 퀀트 리서처**로서 행동한다.
-핵심 판단 기준: "이 전략에 경제적 논거가 있고, 과적합 없이 전 시장환경에서 작동하는가?"
+판단 기준: "이 전략에 경제적 논거가 있고, 과적합 없이 전 시장환경에서 작동하는가?"
 
 ## 핵심 원칙
 
-1. **경제적 논거 우선**: 통계적 패턴만으로는 불충분. "왜 이 edge가 존재하는가?"를 설명할 수 있어야 한다
-2. **참신성 추구**: 이미 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
-3. **전 시장환경 대응**: 특정 레짐에만 작동하는 전략 지양. 단, RegimeService를 통한 적응적 대응은 권장 (아래 참조)
-4. **단일 에셋 전용**: 멀티에셋/횡단면 전략은 범위 밖 (포트폴리오는 PM이 처리)
-5. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode를 검토
-6. **크립토 네이티브 edge**: 전통금융 전략의 단순 포팅은 위험. 크립토 24/7 시장 특성에 맞는 edge 필요 (교훈 #13~#16)
+1. **경제적 논거 우선**: "왜 이 edge가 존재하는가?" 설명 필수
+2. **참신성 추구**: 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
+3. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
+4. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
+5. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode 검토
+6. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
 7. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
-8. **RegimeService 활용**: 공유 레짐 인프라를 활용하여 레짐 적응형 전략 설계 가능 (아래 "레짐 적응형 전략 설계" 섹션 참조)
-9. **앙상블 기여도 관점**: 단독 Sharpe가 낮더라도(0.5+) 기존 전략과 **낮은 상관 + 독립적 alpha**를 가지면 앙상블로 결합하여 Sharpe 0.8~1.0 달성 가능. "단독 우승"보다 "포트폴리오 기여도"를 우선 평가한다 (아래 "앙상블 전략 프레임워크" 섹션 참조)
+8. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
+9. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
 
 ## 워크플로우 (7단계)
 
@@ -80,48 +74,19 @@ allowed-tools:
 
 #### 1-A. 아이디어 소싱 채널 (우선순위)
 
-```
-1. 학술 논문 (SSRN, arXiv, Journal of Financial Economics)
-   - 크립토 특화 최신 논문 검색
-   - "왜 작동하는가?"의 경제적 설명이 있는 논문만
+| # | 채널 | 설명 |
+|---|------|------|
+| 1 | 학술 논문 (SSRN, arXiv, JFE) | 크립토 특화 + 경제적 설명 있는 논문 |
+| 2 | 시장 미시구조 | Order book imbalance, VPIN, funding rate, basis spread |
+| 3 | 변동성 구조 | Realized vs implied vol, VoV, term structure |
+| 4 | 정보 이론 | Transfer entropy, mutual information, approximate entropy |
+| 5 | 행동 재무학 | Disposition effect, anchoring, herding |
+| 6 | 대안 데이터 | On-chain whale flow, social sentiment |
+| 7 | Derivatives | Funding Rate(백테스팅 O), OI/LS Ratio(Live 전용, 30일 제한) |
 
-2. 시장 미시구조 (Microstructure)
-   - Order book imbalance, VPIN, Roll measure
-   - Funding rate dynamics, liquidation cascades
-   - Basis spread (spot-perp), contango/backwardation
-
-3. 변동성 구조 (Volatility Surface)
-   - Realized vs implied vol spread
-   - Vol-of-vol, term structure slope
-   - Intraday volatility patterns (U-shape, overnight gap)
-
-4. 정보 이론 (Information Theory)
-   - Transfer entropy (lead-lag between assets)
-   - Mutual information for feature selection
-   - Approximate entropy for regime detection
-
-5. 행동 재무학 (Behavioral Finance)
-   - Disposition effect → delayed mean reversion
-   - Anchoring bias → support/resistance persistence
-   - Herding → momentum continuation
-
-6. 대안 데이터 시그널 (Alternative Data)
-   - On-chain: whale flow, exchange net flow
-   - Social sentiment: fear/greed aggregation
-
-7. Derivatives Data (크립토 선물 고유) ★ NEW
-   - Funding Rate: 8h 간격, 전체 히스토리 가용, 백테스팅 가능
-     → ✅ DerivativesDataService 인프라 완비
-     → 참조 구현: src/strategy/funding_carry/
-   - OI/LS Ratio/Taker Ratio: Binance 30일 제한, Live 전용 (백테스팅 불가)
-   - MarketDataService.get(include_derivatives=True)로 OHLCV 자동 병합
-```
-
-참고: [references/idea-sources.md](references/idea-sources.md)
+상세: [references/idea-sources.md](references/idea-sources.md)
 
 #### 1-B. 시그널 품질 사전 검증 (IC + AlphaEval)
-
-아이디어가 전략으로 발전하기 전에, 시그널의 예측력을 검증한다.
 
 **IC (Information Coefficient) — 필수:**
 
@@ -165,20 +130,15 @@ allowed-tools:
       1=동일지표, 3=새조합, 5=새카테고리
 
   [3] 데이터 확보 (Data Availability)          : _/5
-      OHLCV만으로 구현 가능?
       1=외부API필수, 3=파생계산, 4=Derivatives(Silver), 5=OHLCV직접
-      (Derivatives: funding_rate 등 Silver _deriv 파일에서 로드)
 
   [4] 구현 복잡도 (Implementation Complexity)  : _/5
-      4-파일 구조에 맞는가?
       1=인프라변경필요, 3=중간, 5=직관적
 
   [5] 용량 수용 (Capacity)                     : _/5
-      단일에셋에서 충분한 거래 빈도?
       1=월2건미만, 3=주1-2건, 5=일1건+
 
   [6] 레짐 적응성 (Regime Adaptability)         : _/5
-      전 시장환경에서 작동? (RegimeService 적응 포함)
       1=특정레짐전용(무적응), 3=2/3레짐 or 적응형, 5=전레짐 or 확률가중적응
 
 ──────────────────────────────────────────────────────
@@ -195,118 +155,53 @@ allowed-tools:
 
 ### Step 3: 중복 검사 — 폐기 전략 회피 + 교훈 검증
 
-[references/discarded-strategies.md](references/discarded-strategies.md)의 **"실패 패턴 요약"** 테이블과 **교훈 데이터**를 함께 확인한다:
+[references/discarded-strategies.md](references/discarded-strategies.md)와 교훈 데이터를 확인한다:
 
 ```
-0. 교훈 데이터 매칭 (최우선 — 프로그래매틱 검색)
-   # 아이디어 관련 교훈이 있는지 확인
-   uv run mcbot pipeline lessons-list --tf {TF}        # 타겟 TF 교훈
-   uv run mcbot pipeline lessons-list -s {관련전략}     # 유사 전략 교훈
-   uv run mcbot pipeline lessons-list -t {키워드}       # 태그 검색
-   # 교훈이 명시하는 안티패턴과 아이디어가 일치하면 → 즉시 폐기 또는 수정
-   # 예: lessons-list --tf 1H → "FX Session ≠ Crypto", "BVC 근사 한계" 등 확인
+0. 교훈 데이터 매칭 (최우선)
+   uv run mcbot pipeline lessons-list --tf {TF}
+   uv run mcbot pipeline lessons-list -s {관련전략}
+   uv run mcbot pipeline lessons-list -t {키워드}
+   # 교훈 안티패턴과 일치 → 즉시 폐기 또는 수정
 
-1. 실패 패턴 매칭 (빠른 체크)
-   - 단일 지표 trend-following? → Decay 56~92% (TSMOM 외 6개 전멸)
-   - 레짐 감지 = 전략? → ADX/HMM/Hurst/AC/VR 등 7개 전멸
-   - OHLCV 기반 microstructure? → BVC 정밀도 부족 (VPIN-Flow, Flow-Imbalance)
-   - 전통금융→크립토 단순 전이? → Session/Amihud/Seasonality 4종 전멸
-   - 동일 TF에서 Mom+MR 블렌딩? → alpha 상쇄
+1. 실패 패턴 매칭
+   - 단일 지표 trend-following? → Decay 56~92%
+   - 레짐 감지 = 전략? → 7개 전멸
+   - OHLCV microstructure? → BVC 정밀도 부족
+   - 전통금융→크립토 단순 전이? → 4종 전멸
+   - 동일 TF Mom+MR 블렌딩? → alpha 상쇄
    - 1-bar hold? → 비용 > 수익
-   - 밈코인 FULL Short? → MDD 무한대 위험
 
 2. 동일 핵심 지표 사용 여부 확인
-   - 예: RSI 단독 → RSI Crossover 폐기됨
-   - 예: Donchian 단독 → Donchian 폐기됨 (Decay 91%)
-   - 예: BVC/OFI/VPIN → Flow-Imbalance, VPIN-Flow 폐기됨 (OHLCV 한계)
-   - 예: Amihud → Liq-Momentum 폐기됨 (1H 과빈번 전환)
-   - 예: Hour-of-day t-stat → Hour-Season 폐기됨 (noise 과적합)
+   - RSI/Donchian/BVC/VPIN/Amihud/Hour-of-day 등 폐기 확인
 
 3. 차별화 포인트 명시
-   - 어떤 점이 폐기 전략과 다른가?
-   - 새로운 데이터 소스, 새로운 수학적 접근, 또는 근본적으로 다른 edge가 있는가?
-   - "파라미터 조정"이나 "필터 추가"만으로는 차별화 불충분
-   - 관련 교훈 번호를 명시하여 왜 이번에는 다른지 설명
+   - 새 데이터 소스, 새 수학적 접근, 근본적으로 다른 edge
+   - "파라미터 조정"/"필터 추가"만으로는 불충분
+   - 관련 교훈 번호 명시
 
-→ 차별화 불충분 시 아이디어를 수정하거나 폐기한다.
+→ 차별화 불충분 시 수정하거나 폐기.
 ```
 
 ### Step 4: 전략 설계 — ShortMode + TF + 레짐 적응
 
-#### 4-0. RegimeService 활용 설계 (신규)
+#### 4-0. RegimeService 활용 설계
 
-공유 RegimeService가 EDA 전 컴포넌트에 레짐 정보를 투명하게 제공합니다.
-전략은 **자체 레짐 감지 없이** DataFrame에서 레짐 컬럼을 읽어 적응적 동작이 가능합니다.
+공유 RegimeService가 StrategyEngine을 통해 6개 레짐 컬럼을 자동 주입한다.
 
-**사용 가능한 레짐 컬럼 (StrategyEngine이 자동 주입):**
+| 패턴 | 설명 | 적합 상황 |
+|------|------|----------|
+| A. 확률 가중 | 레짐 확률로 파라미터 연속 조절 | 부드러운 전환 필요 시 |
+| B. 조건부 필터 | 특정 레짐에서 시그널 활성화/비활성화 | 명확한 On/Off 로직 |
+| C. 방향 가중 | trend_direction/strength로 시그널 가중 | 추세 방향 활용 시 |
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| `regime_label` | str | 현재 레짐: `"trending"`, `"ranging"`, `"volatile"` |
-| `p_trending` | float | TRENDING 확률 (0~1) |
-| `p_ranging` | float | RANGING 확률 (0~1) |
-| `p_volatile` | float | VOLATILE 확률 (0~1) |
-| `trend_direction` | int | 추세 방향: +1(상승), -1(하락), 0(중립) |
-| `trend_strength` | float | 추세 강도 (0.0~1.0) |
+**올바른 vs 잘못된 사용:**
+- OK: 기존 alpha에 레짐을 오버레이/필터로 적용 (사이징/강도 조절)
+- OK: `regime_service=None` 시 기본 동작 유지 (backward compatible)
+- NG: 레짐 전환 자체를 매매 시그널로 사용 (7개 전략 전멸)
+- NG: 레짐 없이 시그널이 생성되지 않는 구조
 
-**RegimeService 아키텍처:**
-
-```
-EnsembleRegimeDetector (Rule-Based + HMM + Vol-Structure + MSAR)
-        ↓
-    RegimeService.precompute()  (backtest: vectorized 사전계산)
-    RegimeService._on_bar()     (live: BAR 이벤트 구독 → 증분 업데이트)
-        ↓
-    StrategyEngine._enrich_with_regime()  (DataFrame에 6개 컬럼 자동 추가)
-        ↓
-    strategy.preprocess() / generate_signals()  (컬럼 읽어서 활용)
-```
-
-**레짐 적응형 전략의 3가지 패턴:**
-
-```
-패턴 A. 확률 가중 파라미터 적응 (Probability-Weighted)
-   — 레짐 확률로 vol_target/threshold 등을 연속적으로 조절
-   — 예: adaptive_vol_target = p_trending*0.40 + p_ranging*0.15 + p_volatile*0.10
-   — 장점: 부드러운 전환, 레짐 전환 시 whipsaw 최소
-   — 예시: regime-tsmom (기존 구현)
-
-패턴 B. 레짐 조건부 필터 (Regime Conditional)
-   — 특정 레짐에서만 시그널 활성화/비활성화
-   — 예: trending + trend_direction=+1 → 롱 시그널만 허용
-   — 예: volatile → 포지션 축소 또는 시그널 억제
-   — 장점: 명확한 논리, 디버깅 용이
-
-패턴 C. 방향 가중 시그널 (Direction-Weighted)
-   — trend_direction/trend_strength로 시그널 방향/강도 가중
-   — 예: strength *= trend_strength (추세 강도에 비례)
-   — 예: direction과 trend_direction 일치 시 conviction 부여
-   — 장점: 추세 방향 정보 활용
-```
-
-**레짐 활용 vs 레짐 의존 — 핵심 구분:**
-
-```
-✅ 올바른 사용: 레짐을 "오버레이/필터"로 사용
-   — 기존 alpha 소스(momentum, MR 등)가 독립적으로 존재
-   — 레짐은 포지션 사이징 조절, 시그널 강도 감쇄에만 사용
-   — regime_service=None이면 기본 동작 (backward compatible)
-
-❌ 잘못된 사용: 레짐 감지 자체가 alpha 소스
-   — 레짐 전환을 매매 시그널로 직접 사용
-   — ADX/HMM/Hurst/AC/VR 등 7개 전략 전멸의 교훈 (안티패턴 #9)
-   — 레짐 정보만으로 시장 방향 예측 불가
-```
-
-**설계 시 레짐 활용 결정 체크리스트:**
-
-```
-1. 기존 alpha 소스가 레짐과 독립적인가? → 예: 진행
-2. 레짐 없이도 시그널이 생성되는가? → 예: 진행
-3. 레짐은 "어떻게 거래할지"를 조절하는가? (not "무엇을 거래할지") → 예: 진행
-4. regime_service=None 시 graceful fallback이 있는가? → 예: 진행
-→ 4개 모두 "예"이면 레짐 적응형 설계 적합
-```
+상세: [references/regime-design.md](references/regime-design.md)
 
 #### 4-A. ShortMode 결정 매트릭스
 
@@ -333,61 +228,28 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 
 #### 4-C. 사용 가능한 지표 라이브러리
 
-`src/market/indicators/` 패키지에 **53개 공유 지표 함수**가 준비되어 있다.
-전략 설계 시 이 목록에서 빌딩블록을 선택하면 구현 복잡도가 크게 줄어든다.
-
-```
-카테고리별 사용 가능 함수:
-
-Returns (3): log_returns, simple_returns, rolling_return
-Volatility (8): realized_volatility, volatility_scalar, parkinson_volatility,
-    garman_klass_volatility, vol_regime, volatility_of_volatility,
-    yang_zhang_volatility, vol_percentile_rank
-Trend (6): atr, adx, sma, ema, efficiency_ratio, kama
-Oscillators (7): rsi, stochastic, williams_r, cci, roc, macd, momentum
-Channels (3): bollinger_bands, donchian_channel, keltner_channels
-Volume (4): obv, volume_weighted_returns, chaikin_money_flow, volume_macd
-Composite (12): drawdown, rolling_zscore, bb_position, sma_cross, ema_cross,
-    squeeze_detect, hurst_exponent, fractal_dimension, price_acceleration,
-    rsi_divergence, trend_strength, mean_reversion_score
-Derivatives (7): funding_rate_ma, funding_zscore, oi_momentum,
-    oi_price_divergence, basis_spread, ls_ratio_zscore, liquidation_intensity
-
-→ 전체 시그니처: src/market/indicators/__init__.py 참조
-→ FeatureStore 통합: 8개 기본 지표는 precompute 자동 캐시
-  (atr_14, rsi_14, adx_14, realized_volatility_30, drawdown,
-   parkinson_volatility, efficiency_ratio_10, momentum_10)
-```
-
-> **핵심**: 전략 preprocessor에서 중복 구현 금지.
-> `from src.market.indicators import atr, rsi, ...` 로 재사용.
+`src/market/indicators/` 패키지 53개 공유 지표. 중복 구현 금지.
+전체 목록: `src/market/indicators/__init__.py` 참조.
 
 #### 4-D. 설계 문서 작성
 
 다음 항목을 정리한다:
 
 ```
-1. 전략 이름 (kebab-case): ___
-2. 핵심 가설: ___
-3. 경제적 논거: ___
-4. 사용 지표: [목록 — 위 라이브러리에서 선택 권장]
-5. 시그널 생성 로직 (수식): ___
-6. ShortMode: DISABLED / HEDGE_ONLY / FULL
-7. 타임프레임: 1D / 4H / 1H
-8. 예상 거래 빈도: ___/년
-9. 예상 Sharpe 범위: ___
-10. CTREND와의 상관관계 예측: 낮음/중간/높음
-11. 레짐 활용 여부: 없음 / 패턴A(확률가중) / 패턴B(조건부필터) / 패턴C(방향가중)
-    → 활용 시: 어떤 컬럼을, 어떤 파라미터에 적용하는지 명시
-12. 데이터 요구사항: OHLCV only / Derivatives 필요 (funding_rate / open_interest / etc.)
-13. 백테스팅 데이터 가용성: 전 기간 가용 / 30일 제한 / 미확보
-14. 앙상블 활용: 단독 운용 / 앙상블 서브 전략 후보 / 앙상블 전용
-    → 단독 Sharpe < 1.0이더라도 기존 전략과 상관 < 0.3이면 앙상블 서브 전략으로 가치 있음
+1. 전략 이름 (kebab-case)     2. 핵심 가설
+3. 경제적 논거                4. 사용 지표 (라이브러리에서 선택)
+5. 시그널 생성 로직 (수식)    6. ShortMode: DISABLED/HEDGE_ONLY/FULL
+7. 타임프레임: 1D/4H/1H      8. 예상 거래 빈도 (건/년)
+9. 예상 Sharpe 범위          10. CTREND 상관 예측: 낮음/중간/높음
+11. 레짐 활용: 없음/패턴A/B/C (활용 시 컬럼+파라미터 명시)
+12. 데이터 요구사항: OHLCV only / Derivatives
+13. 백테스팅 데이터 가용성: 전 기간/30일 제한/미확보
+14. 앙상블 활용: 단독/서브 전략 후보/앙상블 전용
 ```
 
 **CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
 
-### Step 4.5: YAML 파이프라인 등록
+### Step 4.5–4.6: YAML 파이프라인 등록 (Gate 0A PASS 시 필수)
 
 Gate 0 PASS인 아이디어를 `pipeline create` CLI로 YAML에 등록한다.
 
@@ -395,64 +257,18 @@ Gate 0 PASS인 아이디어를 `pipeline create` CLI로 YAML에 등록한다.
 uv run mcbot pipeline create {strategy-name} \
   --display-name "{DisplayName}" \
   --category "{Category}" \
-  --timeframe "{TF}" \
-  --short-mode "{HEDGE_ONLY|FULL|DISABLED}" \
-  --status CANDIDATE
-```
-
-> YAML이 Single Source of Truth. 별도 임시 파일 불필요.
-
-**핵심 가설**: (1-2문장)
-
-**경제적 논거**: (왜 이 edge가 존재하는가)
-
-**사용 지표**: (목록)
-
-**시그널 생성 로직**:
-(수식 또는 의사코드)
-
-**CTREND 상관 예측**: 낮음 / 중간 / 높음
-
-**예상 거래 빈도**: __건/년
-
-**차별화 포인트**: (폐기 전략 대비 어떤 점이 다른가)
-
-**출처**: (논문/URL/독자적)
-
-**Gate 0 상세 점수**:
-- 경제적 논거: _/5
-- 참신성: _/5
-- 데이터 확보: _/5
-- 구현 복잡도: _/5
-- 용량 수용: _/5
-- 레짐 적응성: _/5
-
----
-```
-
-#### 상태 전이
-
-```
-🔵 후보 → 사용자 승인 → 🟡 구현중 → Gate 1+ → ✅ 구현완료 / ❌ 폐기
-                ↘ 사용자 거부 → ❌ 폐기 (사유 기록)
-```
-
-### Step 4.6: YAML 메타데이터 생성 (Gate 0A PASS 시 필수)
-
-Gate 0 PASS인 아이디어는 `pipeline create` CLI로 YAML을 생성한다:
-
-```bash
-uv run mcbot pipeline create {registry-name} \
-  --display-name "{Display Name}" \
-  --category "{카테고리}" \
   --timeframe {TF} \
   --short-mode {SHORT_MODE} \
   --rationale "{경제적 논거}" \
-  --g0a-score {점수}
+  --g0a-score {점수} \
+  --status CANDIDATE
 ```
 
-- `strategies/{registry-name}.yaml` 생성 (status: CANDIDATE, G0A: PASS)
+- `strategies/{strategy-name}.yaml` 생성 (status: CANDIDATE, G0A: PASS)
+- YAML이 Single Source of Truth. 별도 임시 파일 불필요
 - 생성 후 Dashboard 갱신: `uv run mcbot pipeline report`
+
+**상태 전이**: 후보 → 사용자 승인 → 구현중 → Gate 1+ → 구현완료 / 폐기
 
 ### Step 5: 구현 위임
 
@@ -468,55 +284,16 @@ uv run mcbot pipeline create {registry-name} \
 
 ### Step 5.5: 앙상블 전략 구성 (선택)
 
-발굴한 전략이 **단독 Sharpe < 1.0**이지만 기존 전략과 **낮은 상관**을 보이면,
-앙상블 프레임워크로 결합하여 포트폴리오 Sharpe를 높일 수 있다.
+단독 Sharpe < 1.0이지만 기존 전략과 낮은 상관을 보이면 앙상블로 결합 가능.
 
-#### 앙상블 프레임워크 개요
+**후보 기준:** Sharpe >= 0.5, 기존 전략과 상관 < 0.3, 독립적 alpha, 결합 후 Sharpe 개선 확인.
 
-`ensemble` 전략은 여러 서브 전략의 시그널을 하나로 결합하는 메타 전략이다.
-기존 인프라(BacktestEngine, EDARunner, CLI) 변경 없이 YAML 설정만으로 사용 가능.
-
-```yaml
-# config/ensemble-example.yaml
-strategy:
-  name: ensemble
-  params:
-    aggregation: inverse_volatility  # 4가지 방법 중 선택
-    vol_target: 0.35
-  sub_strategies:
-    - name: ctrend                   # 기존 활성 전략
-    - name: {new-strategy}           # 신규 발굴 전략
-    - name: {another-strategy}       # 추가 전략
-```
-
-#### 4가지 Aggregation 방법
-
-| 방법 | 적합 상황 |
-|------|----------|
+| Aggregation 방법 | 적합 상황 |
+|------------------|----------|
 | `equal_weight` | 전략 간 성과 편차 작을 때 (기본값) |
 | `inverse_volatility` | 안정적인 전략에 가중치 부여 (권장) |
 | `majority_vote` | 3+ 전략의 방향 합의가 중요할 때 |
 | `strategy_momentum` | 시장 환경별 최적 전략이 바뀔 때 |
-
-#### 앙상블 후보 평가 기준
-
-```
-1. 개별 Sharpe ≥ 0.5 (앙상블 기여 최소 기준)
-2. 기존 활성 전략과 상관 < 0.3 (다양성 극대화)
-3. 독립적 alpha 소스 (동일 지표 조합 X)
-4. 앙상블 결합 후 Sharpe 개선 확인 (백테스트 필수)
-```
-
-#### 앙상블 백테스트
-
-```bash
-# 앙상블 YAML 작성 후
-uv run mcbot backtest run config/my-ensemble.yaml
-uv run mcbot eda run config/my-ensemble.yaml
-```
-
-> **주의**: 앙상블은 서브 전략이 모두 Gate 검증을 통과한 후에 구성하는 것이 이상적이다.
-> 단, 발굴 단계에서 앙상블 잠재력을 미리 평가하는 것은 권장한다.
 
 ### Step 6: 백테스트 실행 + 해석
 
@@ -551,154 +328,57 @@ Gate 1 FAIL → 아이디어 폐기, Step 1로 복귀
 ```
 
 **파라미터 최적화 시 GT-Score 활용 권장** (arXiv:2602.00080):
-
-```
-GT-Score = (mu * ln(z) * r^2) / sigma_d
-  mu      = 평균 수익 (성과)
-  ln(z)   = Z-score 로그 (통계적 유의성, 과대 지배 방지)
-  r^2     = R-squared (수익 일관성, outlier 전략 패널티)
-  sigma_d = 하방 편차 (하방 리스크만 패널티)
-
-→ Sharpe 대신 GT-Score를 sweep objective로 사용 시
-  Walk-Forward Generalization Ratio 98% 향상 (0.185→0.365)
-```
+`GT-Score = (mu * ln(z) * r^2) / sigma_d` — Sharpe 대비 WF Generalization Ratio 98% 향상.
 
 ## 아이디어 발상 보조 도구
 
-사용자가 아이디어가 없을 때, 다음 프롬프트로 탐색을 돕는다:
-
-### 카테고리별 커버리지 확인
+아이디어가 없을 때 활용:
 
 ```
-현재 포트폴리오 커버리지를 동적으로 확인:
-  uv run mcbot pipeline status         # 전체 상태 카운트
-  uv run mcbot pipeline list --status RETIRED   # 폐기 전략 카테고리 확인
-  uv run mcbot pipeline list --status ACTIVE    # 활성 전략 확인
+# 포트폴리오 커버리지 확인
+uv run mcbot pipeline status
+uv run mcbot pipeline list --status RETIRED   # 폐기 카테고리 확인
+uv run mcbot pipeline list --status ACTIVE    # 활성 전략 확인
 
-미탐색 영역 (판단 영역 — 폐기 전략 카테고리와 대조하여 확인):
-  - Behavioral Finance — Disposition effect, anchoring
-  - Information-Theoretic — Transfer entropy, mutual information
-  - Cross-Asset Signal — BTC dominance → 단일에셋 신호 변환
-  - ML 앙상블 변형 — CTREND 외 다른 ML 접근
-
-위 목록은 발견된 미탐색 영역 가이드이며, pipeline list로 확인한 폐기 목록과 대조하여 최신 상태를 반영한다.
+# 미탐색 영역: Behavioral Finance, Information-Theoretic,
+#   Cross-Asset Signal, ML 앙상블 변형
+# → pipeline list 폐기 목록과 대조하여 최신 상태 반영
 ```
 
-### 최신 학술 리서치 탐색
-
-아이디어가 필요할 때 다음을 WebSearch로 조사한다:
-
-```
-검색 쿼리 예시:
-  - "cryptocurrency trading strategy {year} SSRN"
-  - "crypto microstructure alpha order book"
-  - "volatility premium cryptocurrency futures"
-  - "behavioral finance crypto disposition effect"
-  - "information theory transfer entropy crypto"
-  - "{specific-indicator} trading strategy backtest"
-```
+**WebSearch 쿼리 예시**: "cryptocurrency trading strategy {year} SSRN", "crypto microstructure alpha", "volatility premium cryptocurrency futures"
 
 ## 출력 형식
 
-### 1. 콘솔 리포트 (사용자에게 표시)
-
-```
-══════════════════════════════════════════════════════
-  STRATEGY DISCOVERY REPORT
-  타임프레임: [TF]  |  세션: [날짜]
-══════════════════════════════════════════════════════
-
-  아이디어 #1: [이름]
-  ──────────────────────────────────────────────────
-  카테고리     : [Microstructure / Vol / Carry / ...]
-  핵심 가설    : [1-2문장]
-  경제적 논거  : [왜 이 edge가 존재하는가]
-  참신성       : [기존 전략과 차별화 포인트]
-  사용 지표    : [목록]
-  ShortMode    : [DISABLED / HEDGE_ONLY / FULL]
-  예상 빈도    : [거래/년]
-  Gate 0 점수  : [__/30]
-  레짐 적응    : [없음 / 패턴A 확률가중 / 패턴B 조건부 / 패턴C 방향가중]
-  CTREND 상관  : [낮음 / 중간 / 높음]
-  출처         : [논문/블로그/독자적]
-  ──────────────────────────────────────────────────
-
-  아이디어 #2: ...
-
-══════════════════════════════════════════════════════
-  권장 액션
-──────────────────────────────────────────────────────
-  1순위: [아이디어 #X] → 구현 진행
-  근거: [선택 이유]
-  📄 YAML 등록: strategies/{name}.yaml (pipeline create)
-══════════════════════════════════════════════════════
-```
-
-### 2. 후보 문서 기록 (자동)
-
-Gate 0 PASS 아이디어는 **자동으로** `pipeline create` CLI로 YAML에 등록한다.
-Step 4.5의 절차를 따른다.
+리포트 형식: [references/report-template.md](references/report-template.md) 참조.
+Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step 4.5).
 
 ## 안티패턴 — 반드시 피해야 할 것
 
-```
-1. 지표 수프 (Indicator Soup)
-   - 5개 이상 지표 조합 → 과적합 확률 급증
-   - 예외: CTREND처럼 ML 앙상블은 체계적 차원 축소 필요
+| # | 패턴 | 교훈 |
+|---|------|------|
+| 1 | 지표 수프 (5개+) | 과적합 확률 급증 (ML 앙상블 제외) |
+| 2 | 동일 TF Mom+MR 블렌딩 | alpha 상쇄 (Mom-MR Blend FAIL) |
+| 3 | 1-bar hold | 비용 > 수익 (Larry-VB: 125건/년 x 0.1% = 12.5% drag) |
+| 4 | 단일 지표 의존 | RSI/MACD/Donchian 단독 → 대부분 과적합 |
+| 5 | 특정 레짐 타겟 | "상승장에서만" → 전체 기간 Sharpe 저하 |
+| 6 | IS Sharpe > 3.0 추구 | 과적합 신호. 현실 목표: IS 1.0~2.0 |
+| 7 | 전통금융 무비판 포팅 | FX session/Amihud/Seasonality 전멸 (교훈 #13~#16) |
+| 8 | OHLCV microstructure | BVC 근사 불충분, L2 order book 필요 |
+| 9 | 레짐 감지 = 전략 | ADX/HMM/Hurst/AC/VR 7개 전멸. 오버레이로만 사용 |
 
-2. 동일 TF에서 반대 전략 혼합
-   - Momentum + Mean Reversion 블렌딩 → alpha 상쇄
-   - Mom-MR Blend FAIL의 교훈
-
-3. 1-bar hold 전략
-   - 진입 → 즉시 청산 → 비용이 수익 초과
-   - Larry-VB FAIL: 연 125건 x 0.1% = 12.5% drag
-
-4. 단일 지표 의존
-   - RSI만, MACD만, Donchian만 → 대부분 과적합
-   - 최소 2개 독립 시그널 소스 결합 필요
-
-5. 특정 레짐 타겟
-   - "상승장에서만 작동" → 전체 기간 Sharpe 저하
-   - 레짐 필터는 보조 역할로만 (시그널 강도 조절)
-
-6. IS Sharpe > 3.0 추구
-   - 과적합의 강력한 신호
-   - 현실적 목표: IS Sharpe 1.0~2.0
-
-7. 전통금융 전략의 무비판적 크립토 포팅 (신규)
-   - FX session decomposition → 크립토 24/7에서 edge 소멸
-   - Equity microstructure (Amihud) → 1H 크립토에서 과빈번 전환
-   - Intraday seasonality → noise를 패턴으로 오인
-   - 반드시 "크립토 시장에서 왜 작동하는가?"를 검증
-
-8. OHLCV로 microstructure alpha 추구 (신규)
-   - BVC 근사 (close-low)/(high-low)는 1D→1H 모두 불충분
-   - VPIN-Flow (1D, 거래 0건), Flow-Imbalance (1H, Sharpe 음수) 연속 실패
-   - L2 order book 또는 tick data 없이는 진정한 flow 시그널 불가
-
-9. 레짐 감지 자체를 전략으로 사용
-   - ADX, HMM, Hurst, AC, VR, Entropy 등 7개 전략 전멸
-   - 레짐 감지는 "필터/오버레이"로만 사용, 독립 alpha 소스 아님
-   - ✅ 올바른 사용: RegimeService 컬럼으로 기존 alpha의 강도/사이징 조절
-   - ❌ 잘못된 사용: regime 전환을 매수/매도 시그널로 직접 사용
-```
+전체 목록: [references/discarded-strategies.md](references/discarded-strategies.md) + `uv run mcbot pipeline lessons-list`
 
 ## 체크리스트
 
-완료 전 확인:
-
-- [ ] **교훈 데이터 확인됨** (`lessons-list`로 관련 TF/카테고리/전략 교훈 검토)
-- [ ] Gate 0 스코어카드 작성됨 (18점 이상)
-- [ ] 폐기 전략과 중복 없음 확인 (교훈 + discarded-strategies 교차 검증)
-- [ ] 경제적 논거 1문단 이상 작성됨
-- [ ] ShortMode 3가지 중 근거 있는 선택
-- [ ] TF 적합성 확인 (비용 영향 포함)
-- [ ] CTREND와의 예상 상관관계 평가됨
-- [ ] 사용 지표가 `src/market/indicators/` 라이브러리에서 선택됨 (중복 구현 방지)
-- [ ] 설계 문서 10개 항목 모두 작성됨
-- [ ] Derivatives 데이터 필요 시 Silver _deriv 파일 존재 확인
-- [ ] 백테스팅 가능 데이터인지 확인 (funding_rate: O, OI/LS/Taker: X)
-- [ ] 앙상블 기여도 평가됨 (단독 Sharpe < 1.0 시 기존 전략과 상관 분석)
-- [ ] **`pipeline create` 실행하여 YAML 생성됨** (Gate 0A PASS 시 필수)
-- [ ] **`pipeline report` 실행하여 dashboard 갱신됨**
+- [ ] 교훈 데이터 확인됨 (`lessons-list` TF/카테고리/전략)
+- [ ] Gate 0 스코어카드 18점 이상
+- [ ] 폐기 전략과 중복 없음 (교훈 + discarded-strategies)
+- [ ] 경제적 논거 1문단 이상
+- [ ] ShortMode + TF 적합성 확인
+- [ ] CTREND 예상 상관관계 평가됨
+- [ ] 지표 `src/market/indicators/`에서 선택
+- [ ] 설계 문서 14개 항목 작성됨
+- [ ] Derivatives 필요 시 Silver _deriv 가용성 확인
+- [ ] 앙상블 기여도 평가됨
+- [ ] `pipeline create` → YAML 생성됨
+- [ ] `pipeline report` → dashboard 갱신됨
