@@ -1,0 +1,54 @@
+meta:
+  name: fractal-mom
+  display_name: Fractal-Filtered Momentum
+  category: Regime-Filtered Momentum
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-15'
+  economic_rationale: Fractal Market Hypothesis(Peters 1994). D<1.5=deterministic에서만
+    trend following 활성화. 기존 4H 전략이 항상 켜져 noise 구간 손실 누적한 문제 직접 해결. fractal_dimension을
+    레짐 오버레이(시그널 아님)로 사용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 27
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-15'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 27/30점
+- date: '2026-02-15'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. shift(1) 전수 확인, fractal_dim+ER 레짐 필터, ShortMode 3-way
+    완비.
+- date: '2026-02-15'
+  gate: G1
+  verdict: FAIL
+  rationale: Best Asset SOL Sharpe 0.45(<1.0), CAGR +6.5%(<20%). BNB MDD 54.3%(>50%).
+    Fractal filtering이 noise 구간 회피 불충분. 4H TF 구조적 한계

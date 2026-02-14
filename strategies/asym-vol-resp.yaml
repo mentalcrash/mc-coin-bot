@@ -1,0 +1,54 @@
+meta:
+  name: asym-vol-resp
+  display_name: Asymmetric Volume Response
+  category: Informed Flow Detection
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-15'
+  economic_rationale: Kyle(1985) informed trading model. Volume-price impact ratio로
+    informed flow 감지. 기존 volume 전략(OBV/CMF/VMACD)이 volume 양을 본 반면, volume이 price에
+    미치는 impact 비대칭 분석. EFMA(2025) crypto order flow 실증.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-15'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-15'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. shift(1) 전수 확인, ShortMode 3-way 완비, vol_scalar min_volatility
+    보호.
+- date: '2026-02-15'
+  gate: G1
+  verdict: FAIL
+  rationale: 전 에셋(5/5) trades=0. impact=|return|/volume에서 4H volume 스케일 문제로 impact_asymmetry
+    z-score가 threshold 미달. 시그널 미생성

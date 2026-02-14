@@ -1,0 +1,16 @@
+id: 39
+title: Volume-price impact 지표의 TF 스케일 의존성 — 4H volume 크기로 impact→0 수렴
+body: 'asym-vol-resp: impact=|return|/volume에서 4H aggregation volume이 매우 커 impact값이
+  0 근방에 수렴. z-score 정규화에도 불구하고 threshold(1.0) 미달로 전 에셋 시그널 0건. 지표 설계 시 TF 변경에 따른 입력
+  스케일 검증 필수.'
+category: strategy-design
+tags:
+- volume
+- impact-ratio
+- TF-scaling
+- zero-trades
+strategies:
+- asym-vol-resp
+timeframes:
+- 4H
+added_at: '2026-02-15'

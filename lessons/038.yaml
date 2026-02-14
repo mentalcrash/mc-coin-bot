@@ -1,0 +1,15 @@
+id: 38
+title: 서브전략 전멸 시 앙상블도 구제 불가 — alpha 소스 품질이 분산 효과보다 중요
+body: 'ens-regime-dual(ctrend+regime-mf-mr): regime-mf-mr 전 에셋 Sharpe 음수로 앙상블 성과 잠식.
+  Best SOL Sharpe 1.14이나 CAGR 7.9%에 불과. ctrend 단독 SOL Sharpe 2.05 대비 급감. 낮은 상관(0.03)의
+  분산 효과보다 개별 alpha 소스의 절대 품질이 앙상블 성패를 결정.'
+category: strategy-design
+tags:
+- ensemble
+- alpha-quality
+- diversification
+strategies:
+- ens-regime-dual
+timeframes:
+- 1D
+added_at: '2026-02-14'

@@ -1,0 +1,54 @@
+meta:
+  name: vol-struct-ml
+  display_name: Volatility Structure ML
+  category: ML 앙상블 (Volatility Structure)
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-15'
+  economic_rationale: Vol clustering(Mandelbrot 1963) + VoV premium(Bollerslev 2009).
+    CTREND와 orthogonal한 vol 기반 feature space로 4H 방향성 예측. GK/Parkinson/YZ vol, VoV,
+    fractal_dimension, hurst, efficiency_ratio, ADX, funding_zscore 등 13종 미사용 지표 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 26
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      C1: PASS
+      C2: PASS (fixed)
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  G1:
+    status: FAIL
+    date: '2026-02-15'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-15'
+  gate: G0B
+  verdict: PASS
+  rationale: 'C2 Data Leakage 수정 완료 (training cutoff t-h). C1-C7 전항목 PASS. W2: 파라미터
+    13개(ML), W4: for loop 불가피(rolling ML).'
+- date: '2026-02-15'
+  gate: G1
+  verdict: FAIL
+  rationale: 전 에셋(5/5) MDD>50%(77~96%). 과도한 레버리지+빈번한 거래(700~880)로 equity 파괴. SOL MDD
+    89%, DOGE MDD 96%. ML 분류기 4H 방향예측 실패

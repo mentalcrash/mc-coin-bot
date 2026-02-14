@@ -1,0 +1,17 @@
+id: 40
+title: ML 방향예측(vol feature) 4H 전략의 MDD 폭발 — 전 에셋 MDD>77%, equity 96% 파괴
+body: 'vol-struct-ml: GK/Parkinson/YZ vol, VoV, fractal_dimension 등 13종 vol feature로
+  LightGBM 방향예측. 전 에셋 MDD 77-96%. 원인: (1)ML probability threshold가 낮아 매 bar 포지션 변경(700-880
+  trades/6yr), (2)방향예측 정확도 ~50%에서 비용이 edge를 완전 잠식, (3)vol clustering feature가 4H 방향성과
+  orthogonal. ML 전략은 confidence 필터 + 거래빈도 제한 없이 배포 불가.'
+category: strategy-design
+tags:
+- ML
+- vol-features
+- MDD-explosion
+- overtrading
+strategies:
+- vol-struct-ml
+timeframes:
+- 4H
+added_at: '2026-02-15'

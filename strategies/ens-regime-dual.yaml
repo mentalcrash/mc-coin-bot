@@ -1,0 +1,80 @@
+meta:
+  name: ens-regime-dual
+  display_name: Regime-Adaptive Dual-Alpha Ensemble
+  category: 메타 앙상블
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: 'CTREND(기술 ML 모멘텀) + regime-mf-mr(레짐 게이트 평균회귀) 또는
+
+    ml-deriv-regime(파생 ML)을 결합하는 메타 앙상블.
+
+    서로 다른 alpha 소스(trend vs MR vs derivatives)로 전 시장 환경 대응.
+
+    평균 쌍별 상관 ~0.03으로 극도의 분산 효과 기대.
+
+    최종 구성: 2~3종 서브전략, inverse_volatility 또는 strategy_momentum 집계.
+
+    '
+  rationale_references: []
+  rationale_category: null
+parameters:
+  strategy_name: ensemble
+  sub_strategies:
+  - name: ctrend
+    params: {}
+    weight: 1.0
+  - name: regime-mf-mr
+    params: {}
+    weight: 1.0
+  aggregation: inverse_volatility
+  vol_target: 0.35
+  vol_lookback: 63
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 21
+      max_score: 30
+      ensemble_score: 21
+      avg_pairwise_correlation: 0.03
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+      W1: OK(warmup_periods()=agg_lookback+vol_window+1)
+      W7: OK(서브전략 위임, ensemble aggregators 재사용)
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe_best: 1.14
+      cagr_best: 7.9
+      mdd_best: 5.4
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: G0A 21/30점 + G0E 21/30점, 평균 쌍별 상관 0.03 < 0.6
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. W: ShortMode에 HEDGE_ONLY 미지원(설계상 의도, ensemble ShortMode
+    enum에 없음), vol_window 상한 252는 범위제약(annualization_factor=365 정상)'
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best SOL Sharpe 1.14이나 CAGR 7.9% < 20%. BNB/DOGE Sharpe 음수. regime-mf-mr
+    서브전략 전멸이 앙상블 성과 잠식

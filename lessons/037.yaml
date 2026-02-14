@@ -1,0 +1,16 @@
+id: 37
+title: Derivatives-only ML (FR 단독)은 단일에셋에서 Sharpe < 1 — alpha 불충분
+body: 'ml-deriv-regime 1D: funding_rate 파생 피처만으로 ML Elastic Net 예측. Best Sharpe 0.57(SOL),
+  전 에셋 MDD > 67%. FR은 보조 피처로는 유용하나 단독 alpha 소스로는 불충분. 가격 기반 피처 없이 derivatives만으로는
+  edge가 거래비용을 상쇄하지 못함.'
+category: strategy-design
+tags:
+- ML
+- derivatives
+- funding-rate
+- 1D
+strategies:
+- ml-deriv-regime
+timeframes:
+- 1D
+added_at: '2026-02-14'

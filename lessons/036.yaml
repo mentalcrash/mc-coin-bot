@@ -1,0 +1,16 @@
+id: 36
+title: 1D 레짐 게이트 MR도 크립토에서 전멸 — TF 불문 MR alpha 부재
+body: 'regime-mf-mr 1D: 전 에셋 Sharpe 음수(-0.59~-1.57), MDD 63~92%. p_ranging 게이팅이 trending
+  손실을 차단해도 ranging 구간 MR alpha 자체가 불충분. 4H뿐 아니라 1D에서도 크립토 MR은 비용 차감 후 음의 기대값. BB+Z-score+RSI
+  멀티팩터로도 극복 불가.'
+category: strategy-design
+tags:
+- mean-reversion
+- regime
+- 1D
+- crypto-trend
+strategies:
+- regime-mf-mr
+timeframes:
+- 1D
+added_at: '2026-02-14'
