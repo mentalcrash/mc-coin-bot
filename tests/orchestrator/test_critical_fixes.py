@@ -379,11 +379,13 @@ class TestC3LifecycleWarning:
         )
         pod_ls = mgr._get_or_create_state(pod)
         pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=31)
-        # Score > threshold (no recovery)
+        # Score > threshold (no recovery). Use large shift for alpha=0.99 sensitivity.
         for _ in range(50):
             pod_ls.ph_detector.update(0.01)
         for _ in range(500):
-            pod_ls.ph_detector.update(-0.05)
+            pod_ls.ph_detector.update(-0.20)
+
+        assert pod_ls.ph_detector.score >= pod_ls.ph_detector.lambda_threshold * 0.2
 
         result = mgr.evaluate(pod)
         assert result == LifecycleState.PROBATION
@@ -406,11 +408,11 @@ class TestC3LifecycleWarning:
         assert threshold == pytest.approx(10.0)
 
         # Score just above threshold → no recovery
-        # Feed enough data to raise score above 10.0
+        # Feed enough data to raise score above 10.0 (alpha=0.99 needs larger shift)
         for _ in range(50):
             pod_ls.ph_detector.update(0.01)
         for _ in range(500):
-            pod_ls.ph_detector.update(-0.05)
+            pod_ls.ph_detector.update(-0.20)
         assert pod_ls.ph_detector.score >= threshold
 
         result = mgr.evaluate(pod)

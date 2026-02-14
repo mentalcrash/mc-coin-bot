@@ -501,3 +501,22 @@ class TestInvariants:
         states = {f"pod-{i}": LifecycleState.RETIRED for i in range(3)}
         w = alloc.compute_weights(returns, states)
         assert all(v == 0.0 for v in w.values())
+
+
+# ── TestM2NoDoubleNormalization ──────────────────────────────────
+
+
+class TestM2NoDoubleNormalization:
+    """M-2: _apply_lifecycle_clamps() 내부 정규화 제거 검증."""
+
+    def test_min_fraction_preserved_after_clamp(self) -> None:
+        """clamp 후에도 min_fraction이 compute_weights() 정규화에서 보장."""
+        cfg = _make_config(2, AllocationMethod.EQUAL_WEIGHT)
+        alloc = CapitalAllocator(cfg)
+        returns = _make_returns(2)
+        # PROBATION → min_fraction 고정
+        states = {"pod-0": LifecycleState.PROBATION, "pod-1": LifecycleState.PRODUCTION}
+        w = alloc.compute_weights(returns, states)
+        # Pod-0 min_fraction = 0.02, 정규화 후에도 보장
+        min_frac = cfg.pods[0].min_fraction
+        assert w["pod-0"] >= min_frac - 1e-6
