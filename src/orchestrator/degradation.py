@@ -20,6 +20,8 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
+
 
 class PageHinkleyDetector:
     """Page-Hinkley mean-shift detector.
@@ -63,6 +65,9 @@ class PageHinkleyDetector:
         Returns:
             True if degradation detected (m_t - m_min > lambda_).
         """
+        if math.isnan(value) or math.isinf(value):
+            return False
+
         self._n += 1
 
         if self._n == 1:

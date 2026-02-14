@@ -327,11 +327,30 @@ class TestPMConfigDerivation:
         pm_config = _derive_pm_config(orch_config)
 
         assert pm_config.max_leverage_cap == 5.0
-        assert pm_config.system_stop_loss is None
+        # H-4: system_stop_loss는 이제 max_portfolio_drawdown * 1.5
+        assert pm_config.system_stop_loss is not None
+        assert pm_config.system_stop_loss == pytest.approx(orch_config.max_portfolio_drawdown * 1.5)
         assert pm_config.use_trailing_stop is False
         assert pm_config.rebalance_threshold == 0.01
         assert pm_config.cash_sharing is True
         assert pm_config.cost_model.taker_fee == pytest.approx(0.0008)
+
+    def test_pm_stop_loss_default_config(self) -> None:
+        """H-4: default config → system_stop_loss = 0.15 * 1.5 = 0.225."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        orch_config = _make_orch_config((pod_a,))  # max_portfolio_drawdown=0.15
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.system_stop_loss == pytest.approx(0.225)
+
+    def test_pm_stop_loss_cap_at_30pct(self) -> None:
+        """H-4: high MDD config → cap at 0.30."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        # max_portfolio_drawdown=0.25 → 0.25*1.5=0.375 → cap at 0.30
+        orch_config = _make_orch_config((pod_a,), max_portfolio_drawdown=0.25)
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.system_stop_loss == pytest.approx(0.30)
 
     def test_asset_weights_uniform(self) -> None:
         """uniform weights 검증."""
@@ -354,7 +373,7 @@ class TestPMConfigDerivation:
         orch_config = _make_orch_config((pod_a,))
 
         pm_config = OrchestratedRunner.derive_pm_config(orch_config)
-        assert pm_config.system_stop_loss is None
+        assert pm_config.system_stop_loss == pytest.approx(0.225)
 
 
 class TestPodMetricsComputation:

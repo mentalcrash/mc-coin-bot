@@ -197,6 +197,58 @@ class TestParameterSensitivity:
 # ── TestEdgeCases ────────────────────────────────────────────────
 
 
+class TestNaNInfGuard:
+    """H-7: NaN/Inf 입력 시 상태 미오염 검증."""
+
+    def test_nan_returns_false(self) -> None:
+        """NaN → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        n_before = det.n_observations
+        result = det.update(float("nan"))
+        assert result is False
+        assert det.n_observations == n_before
+
+    def test_inf_returns_false(self) -> None:
+        """Inf → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        n_before = det.n_observations
+        score_before = det.score
+        result = det.update(float("inf"))
+        assert result is False
+        assert det.n_observations == n_before
+        assert det.score == pytest.approx(score_before)
+
+    def test_neg_inf_returns_false(self) -> None:
+        """-Inf → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        result = det.update(float("-inf"))
+        assert result is False
+        assert det.n_observations == 1
+
+    def test_nan_then_normal_works(self) -> None:
+        """NaN 후 정상값 → 정상 동작."""
+        det = PageHinkleyDetector()
+        det.update(float("nan"))
+        assert det.n_observations == 0
+        det.update(0.01)
+        assert det.n_observations == 1
+        det.update(0.02)
+        assert det.n_observations == 2
+
+    def test_first_observation_nan_skip(self) -> None:
+        """첫 관측값 NaN → skip, 다음 값으로 초기화."""
+        det = PageHinkleyDetector()
+        det.update(float("nan"))
+        assert det.n_observations == 0
+        det.update(0.05)
+        assert det.n_observations == 1
+        # 두번째 값이 첫 관측으로 초기화됨
+        assert det.score == pytest.approx(0.0)
+
+
 class TestEdgeCases:
     def test_zero_variance_no_detection(self) -> None:
         """모든 값이 0 → 감지 없음."""

@@ -284,6 +284,38 @@ class TestAdaptiveKelly:
         w = alloc.compute_weights(returns, states)
         assert sum(w.values()) == pytest.approx(1.0, abs=0.01)
 
+    def test_kelly_fraction_single_application(self) -> None:
+        """H-2: kelly_fraction은 f_frac에만 1회 적용, alpha에 중복 적용되지 않음.
+
+        confidence=1.0일 때 alpha=1.0이므로 blended ≈ f_norm (fractional Kelly).
+        Lifecycle clamp으로 합이 1.0 이하일 수 있음.
+        """
+        cfg = _make_config(
+            2,
+            AllocationMethod.ADAPTIVE_KELLY,
+            kelly_fraction=0.5,
+            kelly_confidence_ramp=1,  # 즉시 confidence=1.0
+        )
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        returns = pd.DataFrame(
+            {
+                "pod-0": rng.normal(0.005, 0.02, 500),
+                "pod-1": rng.normal(0.001, 0.02, 500),
+            },
+            index=pd.date_range("2025-01-01", periods=500, freq="D"),
+        )
+        states = {
+            "pod-0": LifecycleState.PRODUCTION,
+            "pod-1": LifecycleState.PRODUCTION,
+        }
+        w = alloc.compute_weights(returns, states, lookback=500)
+        # confidence=1.0 → alpha=1.0 → blended = f_norm (fractional Kelly)
+        # pod-0 has higher expected return → higher weight
+        assert w["pod-0"] > w["pod-1"]
+        assert sum(w.values()) <= 1.0 + 1e-6
+        assert all(v >= 0 for v in w.values())
+
     def test_all_neg_returns_gives_valid(self) -> None:
         cfg = _make_config(2, AllocationMethod.ADAPTIVE_KELLY)
         alloc = CapitalAllocator(cfg)
@@ -298,6 +330,43 @@ class TestAdaptiveKelly:
         states = _all_production(2)
         w = alloc.compute_weights(returns, states)
         assert all(v >= 0 for v in w.values())
+
+    def test_real_live_days_vs_heuristic(self) -> None:
+        """H-8: 실제 live_days 전달 시 heuristic과 다른 결과."""
+        cfg = _make_config(
+            2,
+            AllocationMethod.ADAPTIVE_KELLY,
+            kelly_confidence_ramp=180,
+        )
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        returns = pd.DataFrame(
+            {
+                "pod-0": rng.normal(0.003, 0.02, 200),
+                "pod-1": rng.normal(0.001, 0.02, 200),
+            },
+            index=pd.date_range("2025-01-01", periods=200, freq="D"),
+        )
+        states = _all_production(2)
+
+        # Heuristic: PRODUCTION → 180일 평균 → confidence = 180/180 = 1.0
+        w_heuristic = alloc.compute_weights(returns, states, pod_live_days=None)
+
+        # 실제: 89일 평균 → confidence = 89/180 ≈ 0.49
+        w_real = alloc.compute_weights(returns, states, pod_live_days={"pod-0": 89, "pod-1": 89})
+        # 둘 다 유효한 가중치
+        assert sum(w_heuristic.values()) == pytest.approx(1.0, abs=0.01)
+        assert sum(w_real.values()) == pytest.approx(1.0, abs=0.01)
+
+    def test_pod_live_days_none_fallback(self) -> None:
+        """H-8: pod_live_days=None → heuristic fallback."""
+        cfg = _make_config(2, AllocationMethod.ADAPTIVE_KELLY)
+        alloc = CapitalAllocator(cfg)
+        returns = _make_returns(2, n_days=200)
+        states = _all_production(2)
+        # Should not raise
+        w = alloc.compute_weights(returns, states, pod_live_days=None)
+        assert sum(w.values()) <= 1.0 + 1e-6
 
 
 # ── TestLifecycleClamps ───────────────────────────────────────────

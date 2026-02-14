@@ -451,3 +451,90 @@ class TestIntegration:
 
         pod_ls = mgr._pod_states[pod.pod_id]
         assert pod_ls.consecutive_loss_months == 0
+
+    def test_bar_timestamp_warning_to_probation(self) -> None:
+        """H-3: bar_timestamp 전달 시 WARNING→PROBATION timeout 정상 동작."""
+        pod = _make_pod()
+        pod.state = LifecycleState.WARNING
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        # WARNING 진입을 2024-01-01로 설정
+        warning_entered = datetime(2024, 1, 1, tzinfo=UTC)
+        pod_ls.state_entered_at = warning_entered
+
+        # PH score를 높게 유지 (recovery 불가)
+        for _ in range(50):
+            pod_ls.ph_detector.update(0.01)
+        for _ in range(500):
+            pod_ls.ph_detector.update(-0.05)
+
+        # bar_timestamp = 2024-02-01 (31일 후) → timeout
+        bar_ts = datetime(2024, 2, 1, tzinfo=UTC)
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        assert result == LifecycleState.PROBATION
+
+    def test_bar_timestamp_probation_to_retired(self) -> None:
+        """H-3: bar_timestamp 전달 시 PROBATION→RETIRED timeout 정상 동작."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PROBATION
+        _set_pod_performance(pod, sharpe_ratio=0.3)
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        probation_entered = datetime(2024, 3, 1, tzinfo=UTC)
+        pod_ls.state_entered_at = probation_entered
+
+        # ph_score > 0 (회복 안됨)
+        for _ in range(10):
+            pod_ls.ph_detector.update(-0.05)
+
+        # bar_timestamp = 2024-04-01 (31일 후) → expired
+        bar_ts = datetime(2024, 4, 1, tzinfo=UTC)
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        assert result == LifecycleState.RETIRED
+
+    def test_bar_timestamp_sets_state_entered_at(self) -> None:
+        """H-3: _transition 시 state_entered_at = bar_timestamp."""
+        pod = _graduation_ready_pod()
+        bar_ts = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+
+        mgr = _make_manager()
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        assert result == LifecycleState.PRODUCTION
+
+        pod_ls = mgr._pod_states[pod.pod_id]
+        assert pod_ls.state_entered_at == bar_ts
+
+    def test_bar_timestamp_none_uses_wall_clock(self) -> None:
+        """H-3: bar_timestamp=None → wall clock fallback."""
+        pod = _graduation_ready_pod()
+        before = datetime.now(UTC)
+
+        mgr = _make_manager()
+        mgr.evaluate(pod, bar_timestamp=None)
+
+        pod_ls = mgr._pod_states[pod.pod_id]
+        after = datetime.now(UTC)
+        assert before <= pod_ls.state_entered_at <= after
+
+    def test_geometric_monthly_return_detects_loss(self) -> None:
+        """H-5: 산술합 ≈ 0이지만 기하 복리 < 0인 케이스에서 loss 감지."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+
+        # [-0.10, +0.10] * 15 = 30일
+        # 산술합 = 0.0, 기하 복리 = (0.9 * 1.1)^15 - 1 = 0.99^15 - 1 < 0
+        chunk = [-0.10, 0.10] * 15
+        # 6개월 연속 같은 패턴 → 6 consecutive loss months → RETIRED
+        returns = chunk * 6  # 180일
+        _inject_daily_returns(pod, returns)
+
+        retirement = RetirementCriteria(consecutive_loss_months=6)
+        mgr = _make_manager(retirement=retirement)
+        mgr.evaluate(pod)
+
+        # 기하 복리로 계산하면 모든 월이 손실 → 6개월 연속 손실 → RETIRED
+        assert pod.state == LifecycleState.RETIRED

@@ -210,6 +210,7 @@ class StrategyOrchestrator:
             fill.fill_price,
             fill.fee,
             pod_targets,
+            is_buy=is_buy,
         )
 
         for pod_id, (attr_qty, attr_price, attr_fee) in attributed.items():
@@ -332,11 +333,13 @@ class StrategyOrchestrator:
         pod_returns = pd.DataFrame(pod_returns_data)
 
         pod_states = {pod.pod_id: pod.state for pod in self._pods}
+        pod_live_days = {pod.pod_id: pod.performance.live_days for pod in self._pods}
 
         new_weights = self._allocator.compute_weights(
             pod_returns,
             pod_states,
             lookback=self._config.correlation_lookback,
+            pod_live_days=pod_live_days,
         )
 
         for pod in self._pods:
@@ -376,7 +379,9 @@ class StrategyOrchestrator:
             if not pod.is_active:
                 continue
             pre_state = pod.state.value
-            self._lifecycle.evaluate(pod, portfolio_returns_series)
+            self._lifecycle.evaluate(
+                pod, portfolio_returns_series, bar_timestamp=self._pending_bar_ts
+            )
             if pod.state.value != pre_state:
                 self._lifecycle_events.append(
                     {

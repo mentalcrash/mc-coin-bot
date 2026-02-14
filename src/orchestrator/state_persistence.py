@@ -76,10 +76,11 @@ class OrchestratorStatePersistence:
             "lifecycle": lifecycle_data,
         }
 
-        await self._save_key(_KEY_STATE, json.dumps(state_payload))
-        await self._save_key(
-            _KEY_DAILY_RETURNS,
-            json.dumps(daily_returns_data),
+        await self._save_keys_atomic(
+            [
+                (_KEY_STATE, json.dumps(state_payload)),
+                (_KEY_DAILY_RETURNS, json.dumps(daily_returns_data)),
+            ]
         )
 
         logger.debug("Orchestrator state saved: {} pods", len(pods_data))
@@ -214,6 +215,17 @@ class OrchestratorStatePersistence:
             pod.restore_daily_returns([float(r) for r in pod_returns])
 
     # ── Internal ─────────────────────────────────────────────────
+
+    async def _save_keys_atomic(self, entries: list[tuple[str, str]]) -> None:
+        """Insert or replace multiple key-values in a single transaction."""
+        conn = self._db.connection
+        now = datetime.now(UTC).isoformat()
+        for key, value in entries:
+            await conn.execute(
+                "INSERT OR REPLACE INTO bot_state (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, value, now),
+            )
+        await conn.commit()
 
     async def _save_key(self, key: str, value: str) -> None:
         """Insert or replace key-value in bot_state table."""
