@@ -49,10 +49,12 @@ import src.strategy.enhanced_tsmom  # 전략 등록 side effect
 import src.strategy.ensemble  # 전략 등록 side effect
 import src.strategy.entropy_switch  # 전략 등록 side effect
 import src.strategy.flow_imbalance  # 전략 등록 side effect
+import src.strategy.fr_cond_mom  # 전략 등록 side effect
 import src.strategy.fund_div_mom  # 전략 등록 side effect
 import src.strategy.funding_carry  # 전략 등록 side effect
 import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
+import src.strategy.hd_mom_rev  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
 import src.strategy.hour_season  # 전략 등록 side effect
 import src.strategy.jump_drift_mom  # 전략 등록 side effect
@@ -78,6 +80,7 @@ import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.trend_quality_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
+import src.strategy.up_vol_mom  # 전략 등록 side effect
 import src.strategy.vardecomp_mom  # 전략 등록 side effect
 import src.strategy.vmsm  # 전략 등록 side effect
 import src.strategy.vol_adaptive  # 전략 등록 side effect
