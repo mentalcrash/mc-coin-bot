@@ -25,6 +25,7 @@ from src.core.events import (
     OrderRejectedEvent,
     OrderRequestEvent,
 )
+from src.logging.tracing import component_span_with_context
 from src.models.types import Direction
 
 if TYPE_CHECKING:
@@ -70,8 +71,6 @@ class EDARiskManager:
         # Drawdown 추적
         self._peak_equity: float = portfolio_manager.total_equity
         self._circuit_breaker_triggered = False
-        # Exchange equity sync (live 모드 전용)
-        self._exchange_cb_pending = False
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
@@ -111,6 +110,18 @@ class EDARiskManager:
         """서킷 브레이커 발동 여부."""
         return self._circuit_breaker_triggered
 
+    def sync_peak_equity(self, exchange_equity: float) -> None:
+        """LIVE 모드: 거래소 잔고 기준으로 peak_equity 리셋.
+
+        State 복원 후 peak_equity가 이전 세션 값(paper 등)으로 남아
+        가짜 drawdown이 발생하는 문제를 방지합니다.
+
+        Args:
+            exchange_equity: 거래소 총 equity (USDT)
+        """
+        self._peak_equity = exchange_equity
+        self._circuit_breaker_triggered = False
+
     def restore_state(self, state: dict[str, object]) -> None:
         """저장된 상태를 복원.
 
@@ -127,7 +138,7 @@ class EDARiskManager:
         """거래소 실제 equity로 peak/drawdown 동기화.
 
         Reconciler가 주기적으로 호출. exchange_equity 기준으로
-        peak 갱신 + drawdown 체크 → CB 플래그 설정.
+        peak 갱신 + drawdown 체크 → 즉시 CircuitBreaker 발동.
 
         Args:
             exchange_equity: 거래소 조회 총 equity (USDT)
@@ -142,13 +153,24 @@ class EDARiskManager:
         self._peak_equity = max(self._peak_equity, exchange_equity)
 
         if drawdown >= self._config.system_stop_loss:
-            self._exchange_cb_pending = True
+            self._circuit_breaker_triggered = True
             logger.critical(
                 "EXCHANGE EQUITY CB: drawdown {:.1%} >= stop-loss {:.1%} (exchange_equity=${:.0f})",
                 drawdown,
                 self._config.system_stop_loss,
                 exchange_equity,
             )
+            bus = self._bus
+            if bus is not None:
+                cb_event = CircuitBreakerEvent(
+                    reason=(
+                        f"Exchange equity drawdown {drawdown:.1%} "
+                        f">= stop-loss {self._config.system_stop_loss:.1%}"
+                    ),
+                    close_all_positions=True,
+                    source="RiskManager",
+                )
+                await bus.publish(cb_event)
 
     async def _on_order_request(self, event: AnyEvent) -> None:
         """OrderRequestEvent 검증."""
@@ -161,6 +183,12 @@ class EDARiskManager:
         if order.validated:
             return
 
+        corr_id = str(order.correlation_id) if order.correlation_id else None
+        with component_span_with_context("rm.pre_trade_check", corr_id, {"symbol": order.symbol}):
+            await self._on_order_request_inner(order, bus)
+
+    async def _on_order_request_inner(self, order: OrderRequestEvent, bus: EventBus) -> None:
+        """_on_order_request 본체 (tracing span 내부)."""
         # 서킷 브레이커 발동 상태에서는 모든 주문 거부
         if self._circuit_breaker_triggered:
             reject = OrderRejectedEvent(
@@ -263,21 +291,6 @@ class EDARiskManager:
         # Circuit breaker 비활성화 시 peak만 추적
         if not self._enable_circuit_breaker:
             self._peak_equity = max(self._peak_equity, equity)
-            return
-
-        # Exchange equity CB 펜딩 시 즉시 발동
-        if self._exchange_cb_pending and not self._circuit_breaker_triggered:
-            self._exchange_cb_pending = False
-            self._circuit_breaker_triggered = True
-            bus = self._bus
-            assert bus is not None
-            cb_event = CircuitBreakerEvent(
-                reason="Exchange equity drawdown exceeded system stop-loss",
-                close_all_positions=True,
-                correlation_id=event.correlation_id,
-                source="RiskManager",
-            )
-            await bus.publish(cb_event)
             return
 
         # System stop-loss 체크 (peak 업데이트 전에 drawdown 계산)

@@ -15,7 +15,6 @@ import pytest
 from src.core.event_bus import EventBus
 from src.core.events import (
     AnyEvent,
-    BalanceUpdateEvent,
     CircuitBreakerEvent,
     EventType,
     OrderRequestEvent,
@@ -251,19 +250,9 @@ class TestEquityDriftCBIntegration:
 
         task = asyncio.create_task(bus.start())
 
-        # 거래소 equity가 peak 대비 15% 하락
+        # 거래소 equity가 peak 대비 15% 하락 → 즉시 CB 발동
         await rm.sync_exchange_equity(8500.0)
-        assert rm._exchange_cb_pending is True
 
-        # 다음 balance update에서 CB 발동
-        balance = BalanceUpdateEvent(
-            total_equity=9800.0,
-            available_cash=9800.0,
-            total_margin_used=0.0,
-            correlation_id=uuid4(),
-            source="test",
-        )
-        await bus.publish(balance)
         await bus.stop()
         await task
 
@@ -336,5 +325,5 @@ class TestReconcilerBalanceSync:
 
         # RM sync — drawdown 5% < 10% stop-loss → CB 미발동
         await rm.sync_exchange_equity(exchange_equity)
-        assert rm._exchange_cb_pending is False
+        assert rm.is_circuit_breaker_active is False
         assert rm.peak_equity == 10000.0  # peak 유지 (9500 < 10000)

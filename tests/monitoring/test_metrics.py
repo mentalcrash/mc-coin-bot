@@ -28,6 +28,7 @@ from src.monitoring.metrics import (
     MetricsExporter,
     PrometheusApiCallback,
     PrometheusWsCallback,
+    PrometheusWsDetailCallback,
     _calculate_slippage_bps,
     _categorize_reason,
     _extract_strategy,
@@ -881,3 +882,58 @@ class TestBarAgeMetrics:
         val = _sample("mcbot_last_bar_age_seconds", {"symbol": "BTC/USDT"})
         assert val is not None
         assert val >= 59.0
+
+
+class TestPrometheusWsDetailCallback:
+    """PrometheusWsDetailCallback 테스트."""
+
+    def test_on_ws_status_connected(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_status("BTC/USDT", connected=True)
+        val = _sample("mcbot_exchange_ws_connected", {"symbol": "BTC/USDT"})
+        assert val == 1.0
+
+    def test_on_ws_status_disconnected(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_status("BTC/USDT", connected=False)
+        val = _sample("mcbot_exchange_ws_connected", {"symbol": "BTC/USDT"})
+        assert val == 0.0
+
+    def test_on_ws_message_increments_counter(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        before = _sample("mcbot_ws_messages_received_total", {"symbol": "ETH/USDT"}) or 0
+        cb.on_ws_message("ETH/USDT")
+        cb.on_ws_message("ETH/USDT")
+        after = _sample("mcbot_ws_messages_received_total", {"symbol": "ETH/USDT"})
+        assert after is not None
+        assert after - before == 2
+
+    def test_on_ws_reconnect_increments_counter(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        before = _sample("mcbot_ws_reconnects_total", {"symbol": "SOL/USDT"}) or 0
+        cb.on_ws_reconnect("SOL/USDT")
+        after = _sample("mcbot_ws_reconnects_total", {"symbol": "SOL/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+    def test_update_message_ages(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_message("BTC/USDT")
+        # 즉시 update → 0에 가까워야 함
+        cb.update_message_ages()
+        val = _sample("mcbot_ws_last_message_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val < 1.0
+
+    def test_update_message_ages_stale(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb._last_message_time["BTC/USDT"] = time.monotonic() - 30
+        cb.update_message_ages()
+        val = _sample("mcbot_ws_last_message_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val >= 29.0
+
+    def test_satisfies_ws_status_protocol(self) -> None:
+        """WsStatusCallback Protocol 호환 확인."""
+        cb = PrometheusWsDetailCallback()
+        assert isinstance(cb, PrometheusWsCallback.__class__) or hasattr(cb, "on_ws_status")

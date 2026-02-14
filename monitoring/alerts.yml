@@ -60,3 +60,72 @@ groups:
         annotations:
           summary: "EventBus queue congested ({{ $value }} events pending)"
           description: "EventBus queue depth exceeds 5000 (50% of default 10000). Backpressure risk."
+
+      # 7. Event Loop Lag — 1초 초과 1분 유지
+      - alert: HighEventLoopLag
+        expr: mcbot_event_loop_lag_seconds > 1.0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High event loop lag ({{ $value | printf \"%.2f\" }}s)"
+          description: "Event loop scheduling lag exceeds 1 second. Possible CPU saturation or blocking I/O."
+
+      # 8. RSS 메모리 2GB 초과 — 5분 유지
+      - alert: HighMemoryUsage
+        expr: mcbot_process_memory_rss_bytes > 2147483648
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage ({{ $value | humanize1024 }})"
+          description: "Process RSS memory exceeds 2GB for over 5 minutes. Possible memory leak."
+
+      # 9. Open FD 1000개 초과 — 2분 유지
+      - alert: HighFDCount
+        expr: mcbot_process_open_fds > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High file descriptor count ({{ $value }})"
+          description: "Process has {{ $value }} open file descriptors (threshold: 1000). Possible resource leak."
+
+      # 10. WS 빈번한 재연결 — 5분간 3회 이상
+      - alert: WSFrequentReconnects
+        expr: increase(mcbot_ws_reconnects_total[5m]) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Frequent WS reconnects for {{ $labels.symbol }} ({{ $value | printf \"%.0f\" }} in 5m)"
+          description: "WebSocket for {{ $labels.symbol }} reconnected {{ $value | printf \"%.0f\" }} times in 5 minutes. Network instability suspected."
+
+      # 11. WS 메시지 수신 중단 — 60초 이상
+      - alert: WSNoMessages
+        expr: mcbot_ws_last_message_age_seconds > 60
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No WS messages for {{ $labels.symbol }} ({{ $value | printf \"%.0f\" }}s)"
+          description: "No WebSocket messages received for {{ $labels.symbol }} in {{ $value | printf \"%.0f\" }} seconds. Data feed may be stale."
+
+      # 12. Distribution Drift — p-value < 0.05 for 1 day
+      - alert: DistributionDrift
+        expr: mcbot_distribution_p_value < 0.05
+        for: 1d
+        labels:
+          severity: warning
+        annotations:
+          summary: "Distribution drift detected for {{ $labels.strategy }} (p={{ $value | printf \"%.4f\" }})"
+          description: "KS test p-value below 0.05 for over 1 day. Live return distribution may have shifted from backtest reference."
+
+      # 13. Structural Decay — RANSAC decay detected for 1 day
+      - alert: StructuralDecay
+        expr: mcbot_ransac_decay_detected == 1
+        for: 1d
+        labels:
+          severity: critical
+        annotations:
+          summary: "Structural decay detected for {{ $labels.strategy }}"
+          description: "Conformal-RANSAC detector indicates structural performance decay (slope <= 0 or conformal bound breach)."

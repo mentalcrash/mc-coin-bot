@@ -225,11 +225,17 @@ class LiveDataFeed:
                     was_disconnected = False
                     if self._ws_callback is not None:
                         self._ws_callback.on_ws_status(symbol, connected=True)
+                        reconnect_fn = getattr(self._ws_callback, "on_ws_reconnect", None)
+                        if reconnect_fn is not None:
+                            reconnect_fn(symbol)
 
                 if not ohlcvs:
                     continue
 
                 self._record_heartbeat(symbol)
+                msg_fn = getattr(self._ws_callback, "on_ws_message", None)
+                if msg_fn is not None:
+                    msg_fn(symbol)
                 latest = ohlcvs[-1]
                 current_ts = int(latest[0])
 

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from src.models.types import Direction
+from src.notification.reconciler_formatters import DriftDetail
 
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager, Position
@@ -47,6 +48,8 @@ class PositionReconciler:
     def __init__(self, *, auto_correct: bool = False) -> None:
         self._auto_correct = auto_correct
         self._corrections_applied: int = 0
+        self._last_drift_details: list[DriftDetail] = []
+        self._last_balance_drift_pct: float = 0.0
 
     @property
     def auto_correct_enabled(self) -> bool:
@@ -57,6 +60,16 @@ class PositionReconciler:
     def corrections_applied(self) -> int:
         """적용된 auto-correction 횟수."""
         return self._corrections_applied
+
+    @property
+    def last_drift_details(self) -> list[DriftDetail]:
+        """마지막 비교에서 수집된 drift 상세 정보."""
+        return self._last_drift_details
+
+    @property
+    def last_balance_drift_pct(self) -> float:
+        """마지막 잔고 검증의 drift 비율 (%)."""
+        return self._last_balance_drift_pct
 
     async def initial_check(
         self,
@@ -142,9 +155,11 @@ class PositionReconciler:
 
         pm_equity = pm.total_equity
         if pm_equity <= 0:
+            self._last_balance_drift_pct = 0.0
             return exchange_equity
 
         drift = abs(pm_equity - exchange_equity) / pm_equity
+        self._last_balance_drift_pct = drift * 100
 
         if drift > _BALANCE_DRIFT_THRESHOLD:
             logger.critical(
@@ -199,6 +214,7 @@ class PositionReconciler:
                 exchange_map[spot_sym]["short_size"] = contracts
 
         drifts: list[str] = []
+        self._last_drift_details = []
 
         for symbol in symbols:
             pm_pos = pm.positions.get(symbol)
@@ -210,12 +226,48 @@ class PositionReconciler:
             if self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info):
                 drifts.append(symbol)
 
+                # DriftDetail 수집
+                ex_size = self._get_exchange_size(pm_dir, ex_info)
+                pm_side = "FLAT" if pm_dir == Direction.NEUTRAL else pm_dir.name
+                ex_side = self._detect_exchange_side(ex_info)
+                max_size = max(pm_size, ex_size)
+                drift_pct = (abs(pm_size - ex_size) / max_size * 100) if max_size > 0 else 0.0
+                is_orphan = (pm_size > 0) != (ex_size > 0)
+
+                corrected = False
                 # Auto-correction: PM size를 거래소 기준으로 보정
                 if self._auto_correct and pm_pos is not None:
-                    ex_size = self._get_exchange_size(pm_dir, ex_info)
+                    old_size = pm_pos.size
                     self._apply_correction(pm_pos, ex_size, pm_dir, ex_info)
+                    corrected = pm_pos.size != old_size
+
+                self._last_drift_details.append(
+                    DriftDetail(
+                        symbol=symbol,
+                        pm_size=pm_size,
+                        pm_side=pm_side,
+                        exchange_size=ex_size,
+                        exchange_side=ex_side,
+                        drift_pct=drift_pct,
+                        is_orphan=is_orphan,
+                        auto_corrected=corrected,
+                    )
+                )
 
         return drifts
+
+    @staticmethod
+    def _detect_exchange_side(ex_info: dict[str, float]) -> str:
+        """거래소 포지션 방향 감지."""
+        has_long = ex_info["long_size"] > 0
+        has_short = ex_info["short_size"] > 0
+        if has_long and has_short:
+            return "HEDGE"
+        if has_long:
+            return "LONG"
+        if has_short:
+            return "SHORT"
+        return "FLAT"
 
     def _get_exchange_size(self, pm_dir: Direction, ex_info: dict[str, float]) -> float:
         """PM 방향에 맞는 거래소 포지션 크기 반환."""

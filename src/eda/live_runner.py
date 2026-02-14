@@ -35,6 +35,7 @@ from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
 from src.eda.risk_manager import EDARiskManager
 from src.eda.strategy_engine import StrategyEngine
+from src.logging.tracing import setup_tracing, shutdown_tracing
 from src.notification.models import ChannelRoute, NotificationItem, Severity
 
 if TYPE_CHECKING:
@@ -441,6 +442,13 @@ class LiveRunner:
         from src.eda.persistence.database import Database
         from src.eda.persistence.trade_persistence import TradePersistence
 
+        # 0a. OTel tracing 초기화 (MC_OTEL_ENDPOINT 환경변수 설정 시)
+        import os
+
+        otel_endpoint = os.environ.get("MC_OTEL_ENDPOINT")
+        if otel_endpoint:
+            setup_tracing(endpoint=otel_endpoint)
+
         # 0. LIVE 모드 Pre-flight checks → 거래소 잔고로 capital override
         capital = self._initial_capital
         if self._mode == LiveMode.LIVE and self._futures_client is not None:
@@ -502,6 +510,15 @@ class LiveRunner:
             # 3.5. Orchestrator 상태 복구
             orch_persistence = await self._restore_orchestrator_state(state_mgr)
 
+            # 3.6. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
+            if self._mode == LiveMode.LIVE:
+                pm.sync_capital(capital)
+                rm.sync_peak_equity(capital)
+                logger.info(
+                    "LIVE sync: PM/RM capital reset to exchange balance ${:.2f}",
+                    capital,
+                )
+
             # 4. 모든 컴포넌트 등록 + warmup
             await self._register_and_warmup(
                 bus,
@@ -558,11 +575,22 @@ class LiveRunner:
                         bus,
                         self._futures_client,
                         getattr(self, "_orchestrator_metrics", None),
+                        ws_detail_callback=getattr(self, "_ws_detail_callback", None),
                     )
                 )
 
+            # 프로세스 모니터 task (event loop lag, RSS, FD)
+            process_monitor_task: asyncio.Task[None] | None = None
+            if metrics_exporter is not None:
+                from src.monitoring.process_monitor import monitor_process_and_loop
+
+                process_monitor_task = asyncio.create_task(
+                    monitor_process_and_loop(interval=10.0, bus=bus)
+                )
+
             # Live 모드: PositionReconciler 초기 + 주기적 검증
-            reconciler_task = await self._setup_reconciler(pm, rm)
+            notification_queue = discord_tasks.notification_queue if discord_tasks else None
+            reconciler_task = await self._setup_reconciler(pm, rm, notification_queue)
 
             # 구조화된 startup summary
             self._log_startup_summary(capital)
@@ -582,6 +610,7 @@ class LiveRunner:
                 feed_task=feed_task,
                 save_task=save_task,
                 uptime_task=uptime_task,
+                process_monitor_task=process_monitor_task,
                 reconciler_task=reconciler_task,
                 pm=pm,
                 rm=rm,
@@ -606,6 +635,7 @@ class LiveRunner:
         feed_task: asyncio.Task[None],
         save_task: asyncio.Task[None] | None,
         uptime_task: asyncio.Task[None] | None,
+        process_monitor_task: asyncio.Task[None] | None,
         reconciler_task: asyncio.Task[None] | None,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
@@ -619,7 +649,7 @@ class LiveRunner:
         logger.warning("Initiating graceful shutdown...")
 
         # 주기적 task 취소
-        await self._cancel_periodic_tasks(save_task, uptime_task, reconciler_task)
+        await self._cancel_periodic_tasks(save_task, uptime_task, process_monitor_task, reconciler_task)
 
         await self._feed.stop()
         feed_task.cancel()
@@ -743,6 +773,7 @@ class LiveRunner:
             rm=rm,
             analytics=analytics,
             runner_shutdown=self.request_shutdown,
+            orchestrator=self._orchestrator,
         )
         bot_service.set_trading_context(trading_ctx)
 
@@ -776,6 +807,10 @@ class LiveRunner:
             symbols=self._symbols,
         )
         await health_scheduler.start()
+
+        # L3-3: TradingContext에 trigger 콜백 설정
+        trading_ctx.report_trigger = report_scheduler.trigger_daily_report
+        trading_ctx.health_trigger = health_scheduler.trigger_health_check
 
         # OrchestratorNotificationEngine (Orchestrator 활성 시)
         if self._orchestrator is not None:
@@ -1034,6 +1069,7 @@ class LiveRunner:
         self,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
+        notification_queue: NotificationQueue | None = None,
     ) -> asyncio.Task[None] | None:
         """Live 모드: PositionReconciler 초기 + 주기적 검증 task 생성."""
         if self._mode != LiveMode.LIVE or self._futures_client is None:
@@ -1044,7 +1080,10 @@ class LiveRunner:
         reconciler = PositionReconciler()
         await reconciler.initial_check(pm, self._futures_client, self._symbols)
         return asyncio.create_task(
-            self._periodic_reconciliation(reconciler, pm, rm, self._futures_client, self._symbols)
+            self._periodic_reconciliation(
+                reconciler, pm, rm, self._futures_client, self._symbols,
+                notification_queue=notification_queue,
+            )
         )
 
     async def _stop_derivatives_feed(self) -> None:
@@ -1186,7 +1225,7 @@ class LiveRunner:
         from src.monitoring.metrics import (
             MetricsExporter,
             PrometheusApiCallback,
-            PrometheusWsCallback,
+            PrometheusWsDetailCallback,
             bot_info,
             trading_mode_enum,
         )
@@ -1210,8 +1249,10 @@ class LiveRunner:
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
 
-        # LiveDataFeed에 WS 상태 콜백 주입
-        self._feed.set_ws_callback(PrometheusWsCallback())
+        # LiveDataFeed에 WS 상태 콜백 주입 (상세 메트릭 포함)
+        ws_detail_cb = PrometheusWsDetailCallback()
+        self._feed.set_ws_callback(ws_detail_cb)
+        self._ws_detail_callback: PrometheusWsDetailCallback | None = ws_detail_cb
 
         # OrchestratorMetrics (Orchestrator 활성 시)
         if self._orchestrator is not None:
@@ -1231,6 +1272,7 @@ class LiveRunner:
         bus: EventBus,
         futures_client: BinanceFuturesClient | None,
         orchestrator_metrics: OrchestratorMetrics | None = None,
+        ws_detail_callback: Any = None,
         interval: float = 30.0,
     ) -> None:
         """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator 메트릭 갱신."""
@@ -1243,6 +1285,8 @@ class LiveRunner:
                 exporter.update_exchange_health(futures_client.consecutive_failures)
             if orchestrator_metrics is not None:
                 orchestrator_metrics.update()
+            if ws_detail_callback is not None:
+                ws_detail_callback.update_message_ages()
 
     @staticmethod
     async def _periodic_reconciliation(
@@ -1252,15 +1296,56 @@ class LiveRunner:
         futures_client: BinanceFuturesClient,
         symbols: list[str],
         interval: float = _RECONCILER_INTERVAL,
+        notification_queue: NotificationQueue | None = None,
     ) -> None:
         """주기적 포지션 + 잔고 교차 검증."""
+        from src.notification.reconciler_formatters import (
+            format_balance_drift_embed,
+            format_position_drift_embed,
+        )
+
+        # Balance drift 알림 임계값 (%)
+        _balance_notify_threshold = 2.0
+
         while True:
             await asyncio.sleep(interval)
-            await reconciler.periodic_check(pm, futures_client, symbols)
+            drifts = await reconciler.periodic_check(pm, futures_client, symbols)
+
+            # Position drift 알림
+            if drifts and notification_queue is not None:
+                details = reconciler.last_drift_details
+                if details:
+                    embed = format_position_drift_embed(details)
+                    await notification_queue.enqueue(
+                        NotificationItem(
+                            severity=Severity.WARNING,
+                            channel=ChannelRoute.ALERTS,
+                            embed=embed,
+                            spam_key="position_drift",
+                        )
+                    )
+
             # 잔고 검증 + RM equity sync
             exchange_equity = await reconciler.check_balance(pm, futures_client)
             if exchange_equity is not None:
                 await rm.sync_exchange_equity(exchange_equity)
+
+                # Balance drift 알림
+                balance_drift = reconciler.last_balance_drift_pct
+                if balance_drift >= _balance_notify_threshold and notification_queue is not None:
+                    embed = format_balance_drift_embed(
+                        pm_equity=pm.total_equity,
+                        exchange_equity=exchange_equity,
+                        drift_pct=balance_drift,
+                    )
+                    await notification_queue.enqueue(
+                        NotificationItem(
+                            severity=Severity.WARNING,
+                            channel=ChannelRoute.ALERTS,
+                            embed=embed,
+                            spam_key="balance_drift",
+                        )
+                    )
 
     @property
     def feed(self) -> LiveDataFeed:

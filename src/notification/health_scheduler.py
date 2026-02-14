@@ -126,6 +126,14 @@ class HealthCheckScheduler:
         await self._snapshot_fetcher.stop()
         logger.info("HealthCheckScheduler stopped")
 
+    async def trigger_health_check(self) -> None:
+        """즉시 heartbeat 전송 (Discord /health 명령용)."""
+        try:
+            await self._send_heartbeat()
+            logger.info("Health check triggered manually")
+        except Exception:
+            logger.exception("Failed to trigger health check")
+
     # ─── Loops ────────────────────────────────────────────────
 
     async def _heartbeat_loop(self) -> None:

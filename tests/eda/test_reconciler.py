@@ -345,6 +345,96 @@ class TestMultiSymbol:
         assert "ETH/USDT" in drifts
 
 
+class TestDriftDetails:
+    """last_drift_details / last_balance_drift_pct 프로퍼티 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_drift_details_populated(self) -> None:
+        """drift 감지 시 DriftDetail 리스트가 채워짐."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.01, last_price=50000.0
+            )
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.015, "side": "long"}]
+        )
+
+        reconciler = PositionReconciler()
+        await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        details = reconciler.last_drift_details
+        assert len(details) == 1
+        assert details[0].symbol == "BTC/USDT"
+        assert details[0].pm_side == "LONG"
+        assert details[0].exchange_side == "LONG"
+        assert details[0].drift_pct > 0
+
+    @pytest.mark.asyncio
+    async def test_drift_details_empty_when_no_drift(self) -> None:
+        """drift 없으면 빈 리스트."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.01, last_price=50000.0
+            )
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.01, "side": "long"}]
+        )
+
+        reconciler = PositionReconciler()
+        await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+        assert reconciler.last_drift_details == []
+
+    @pytest.mark.asyncio
+    async def test_orphan_flag(self) -> None:
+        """PM만 포지션 보유 시 is_orphan=True."""
+        positions = {
+            "BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.01, last_price=50000.0
+            )
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client([])
+
+        reconciler = PositionReconciler()
+        await reconciler.periodic_check(pm, client, ["BTC/USDT"])
+
+        details = reconciler.last_drift_details
+        assert len(details) == 1
+        assert details[0].is_orphan is True
+
+    @pytest.mark.asyncio
+    async def test_balance_drift_pct(self) -> None:
+        """check_balance() 후 last_balance_drift_pct 갱신."""
+        pm = _make_pm({})
+        pm.total_equity = 10000.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10300.0}}
+        )
+
+        reconciler = PositionReconciler()
+        await reconciler.check_balance(pm, client)
+        assert abs(reconciler.last_balance_drift_pct - 3.0) < 0.1
+
+    @pytest.mark.asyncio
+    async def test_balance_drift_pct_zero_equity(self) -> None:
+        """PM equity 0일 때 drift_pct 0."""
+        pm = _make_pm({})
+        pm.total_equity = 0.0
+        client = MagicMock()
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10000.0}}
+        )
+
+        reconciler = PositionReconciler()
+        await reconciler.check_balance(pm, client)
+        assert reconciler.last_balance_drift_pct == 0.0
+
+
 class TestAutoCorrection:
     """Auto-correction 모드 테스트."""
 

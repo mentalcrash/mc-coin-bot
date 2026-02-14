@@ -320,16 +320,31 @@ class TestDynamicMaxOrderSize:
 class TestSyncExchangeEquity:
     """sync_exchange_equity() 테스트."""
 
-    async def test_sync_triggers_cb_flag(self) -> None:
-        """거래소 equity 기반 drawdown → CB 플래그 설정."""
+    async def test_sync_triggers_cb_immediately(self) -> None:
+        """거래소 equity 기반 drawdown → 즉시 CB 발동."""
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0, rebalance_threshold=0.01, system_stop_loss=0.10
         )
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         rm = EDARiskManager(config=config, portfolio_manager=pm)
-        # peak = 10000, exchange equity = 8500 → dd = 15%
+        bus = EventBus(queue_size=100)
+        cb_events: list[CircuitBreakerEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, CircuitBreakerEvent):
+                cb_events.append(event)
+
+        bus.subscribe(EventType.CIRCUIT_BREAKER, handler)
+        await rm.register(bus)
+        task = asyncio.create_task(bus.start())
+
+        # peak = 10000, exchange equity = 8500 → dd = 15% > 10%
         await rm.sync_exchange_equity(8500.0)
-        assert rm._exchange_cb_pending is True
+        await bus.stop()
+        await task
+
+        assert rm.is_circuit_breaker_active is True
+        assert len(cb_events) == 1
 
     async def test_sync_no_trigger_within_threshold(self) -> None:
         """drawdown < stop-loss 시 CB 미발동."""
@@ -339,7 +354,7 @@ class TestSyncExchangeEquity:
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         rm = EDARiskManager(config=config, portfolio_manager=pm)
         await rm.sync_exchange_equity(9500.0)
-        assert rm._exchange_cb_pending is False
+        assert rm.is_circuit_breaker_active is False
 
     async def test_sync_updates_peak(self) -> None:
         """거래소 equity가 높으면 peak 갱신."""
@@ -351,8 +366,8 @@ class TestSyncExchangeEquity:
         await rm.sync_exchange_equity(12000.0)
         assert rm.peak_equity == 12000.0
 
-    async def test_exchange_cb_fires_on_balance_update(self) -> None:
-        """exchange CB pending 시 다음 balance update에서 CB 이벤트 발행."""
+    async def test_exchange_cb_fires_immediately(self) -> None:
+        """sync_exchange_equity에서 즉시 CB 이벤트 발행 (BalanceUpdate 불필요)."""
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0, rebalance_threshold=0.01, system_stop_loss=0.10
         )
@@ -370,10 +385,8 @@ class TestSyncExchangeEquity:
         await rm.register(bus)
 
         task = asyncio.create_task(bus.start())
-        # exchange drawdown → flag 설정
+        # exchange drawdown 20% > 10% → 즉시 CB 발동
         await rm.sync_exchange_equity(8000.0)
-        # balance update → CB 발행
-        await bus.publish(_make_balance(total_equity=9500.0))
         await bus.stop()
         await task
 

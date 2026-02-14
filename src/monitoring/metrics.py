@@ -122,6 +122,21 @@ exchange_consecutive_failures_gauge = Gauge(
     "mcbot_exchange_consecutive_failures",
     "Consecutive API failure count",
 )
+ws_reconnects_counter = Counter(
+    "mcbot_ws_reconnects_total",
+    "WebSocket reconnection count",
+    ["symbol"],
+)
+ws_messages_counter = Counter(
+    "mcbot_ws_messages_received_total",
+    "WebSocket messages received",
+    ["symbol"],
+)
+ws_last_message_age_gauge = Gauge(
+    "mcbot_ws_last_message_age_seconds",
+    "Seconds since last WebSocket message",
+    ["symbol"],
+)
 
 # ==========================================================================
 # Layer 4: Bot Health
@@ -220,6 +235,38 @@ class PrometheusWsCallback:
         exchange_ws_connected_gauge.labels(symbol=symbol).set(1 if connected else 0)
 
 
+class PrometheusWsDetailCallback:
+    """기존 WsStatusCallback 호환 + 상세 WS 메트릭 수집.
+
+    on_ws_status: 연결 상태 gauge
+    on_ws_message: 메시지 수 counter + 마지막 메시지 시각 기록
+    on_ws_reconnect: 재연결 counter
+    update_message_ages: 주기적 호출로 last_message_age gauge 갱신
+    """
+
+    def __init__(self) -> None:
+        self._last_message_time: dict[str, float] = {}
+
+    def on_ws_status(self, symbol: str, *, connected: bool) -> None:
+        """WS 연결 상태를 Prometheus gauge로 기록."""
+        exchange_ws_connected_gauge.labels(symbol=symbol).set(1 if connected else 0)
+
+    def on_ws_message(self, symbol: str) -> None:
+        """WS 메시지 수신 → counter 증가 + 시각 기록."""
+        ws_messages_counter.labels(symbol=symbol).inc()
+        self._last_message_time[symbol] = time.monotonic()
+
+    def on_ws_reconnect(self, symbol: str) -> None:
+        """WS 재연결 → counter 증가."""
+        ws_reconnects_counter.labels(symbol=symbol).inc()
+
+    def update_message_ages(self) -> None:
+        """심볼별 마지막 메시지 경과 시간을 gauge로 갱신."""
+        now = time.monotonic()
+        for sym, last in self._last_message_time.items():
+            ws_last_message_age_gauge.labels(symbol=sym).set(now - last)
+
+
 # ==========================================================================
 # Rejection reason 분류
 # ==========================================================================
@@ -277,6 +324,23 @@ class _EventBusSnapshot:
 # ==========================================================================
 # Per-strategy metrics
 # ==========================================================================
+# ==========================================================================
+# Per-strategy anomaly detection
+# ==========================================================================
+distribution_ks_statistic_gauge = Gauge(
+    "mcbot_distribution_ks_statistic", "Distribution drift KS statistic", ["strategy"]
+)
+distribution_p_value_gauge = Gauge(
+    "mcbot_distribution_p_value", "Distribution drift p-value", ["strategy"]
+)
+ransac_slope_gauge = Gauge("mcbot_ransac_slope", "RANSAC estimated slope", ["strategy"])
+ransac_conformal_lower_gauge = Gauge(
+    "mcbot_ransac_conformal_lower", "RANSAC conformal lower bound", ["strategy"]
+)
+ransac_decay_detected_gauge = Gauge(
+    "mcbot_ransac_decay_detected", "RANSAC structural decay detected (0 or 1)", ["strategy"]
+)
+
 strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy PnL", ["strategy"])
 strategy_signals_counter = Counter(
     "mcbot_strategy_signals_total", "Signals by strategy", ["strategy", "side"]
@@ -322,6 +386,8 @@ class MetricsExporter:
     """
 
     def __init__(self, port: int = 8000) -> None:
+        from src.monitoring.anomaly.execution_quality import ExecutionAnomalyDetector
+
         self._port = port
         self._start_time = time.monotonic()
         self._pending_orders: dict[str, _PendingOrder] = {}
@@ -329,6 +395,7 @@ class MetricsExporter:
         self._last_bar_time: dict[str, float] = {}  # symbol → monotonic timestamp
         self._eventbus_snapshot = _EventBusSnapshot()
         self._bus: EventBus | None = None
+        self._anomaly_detector = ExecutionAnomalyDetector()
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록.
@@ -451,6 +518,14 @@ class MetricsExporter:
             if event.fee > 0:
                 strategy_fees_counter.labels(strategy=pending.strategy_name).inc(event.fee)
 
+            # Execution anomaly detection
+            bps_for_anomaly = (
+                _calculate_slippage_bps(expected, event.fill_price) if expected and expected > 0 else 0.0
+            )
+            anomalies = self._anomaly_detector.on_fill(latency, bps_for_anomaly)
+            for anomaly in anomalies:
+                await self._publish_execution_alert(anomaly.severity, anomaly.message)
+
     async def _on_signal(self, event: AnyEvent) -> None:
         """SignalEvent → signals counter + strategy signals counter."""
         assert isinstance(event, SignalEvent)
@@ -507,6 +582,7 @@ class MetricsExporter:
             expected_price=expected_price,
             strategy_name=_extract_strategy(event.client_order_id),
         )
+        self._anomaly_detector.on_order_request()
 
     async def _on_order_ack(self, event: AnyEvent) -> None:
         """OrderAckEvent → orders_total (ack) 증가."""
@@ -527,6 +603,11 @@ class MetricsExporter:
         reason_category = _categorize_reason(event.reason)
         order_rejected_counter.labels(symbol=event.symbol, reason=reason_category).inc()
 
+        # Execution anomaly detection — rejection tracking
+        rejection_anomalies = self._anomaly_detector.on_rejection()
+        for anomaly in rejection_anomalies:
+            await self._publish_execution_alert(anomaly.severity, anomaly.message)
+
         # pending 있으면 orders_total도 기록 후 제거
         pending = self._pending_orders.pop(event.client_order_id, None)
         if pending is not None:
@@ -541,6 +622,14 @@ class MetricsExporter:
         """HeartbeatEvent → heartbeat timestamp gauge."""
         assert isinstance(event, HeartbeatEvent)
         heartbeat_timestamp_gauge.set(event.timestamp.timestamp())
+
+    def check_execution_health(self) -> object | None:
+        """Fill rate 주기적 체크용 (external caller).
+
+        Returns:
+            ExecutionAnomaly 또는 None (정상/데이터 부족)
+        """
+        return self._anomaly_detector.check_fill_rate()
 
     # ------------------------------------------------------------------
     # Execution quality alerts
