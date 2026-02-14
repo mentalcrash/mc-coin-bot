@@ -49,6 +49,11 @@ class PageHinkleyDetector:
         self._m_t: float = 0.0
         self._m_min: float = 0.0
 
+    @property
+    def lambda_threshold(self) -> float:
+        """Detection threshold (lambda)."""
+        return self._lambda
+
     def update(self, value: float) -> bool:
         """Ingest a new observation and check for degradation.
 

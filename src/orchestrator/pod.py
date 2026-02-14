@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 _MAX_BUFFER_SIZE = 1000
 _MIN_WEIGHT_THRESHOLD = 1e-8
 _DEFAULT_WARMUP = 50
+_PERIODS_PER_YEAR = 365
+_EPSILON = 1e-12
+_MIN_METRICS_SAMPLES = 2
 
 
 # ── StrategyPod ──────────────────────────────────────────────────
@@ -224,9 +227,11 @@ class StrategyPod:
     ) -> None:
         """체결 정보로 Pod 포지션을 업데이트합니다.
 
+        Signed quantity 기반 가중 평균 진입가 추적으로 정확한 realized PnL 계산.
+
         Args:
             symbol: 거래 심볼
-            fill_qty: 체결 수량
+            fill_qty: 체결 수량 (양수)
             fill_price: 체결 가격
             fee: 수수료
             is_buy: 매수 여부
@@ -238,16 +243,19 @@ class StrategyPod:
             )
 
         pos = self._positions[symbol]
-        signed_qty = fill_qty if is_buy else -fill_qty
-        new_notional = pos.notional_usd + signed_qty * fill_price
+        old_qty = pos.quantity
+        signed_fill = fill_qty if is_buy else -fill_qty
 
-        # realized PnL: 기존 포지션과 반대 방향 체결 시
-        realized_delta = 0.0
-        if not is_buy and pos.notional_usd > 0:
-            realized_delta = fill_qty * fill_price - fill_qty * (
-                pos.notional_usd / max(abs(pos.notional_usd / fill_price), 1e-12)
-            )
+        # Realized PnL: 기존 포지션과 반대 방향 체결 시
+        realized_delta = self._compute_realized_pnl(old_qty, signed_fill, fill_price, pos.avg_entry_price)
         realized_delta -= fee
+
+        # 새 quantity / avg_entry_price 계산
+        new_qty = old_qty + signed_fill
+        new_avg = self._compute_new_avg_entry(
+            old_qty, pos.avg_entry_price, signed_fill, fill_price, new_qty,
+        )
+        new_notional = abs(new_qty) * fill_price
 
         self._positions[symbol] = PodPosition(
             pod_id=self.pod_id,
@@ -257,9 +265,63 @@ class StrategyPod:
             notional_usd=new_notional,
             unrealized_pnl=pos.unrealized_pnl,
             realized_pnl=pos.realized_pnl + realized_delta,
+            avg_entry_price=new_avg,
+            quantity=new_qty,
         )
 
         self._performance.trade_count += 1
+
+    @staticmethod
+    def _compute_realized_pnl(
+        old_qty: float,
+        signed_fill: float,
+        fill_price: float,
+        avg_entry: float,
+    ) -> float:
+        """기존 포지션과 반대 방향 체결 시 realized PnL 계산."""
+        if abs(old_qty) < _EPSILON or avg_entry < _EPSILON:
+            return 0.0
+
+        # 같은 방향 추가 → realized 없음
+        if (old_qty > 0 and signed_fill > 0) or (old_qty < 0 and signed_fill < 0):
+            return 0.0
+
+        close_qty = min(abs(signed_fill), abs(old_qty))
+        if old_qty > 0:
+            # Long close: (fill_price - avg_entry) * close_qty
+            return (fill_price - avg_entry) * close_qty
+        # Short cover: (avg_entry - fill_price) * close_qty
+        return (avg_entry - fill_price) * close_qty
+
+    @staticmethod
+    def _compute_new_avg_entry(
+        old_qty: float,
+        old_avg: float,
+        signed_fill: float,
+        fill_price: float,
+        new_qty: float,
+    ) -> float:
+        """새로운 가중 평균 진입가 계산."""
+        # 완전 청산
+        if abs(new_qty) < _EPSILON:
+            return 0.0
+
+        # 신규 진입 (기존 포지션 없음)
+        if abs(old_qty) < _EPSILON:
+            return fill_price
+
+        # 방향 전환 (flip)
+        if (old_qty > 0 and new_qty < 0) or (old_qty < 0 and new_qty > 0):
+            return fill_price
+
+        # 같은 방향 추가: 가중 평균
+        if (old_qty > 0 and signed_fill > 0) or (old_qty < 0 and signed_fill < 0):
+            old_cost = abs(old_qty) * old_avg
+            new_cost = abs(signed_fill) * fill_price
+            return (old_cost + new_cost) / abs(new_qty)
+
+        # 부분 청산: avg_entry 유지
+        return old_avg
 
     def record_daily_return(self, daily_return: float) -> None:
         """일별 수익률을 기록합니다.
@@ -270,6 +332,7 @@ class StrategyPod:
         self._daily_returns.append(daily_return)
         self._performance.live_days = len(self._daily_returns)
         self._performance.last_updated = datetime.now(UTC)
+        self._compute_metrics()
 
     def inject_warmup(
         self,
@@ -318,6 +381,8 @@ class StrategyPod:
                 "realized_pnl": pos.realized_pnl,
                 "target_weight": pos.target_weight,
                 "global_weight": pos.global_weight,
+                "avg_entry_price": pos.avg_entry_price,
+                "quantity": pos.quantity,
             }
 
         perf = self._performance
@@ -378,6 +443,8 @@ class StrategyPod:
                         realized_pnl=float(pos_data.get("realized_pnl", 0.0)),
                         target_weight=float(pos_data.get("target_weight", 0.0)),
                         global_weight=float(pos_data.get("global_weight", 0.0)),
+                        avg_entry_price=float(pos_data.get("avg_entry_price", 0.0)),
+                        quantity=float(pos_data.get("quantity", 0.0)),
                     )
 
         # Performance
@@ -409,6 +476,66 @@ class StrategyPod:
             perf.last_updated = datetime.fromisoformat(last_updated)
 
     # ── Private ──────────────────────────────────────────────────────
+
+    def _compute_metrics(self) -> None:
+        """daily_returns 기반으로 PodPerformance 메트릭을 재계산합니다.
+
+        순수 Python 구현 (의존성 최소화).
+        n < 2이면 early return (분산 계산 불가).
+        """
+        returns = self._daily_returns
+        n = len(returns)
+        perf = self._performance
+
+        if n < _MIN_METRICS_SAMPLES:
+            if n >= 1:
+                perf.total_return = returns[0]
+            return
+
+        # total_return: prod(1+r) - 1
+        cum = 1.0
+        for r in returns:
+            cum *= 1.0 + r
+        perf.total_return = cum - 1.0
+
+        # equity curve → peak / drawdown
+        equity = 1.0
+        peak = 1.0
+        max_dd = 0.0
+        for r in returns:
+            equity *= 1.0 + r
+            peak = max(peak, equity)
+            dd = (peak - equity) / peak if peak > 0 else 0.0
+            max_dd = max(max_dd, dd)
+
+        perf.current_equity = equity
+        perf.peak_equity = peak
+        perf.current_drawdown = (peak - equity) / peak if peak > 0 else 0.0
+        perf.max_drawdown = max_dd
+
+        # mean / variance
+        mean_r = sum(returns) / n
+        var_r = sum((r - mean_r) ** 2 for r in returns) / (n - 1)
+
+        vol = var_r**0.5
+        annual_vol = vol * (_PERIODS_PER_YEAR**0.5)
+        perf.rolling_volatility = annual_vol
+
+        # sharpe_ratio (rf=0, annualized)
+        if annual_vol > _EPSILON:
+            perf.sharpe_ratio = (mean_r * _PERIODS_PER_YEAR) / annual_vol
+        else:
+            perf.sharpe_ratio = 0.0
+
+        # calmar_ratio
+        if max_dd > _EPSILON:
+            perf.calmar_ratio = (mean_r * _PERIODS_PER_YEAR) / max_dd
+        else:
+            perf.calmar_ratio = 0.0
+
+        # win_rate
+        positive = sum(1 for r in returns if r > 0)
+        perf.win_rate = positive / n
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지."""

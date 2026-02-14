@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 _DAYS_PER_MONTH = 30
 _WARNING_TIMEOUT_DAYS = 30
 _MIN_CORRELATION_SAMPLES = 2
+_MIN_WARNING_OBSERVATION_DAYS = 5
+_PH_RECOVERY_RATIO = 0.2
 
 
 # ── Internal State ────────────────────────────────────────────────
@@ -153,13 +155,18 @@ class LifecycleManager:
         pod_ls: _PodLifecycleState,
     ) -> None:
         """WARNING → PRODUCTION (recovery) 또는 → PROBATION (timeout)."""
-        # Recovery: PH score below floor → back to PRODUCTION
-        if pod_ls.ph_detector.score < self._retirement.rolling_sharpe_floor:
+        days_in_warning = (datetime.now(UTC) - pod_ls.state_entered_at).days
+
+        # Recovery: PH score < lambda * 0.2 AND 최소 관찰 기간 경과
+        ph_recovery_threshold = pod_ls.ph_detector.lambda_threshold * _PH_RECOVERY_RATIO
+        if (
+            days_in_warning >= _MIN_WARNING_OBSERVATION_DAYS
+            and pod_ls.ph_detector.score < ph_recovery_threshold
+        ):
             self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
             return
 
         # Timeout: 30 days without recovery → PROBATION
-        days_in_warning = (datetime.now(UTC) - pod_ls.state_entered_at).days
         if days_in_warning >= _WARNING_TIMEOUT_DAYS:
             self._transition(pod, pod_ls, LifecycleState.PROBATION)
 

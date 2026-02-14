@@ -282,15 +282,15 @@ class TestDegradation:
 
 class TestWarningRecovery:
     def test_recovery_within_30d_returns_production(self) -> None:
-        """WARNING에서 PH score < rolling_sharpe_floor → PRODUCTION 복귀."""
+        """WARNING에서 PH score < lambda*0.2 AND 5일 경과 → PRODUCTION 복귀."""
         pod = _make_pod()
         pod.state = LifecycleState.WARNING
         _inject_daily_returns(pod, [0.01] * 10)
 
         mgr = _make_manager()
-        # PH detector score를 낮게 만들기 위해 직접 설정
         pod_ls = mgr._get_or_create_state(pod)
-        pod_ls.state_entered_at = datetime.now(UTC)
+        # 5일 전에 WARNING 진입 (최소 관찰 기간 충족)
+        pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=6)
         # PH score가 낮으면 recovery
         pod_ls.ph_detector.reset()
 
@@ -309,10 +309,13 @@ class TestWarningRecovery:
         pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=31)
 
         # PH score를 높게 유지 (정상→악화 shift로 score 누적)
+        # score > lambda * 0.2 = 10.0이 되어야 recovery 불가
         for _ in range(50):
             pod_ls.ph_detector.update(0.01)
-        for _ in range(100):
+        for _ in range(500):
             pod_ls.ph_detector.update(-0.05)
+
+        assert pod_ls.ph_detector.score >= pod_ls.ph_detector.lambda_threshold * 0.2
 
         result = mgr.evaluate(pod)
         assert result == LifecycleState.PROBATION
@@ -419,6 +422,8 @@ class TestIntegration:
 
         mgr = _make_manager()
         pod_ls = mgr._get_or_create_state(pod)
+        # 5일 전에 WARNING 진입 (최소 관찰 기간 충족)
+        pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=6)
         # Feed some data before recovery
         for _ in range(5):
             pod_ls.ph_detector.update(0.01)

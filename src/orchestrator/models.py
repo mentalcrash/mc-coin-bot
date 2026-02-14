@@ -135,6 +135,8 @@ class PodPosition:
     notional_usd: float = 0.0
     unrealized_pnl: float = 0.0
     realized_pnl: float = 0.0
+    avg_entry_price: float = 0.0
+    quantity: float = 0.0
 
     @property
     def total_pnl(self) -> float:
