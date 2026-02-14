@@ -1,0 +1,45 @@
+meta:
+  name: dual-vol
+  display_name: Dual Volatility Trend
+  category: Volatility Structure
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: Yang-Zhang vs Parkinson vol 비율로 정보 도래 vs 노이즈 구분. Cross-estimator
+    비교는 77개 전략 중 최초.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.07
+      cagr: -177.9%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.07 ≈ 0; 4/5 에셋 음수; vol ratio 기반 시그널이 4H 노이즈에 취약

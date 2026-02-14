@@ -1,0 +1,56 @@
+meta:
+  name: cmf-persist
+  display_name: CMF Trend Persistence
+  category: Money Flow
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: Chaikin Money Flow 부호의 시계열 지속성으로 기관 축적/배분 포착. 단일 bar가 아닌 N bar
+    연속 패턴.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 23
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      sharpe: 1.01
+      cagr: 1627.2%
+  G2:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      oos_sharpe: -0.4
+      decay: 125.6%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: PASS
+  rationale: ETH Sharpe 1.01, CAGR +1627%, Trades 827; CMF 누적 패턴이 4H 추세에 효과적
+- date: '2026-02-14'
+  gate: G2
+  verdict: FAIL
+  rationale: OOS Sharpe -0.40 (기준 >=0.3), Decay 125.6% (기준 <50%); IS→OOS 완전 붕괴, 2024-2025
+    시장 구조 변화에 취약

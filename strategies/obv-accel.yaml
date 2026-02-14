@@ -1,0 +1,45 @@
+meta:
+  name: obv-accel
+  display_name: OBV Acceleration Momentum
+  category: Volume Dynamics
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: OBV 2차 도함수(가속)로 smart money 활동 강도 변화 포착. CTREND는 normalized
+    OBV(1차) 사용, 여기선 2차 도함수.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 22
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: -0.52
+      cagr: -1695.3%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: 전 에셋 Sharpe 음수 — 즉시 폐기; OBV 2차 미분이 4H에서 과도한 노이즈 생성, 거래 3000회급

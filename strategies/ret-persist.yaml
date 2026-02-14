@@ -1,0 +1,45 @@
+meta:
+  name: ret-persist
+  display_name: Return Persistence Score
+  category: Behavioral Persistence
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: 양수 수익 bar 비율의 rolling count로 추세 지속성 포착. 극단적 단순함으로 과적합 최소화. 75개
+    전략 실패가 과도한 복잡성에서 기인했을 가능성의 역발상.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.62
+      cagr: 1322.6%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.62 < 1.0; 단순 양수 비율이 충분한 alpha 생성 실패

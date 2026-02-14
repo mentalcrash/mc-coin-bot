@@ -1,0 +1,46 @@
+meta:
+  name: mcr-mom
+  display_name: Momentum Crash Filter
+  category: Risk-Aware Momentum
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: '표준 모멘텀 + VoV 기반 crash filter. VoV-Mom 실패 교훈: VoV를 alpha가 아닌
+    defensive override로만 사용.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 24
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.49
+      cagr: 1139.9%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.49 < 1.0; BTC -1.08; VoV crash filter로도 4H 모멘텀 손실
+    방어 불가
