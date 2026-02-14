@@ -27,6 +27,7 @@ from src.core.events import (
     SignalEvent,
 )
 from src.models.types import Direction
+from src.orchestrator.netting import attribute_fill, scale_weights_to_leverage
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
     from src.orchestrator.config import OrchestratorConfig
     from src.orchestrator.lifecycle import LifecycleManager
     from src.orchestrator.pod import StrategyPod
+    from src.orchestrator.risk_aggregator import RiskAggregator
 
 # ── Constants ─────────────────────────────────────────────────────
 
@@ -66,11 +68,13 @@ class StrategyOrchestrator:
         pods: list[StrategyPod],
         allocator: CapitalAllocator,
         lifecycle_manager: LifecycleManager | None = None,
+        risk_aggregator: RiskAggregator | None = None,
     ) -> None:
         self._config = config
         self._pods = pods
         self._allocator = allocator
         self._lifecycle = lifecycle_manager
+        self._risk_aggregator = risk_aggregator
         self._bus: EventBus | None = None
 
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
@@ -150,7 +154,7 @@ class StrategyOrchestrator:
         self._check_rebalance(bar.bar_timestamp)
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent 핸들러: 비례 귀속."""
+        """FillEvent 핸들러: netting.attribute_fill()로 비례 귀속."""
         assert isinstance(event, FillEvent)
         fill = event
 
@@ -166,24 +170,15 @@ class StrategyOrchestrator:
         if not pod_targets:
             return
 
-        # 비례 배분: abs(target) / sum(abs(all_targets))
-        total_abs = sum(abs(t) for t in pod_targets.values())
-        if total_abs < _MIN_NET_WEIGHT:
-            return
+        attributed = attribute_fill(
+            symbol, fill.fill_qty, fill.fill_price, fill.fee, pod_targets,
+        )
 
-        for pod_id, target in pod_targets.items():
-            share = abs(target) / total_abs
-            attributed_qty = fill.fill_qty * share
-            attributed_fee = fill.fee * share
-
+        for pod_id, (attr_qty, attr_price, attr_fee) in attributed.items():
             pod = self._find_pod(pod_id)
             if pod is not None:
                 pod.update_position(
-                    symbol,
-                    attributed_qty,
-                    fill.fill_price,
-                    attributed_fee,
-                    is_buy=is_buy,
+                    symbol, attr_qty, attr_price, attr_fee, is_buy=is_buy,
                 )
 
     # ── Signal Emission ──────────────────────────────────────────
@@ -194,7 +189,12 @@ class StrategyOrchestrator:
         if bus is None or self._pending_bar_ts is None:
             return
 
-        for symbol, net_weight in self._pending_net_weights.items():
+        # 레버리지 한도 적용
+        scaled = scale_weights_to_leverage(
+            self._pending_net_weights, self._config.max_gross_leverage,
+        )
+
+        for symbol, net_weight in scaled.items():
             abs_weight = abs(net_weight)
             if abs_weight < _MIN_NET_WEIGHT:
                 direction = Direction.NEUTRAL
@@ -301,6 +301,23 @@ class StrategyOrchestrator:
                 pod.capital_fraction = new_weights[pod.pod_id]
 
         logger.debug("Rebalanced: {}", {p.pod_id: p.capital_fraction for p in self._pods})
+
+        # Risk 한도 검사
+        if self._risk_aggregator is not None:
+            pod_performances = {
+                pod.pod_id: pod.performance for pod in self._pods if pod.is_active
+            }
+            pod_weights_map = {
+                pod.pod_id: pod.capital_fraction for pod in self._pods if pod.is_active
+            }
+            alerts = self._risk_aggregator.check_portfolio_limits(
+                net_weights=self._pending_net_weights,
+                pod_performances=pod_performances,
+                pod_weights=pod_weights_map,
+                pod_returns=pod_returns,
+            )
+            for alert in alerts:
+                logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
 
     # ── Query ────────────────────────────────────────────────────
 

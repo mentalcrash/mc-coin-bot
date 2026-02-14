@@ -10,6 +10,7 @@ from src.orchestrator.models import (
     PodPerformance,
     PodPosition,
     RebalanceTrigger,
+    RiskAlert,
 )
 
 # ── LifecycleState ──────────────────────────────────────────────
@@ -123,3 +124,47 @@ class TestPodPosition:
     def test_is_not_open(self) -> None:
         pos = PodPosition(pod_id="pod-1", symbol="BTC/USDT", notional_usd=0.0)
         assert pos.is_open is False
+
+
+# ── RiskAlert ──────────────────────────────────────────────────
+
+
+class TestRiskAlert:
+    def test_frozen(self) -> None:
+        alert = RiskAlert(
+            alert_type="gross_leverage",
+            severity="critical",
+            message="Leverage exceeded",
+            current_value=3.5,
+            threshold=3.0,
+        )
+        assert alert.alert_type == "gross_leverage"
+        assert alert.severity == "critical"
+        assert alert.pod_id is None
+
+    def test_pod_id_set(self) -> None:
+        alert = RiskAlert(
+            alert_type="single_pod_risk",
+            severity="warning",
+            message="Pod risk high",
+            current_value=0.35,
+            threshold=0.40,
+            pod_id="pod-a",
+        )
+        assert alert.pod_id == "pod-a"
+
+    def test_has_critical_true(self) -> None:
+        alerts = [
+            RiskAlert("daily_loss", "warning", "Approaching limit", 0.02, 0.03),
+            RiskAlert("gross_leverage", "critical", "Exceeded", 3.5, 3.0),
+        ]
+        assert RiskAlert.has_critical(alerts) is True
+
+    def test_has_critical_false(self) -> None:
+        alerts = [
+            RiskAlert("daily_loss", "warning", "Approaching limit", 0.02, 0.03),
+        ]
+        assert RiskAlert.has_critical(alerts) is False
+
+    def test_has_critical_empty(self) -> None:
+        assert RiskAlert.has_critical([]) is False

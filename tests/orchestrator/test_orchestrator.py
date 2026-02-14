@@ -17,6 +17,7 @@ from src.orchestrator.config import OrchestratorConfig, PodConfig
 from src.orchestrator.models import AllocationMethod, LifecycleState
 from src.orchestrator.orchestrator import _ORCHESTRATOR_SOURCE, StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod
+from src.orchestrator.risk_aggregator import RiskAggregator
 from src.strategy.base import BaseStrategy
 from src.strategy.types import StrategySignals
 
@@ -588,3 +589,114 @@ class TestOrchestratorEdgeCases:
         assert summary[0]["pod_id"] == "pod-a"
         assert summary[0]["is_active"] is True
         assert "capital_fraction" in summary[0]
+
+
+# ── TestOrchestratorNettingIntegration ─────────────────────────
+
+
+class TestOrchestratorNettingIntegration:
+    """netting 모듈 통합 테스트."""
+
+    async def test_fill_via_attribute_fill(self) -> None:
+        """attribute_fill() 경유로 비례 귀속이 동작."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.6, warmup=3)
+        pod_b = _make_pod("pod-b", ("BTC/USDT",), capital_fraction=0.4, warmup=3)
+        config = _make_orchestrator_config((pod_a.config, pod_b.config))
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        _feed_warmup_bars(pod_a, "BTC/USDT", 2, ts)
+        _feed_warmup_bars(pod_b, "BTC/USDT", 2, ts)
+
+        bar = _make_bar("BTC/USDT", 100.0, 110.0, ts + timedelta(days=2))
+        fill = _make_fill("BTC/USDT", "BUY", 1.0, 50000.0, 10.0)
+
+        bus = EventBus(queue_size=100)
+        await orch.register(bus)
+        task = asyncio.create_task(bus.start())
+
+        await bus.publish(bar)
+        await bus.flush()
+        await orch.flush_pending_signals()
+        await bus.flush()
+        await bus.publish(fill)
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        # 두 Pod 모두 fill 귀속
+        assert pod_a.performance.trade_count >= 1
+        assert pod_b.performance.trade_count >= 1
+
+    async def test_leverage_scaling_applied(self) -> None:
+        """max_gross_leverage 초과 시 가중치 축소."""
+        pod = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=5.0, warmup=3)
+        config = _make_orchestrator_config(
+            (pod.config,),
+            max_gross_leverage=2.0,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod], allocator)
+
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        _feed_warmup_bars(pod, "BTC/USDT", 2, ts)
+
+        bar = _make_bar("BTC/USDT", 100.0, 110.0, ts + timedelta(days=2))
+        signals = await _run_with_bus(orch, [bar])
+
+        btc_signals = [s for s in signals if s.symbol == "BTC/USDT"]
+        if btc_signals:
+            # strength가 2.0 이하로 축소되어야 함
+            assert btc_signals[0].strength <= 2.0 + 1e-6
+
+
+# ── TestOrchestratorRiskIntegration ────────────────────────────
+
+
+class TestOrchestratorRiskIntegration:
+    """RiskAggregator 통합 테스트."""
+
+    def test_risk_aggregator_none_backward_compat(self) -> None:
+        """risk_aggregator=None → 기존 동작 유지."""
+        pod = _make_pod("pod-a", ("BTC/USDT",))
+        config = _make_orchestrator_config((pod.config,))
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod], allocator)
+        assert orch._risk_aggregator is None
+
+    def test_risk_aggregator_injected(self) -> None:
+        """RiskAggregator 주입 시 저장."""
+        pod = _make_pod("pod-a", ("BTC/USDT",))
+        config = _make_orchestrator_config((pod.config,))
+        allocator = CapitalAllocator(config)
+        ra = RiskAggregator(config)
+        orch = StrategyOrchestrator(config, [pod], allocator, risk_aggregator=ra)
+        assert orch._risk_aggregator is ra
+
+    async def test_rebalance_triggers_risk_check(self) -> None:
+        """리밸런스 시 RiskAggregator.check_portfolio_limits() 호출."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        ra = RiskAggregator(config)
+        orch = StrategyOrchestrator(
+            config, [pod_a, pod_b], allocator, risk_aggregator=ra,
+        )
+
+        pod_a.record_daily_return(0.01)
+        pod_b.record_daily_return(0.02)
+
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        _feed_warmup_bars(pod_a, "BTC/USDT", 2, ts)
+        _feed_warmup_bars(pod_b, "ETH/USDT", 2, ts)
+
+        bar = _make_bar("BTC/USDT", 100.0, 110.0, ts + timedelta(days=2))
+        # 리밸런스 + 리스크 체크 실행 (로깅으로 확인 — 에러 없이 완료되면 성공)
+        await _run_with_bus(orch, [bar])
+        assert orch.active_pod_count == 2

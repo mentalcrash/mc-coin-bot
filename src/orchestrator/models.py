@@ -145,3 +145,32 @@ class PodPosition:
     def is_open(self) -> bool:
         """포지션이 열려 있는지 여부 (notional > 0)."""
         return abs(self.notional_usd) > 0.0
+
+
+@dataclass(frozen=True)
+class RiskAlert:
+    """포트폴리오 리스크 경고.
+
+    RiskAggregator가 발행하는 immutable 경고 객체입니다.
+
+    Attributes:
+        alert_type: 경고 유형 (gross_leverage, portfolio_drawdown, daily_loss,
+                    single_pod_risk, correlation_stress)
+        severity: 심각도 ("warning" | "critical")
+        message: 상세 메시지
+        current_value: 현재 측정값
+        threshold: 설정 임계값
+        pod_id: 관련 Pod ID (None = 포트폴리오 전체)
+    """
+
+    alert_type: str
+    severity: str
+    message: str
+    current_value: float
+    threshold: float
+    pod_id: str | None = None
+
+    @staticmethod
+    def has_critical(alerts: list[RiskAlert]) -> bool:
+        """리스트에 critical 경고가 존재하는지 여부."""
+        return any(a.severity == "critical" for a in alerts)
