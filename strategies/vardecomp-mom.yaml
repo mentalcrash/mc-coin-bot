@@ -1,0 +1,25 @@
+meta:
+  name: vardecomp-mom
+  display_name: Variance Decomposition Momentum
+  category: Volatility
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: Realized variance를 good(상방)과 bad(하방) semivariance로 분해하여 모멘텀
+    품질을 측정. good_var 지배적 추세는 지속, bad_var 지배적 추세는 붕괴. Prospect theory + JFQA 2024 실증.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 26
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 26/30점

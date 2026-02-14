@@ -1,0 +1,25 @@
+meta:
+  name: jump-drift-mom
+  display_name: Jump Drift Momentum
+  category: Event-Driven
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: '4H bipower variation 기반 jump 감지 후 post-jump drift 추종. 크립토 jump은
+    정보 이벤트(고래, 규제, liquidation cascade) 반영. rv-jump-cont(15m)과 TF 차이 근본적(교훈 #25).'
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 22
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 22/30점

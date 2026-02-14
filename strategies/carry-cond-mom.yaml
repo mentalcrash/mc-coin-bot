@@ -1,0 +1,26 @@
+meta:
+  name: carry-cond-mom
+  display_name: Carry-Conditional Momentum
+  category: Carry
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: '가격 모멘텀과 funding rate LEVEL의 agreement가 모멘텀 지속 가능성과 crash risk를
+    예측. mom(+) AND FR(+) = bullish consensus → confident long. 불일치 시 position 축소.
+    BIS WP #1087 실증.'
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 25
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점

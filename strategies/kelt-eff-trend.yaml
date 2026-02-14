@@ -1,0 +1,25 @@
+meta:
+  name: kelt-eff-trend
+  display_name: Keltner Efficiency Trend
+  category: Breakout
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: 'ATR 기반 Keltner Channel 돌파 + Efficiency Ratio 확인으로 고품질 추세 진입.
+    KC는 vol 적응형 밴드, ER은 추세 품질 게이트. 이진 결정으로 conviction scalar 천장(교훈 #29) 회피.'
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 21
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 21/30점
