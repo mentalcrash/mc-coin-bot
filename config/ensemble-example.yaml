@@ -1,0 +1,38 @@
+# Ensemble Strategy Example Configuration
+#
+# 3개 서브 전략(TSMOM, Donchian-Ensemble, Vol-Adaptive)을
+# inverse_volatility 방법으로 결합하는 앙상블 설정 예시.
+
+backtest:
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+  timeframe: "1D"
+  start: "2024-01-01"
+  end: "2025-12-31"
+  capital: 100000
+
+strategy:
+  name: ensemble
+  params:
+    aggregation: inverse_volatility
+    vol_lookback: 63
+    vol_target: 0.35
+    vol_window: 30
+    short_mode: 0
+  sub_strategies:
+    - name: tsmom
+      params:
+        lookback: 30
+        vol_target: 0.35
+    - name: donchian-ensemble
+      params:
+        lookbacks: [20, 60, 150]
+    - name: vol-adaptive
+      params: {}
+
+portfolio:
+  max_leverage_cap: 2.0
+  system_stop_loss: 0.10
+  rebalance_threshold: 0.05
