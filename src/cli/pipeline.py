@@ -157,8 +157,113 @@ def show(name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")]
     _print_strategy_detail(record)
 
 
-_G0A_MAX_SCORE = 30
-_G0A_PASS_THRESHOLD = 18
+_G0A_ITEM_MIN_SCORE = 1
+_G0A_ITEM_MAX_SCORE = 5
+
+
+def _load_g0a_criteria() -> tuple[int, int, list[str]]:
+    """criteria.yaml에서 G0A 기준 로드.
+
+    Returns:
+        (pass_threshold, max_total, item_names) 튜플
+    """
+    from src.pipeline.gate_store import GateCriteriaStore
+
+    try:
+        store = GateCriteriaStore()
+        g0a = store.load("G0A")
+        scoring = g0a.scoring
+        if scoring is None:
+            return 21, 30, []
+        return scoring.pass_threshold, scoring.max_total, [i.name for i in scoring.items]
+    except (FileNotFoundError, KeyError):
+        return 21, 30, []
+
+
+def _validate_g0a_items(
+    items_json: str,
+    item_names: list[str],
+) -> dict[str, int]:
+    """--g0a-items JSON 파싱 + 항목명/범위 검증.
+
+    Args:
+        items_json: JSON 문자열
+        item_names: criteria.yaml에서 로드한 항목명 목록
+
+    Returns:
+        검증된 {항목명: 점수} 딕셔너리
+
+    Raises:
+        typer.Exit: 검증 실패 시 exit(1)
+    """
+    import json
+
+    try:
+        items: dict[str, object] = json.loads(items_json)
+    except json.JSONDecodeError:
+        console.print("[red]Invalid JSON for --g0a-items[/red]")
+        raise typer.Exit(code=1) from None
+
+    # 항목명 검증
+    if item_names:
+        expected = set(item_names)
+        provided = set(items.keys())
+        if provided != expected:
+            missing = expected - provided
+            extra = provided - expected
+            msg_parts = []
+            if missing:
+                msg_parts.append(f"누락: {', '.join(sorted(missing))}")
+            if extra:
+                msg_parts.append(f"불일치: {', '.join(sorted(extra))}")
+            console.print(f"[red]G0A 항목 불일치 — {'; '.join(msg_parts)}[/red]")
+            raise typer.Exit(code=1)
+
+    # 점수 범위 검증 (1-5)
+    for item_name, item_score in items.items():
+        if (
+            not isinstance(item_score, int)
+            or item_score < _G0A_ITEM_MIN_SCORE
+            or item_score > _G0A_ITEM_MAX_SCORE
+        ):
+            console.print(
+                f"[red]Invalid score for '{item_name}': {item_score} (valid: {_G0A_ITEM_MIN_SCORE}~{_G0A_ITEM_MAX_SCORE})[/red]"
+            )
+            raise typer.Exit(code=1)
+
+    # After validation, all values are int
+    return {k: int(v) for k, v in items.items()}  # type: ignore[arg-type]
+
+
+def _build_g0a_v2_details(
+    items: dict[str, int],
+    pass_threshold: int,
+    max_total: int,
+) -> tuple[GateVerdict, dict[str, object], str]:
+    """v2 항목별 점수 → verdict, details, rationale_text 생성."""
+    total_score = sum(items.values())
+    verdict = GateVerdict.PASS if total_score >= pass_threshold else GateVerdict.FAIL
+    details: dict[str, object] = {
+        "version": 2,
+        "score": total_score,
+        "max_score": max_total,
+        "items": items,
+    }
+
+    # 항목별 점수 테이블 출력
+    score_table = Table(show_header=True, header_style="bold")
+    score_table.add_column("항목", min_width=16)
+    score_table.add_column("점수", justify="right", width=6)
+    for iname, iscore in items.items():
+        score_table.add_row(iname, f"{iscore}/{_G0A_ITEM_MAX_SCORE}")
+    verdict_str = "[green]PASS[/green]" if verdict == GateVerdict.PASS else "[red]FAIL[/red]"
+    score_table.add_row(
+        "[bold]합계[/bold]",
+        f"[bold]{total_score}/{max_total}[/bold] ({verdict_str} ≥ {pass_threshold})",
+    )
+    console.print(score_table)
+
+    return verdict, details, f"{total_score}/{max_total}점 (v2)"
 
 
 @app.command()
@@ -169,7 +274,14 @@ def create(
     timeframe: Annotated[str, typer.Option("--timeframe", "--tf", help="타임프레임")],
     short_mode: Annotated[str, typer.Option("--short-mode", help="DISABLED|HEDGE_ONLY|FULL")],
     rationale: Annotated[str, typer.Option("--rationale", "-r", help="경제적 논거")] = "",
-    g0a_score: Annotated[int, typer.Option("--g0a-score", help="Gate 0A 점수")] = 0,
+    g0a_score: Annotated[int, typer.Option("--g0a-score", help="Gate 0A 점수 (v1 레거시)")] = 0,
+    g0a_items: Annotated[
+        str | None,
+        typer.Option(
+            "--g0a-items",
+            help='항목별 점수 JSON (e.g., \'{"경제적 논거 고유성":4,"IC 사전 검증":5,...}\')',
+        ),
+    ] = None,
     rationale_category: Annotated[
         str | None, typer.Option("--rationale-category", help="학술 근거 카테고리")
     ] = None,
@@ -180,15 +292,22 @@ def create(
         console.print(f"[red]Already exists: {name}[/red]")
         raise typer.Exit(code=1)
 
-    # G0A 점수 범위 검증
-    if g0a_score < 0 or g0a_score > _G0A_MAX_SCORE:
-        console.print(
-            f"[red]Invalid G0A score: {g0a_score} (valid range: 0~{_G0A_MAX_SCORE})[/red]"
-        )
-        raise typer.Exit(code=1)
+    pass_threshold, max_total, item_names = _load_g0a_criteria()
 
-    # G0A verdict 결정
-    verdict = GateVerdict.PASS if g0a_score >= _G0A_PASS_THRESHOLD else GateVerdict.FAIL
+    if g0a_items is not None:
+        items = _validate_g0a_items(g0a_items, item_names)
+        verdict, details, rationale_text = _build_g0a_v2_details(items, pass_threshold, max_total)
+        total_score = sum(items.values())
+    else:
+        # v1 레거시: --g0a-score
+        if g0a_score < 0 or g0a_score > max_total:
+            console.print(f"[red]Invalid G0A score: {g0a_score} (valid range: 0~{max_total})[/red]")
+            raise typer.Exit(code=1)
+
+        total_score = g0a_score
+        verdict = GateVerdict.PASS if total_score >= pass_threshold else GateVerdict.FAIL
+        details = {"score": total_score, "max_score": max_total}
+        rationale_text = f"{total_score}/{max_total}점"
 
     # 동일 rationale_category RETIRED 전략 경고
     if rationale_category:
@@ -211,7 +330,7 @@ def create(
             GateId.G0A: GateResult(
                 status=verdict,
                 date=today,
-                details={"score": g0a_score, "max_score": _G0A_MAX_SCORE},
+                details=details,
             ),
         },
         decisions=[
@@ -219,7 +338,7 @@ def create(
                 date=today,
                 gate=GateId.G0A,
                 verdict=verdict,
-                rationale=f"{g0a_score}/{_G0A_MAX_SCORE}점",
+                rationale=rationale_text,
             ),
         ],
     )
@@ -227,7 +346,7 @@ def create(
 
     if verdict == GateVerdict.FAIL:
         console.print(
-            f"[yellow]Created: strategies/{name}.yaml (CANDIDATE) — G0A FAIL ({g0a_score}/{_G0A_MAX_SCORE})[/yellow]"
+            f"[yellow]Created: strategies/{name}.yaml (CANDIDATE) — G0A FAIL ({total_score}/{max_total})[/yellow]"
         )
     else:
         console.print(f"[green]Created: strategies/{name}.yaml (CANDIDATE)[/green]")
@@ -701,6 +820,169 @@ def gates_show(
             )
 
     console.print(Panel("\n".join(lines), title=f"Gate {g.gate_id}"))
+
+
+# ─── G0A check command ───────────────────────────────────────────────
+
+
+@app.command(name="g0a-check")
+def g0a_check(
+    indicator_name: Annotated[
+        str,
+        typer.Argument(help="Indicator name (e.g., rsi, momentum, efficiency_ratio)"),
+    ],
+    symbol: Annotated[
+        str,
+        typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
+    ] = "BTC/USDT",
+    timeframe: Annotated[str, typer.Option("--tf", help="Timeframe")] = "1D",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s)"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", "-p", help="Indicator param key=value (e.g., period=14)"),
+    ] = None,
+    category: Annotated[
+        str | None,
+        typer.Option("--category", "-c", help="Rationale category for success rate scoring"),
+    ] = None,
+) -> None:
+    """G0A 데이터 기반 항목 자동 점수 계산 도우미.
+
+    IC 사전 검증, 카테고리 성공률, 레짐 독립성 3개 항목의
+    추천 점수를 자동 계산합니다.
+
+    Example:
+        uv run mcbot pipeline g0a-check rsi BTC/USDT --tf 1D -p period=14 --category momentum
+    """
+    import json
+
+    from src.pipeline.g0a_helpers import (
+        compute_category_success_score,
+        compute_ic_score,
+        compute_regime_independence_score,
+    )
+
+    # 파라미터 파싱
+    params: dict[str, object] = {}
+    for p in param or []:
+        key, _, val = p.partition("=")
+        try:
+            params[key] = int(val)
+        except ValueError:
+            try:
+                params[key] = float(val)
+            except ValueError:
+                params[key] = val
+
+    console.print(
+        Panel(
+            (
+                f"[bold]G0A Data-Based Score Check[/bold]\n"
+                f"Indicator: {indicator_name}\n"
+                f"Symbol: {symbol} | TF: {timeframe}\n"
+                f"Params: {params or 'default'}"
+            ),
+            border_style="cyan",
+        )
+    )
+
+    # 데이터 로드
+    from datetime import UTC, datetime
+
+    from src.config.settings import get_settings
+    from src.core.exceptions import DataNotFoundError
+    from src.core.logger import setup_logger
+    from src.data.market_data import MarketDataRequest
+    from src.data.service import MarketDataService
+
+    setup_logger(console_level="WARNING")
+
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+        data = data_service.get(
+            MarketDataRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start_date,
+                end=end_date,
+            )
+        )
+    except DataNotFoundError as e:
+        console.print(f"[red]Data load failed: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    # 지표 계산
+    from src.market.feature_store import IndicatorSpec, compute_indicator
+
+    spec = IndicatorSpec(name=indicator_name, params=dict(params))
+    try:
+        indicator_series = compute_indicator(spec, data.ohlcv)
+    except AttributeError:
+        console.print(f"[red]Indicator not found: {indicator_name}[/red]")
+        raise typer.Exit(code=1) from None
+
+    # Forward returns
+    close_series = data.ohlcv["close"]
+    forward_returns = close_series.pct_change().shift(-1)
+
+    # 1) IC 점수
+    from src.backtest.ic_analyzer import ICAnalyzer
+
+    ic_corr, _ = ICAnalyzer.rank_ic(indicator_series, forward_returns)  # type: ignore[arg-type]
+    ic_score = compute_ic_score(ic_corr)
+
+    scores = [ic_score]
+
+    # 2) 카테고리 성공률
+    if category:
+        cat_score = compute_category_success_score(category, StrategyStore())
+        scores.append(cat_score)
+
+    # 3) 레짐 독립성
+    from src.regime.config import RegimeLabel
+    from src.regime.detector import RegimeDetector
+
+    detector = RegimeDetector()
+    regime_df = detector.classify_series(close_series)  # type: ignore[arg-type]
+
+    from src.pipeline.g0a_helpers import MIN_REGIME_SAMPLES
+
+    regime_ics: dict[str, float] = {}
+    for label in RegimeLabel:
+        mask = regime_df["regime_label"] == label
+        if mask.sum() > MIN_REGIME_SAMPLES:
+            subset_ind = indicator_series[mask]
+            subset_ret = forward_returns[mask]
+            regime_ic, _ = ICAnalyzer.rank_ic(subset_ind, subset_ret)  # type: ignore[arg-type]
+            regime_ics[label.value] = regime_ic
+
+    if regime_ics:
+        regime_score = compute_regime_independence_score(regime_ics)
+        scores.append(regime_score)
+
+    # 결과 테이블
+    result_table = Table(title="G0A Data-Based Scores", show_header=True, header_style="bold")
+    result_table.add_column("항목", min_width=16)
+    result_table.add_column("점수", justify="right", width=6)
+    result_table.add_column("근거")
+
+    items_json: dict[str, int] = {}
+    for s in scores:
+        result_table.add_row(s.item_name, f"{s.score}/5", s.reason)
+        items_json[s.item_name] = s.score
+
+    console.print(result_table)
+
+    # --g0a-items 복사 가능 JSON
+    console.print(
+        f"\n[bold]--g0a-items JSON:[/bold]\n'{json.dumps(items_json, ensure_ascii=False)}'"
+    )
 
 
 # ─── Gate runner commands ────────────────────────────────────────────

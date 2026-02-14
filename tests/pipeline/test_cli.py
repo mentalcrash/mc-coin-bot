@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,18 @@ from src.pipeline.store import StrategyStore
 
 runner = CliRunner()
 
+# G0A v2 기준 (criteria.yaml와 동기화)
+_G0A_V2_ITEMS = [
+    "경제적 논거 고유성",
+    "IC 사전 검증",
+    "카테고리 성공률",
+    "레짐 독립성",
+    "앙상블 기여도",
+    "수용 용량",
+]
+_G0A_V2_PASS_THRESHOLD = 21
+_G0A_V2_MAX_TOTAL = 30
+
 
 @pytest.fixture
 def strategies_dir(tmp_path: Path) -> Path:
@@ -26,14 +39,41 @@ def strategies_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def _patch_store(strategies_dir: Path) -> None:
-    """Patch StrategyStore to use tmp_path."""
+def _patch_store(strategies_dir: Path, tmp_path: Path) -> None:
+    """Patch StrategyStore and GateCriteriaStore to use tmp_path."""
     original_init = StrategyStore.__init__
 
     def patched_init(self: StrategyStore, base_dir: Path = strategies_dir) -> None:
         original_init(self, base_dir=base_dir)
 
-    with patch.object(StrategyStore, "__init__", patched_init):
+    # G0A v2 criteria YAML for _load_g0a_criteria()
+    gate_path = tmp_path / "g0a_criteria.yaml"
+    gate_yaml = {
+        "gates": [
+            {
+                "gate_id": "G0A",
+                "name": "아이디어 검증",
+                "gate_type": "scoring",
+                "scoring": {
+                    "pass_threshold": _G0A_V2_PASS_THRESHOLD,
+                    "max_total": _G0A_V2_MAX_TOTAL,
+                    "items": [{"name": n, "description": "test"} for n in _G0A_V2_ITEMS],
+                },
+            },
+        ],
+    }
+    gate_path.write_text(
+        yaml.dump(gate_yaml, default_flow_style=False, allow_unicode=True), encoding="utf-8"
+    )
+    original_gate_init = GateCriteriaStore.__init__
+
+    def patched_gate_init(self: GateCriteriaStore, path: Path = gate_path) -> None:
+        original_gate_init(self, path=path)
+
+    with (
+        patch.object(StrategyStore, "__init__", patched_init),
+        patch.object(GateCriteriaStore, "__init__", patched_gate_init),
+    ):
         yield
 
 
@@ -169,7 +209,7 @@ class TestCreateCommand:
         assert record.gates[GateId.G0A].status == GateVerdict.FAIL
 
     def test_create_g0a_below_threshold(self, strategies_dir: Path) -> None:
-        """score=15 < 18 → FAIL verdict, CANDIDATE 유지."""
+        """score=15 < 21 → FAIL verdict, CANDIDATE 유지."""
         result = runner.invoke(
             app,
             [
@@ -197,7 +237,7 @@ class TestCreateCommand:
         assert record.decisions[0].verdict == GateVerdict.FAIL
 
     def test_create_g0a_at_threshold(self, strategies_dir: Path) -> None:
-        """score=18 → PASS."""
+        """score=21 → PASS (v2 threshold)."""
         result = runner.invoke(
             app,
             [
@@ -212,7 +252,7 @@ class TestCreateCommand:
                 "--short-mode",
                 "DISABLED",
                 "--g0a-score",
-                "18",
+                "21",
             ],
         )
         assert result.exit_code == 0
@@ -282,7 +322,7 @@ class TestCreateCommand:
                 "--short-mode",
                 "DISABLED",
                 "--g0a-score",
-                "20",
+                "22",
                 "--rationale-category",
                 "momentum",
             ],
@@ -292,6 +332,162 @@ class TestCreateCommand:
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("cat-strat")
         assert record.meta.rationale_category == "momentum"
+
+    # ─── v2 --g0a-items 테스트 ─────────────────────────────────────
+
+    def test_create_with_g0a_items(self, strategies_dir: Path) -> None:
+        """--g0a-items JSON → v2 details 저장."""
+        items = dict.fromkeys(_G0A_V2_ITEMS, 4)
+        items_json = json.dumps(items, ensure_ascii=False)
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-strat",
+                "--display-name",
+                "V2 Strategy",
+                "--category",
+                "Trend",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "FULL",
+                "--g0a-items",
+                items_json,
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Created" in result.output
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("v2-strat")
+        details = record.gates[GateId.G0A].details
+        assert details["version"] == 2
+        assert details["score"] == 24  # 6 items x 4
+        assert details["max_score"] == 30
+        assert details["items"]["IC 사전 검증"] == 4
+        assert record.gates[GateId.G0A].status == GateVerdict.PASS
+
+    def test_create_g0a_items_below_threshold(self, strategies_dir: Path) -> None:
+        """--g0a-items 합계 < 21 → FAIL."""
+        items = dict.fromkeys(_G0A_V2_ITEMS, 2)  # 6 x 2 = 12 < 21
+        items_json = json.dumps(items, ensure_ascii=False)
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-low",
+                "--display-name",
+                "V2 Low",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-items",
+                items_json,
+            ],
+        )
+        assert result.exit_code == 0
+        assert "G0A FAIL" in result.output
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("v2-low")
+        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
+        assert record.gates[GateId.G0A].details["version"] == 2
+
+    def test_create_g0a_items_invalid_name(self) -> None:
+        """잘못된 항목명 → exit(1)."""
+        items = {"WRONG_ITEM": 3}
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-bad-name",
+                "--display-name",
+                "Bad",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-items",
+                json.dumps(items, ensure_ascii=False),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "불일치" in result.output
+
+    def test_create_g0a_items_missing_item(self) -> None:
+        """항목 누락 → exit(1)."""
+        items = dict.fromkeys(_G0A_V2_ITEMS[:4], 3)  # 4 of 6
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-missing",
+                "--display-name",
+                "Missing",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-items",
+                json.dumps(items, ensure_ascii=False),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "누락" in result.output
+
+    def test_create_g0a_items_invalid_range(self) -> None:
+        """점수 범위 초과 → exit(1)."""
+        items = dict.fromkeys(_G0A_V2_ITEMS, 3)
+        items[_G0A_V2_ITEMS[0]] = 6  # > 5
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-range",
+                "--display-name",
+                "Range",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-items",
+                json.dumps(items, ensure_ascii=False),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid score" in result.output
+
+    def test_create_g0a_items_invalid_json(self) -> None:
+        """잘못된 JSON → exit(1)."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "v2-badjson",
+                "--display-name",
+                "Bad JSON",
+                "--category",
+                "Test",
+                "--timeframe",
+                "1D",
+                "--short-mode",
+                "DISABLED",
+                "--g0a-items",
+                "not-valid-json",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid JSON" in result.output
 
 
 # ─── update-status command ───────────────────────────────────────────
