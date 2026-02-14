@@ -1,0 +1,25 @@
+meta:
+  name: cgo-mom
+  display_name: Capital Gains Overhang Momentum
+  category: Behavioral
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: Turnover 기반 평균 매입단가(reference price) 추정 후 현재가와의 괴리(CGO)로 disposition
+    effect 매도/매수 압력 예측. Grinblatt & Han 2005 seminal + 크립토 DE 실증.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

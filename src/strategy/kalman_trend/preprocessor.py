@@ -20,14 +20,15 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from src.strategy.kalman_trend.config import KalmanTrendConfig
-from src.strategy.vol_regime.preprocessor import (
-    calculate_atr,
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    simple_returns,
+    volatility_scalar,
 )
+from src.strategy.kalman_trend.config import KalmanTrendConfig
 
 logger = logging.getLogger(__name__)
 
@@ -148,19 +149,18 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. 수익률 계산
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
+    result["returns"] = (
+        log_returns(close_series) if config.use_log_returns else simple_returns(close_series)
     )
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. 단기/장기 실현 변동성 (Adaptive Q 계산용)
-    short_term_vol = calculate_realized_volatility(
+    short_term_vol = realized_volatility(
         returns_series,
         window=config.vol_lookback,
         annualization_factor=config.annualization_factor,
     )
-    long_term_vol = calculate_realized_volatility(
+    long_term_vol = realized_volatility(
         returns_series,
         window=config.long_term_vol_lookback,
         annualization_factor=config.annualization_factor,
@@ -190,14 +190,14 @@ def preprocess(
     result["kalman_velocity"] = velocities
 
     # 5. 변동성 스케일러 (포지션 사이징용)
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         short_term_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 6. ATR 계산
-    result["atr"] = calculate_atr(
+    result["atr"] = atr(
         high_series,
         low_series,
         close_series,
@@ -205,7 +205,7 @@ def preprocess(
     )
 
     # 7. 드로다운 계산
-    result["drawdown"] = calculate_drawdown(close_series)
+    result["drawdown"] = drawdown(close_series)
 
     # 디버그: 지표 통계
     valid_data = result.dropna()

@@ -545,9 +545,7 @@ class TestMinNotional:
         """notional >= MIN_NOTIONAL 시 True."""
         settings = _make_settings()
         mock_exchange = _make_mock_exchange()
-        mock_exchange.market = MagicMock(
-            return_value={"limits": {"cost": {"min": 5.0}}}
-        )
+        mock_exchange.market = MagicMock(return_value={"limits": {"cost": {"min": 5.0}}})
 
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
@@ -558,9 +556,7 @@ class TestMinNotional:
         """notional < MIN_NOTIONAL 시 False."""
         settings = _make_settings()
         mock_exchange = _make_mock_exchange()
-        mock_exchange.market = MagicMock(
-            return_value={"limits": {"cost": {"min": 10.0}}}
-        )
+        mock_exchange.market = MagicMock(return_value={"limits": {"cost": {"min": 10.0}}})
 
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
@@ -647,9 +643,7 @@ class TestApiCircuitBreaker:
 
         settings = _make_settings()
         mock_exchange = _make_mock_exchange()
-        mock_exchange.create_order = AsyncMock(
-            side_effect=ccxt_sync.ExchangeError("server error")
-        )
+        mock_exchange.create_order = AsyncMock(side_effect=ccxt_sync.ExchangeError("server error"))
 
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
@@ -693,9 +687,7 @@ class TestApiCircuitBreaker:
 
         settings = _make_settings()
         mock_exchange = _make_mock_exchange()
-        mock_exchange.create_order = AsyncMock(
-            side_effect=ccxt_sync.NetworkError("timeout")
-        )
+        mock_exchange.create_order = AsyncMock(side_effect=ccxt_sync.NetworkError("timeout"))
 
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:

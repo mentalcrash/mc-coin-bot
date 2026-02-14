@@ -133,9 +133,7 @@ class LiveDerivativesFeed:
         while not self._shutdown.is_set():
             for symbol in self._symbols:
                 try:
-                    raw = await self._client.fetch_funding_rate_history(
-                        symbol, limit=1
-                    )
+                    raw = await self._client.fetch_funding_rate_history(symbol, limit=1)
                     if raw:
                         item = raw[-1]
                         cache = self._cache.setdefault(symbol, {})
@@ -182,9 +180,7 @@ class LiveDerivativesFeed:
             for symbol in self._symbols:
                 try:
                     # LS Ratio
-                    ls_raw = await self._client.fetch_long_short_ratio(
-                        symbol, period="1h", limit=1
-                    )
+                    ls_raw = await self._client.fetch_long_short_ratio(symbol, period="1h", limit=1)
                     if ls_raw:
                         item = ls_raw[-1]
                         cache = self._cache.setdefault(symbol, {})

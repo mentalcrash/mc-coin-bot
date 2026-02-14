@@ -16,122 +16,39 @@ Rules Applied:
 
 import logging
 
-import numpy as np
 import pandas as pd
 
+from src.market.indicators import (
+    adx as calculate_adx,
+    atr as calculate_atr,
+    drawdown as calculate_drawdown,
+    log_returns,
+    realized_volatility as calculate_realized_volatility,
+    simple_returns,
+    volatility_scalar as calculate_volatility_scalar,
+    volume_weighted_returns as calculate_volume_weighted_returns,
+)
 from src.strategy.tsmom.config import TSMOMConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat re-exports (used by ~30 downstream strategies)
+# ---------------------------------------------------------------------------
 
 
 def calculate_returns(
     close: pd.Series,
     use_log: bool = True,
 ) -> pd.Series:
-    """수익률 계산 (로그 또는 단순).
-
-    Args:
-        close: 종가 시리즈
-        use_log: True면 로그 수익률, False면 단순 수익률
-
-    Returns:
-        수익률 시리즈 (첫 값은 NaN)
-
-    Example:
-        >>> returns = calculate_returns(df["close"], use_log=True)
-    """
-    if len(close) == 0:
-        msg = "Empty Series provided"
-        raise ValueError(msg)
-
-    if use_log:
-        # 로그 수익률: ln(P_t / P_{t-1})
-        price_ratio = close / close.shift(1)
-        return pd.Series(np.log(price_ratio), index=close.index, name="returns")
-    # 단순 수익률: (P_t - P_{t-1}) / P_{t-1}
-    return close.pct_change()
+    """수익률 계산 (로그 또는 단순). Backward-compat wrapper."""
+    return log_returns(close) if use_log else simple_returns(close)
 
 
-def calculate_realized_volatility(
-    returns: pd.Series,
-    window: int,
-    annualization_factor: float = 365.0,
-    min_periods: int | None = None,
-) -> pd.Series:
-    """실현 변동성 계산 (연환산).
-
-    Rolling standard deviation을 사용하여 실현 변동성을 계산합니다.
-    결과는 연환산되어 반환됩니다.
-
-    Args:
-        returns: 수익률 시리즈
-        window: Rolling 윈도우 크기
-        annualization_factor: 연환산 계수 (일봉: 365)
-        min_periods: 최소 관측치 수 (None이면 window 사용)
-
-    Returns:
-        연환산 변동성 시리즈
-
-    Example:
-        >>> vol = calculate_realized_volatility(returns, window=30)
-    """
-    if min_periods is None:
-        min_periods = window
-
-    # Rolling 표준편차 계산
-    rolling_std = returns.rolling(window=window, min_periods=min_periods).std()
-
-    # 연환산: vol_annual = vol_period * sqrt(periods_per_year)
-    return rolling_std * np.sqrt(annualization_factor)
-
-
-def calculate_volume_weighted_returns(
-    returns: pd.Series,
-    volume: pd.Series,
-    window: int,
-    min_periods: int | None = None,
-) -> pd.Series:
-    """거래량 가중 수익률 계산 (로그 스케일링 적용).
-
-    각 기간의 수익률에 로그 거래량을 가중하여 평균합니다.
-    로그 스케일링으로 거래량 이상치(패닉 셀링 등)의 과도한 영향력을 압축합니다.
-
-    Log-Volume Scaling:
-        - 거래량 100배 → 가중치 ln(100) ≈ 4.6배 (100배가 아님)
-        - 패닉 셀링 한 방에 전체 추세가 뒤집히는 것을 방지
-
-    Args:
-        returns: 수익률 시리즈
-        volume: 거래량 시리즈
-        window: Rolling 윈도우 크기
-        min_periods: 최소 관측치 수
-
-    Returns:
-        거래량 가중 수익률 시리즈 (로그 스케일링 적용)
-
-    Example:
-        >>> vw_returns = calculate_volume_weighted_returns(
-        ...     df["returns"], df["volume"], window=30
-        ... )
-    """
-    if min_periods is None:
-        min_periods = window
-
-    # 로그 스케일링: ln(volume + 1)로 이상치 영향력 압축
-    # +1은 volume=0일 때 ln(0) = -inf 방지
-    log_volume = np.log1p(volume)  # log1p(x) = ln(1 + x), 수치 안정성 우수
-
-    # 가중 수익률: sum(return * ln_volume) / sum(ln_volume)
-    weighted_returns: pd.Series = (  # type: ignore[assignment]
-        (returns * log_volume).rolling(window=window, min_periods=min_periods).sum()
-    )
-    total_log_volume: pd.Series = log_volume.rolling(  # type: ignore[assignment]
-        window=window, min_periods=min_periods
-    ).sum()
-
-    # 0으로 나누기 방지
-    total_log_volume_safe = total_log_volume.replace(0, np.nan)
-    return weighted_returns / total_log_volume_safe
+# ---------------------------------------------------------------------------
+# TSMOM-specific: Volume-Weighted Momentum
+# ---------------------------------------------------------------------------
 
 
 def calculate_vw_momentum(
@@ -155,171 +72,18 @@ def calculate_vw_momentum(
 
     Returns:
         모멘텀 시리즈
-
-    Example:
-        >>> momentum = calculate_vw_momentum(
-        ...     df["returns"], df["volume"], lookback=30
-        ... )
     """
-    # 거래량 가중 수익률 계산
     vw_returns: pd.Series = calculate_volume_weighted_returns(
         returns, volume, lookback, min_periods
     )
-
-    # 선택적 스무딩 (EMA)
     if smoothing is not None and smoothing > 1:
         vw_returns = vw_returns.ewm(span=smoothing, adjust=False).mean()  # type: ignore[assignment]
-
     return vw_returns
 
 
-def calculate_atr(
-    high: pd.Series,
-    low: pd.Series,
-    close: pd.Series,
-    period: int = 14,
-) -> pd.Series:
-    """ATR (Average True Range) 계산.
-
-    Wilder's smoothing(EWM)을 사용한 True Range의 지수이동평균입니다.
-    Trailing Stop 등 변동성 기반 리스크 관리에 사용됩니다.
-
-    Args:
-        high: 고가 시리즈
-        low: 저가 시리즈
-        close: 종가 시리즈
-        period: 계산 기간 (기본 14)
-
-    Returns:
-        ATR 시리즈
-
-    Example:
-        >>> atr = calculate_atr(df["high"], df["low"], df["close"], period=14)
-    """
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    return pd.Series(atr, index=close.index, name="atr")
-
-
-def calculate_adx(
-    high: pd.Series,
-    low: pd.Series,
-    close: pd.Series,
-    period: int = 14,
-) -> pd.Series:
-    """ADX (Average Directional Index) 계산.
-
-    ADX는 추세의 강도를 측정하는 지표입니다.
-    - ADX > 25: 강한 추세 (트렌드 추종 유리)
-    - ADX < 25: 약한 추세/횡보장 (트렌드 추종 불리)
-
-    Args:
-        high: 고가 시리즈
-        low: 저가 시리즈
-        close: 종가 시리즈
-        period: 계산 기간 (기본 14)
-
-    Returns:
-        ADX 시리즈 (0~100 범위)
-
-    Example:
-        >>> adx = calculate_adx(df["high"], df["low"], df["close"], period=14)
-        >>> sideways = adx < 25  # 횡보장 판단
-    """
-    # True Range 계산
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    # +DM, -DM 계산
-    up_move = high - high.shift(1)
-    down_move = low.shift(1) - low
-
-    plus_dm = pd.Series(
-        np.where((up_move > down_move) & (up_move > 0), up_move, 0),
-        index=high.index,
-    )
-    minus_dm = pd.Series(
-        np.where((down_move > up_move) & (down_move > 0), down_move, 0),
-        index=high.index,
-    )
-
-    # Smoothed TR, +DM, -DM (Wilder's smoothing)
-    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    plus_di: pd.Series = 100 * (
-        plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
-    )  # type: ignore[assignment] - pandas stub limitation: __mul__ returns int
-    minus_di: pd.Series = 100 * (
-        minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
-    )  # type: ignore[assignment] - pandas stub limitation: __mul__ returns int
-
-    # DX 계산
-    di_sum = plus_di + minus_di
-    di_diff = (plus_di - minus_di).abs()
-    dx = 100 * (di_diff / di_sum.replace(0, np.nan))
-
-    # ADX = DX의 smoothed average
-    adx = dx.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-
-    return pd.Series(adx, index=close.index, name="adx")
-
-
-def calculate_drawdown(close: pd.Series) -> pd.Series:
-    """롤링 최고점 대비 드로다운 계산.
-
-    현재 가격이 과거 최고점 대비 얼마나 하락했는지를 계산합니다.
-    헤지 숏 모드에서 숏 활성화 조건으로 사용됩니다.
-
-    Args:
-        close: 종가 시리즈
-
-    Returns:
-        드로다운 시리즈 (항상 0 이하, 예: -0.15 = -15%)
-
-    Example:
-        >>> drawdown = calculate_drawdown(df["close"])
-        >>> hedge_active = drawdown < -0.15  # -15% 이상 하락 시
-    """
-    # 과거 최고점 (expanding max)
-    rolling_max = close.expanding().max()
-
-    # 드로다운 계산: (현재가 - 최고점) / 최고점
-    drawdown: pd.Series = (close - rolling_max) / rolling_max  # type: ignore[assignment]
-
-    return pd.Series(drawdown, index=close.index, name="drawdown")
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float = 0.05,
-) -> pd.Series:
-    """변동성 스케일러 계산.
-
-    목표 변동성 대비 실현 변동성의 비율을 계산합니다.
-    변동성이 높을 때 포지션을 줄이고, 낮을 때 늘립니다.
-
-    Args:
-        realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성 (예: 0.40)
-        min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
-
-    Returns:
-        변동성 스케일러 시리즈
-
-    Example:
-        >>> scalar = calculate_volatility_scalar(vol, vol_target=0.40)
-    """
-    # 최소 변동성으로 클램프 (0으로 나누기 방지)
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-
-    # 스케일러 계산: target / realized
-    return vol_target / clamped_vol
+# ---------------------------------------------------------------------------
+# preprocess / preprocess_live
+# ---------------------------------------------------------------------------
 
 
 def preprocess(
@@ -352,38 +116,26 @@ def preprocess(
 
     Raises:
         ValueError: 필수 컬럼 누락 시
-
-    Example:
-        >>> config = TSMOMConfig(lookback=30, vol_target=0.40)
-        >>> processed_df = preprocess(ohlcv_df, config)
-        >>> processed_df["vw_momentum"]  # 모멘텀 시리즈
     """
-    # 입력 검증
     required_cols = {"close", "volume"}
     missing = required_cols - set(df.columns)
     if missing:
         msg = f"Missing required columns: {missing}"
         raise ValueError(msg)
 
-    # 원본 보존 (복사본 생성)
     result = df.copy()
 
     # OHLCV 컬럼을 float64로 변환 (Decimal 타입 처리)
-    # Parquet에서 Decimal로 저장된 경우 np.log() 등이 작동하지 않음
     numeric_cols = ["open", "high", "low", "close", "volume"]
     for col in numeric_cols:
         if col in result.columns:
             result[col] = pd.to_numeric(result[col], errors="coerce")
 
-    # 컬럼 추출 (명시적 Series 타입)
     close_series: pd.Series = result["close"]  # type: ignore[assignment]
     volume_series: pd.Series = result["volume"]  # type: ignore[assignment]
 
     # 1. 수익률 계산
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
-    )
+    result["returns"] = calculate_returns(close_series, use_log=config.use_log_returns)
 
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
@@ -442,7 +194,6 @@ def preprocess(
             vs_min,
             vs_max,
         )
-        # 방향성 검증: 가격 vs 모멘텀
         price_change = (result["close"].iloc[-1] / result["close"].iloc[0] - 1) * 100
         avg_momentum = valid_data["vw_momentum"].mean()
         aligned = (price_change > 0 and avg_momentum > 0) or (price_change < 0 and avg_momentum < 0)
@@ -464,9 +215,6 @@ def preprocess_live(
 ) -> pd.DataFrame:
     """라이브 트레이딩용 전처리 (버퍼 기반).
 
-    라이브 트레이딩에서는 전체 데이터가 아닌 최근 버퍼만 유지하며
-    계산합니다. 메모리 효율적이며 실시간 처리에 적합합니다.
-
     Args:
         buffer: 최근 캔들 버퍼 (최신이 마지막)
         config: TSMOM 설정
@@ -474,16 +222,7 @@ def preprocess_live(
 
     Returns:
         전처리된 버퍼 (마지막 행이 최신 시그널)
-
-    Example:
-        >>> # 라이브 트레이딩 루프에서
-        >>> buffer = buffer.append(new_candle).tail(200)
-        >>> processed = preprocess_live(buffer, config)
-        >>> latest_signal = processed["raw_signal"].iloc[-1]
     """
-    # 버퍼 크기 제한
     if len(buffer) > max_rows:
         buffer = buffer.tail(max_rows)
-
-    # 일반 전처리 수행
     return preprocess(buffer, config)

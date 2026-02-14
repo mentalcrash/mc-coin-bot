@@ -7,11 +7,11 @@ OHLCV 데이터에서 volume spike + directional bar feature를 계산.
 import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    drawdown,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
 from src.strategy.vol_impulse_mom.config import VolImpulseMomConfig
 
@@ -45,11 +45,11 @@ def preprocess(df: pd.DataFrame, config: VolImpulseMomConfig) -> pd.DataFrame:
     volume: pd.Series = df["volume"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -57,7 +57,7 @@ def preprocess(df: pd.DataFrame, config: VolImpulseMomConfig) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
@@ -95,6 +95,6 @@ def preprocess(df: pd.DataFrame, config: VolImpulseMomConfig) -> pd.DataFrame:
     df["impulse_short"] = impulse_short_raw.rolling(window=config.hold_bars, min_periods=1).max()
 
     # --- Drawdown (HEDGE_ONLY용) ---
-    df["drawdown"] = calculate_drawdown(close)
+    df["drawdown"] = drawdown(close)
 
     return df

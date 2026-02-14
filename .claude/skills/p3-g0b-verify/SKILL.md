@@ -1,14 +1,8 @@
 ---
 name: p3-g0b-verify
 description: >
-  Gate 0 Phase B 전략 코드 검증. 새 전략 구현 완료 후 백테스트 실행 전에 수행하는 필수 관문.
-  시니어 퀀트 개발자 관점에서 look-ahead bias, 데이터 누수, 시그널 로직 결함, 포지션 사이징 오류,
-  비용 모델 누락, 진입/청산 로직 모순 등 7가지 Critical 항목(C1-C7)과 5가지 Warning 항목(W1-W5)을
-  검증하여 PASS/FAIL 판정을 내린다.
-  사용 시점: (1) 새 전략 구현 완료 후 Gate 1 백테스트 전,
-  (2) 전략 코드 수정 후 재검증,
-  (3) "검증", "verify", "audit", "코드 검사" 요청 시,
-  (4) 백테스트 Sharpe가 비정상적으로 높아 코드 의심 시.
+  Gate 0B 전략 코드 검증 — C1~C7 Critical + W1~W7 Warning 판정.
+  사용 시점: 구현 완료 후 백테스트 전, "검증" "verify" 요청 시.
 context: fork
 allowed-tools:
   - Bash
@@ -206,7 +200,7 @@ vol_scalar = clip(vol_scalar, 0, max_leverage_cap)  # PM에서 처리될 수도 
 
 > 상세: [references/critical-checklist.md](references/critical-checklist.md) C7절
 
-### 8단계: Warning 항목 (W1-W5)
+### 8단계: Warning 항목 (W1-W7)
 
 FAIL 사유는 아니나 반드시 기록:
 
@@ -217,6 +211,8 @@ FAIL 사유는 아니나 반드시 기록:
 | W3 | Regime Concentration | 특정 레짐(2020-2021 상승장)에 수익 집중 가능성 |
 | W4 | Turnover | 연간 회전율이 비용 대비 합리적인가 |
 | W5 | Correlation | 기존 활성 전략과 수익률 상관 < 0.7 |
+| W6 | Derivatives NaN | derivatives 컬럼 `ffill()` 처리 여부 |
+| W7 | Shared Indicators | `src/market/indicators/` 53개 지표 중복 재구현 방지 |
 
 > 상세: [references/warning-checklist.md](references/warning-checklist.md)
 
@@ -224,90 +220,9 @@ FAIL 사유는 아니나 반드시 기록:
 
 ## 리포트 출력 형식
 
-검증 완료 후 **반드시** 아래 형식으로 리포트를 출력한다:
+리포트 형식: [references/report-template.md](references/report-template.md) 참조.
 
-```
-============================================================
-  GATE 0B: STRATEGY VERIFICATION REPORT
-  전략: [전략명] (registry key)
-  감사일: [날짜]
-  대상 파일: [분석한 파일 목록]
-============================================================
-
-  판정: [PASS / FAIL]
-
-------------------------------------------------------------
-  Critical Checklist (C1-C7) — 1개라도 FAIL이면 Gate 0B FAIL
-------------------------------------------------------------
-
-  [C1] Look-Ahead Bias        : [PASS / FAIL]
-       (세부 사항)
-
-  [C2] Data Leakage            : [PASS / FAIL]
-       (세부 사항)
-
-  [C3] Survivorship Bias       : [PASS / FAIL]
-       (세부 사항)
-
-  [C4] Signal Vectorization    : [PASS / FAIL]
-       (세부 사항)
-
-  [C5] Position Sizing         : [PASS / FAIL]
-       (세부 사항)
-
-  [C6] Cost Model              : [PASS / FAIL]
-       (세부 사항)
-
-  [C7] Entry/Exit Logic        : [PASS / FAIL]
-       (세부 사항)
-
-------------------------------------------------------------
-  결함 상세 (FAIL 항목만)
-------------------------------------------------------------
-
-  [C?-001] 제목
-    위치: src/strategy/{name}/signal.py:45
-    문제: (구체적 코드와 함께 설명)
-    영향: (실전 결과를 금액/비율로 추정)
-    수정: (구체적 코드 수정안)
-
-------------------------------------------------------------
-  Warning Checklist (W1-W5) — 기록용, FAIL 사유 아님
-------------------------------------------------------------
-
-  [W1] Warmup Period           : [OK / WARNING]
-       (세부 사항)
-
-  [W2] Parameter Count         : [OK / WARNING]
-       (세부 사항)
-
-  [W3] Regime Concentration    : [OK / WARNING]
-       (세부 사항)
-
-  [W4] Turnover                : [OK / WARNING]
-       (세부 사항)
-
-  [W5] Correlation             : [OK / WARNING]
-       (세부 사항)
-
-------------------------------------------------------------
-  검증 요약
-------------------------------------------------------------
-
-  Critical PASS: N/7
-  Critical FAIL: N/7
-  Warnings:      N/5
-  총 결함:       N건 (CRITICAL: N, HIGH: N, MEDIUM: N)
-
-------------------------------------------------------------
-  권장 액션 (우선순위순)
-------------------------------------------------------------
-
-  1. [C?-001] 수정 방향 (필수 — Gate 0B 통과 조건)
-  2. [W?] 개선 권고 (선택)
-
-============================================================
-```
+---
 
 ## 문서 갱신
 
@@ -350,29 +265,22 @@ uv run mcbot pipeline report
 
 **반복되는 결함 패턴**이 발견되면 교훈 데이터에 기록하여 향후 전략 개발에서 회피한다.
 
-### 교훈 기록 판단 기준
-
 | 상황 | 교훈 기록 | 이유 |
 |------|:--------:|------|
 | 이전에 발견된 적 없는 새로운 결함 패턴 | O | 미래 방지 |
 | 기존 교훈에 이미 포함된 패턴 | X | 중복 방지 |
 | 전략 고유 버그 (일반화 불가) | X | 교훈이 아닌 버그 수정 |
 
-### 교훈 기록 프로세스
+새로운 결함 패턴 발견 시:
 
 ```bash
-# 1. 기존 교훈 확인 (중복 방지)
-uv run mcbot pipeline lessons-list -c strategy-design
-uv run mcbot pipeline lessons-list -t {관련키워드}
-
-# 2. 새로운 패턴이면 교훈 추가
 uv run mcbot pipeline lessons-add \
   --title "{결함 패턴 제목}" \
   --body "{구체적 설명 + 영향 + 방지법}" \
-  -c strategy-design \
-  -t {태그1} -t {태그2} \
-  -s {strategy_name}
+  -c strategy-design -s {strategy_name}
 ```
+
+기존 교훈과 겹치면 추가하지 않는다. `uv run mcbot pipeline lessons-list -c strategy-design` 검색 후 판단.
 
 ---
 
@@ -387,9 +295,6 @@ uv run mcbot pipeline lessons-add \
 
 ## 감사 원칙
 
-1. **전체 데이터 흐름 추적** — `config.py` -> `preprocessor.py` -> `signal.py` -> `StrategySignals` 순서로 데이터가 어떻게 변환되는지 끝까지 추적
-2. **shift(1) 한 줄씩 검증** — signal.py에서 시그널 계산에 사용되는 **모든** 변수의 shift 여부를 개별 확인
-3. **엣지 케이스 우선** — 급등, 급락, 유동성 고갈, NaN 구간, vol=0에서의 동작
-4. **숫자로 지적** — "문제 있다"가 아니라 구체적 수치와 시나리오로 영향 추정
-5. **수정안 반드시 제시** — 문제 지적만으로 끝내지 않음
-6. **매직 넘버에 근거 요구** — 하드코딩 상수마다 "왜 이 값인가?" 질문
+1. **shift(1) 한 줄씩 검증** — signal.py에서 시그널 계산에 사용되는 **모든** 변수의 shift 여부를 개별 확인
+2. **엣지 케이스 우선** — 급등, 급락, 유동성 고갈, NaN 구간, vol=0에서의 동작
+3. **수정안 반드시 제시** — 문제 지적만으로 끝내지 않음. 구체적 코드 수정안 포함

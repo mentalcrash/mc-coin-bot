@@ -130,7 +130,9 @@ class GateCriteria(BaseModel):
     gate_type: GateType = Field(description="평가 유형")
     cli_command: str = Field(default="", description="CLI 실행 명령")
 
-    scoring: ScoringCriteria | None = Field(default=None, description="채점 기준 (gate_type=scoring)")
+    scoring: ScoringCriteria | None = Field(
+        default=None, description="채점 기준 (gate_type=scoring)"
+    )
     checklist: ChecklistCriteria | None = Field(
         default=None, description="체크리스트 기준 (gate_type=checklist)"
     )

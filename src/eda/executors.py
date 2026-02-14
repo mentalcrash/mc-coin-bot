@@ -303,7 +303,9 @@ class LiveExecutor:
             if last > 0:
                 return last
         except Exception:
-            logger.warning("LiveExecutor: fetch_ticker failed for {}, using PM price", futures_symbol)
+            logger.warning(
+                "LiveExecutor: fetch_ticker failed for {}, using PM price", futures_symbol
+            )
         return None
 
     async def _execute_single(
@@ -374,9 +376,7 @@ class LiveExecutor:
 
         return self._parse_fill(order, result, amount)
 
-    async def _confirm_order(
-        self, result: dict[str, Any], futures_symbol: str
-    ) -> dict[str, Any]:
+    async def _confirm_order(self, result: dict[str, Any], futures_symbol: str) -> dict[str, Any]:
         """주문 상태 확인 — closed가 아니면 0.5s 후 재확인."""
         _confirm_delay = 0.5
         status = str(result.get("status", ""))

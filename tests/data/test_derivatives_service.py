@@ -25,32 +25,41 @@ def _make_batch(symbol: str = "BTC/USDT") -> DerivativesBatch:
         symbol=symbol,
         funding_rates=(
             FundingRateRecord(
-                symbol=symbol, timestamp=ts1,
-                funding_rate=Decimal("0.0001"), mark_price=Decimal(42000),
+                symbol=symbol,
+                timestamp=ts1,
+                funding_rate=Decimal("0.0001"),
+                mark_price=Decimal(42000),
             ),
             FundingRateRecord(
-                symbol=symbol, timestamp=ts2,
-                funding_rate=Decimal("0.0002"), mark_price=Decimal(42500),
+                symbol=symbol,
+                timestamp=ts2,
+                funding_rate=Decimal("0.0002"),
+                mark_price=Decimal(42500),
             ),
         ),
         open_interest=(
             OpenInterestRecord(
-                symbol=symbol, timestamp=ts1,
+                symbol=symbol,
+                timestamp=ts1,
                 sum_open_interest=Decimal(50000),
                 sum_open_interest_value=Decimal(2100000000),
             ),
         ),
         long_short_ratios=(
             LongShortRatioRecord(
-                symbol=symbol, timestamp=ts1,
-                long_account=Decimal("0.55"), short_account=Decimal("0.45"),
+                symbol=symbol,
+                timestamp=ts1,
+                long_account=Decimal("0.55"),
+                short_account=Decimal("0.45"),
                 long_short_ratio=Decimal("1.22"),
             ),
         ),
         taker_ratios=(
             TakerRatioRecord(
-                symbol=symbol, timestamp=ts1,
-                buy_vol=Decimal(1000), sell_vol=Decimal(800),
+                symbol=symbol,
+                timestamp=ts1,
+                buy_vol=Decimal(1000),
+                sell_vol=Decimal(800),
                 buy_sell_ratio=Decimal("1.25"),
             ),
         ),
@@ -158,7 +167,10 @@ class TestDerivativesDataServiceEnrich:
         start = datetime(2024, 1, 1, tzinfo=UTC)
         end = datetime(2024, 12, 31, tzinfo=UTC)
         enriched = service.enrich(
-            ohlcv_df, "BTC/USDT", start, end,
+            ohlcv_df,
+            "BTC/USDT",
+            start,
+            end,
             columns=["funding_rate"],
         )
         assert "close" in enriched.columns
@@ -199,7 +211,10 @@ class TestDerivativesDataServicePrecompute:
         end = datetime(2024, 12, 31, tzinfo=UTC)
 
         result = service.precompute(
-            "BTC/USDT", ohlcv_index, start, end,
+            "BTC/USDT",
+            ohlcv_index,
+            start,
+            end,
             columns=["funding_rate", "open_interest"],
         )
         assert len(result) == 3

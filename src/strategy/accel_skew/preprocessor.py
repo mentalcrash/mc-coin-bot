@@ -6,14 +6,14 @@ OHLCV 데이터에서 acceleration, rolling skewness, vol-target feature를 계�
 
 import pandas as pd
 
-from src.strategy.accel_skew.config import AccelSkewConfig
-from src.strategy.vol_regime.preprocessor import (
-    calculate_atr,
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
+from src.strategy.accel_skew.config import AccelSkewConfig
 
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
 
@@ -43,11 +43,11 @@ def preprocess(df: pd.DataFrame, config: AccelSkewConfig) -> pd.DataFrame:
     low: pd.Series = df["low"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -55,7 +55,7 @@ def preprocess(df: pd.DataFrame, config: AccelSkewConfig) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
@@ -75,9 +75,9 @@ def preprocess(df: pd.DataFrame, config: AccelSkewConfig) -> pd.DataFrame:
     ).skew()
 
     # --- Drawdown (HEDGE_ONLY용) ---
-    df["drawdown"] = calculate_drawdown(close)
+    df["drawdown"] = drawdown(close)
 
     # --- ATR ---
-    df["atr"] = calculate_atr(high, low, close, period=config.atr_period)
+    df["atr"] = atr(high, low, close, period=config.atr_period)
 
     return df

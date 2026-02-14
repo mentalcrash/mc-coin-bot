@@ -7,14 +7,14 @@ OHLCV 데이터에서 연속 동방향 streak 기반 cascade score를 계산.
 import numpy as np
 import pandas as pd
 
-from src.strategy.cascade_mom.config import CascadeMomConfig
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_drawdown,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    volatility_scalar,
 )
+from src.strategy.cascade_mom.config import CascadeMomConfig
 
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
 
@@ -66,11 +66,11 @@ def preprocess(df: pd.DataFrame, config: CascadeMomConfig) -> pd.DataFrame:
     low: pd.Series = df["low"]  # type: ignore[assignment]
 
     # --- Returns ---
-    returns = calculate_returns(close)
+    returns = log_returns(close)
     df["returns"] = returns
 
     # --- Realized Volatility ---
-    realized_vol = calculate_realized_volatility(
+    realized_vol = realized_volatility(
         returns,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -78,14 +78,14 @@ def preprocess(df: pd.DataFrame, config: CascadeMomConfig) -> pd.DataFrame:
     df["realized_vol"] = realized_vol
 
     # --- Vol Scalar ---
-    df["vol_scalar"] = calculate_volatility_scalar(
+    df["vol_scalar"] = volatility_scalar(
         realized_vol,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # --- ATR ---
-    atr = calculate_atr(high, low, close, period=config.atr_period)
+    atr_val = atr(high, low, close, period=config.atr_period)
 
     # --- Bar direction ---
     bar_dir = pd.Series(np.sign(close - open_), index=df.index)
@@ -95,7 +95,7 @@ def preprocess(df: pd.DataFrame, config: CascadeMomConfig) -> pd.DataFrame:
 
     # --- Body / ATR ratio ---
     body = (close - open_).abs()
-    atr_safe = atr.clip(lower=1e-10)
+    atr_safe = atr_val.clip(lower=1e-10)
     body_atr = body / atr_safe
 
     # --- Cascade Score: streak * rolling_mean(body/ATR) over cascade_window ---
@@ -105,6 +105,6 @@ def preprocess(df: pd.DataFrame, config: CascadeMomConfig) -> pd.DataFrame:
     df["cascade_score"] = streak * rolling_body_atr
 
     # --- Drawdown (HEDGE_ONLY용) ---
-    df["drawdown"] = calculate_drawdown(close)
+    df["drawdown"] = drawdown(close)
 
     return df

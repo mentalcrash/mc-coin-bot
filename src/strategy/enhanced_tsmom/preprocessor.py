@@ -18,82 +18,17 @@ import logging
 import numpy as np
 import pandas as pd
 
+from src.market.indicators import (
+    atr,
+    drawdown,
+    log_returns,
+    realized_volatility,
+    simple_returns,
+    volatility_scalar,
+)
 from src.strategy.enhanced_tsmom.config import EnhancedTSMOMConfig
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_returns(
-    close: pd.Series,
-    use_log: bool = True,
-) -> pd.Series:
-    """수익률 계산 (로그 또는 단순).
-
-    Args:
-        close: 종가 시리즈
-        use_log: True면 로그 수익률, False면 단순 수익률
-
-    Returns:
-        수익률 시리즈 (첫 값은 NaN)
-
-    Example:
-        >>> returns = calculate_returns(df["close"], use_log=True)
-    """
-    if len(close) == 0:
-        msg = "Empty Series provided"
-        raise ValueError(msg)
-
-    if use_log:
-        price_ratio = close / close.shift(1)
-        return pd.Series(np.log(price_ratio), index=close.index, name="returns")
-    return close.pct_change()
-
-
-def calculate_realized_volatility(
-    returns: pd.Series,
-    window: int,
-    annualization_factor: float = 365.0,
-    min_periods: int | None = None,
-) -> pd.Series:
-    """실현 변동성 계산 (연환산).
-
-    Rolling standard deviation을 사용하여 실현 변동성을 계산합니다.
-
-    Args:
-        returns: 수익률 시리즈
-        window: Rolling 윈도우 크기
-        annualization_factor: 연환산 계수 (일봉: 365)
-        min_periods: 최소 관측치 수 (None이면 window 사용)
-
-    Returns:
-        연환산 변동성 시리즈
-    """
-    if min_periods is None:
-        min_periods = window
-
-    rolling_std = returns.rolling(window=window, min_periods=min_periods).std()
-    return rolling_std * np.sqrt(annualization_factor)
-
-
-def calculate_volatility_scalar(
-    realized_vol: pd.Series,
-    vol_target: float,
-    min_volatility: float = 0.05,
-) -> pd.Series:
-    """변동성 스케일러 계산.
-
-    목표 변동성 대비 실현 변동성의 비율을 계산합니다.
-
-    Args:
-        realized_vol: 실현 변동성 시리즈
-        vol_target: 연간 목표 변동성
-        min_volatility: 최소 변동성 클램프 (0으로 나누기 방지)
-
-    Returns:
-        변동성 스케일러 시리즈
-    """
-    clamped_vol = realized_vol.clip(lower=min_volatility)
-    return vol_target / clamped_vol
 
 
 def calculate_enhanced_vw_momentum(
@@ -132,48 +67,6 @@ def calculate_enhanced_vw_momentum(
     weighted_returns = returns * vol_ratio
     momentum = weighted_returns.rolling(window=lookback, min_periods=lookback).sum()
     return pd.Series(momentum, index=returns.index, name="evw_momentum")
-
-
-def calculate_atr(
-    high: pd.Series,
-    low: pd.Series,
-    close: pd.Series,
-    period: int = 14,
-) -> pd.Series:
-    """ATR (Average True Range) 계산.
-
-    Wilder's smoothing(EWM)을 사용한 True Range의 지수이동평균입니다.
-
-    Args:
-        high: 고가 시리즈
-        low: 저가 시리즈
-        close: 종가 시리즈
-        period: 계산 기간 (기본 14)
-
-    Returns:
-        ATR 시리즈
-    """
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    return pd.Series(atr, index=close.index, name="atr")
-
-
-def calculate_drawdown(close: pd.Series) -> pd.Series:
-    """롤링 최고점 대비 드로다운 계산.
-
-    Args:
-        close: 종가 시리즈
-
-    Returns:
-        드로다운 시리즈 (항상 0 이하, 예: -0.15 = -15%)
-    """
-    rolling_max = close.expanding().max()
-    drawdown: pd.Series = (close - rolling_max) / rolling_max  # type: ignore[assignment]
-    return pd.Series(drawdown, index=close.index, name="drawdown")
 
 
 def preprocess(
@@ -226,15 +119,15 @@ def preprocess(
     low_series: pd.Series = result["low"]  # type: ignore[assignment]
 
     # 1. 수익률 계산
-    result["returns"] = calculate_returns(
-        close_series,
-        use_log=config.use_log_returns,
-    )
+    if config.use_log_returns:
+        result["returns"] = log_returns(close_series)
+    else:
+        result["returns"] = simple_returns(close_series)
 
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. 실현 변동성 계산 (연환산)
-    result["realized_vol"] = calculate_realized_volatility(
+    result["realized_vol"] = realized_volatility(
         returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -252,17 +145,17 @@ def preprocess(
     )
 
     # 4. 변동성 스케일러 계산
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol_series,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
     )
 
     # 5. 드로다운 계산 (헤지 숏 모드용)
-    result["drawdown"] = calculate_drawdown(close_series)
+    result["drawdown"] = drawdown(close_series)
 
     # 6. ATR 계산 (Trailing Stop용)
-    result["atr"] = calculate_atr(high_series, low_series, close_series, period=config.atr_period)
+    result["atr"] = atr(high_series, low_series, close_series, period=config.atr_period)
 
     # 디버그: 지표 통계
     valid_data = result.dropna()

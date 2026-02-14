@@ -78,11 +78,38 @@ uv run mcbot backtest run tsmom BTC/USDT \
     --report
 ```
 
+## Tiered Validation (`src/backtest/validation/`)
+
+4단계 검증 시스템 (`TieredValidator`):
+
+| Level | Method | Pass Criteria |
+|-------|--------|---------------|
+| **Quick** | IS/OOS Split (70/30) | OOS Sharpe > 0.5, Decay < 50% |
+| **Milestone** | Walk-Forward (5-fold) | Consistency > 60%, OOS Sharpe > 0.3 |
+| **Final** | CPCV + DSR + PBO | PBO < 0.4, DSR > 1.0 |
+| **Multi** | Multi-asset 전용 | 위 기준 + 포트폴리오 레벨 검증 |
+
+```python
+from src.backtest.validation import TieredValidator, ValidationLevel
+validator = TieredValidator()
+result = validator.validate(level=ValidationLevel.QUICK, ...)
+```
+
+## Diagnostics & Advisor (`src/backtest/advisor/`)
+
+전략 진단 분석:
+- **Signal Analyzer**: 시그널 품질, 승률, 보유 기간 분포
+- **Regime Analyzer**: 시장 국면별 성과 (상승/하락/횡보)
+- **Loss Analyzer**: 손실 구간 분석, 연속 손실 패턴
+- **Overfit Analyzer**: 과적합 징후 탐지
+
 ## Performance Metrics
 
 핵심 지표:
 - Sharpe Ratio (연율화)
+- Sortino Ratio (하방 변동성 기준)
 - Max Drawdown
+- Calmar Ratio (CAGR / MDD)
 - Win Rate
 - Profit Factor
-- Calmar Ratio
+- Tail Ratio (95th / 5th percentile)

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from src.data.market_data import MarketDataSet, MultiSymbolData
     from src.eda.ports import DataFeedPort, ExecutorPort
+    from src.market.feature_store import FeatureStore, FeatureStoreConfig
     from src.models.backtest import PerformanceMetrics
     from src.portfolio.config import PortfolioManagerConfig
     from src.regime.service import RegimeService, RegimeServiceConfig
@@ -64,6 +65,7 @@ class EDARunner:
         *,
         fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._config = config
@@ -73,6 +75,7 @@ class EDARunner:
         self._target_timeframe = target_timeframe
         self._fast_mode = fast_mode
         self._regime_config = regime_config
+        self._feature_store_config = feature_store_config
 
         # feed/executor 생성
         self._feed: DataFeedPort = HistoricalDataFeed(
@@ -99,6 +102,7 @@ class EDARunner:
         *,
         fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> EDARunner:
         """어댑터를 직접 주입하여 Runner를 생성합니다 (내부용)."""
         instance = object.__new__(cls)
@@ -112,6 +116,7 @@ class EDARunner:
         instance._target_timeframe = target_timeframe
         instance._fast_mode = fast_mode
         instance._regime_config = regime_config
+        instance._feature_store_config = feature_store_config
         instance._bus = None
         instance._analytics = None
         instance._pm = None
@@ -130,6 +135,7 @@ class EDARunner:
         *,
         fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> EDARunner:
         """백테스트용 Runner 생성.
 
@@ -147,6 +153,7 @@ class EDARunner:
             queue_size=queue_size,
             fast_mode=fast_mode,
             regime_config=regime_config,
+            feature_store_config=feature_store_config,
         )
 
     @classmethod
@@ -160,6 +167,7 @@ class EDARunner:
         asset_weights: dict[str, float] | None = None,
         *,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> EDARunner:
         """Shadow 모드 Runner 생성.
 
@@ -174,6 +182,7 @@ class EDARunner:
             initial_capital=initial_capital,
             asset_weights=asset_weights,
             regime_config=regime_config,
+            feature_store_config=feature_store_config,
         )
 
     async def run(self) -> PerformanceMetrics:
@@ -195,6 +204,9 @@ class EDARunner:
         # Derivatives provider (선택적)
         derivatives_provider = self._create_derivatives_provider()
 
+        # FeatureStore (선택적)
+        feature_store = self._create_feature_store()
+
         # fast_mode: signal pre-computation (전체 데이터로 한번에 시그널 계산)
         strategy_engine_kwargs: dict[str, object] = {
             "target_timeframe": self._target_timeframe,
@@ -207,6 +219,8 @@ class EDARunner:
             strategy_engine_kwargs["regime_service"] = regime_service
         if derivatives_provider is not None:
             strategy_engine_kwargs["derivatives_provider"] = derivatives_provider
+        if feature_store is not None:
+            strategy_engine_kwargs["feature_store"] = feature_store
 
         strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
@@ -244,9 +258,11 @@ class EDARunner:
             bus.subscribe(EventType.BAR, executor_bar_handler)
 
         # 2. 모든 컴포넌트 등록 (순서 중요)
-        # RegimeService는 StrategyEngine 앞에 등록 (BAR 처리 시 regime 먼저 업데이트)
+        # RegimeService → FeatureStore → StrategyEngine 순서
         if regime_service is not None:
             await regime_service.register(bus)
+        if feature_store is not None:
+            await feature_store.register(bus)
         await strategy_engine.register(bus)
         await pm.register(bus)
         await rm.register(bus)
@@ -347,7 +363,10 @@ class EDARunner:
         if isinstance(data, MarketDataSet):
             df_tf = resample_1m_to_tf(data.ohlcv, freq)
             deriv = deriv_service.precompute(
-                data.symbol, df_tf.index, data.start, data.end  # type: ignore[arg-type]
+                data.symbol,
+                df_tf.index,
+                data.start,
+                data.end,  # type: ignore[arg-type]
             )
             if not deriv.empty and not deriv.dropna(how="all").empty:
                 precomputed[data.symbol] = deriv
@@ -356,7 +375,10 @@ class EDARunner:
             for sym in data.symbols:
                 df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
                 deriv = deriv_service.precompute(
-                    sym, df_tf.index, data.start, data.end  # type: ignore[arg-type]
+                    sym,
+                    df_tf.index,
+                    data.start,
+                    data.end,  # type: ignore[arg-type]
                 )
                 if not deriv.empty and not deriv.dropna(how="all").empty:
                     precomputed[sym] = deriv
@@ -369,6 +391,41 @@ class EDARunner:
             len(precomputed),
         )
         return BacktestDerivativesProvider(precomputed)
+
+    def _create_feature_store(self) -> FeatureStore | None:
+        """FeatureStore 생성 + 전체 데이터 사전 계산.
+
+        feature_store_config가 None이면 None을 반환합니다.
+
+        Returns:
+            FeatureStore 또는 None
+        """
+        if self._feature_store_config is None:
+            return None
+
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.market.feature_store import FeatureStore
+
+        store = FeatureStore(self._feature_store_config)
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return store
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            store.precompute(data.symbol, df_tf)
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                store.precompute(sym, df_tf)
+
+        return store
 
     def _precompute_signals(self) -> dict[str, object] | None:
         """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.

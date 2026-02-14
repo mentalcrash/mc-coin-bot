@@ -90,3 +90,35 @@ class DerivativesProviderPort(Protocol):
             {column_name: value} 또는 None (데이터 없음)
         """
         ...
+
+
+@runtime_checkable
+class FeatureStorePort(Protocol):
+    """공통 지표 캐시 서비스 인터페이스.
+
+    Backtest: precompute() → enrich_dataframe() (vectorized, timestamp join)
+    Live: register() → _on_bar() → get_feature_columns() (incremental)
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """캐시된 지표 컬럼을 DataFrame에 timestamp join.
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            지표 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_feature_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 지표 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
+        """
+        ...

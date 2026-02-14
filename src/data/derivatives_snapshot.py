@@ -92,9 +92,7 @@ class DerivativesSnapshotFetcher:
                 await asyncio.sleep(0.5)
         return results
 
-    async def _fetch_via_futures_client(
-        self, symbol: str
-    ) -> SymbolDerivativesSnapshot | None:
+    async def _fetch_via_futures_client(self, symbol: str) -> SymbolDerivativesSnapshot | None:
         """BinanceFuturesClient를 통한 데이터 조회."""
         assert self._futures_client is not None
 
@@ -102,27 +100,17 @@ class DerivativesSnapshotFetcher:
         ticker = await self._futures_client.fetch_ticker(symbol)
         price = float(ticker.get("last", 0))
 
-        fr_history = await self._futures_client.fetch_funding_rate_history(
-            symbol, limit=1
-        )
+        fr_history = await self._futures_client.fetch_funding_rate_history(symbol, limit=1)
         funding_rate = float(fr_history[0].get("fundingRate", 0)) if fr_history else 0.0
 
-        oi_history = await self._futures_client.fetch_open_interest_history(
-            symbol, limit=1
-        )
+        oi_history = await self._futures_client.fetch_open_interest_history(symbol, limit=1)
         oi_value = float(oi_history[0].get("sumOpenInterestValue", 0)) if oi_history else 0.0
 
-        ls_history = await self._futures_client.fetch_long_short_ratio(
-            symbol, limit=1
-        )
+        ls_history = await self._futures_client.fetch_long_short_ratio(symbol, limit=1)
         ls_ratio = float(ls_history[0].get("longShortRatio", 1.0)) if ls_history else 1.0
 
-        taker_history = await self._futures_client.fetch_taker_buy_sell_ratio(
-            symbol, limit=1
-        )
-        taker_ratio = (
-            float(taker_history[0].get("buySellRatio", 1.0)) if taker_history else 1.0
-        )
+        taker_history = await self._futures_client.fetch_taker_buy_sell_ratio(symbol, limit=1)
+        taker_ratio = float(taker_history[0].get("buySellRatio", 1.0)) if taker_history else 1.0
 
         return SymbolDerivativesSnapshot(
             symbol=symbol,
@@ -134,9 +122,7 @@ class DerivativesSnapshotFetcher:
             taker_ratio=taker_ratio,
         )
 
-    async def _fetch_via_own_exchange(
-        self, symbol: str
-    ) -> SymbolDerivativesSnapshot | None:
+    async def _fetch_via_own_exchange(self, symbol: str) -> SymbolDerivativesSnapshot | None:
         """내부 ccxt를 통한 public endpoint 조회."""
         if self._own_exchange is None:
             logger.warning("DerivativesSnapshotFetcher not started")
@@ -163,18 +149,20 @@ class DerivativesSnapshotFetcher:
         oi_value = float(oi_data[0].get("sumOpenInterestValue", 0)) if oi_data else 0.0
 
         # 4. Long/Short ratio
-        ls_data: list[dict[str, Any]] = await exchange.fapipublic_get_futures_data_globallongshortaccountratio(  # type: ignore[assignment,attr-defined]
+        ls_data: list[
+            dict[str, Any]
+        ] = await exchange.fapipublic_get_futures_data_globallongshortaccountratio(  # type: ignore[assignment,attr-defined]
             {"symbol": bare_symbol, "period": "1h", "limit": 1}
         )
         ls_ratio = float(ls_data[0].get("longShortRatio", 1.0)) if ls_data else 1.0
 
         # 5. Taker ratio
-        taker_data: list[dict[str, Any]] = await exchange.fapipublic_get_futures_data_takerlongshortratio(  # type: ignore[assignment,attr-defined]
+        taker_data: list[
+            dict[str, Any]
+        ] = await exchange.fapipublic_get_futures_data_takerlongshortratio(  # type: ignore[assignment,attr-defined]
             {"symbol": bare_symbol, "period": "1h", "limit": 1}
         )
-        taker_ratio = (
-            float(taker_data[0].get("buySellRatio", 1.0)) if taker_data else 1.0
-        )
+        taker_ratio = float(taker_data[0].get("buySellRatio", 1.0)) if taker_data else 1.0
 
         return SymbolDerivativesSnapshot(
             symbol=symbol,

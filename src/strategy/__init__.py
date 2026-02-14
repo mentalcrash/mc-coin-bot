@@ -44,8 +44,10 @@ import src.strategy.donchian  # 전략 등록 side effect
 import src.strategy.donchian_ensemble  # 전략 등록 side effect
 import src.strategy.dvr_mom  # 전략 등록 side effect
 import src.strategy.enhanced_tsmom  # 전략 등록 side effect
+import src.strategy.ensemble  # 전략 등록 side effect
 import src.strategy.entropy_switch  # 전략 등록 side effect
 import src.strategy.flow_imbalance  # 전략 등록 side effect
+import src.strategy.fund_div_mom  # 전략 등록 side effect
 import src.strategy.funding_carry  # 전략 등록 side effect
 import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
@@ -55,6 +57,7 @@ import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.liq_momentum  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
+import src.strategy.mh_roc  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
 import src.strategy.multi_factor  # 전략 등록 side effect

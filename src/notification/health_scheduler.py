@@ -1,7 +1,7 @@
 """HealthCheckScheduler — 주기적 시스템/마켓/전략 건강 상태 알림.
 
 3개 내부 asyncio 루프:
-- heartbeat_loop (5분 주기): 시스템 생존 확인
+- heartbeat_loop (1시간 주기): 시스템 생존 확인
 - regime_loop (4시간 주기): 마켓 regime 리포트
 - strategy_health_loop (8시간 주기): 전략 건강도 확인 + alpha decay 감지
 
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from src.notification.queue import NotificationQueue
 
 # 루프 주기 (초)
-_HEARTBEAT_INTERVAL = 300.0  # 5분
+_HEARTBEAT_INTERVAL = 3600.0  # 1시간
 _REGIME_INTERVAL = 14400.0  # 4시간
 _STRATEGY_HEALTH_INTERVAL = 28800.0  # 8시간
 
@@ -128,7 +128,7 @@ class HealthCheckScheduler:
     # ─── Loops ────────────────────────────────────────────────
 
     async def _heartbeat_loop(self) -> None:
-        """5분 주기 System Heartbeat."""
+        """1시간 주기 System Heartbeat."""
         while True:
             await asyncio.sleep(_HEARTBEAT_INTERVAL)
             try:
@@ -259,9 +259,7 @@ class HealthCheckScheduler:
 
         # Rolling Sharpe (30d)
         cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
-        recent_trades_30d = [
-            t for t in trades if t.exit_time and t.exit_time >= cutoff_30d
-        ]
+        recent_trades_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
         rolling_sharpe = self._compute_rolling_sharpe(recent_trades_30d)
 
         # Alpha decay 감지

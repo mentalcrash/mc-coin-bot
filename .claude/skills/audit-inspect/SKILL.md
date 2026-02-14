@@ -1,10 +1,8 @@
 ---
 name: audit-inspect
 description: >
-  Architecture Audit 실행 스킬. 프로젝트 전반의 코드 품질, 아키텍처, 리스크, 테스트 상태를
-  정량적으로 분석하고 등급을 매기며, 발견사항(Finding)과 액션(Action)을 자동 생성한다.
-  사용 시점: (1) 정기 감사 수행, (2) "audit", "감사", "아키텍처 점검" 요청 시,
-  (3) 대규모 변경 후 건강도 확인, (4) 이전 감사 대비 개선/악화 추적.
+  Architecture Audit 실행 — 코드 품질/아키텍처/리스크 정량 분석 + Finding/Action 생성.
+  사용 시점: 정기 감사, "audit" "감사" 요청, 대규모 변경 후 건강도 확인 시.
 context: fork
 allowed-tools:
   - Bash

@@ -461,7 +461,9 @@ def add_action(
     description: Annotated[str, typer.Option("--description", help="Description")] = "",
     effort: Annotated[str, typer.Option("--effort", help="Estimated effort")] = "",
     verification: Annotated[str, typer.Option("--verification", help="Verification criteria")] = "",
-    finding: Annotated[list[int] | None, typer.Option("--finding", help="Related finding IDs")] = None,
+    finding: Annotated[
+        list[int] | None, typer.Option("--finding", help="Related finding IDs")
+    ] = None,
     tag: Annotated[list[str] | None, typer.Option("--tag", help="Tags (repeatable)")] = None,
 ) -> None:
     """새 액션 아이템 생성."""

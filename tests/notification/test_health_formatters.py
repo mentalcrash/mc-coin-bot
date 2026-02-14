@@ -28,6 +28,7 @@ from src.notification.health_models import (
 
 # ─── Fixtures ──────────────────────────────────────────────
 
+
 def _make_health_snapshot(**overrides: object) -> SystemHealthSnapshot:
     defaults: dict[str, object] = {
         "timestamp": datetime(2026, 2, 14, tzinfo=UTC),
@@ -53,6 +54,7 @@ def _make_health_snapshot(**overrides: object) -> SystemHealthSnapshot:
 
 
 # ─── regime_score 테스트 ──────────────────────────────────
+
 
 class TestRegimeScore:
     def test_neutral_inputs(self) -> None:
@@ -90,6 +92,7 @@ class TestRegimeScore:
 
 # ─── Heartbeat color 테스트 ────────────────────────────────
 
+
 class TestHeartbeatColor:
     def test_green_normal(self) -> None:
         snap = _make_health_snapshot()
@@ -126,6 +129,7 @@ class TestHeartbeatColor:
 
 # ─── Uptime 포맷 테스트 ──────────────────────────────────
 
+
 class TestFormatUptime:
     def test_minutes_only(self) -> None:
         assert _format_uptime(300) == "5m"
@@ -139,6 +143,7 @@ class TestFormatUptime:
 
 
 # ─── Heartbeat embed 테스트 ───────────────────────────────
+
 
 class TestFormatHeartbeatEmbed:
     def test_basic_structure(self) -> None:
@@ -156,6 +161,7 @@ class TestFormatHeartbeatEmbed:
 
 
 # ─── Regime embed 테스트 ─────────────────────────────────
+
 
 class TestFormatRegimeEmbed:
     def test_basic_structure(self) -> None:
@@ -202,6 +208,7 @@ class TestFormatRegimeEmbed:
 
 
 # ─── Strategy health embed 테스트 ────────────────────────
+
 
 class TestFormatStrategyHealthEmbed:
     def test_basic_structure(self) -> None:

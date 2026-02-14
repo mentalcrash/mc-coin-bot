@@ -297,9 +297,12 @@ class TestAddFinding:
             app,
             [
                 "add-finding",
-                "--title", "Test finding",
-                "--severity", "low",
-                "--category", "architecture",
+                "--title",
+                "Test finding",
+                "--severity",
+                "low",
+                "--category",
+                "architecture",
             ],
         )
         assert result.exit_code == 0
@@ -310,16 +313,26 @@ class TestAddFinding:
             app,
             [
                 "add-finding",
-                "--title", "New finding",
-                "--severity", "high",
-                "--category", "risk-safety",
-                "--location", "src/eda/oms.py:100",
-                "--description", "Some desc",
-                "--impact", "Data loss",
-                "--proposed-fix", "Add guard",
-                "--effort", "2h",
-                "--tag", "live-trading",
-                "--tag", "persistence",
+                "--title",
+                "New finding",
+                "--severity",
+                "high",
+                "--category",
+                "risk-safety",
+                "--location",
+                "src/eda/oms.py:100",
+                "--description",
+                "Some desc",
+                "--impact",
+                "Data loss",
+                "--proposed-fix",
+                "Add guard",
+                "--effort",
+                "2h",
+                "--tag",
+                "live-trading",
+                "--tag",
+                "persistence",
             ],
         )
         assert result.exit_code == 0
@@ -353,7 +366,15 @@ class TestAddFinding:
         """Auto ID increments from existing findings."""
         result = runner.invoke(
             app,
-            ["add-finding", "--title", "Second", "--severity", "medium", "--category", "code-quality"],
+            [
+                "add-finding",
+                "--title",
+                "Second",
+                "--severity",
+                "medium",
+                "--category",
+                "code-quality",
+            ],
         )
         assert result.exit_code == 0
         assert "Finding #2 created" in result.output
@@ -374,14 +395,22 @@ class TestAddAction:
             app,
             [
                 "add-action",
-                "--title", "Fix OMS",
-                "--priority", "P0",
-                "--phase", "A",
-                "--description", "Add persistence",
-                "--effort", "4h",
-                "--verification", "OMS survives restart",
-                "--finding", "1",
-                "--tag", "live-trading",
+                "--title",
+                "Fix OMS",
+                "--priority",
+                "P0",
+                "--phase",
+                "A",
+                "--description",
+                "Add persistence",
+                "--effort",
+                "4h",
+                "--verification",
+                "OMS survives restart",
+                "--finding",
+                "1",
+                "--tag",
+                "live-trading",
             ],
         )
         assert result.exit_code == 0
@@ -447,7 +476,9 @@ class TestCreateSnapshot:
         assert s.metrics.test_count == 3100
 
     def test_create_snapshot_file_not_found(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["create-snapshot", "--from-yaml", str(tmp_path / "nonexistent.yaml")])
+        result = runner.invoke(
+            app, ["create-snapshot", "--from-yaml", str(tmp_path / "nonexistent.yaml")]
+        )
         assert result.exit_code == 1
         assert "not found" in result.output
 

@@ -72,12 +72,17 @@
 | Flow-Imbalance | `flow-imbalance` | -0.12 | -27% | ~54 | BVC 근사로 flow 방향 예측 불가. OFI>0.6 진입 후 mean reversion |
 | Hour-Season | `hour-season` | -1.01 | -45% | ~190 | 30일 rolling t-stat이 noise 과적합. BTC(-4.46) 최악 = 효율적 시장에서 계절성 즉시 차익거래 |
 
-## Gate 1 실패 — 데이터 부재 (2개)
+## Gate 1 실패 — 데이터 부재 (1개)
 
 | 전략 | Registry | G0 점수 | 실패 사유 |
 |------|----------|---------|----------|
-| Funding Carry | `funding-carry` | 25/30 | funding_rate 데이터 부재, 인프라 미구축 → 폐기 |
 | Copula Pairs | `copula-pairs` | 20/30 | pair_close 데이터 부재, 인프라 미구축 → 폐기 |
+
+## 재시도 대기 — 데이터 확보 (1개)
+
+| 전략 | Registry | G0 점수 | 상태 |
+|------|----------|---------|------|
+| Funding Carry | `funding-carry` | 25/30 | ✅ DerivativesDataService 인프라 구축 완료 → 재시도 가능 |
 
 ## Gate 1 실패 — 구조적 결함 / 코드 삭제 (7개)
 
@@ -124,5 +129,5 @@
 | 레짐 감지 = 전략 | ADX, HMM, Vol-Adaptive, Hurst, Entropy, AC, VR | 과적합 or 시그널 부재 |
 | OHLCV 기반 microstructure | VPIN-Flow, Flow-Imbalance | BVC 정밀도 부족, L2 필수 |
 | 전통금융→크립토 전이 | Session-Breakout, Liq-Momentum, Hour-Season | 시장 구조 차이로 edge 소멸 |
-| 데이터 부재 전략 | Funding Carry, Copula Pairs | 인프라 미구축 → 무기한 보류 = 폐기 |
+| 데이터 부재 전략 | Copula Pairs | 인프라 미구축 → 무기한 보류 = 폐기 (Funding Carry는 인프라 구축 완료로 재시도 대기) |
 | 밈코인 FULL Short | VWAP-Disposition | DOGE 급등 시 MDD 무한대 |

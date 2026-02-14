@@ -1,0 +1,25 @@
+meta:
+  name: fund-div-mom
+  display_name: Funding Divergence Momentum
+  category: Derivatives
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: 가격 모멘텀과 funding rate 추세의 divergence가 추세 지속 가능성을 예측. FR 하락+가격
+    상승=유기적 수요(지속), FR 급등+가격 상승=투기과열(청산위험). 크립토 영구선물 고유 edge.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

@@ -50,10 +50,51 @@ amount_to_precision() / price_to_precision()
 str (CCXT API)
 ```
 
+## BinanceFuturesClient (`src/exchange/binance_futures_client.py`)
+
+주문 실행 전용 클라이언트 (데이터 스트리밍은 `BinanceClient` 사용):
+- **Hedge Mode**: Long/Short 포지션 동시 보유
+- **Cross Margin**: 전체 잔고를 마진으로 사용
+- **1x Leverage**: 레버리지 없음 (안전 우선)
+
+```python
+async with BinanceFuturesClient() as client:
+    result = await client.create_order(
+        symbol="BTC/USDT:USDT", side="buy", amount=0.001,
+        position_side="LONG",
+    )
+```
+
+## CCXT Exception Hierarchy (Critical)
+
+`RateLimitExceeded`는 `NetworkError`의 서브클래스 — except 순서 중요:
+
+```
+BaseError
+├── ExchangeError
+│   ├── InsufficientFunds
+│   └── InvalidOrder
+└── NetworkError          ← RateLimitExceeded는 여기 하위
+    ├── RateLimitExceeded ← 반드시 NetworkError보다 먼저 catch
+    ├── DDoSProtection
+    └── RequestTimeout
+```
+
+```python
+# Good: RateLimitExceeded를 먼저 catch
+try:
+    await exchange.create_order(...)
+except ccxt.RateLimitExceeded:
+    raise RateLimitError(...)       # 별도 처리
+except ccxt.NetworkError:
+    raise NetworkError(...)         # 일반 재시도
+```
+
 ## Error Handling
 
 | Exception | Cause | Strategy |
 |-----------|-------|----------|
+| `RateLimitExceeded` | API rate limit 초과 | **Wait** + exponential backoff |
 | `NetworkError` | Temporary network issue | **Retry** with backoff |
 | `DDoSProtection` | Rate limit reached | **Wait** then retry |
 | `InsufficientFunds` | Balance shortage | **Abort** + notify |

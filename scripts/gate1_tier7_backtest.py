@@ -147,7 +147,9 @@ def print_strategy_results(strategy_name: str, results: list[dict[str, Any]]) ->
     for r in sorted(results, key=lambda x: x["metrics"]["sharpe_ratio"], reverse=True):
         m = r["metrics"]
         b = r.get("benchmark", {})
-        sharpe_style = "green" if m["sharpe_ratio"] > 1.0 else ("yellow" if m["sharpe_ratio"] > 0 else "red")
+        sharpe_style = (
+            "green" if m["sharpe_ratio"] > 1.0 else ("yellow" if m["sharpe_ratio"] > 0 else "red")
+        )
         table.add_row(
             r["symbol"],
             f"[{sharpe_style}]{m['sharpe_ratio']:.2f}[/]",
@@ -230,7 +232,9 @@ def main() -> None:
 
     for strategy_name, results in all_results.items():
         if not results:
-            summary_table.add_row(strategy_name, STRATEGIES[strategy_name], "-", "-", "-", "-", "-", "[red]ERROR[/]")
+            summary_table.add_row(
+                strategy_name, STRATEGIES[strategy_name], "-", "-", "-", "-", "-", "[red]ERROR[/]"
+            )
             continue
         best = max(results, key=lambda x: x["metrics"]["sharpe_ratio"])
         m = best["metrics"]

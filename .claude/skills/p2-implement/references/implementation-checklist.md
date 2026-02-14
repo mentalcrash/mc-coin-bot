@@ -17,6 +17,8 @@
 - [ ] 사용 지표 (구체적 수식)
 - [ ] 시그널 생성 로직 (조건 + 방향)
 - [ ] 차별화 포인트 (기존 전략과 구분)
+- [ ] 데이터 요구사항 확인 (OHLCV only / Derivatives)
+- [ ] Derivatives 필요 시: Silver _deriv 파일 존재 확인 + 백테스팅 가용 데이터인지 확인
 
 ### 2. 폐기 전략 패턴 확인
 
@@ -127,6 +129,8 @@
 - [ ] `atr` (trailing stop용, 필요 시)
 - [ ] NaN 방어 (0 나눗셈, edge case)
 - [ ] 유틸리티 재사용 (중복 구현 금지)
+- [ ] Derivatives 컬럼 사용 시: `_REQUIRED_COLUMNS`에 포함
+- [ ] Derivatives 컬럼 NaN 처리: `ffill()` 적용 (merge_asof 후 첫 구간)
 
 ### signal.py
 

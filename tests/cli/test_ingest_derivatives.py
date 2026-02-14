@@ -18,8 +18,12 @@ class TestInfoCommand:
             settings = MagicMock()
             settings.bronze_dir = tmp_path / "bronze"
             settings.silver_dir = tmp_path / "silver"
-            settings.get_bronze_deriv_path.return_value = tmp_path / "bronze" / "BTC_USDT" / "2024_deriv.parquet"
-            settings.get_silver_deriv_path.return_value = tmp_path / "silver" / "BTC_USDT" / "2024_deriv.parquet"
+            settings.get_bronze_deriv_path.return_value = (
+                tmp_path / "bronze" / "BTC_USDT" / "2024_deriv.parquet"
+            )
+            settings.get_silver_deriv_path.return_value = (
+                tmp_path / "silver" / "BTC_USDT" / "2024_deriv.parquet"
+            )
             mock_settings.return_value = settings
 
             result = runner.invoke(app, ["info", "BTC/USDT", "--year", "2024"])
@@ -72,7 +76,9 @@ class TestSilverCommand:
             settings.log_dir = tmp_path / "logs"
             settings.bronze_dir = tmp_path / "bronze"
             settings.silver_dir = tmp_path / "silver"
-            settings.get_bronze_deriv_path.return_value = tmp_path / "bronze" / "BTC_USDT" / "2024_deriv.parquet"
+            settings.get_bronze_deriv_path.return_value = (
+                tmp_path / "bronze" / "BTC_USDT" / "2024_deriv.parquet"
+            )
             mock_settings.return_value = settings
 
             result = runner.invoke(app, ["silver", "BTC/USDT", "--year", "2024"])

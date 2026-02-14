@@ -1,7 +1,7 @@
 ---
 paths:
   - "tests/**"
-  - "conftest.py"
+  - "tests/conftest.py"
 ---
 
 # Testing Rules
@@ -118,7 +118,7 @@ uv run pytest
 ## Fixture Organization
 
 ```python
-# conftest.py
+# tests/conftest.py
 @pytest.fixture(scope="session")
 def exchange_config():
     """전역 설정 (세션 공유)"""
@@ -129,3 +129,30 @@ def mock_exchange():
     """테스트별 Mock (매번 새로 생성)"""
     return AsyncMock()
 ```
+
+## EDA Testing Patterns
+
+EventBus 기반 이벤트 흐름 테스트:
+
+```python
+@pytest.fixture
+def event_bus():
+    return EventBus(max_queue_size=100)
+
+async def test_bar_to_fill_flow(event_bus):
+    collected = []
+    async def handler(event):
+        collected.append(event)
+    event_bus.subscribe(EventType.FILL, handler)
+
+    # Publish BAR → flush로 동기 처리
+    await event_bus.publish(bar_event)
+    await event_bus.flush()
+
+    assert len(collected) == 1
+```
+
+**핵심 규칙:**
+- `flush()` 호출 필수 — bar-by-bar 동기 처리 보장
+- 이벤트 순서 검증: `BAR → SIGNAL → ORDER → FILL`
+- BacktestExecutor: 일반 주문은 다음 bar open에 체결, SL/TS는 즉시 체결

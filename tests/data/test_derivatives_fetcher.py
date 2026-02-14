@@ -57,7 +57,9 @@ class TestGetYearTimestamps:
 
 class TestFetchFundingRates:
     @pytest.mark.asyncio()
-    async def test_empty_response(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_empty_response(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         mock_client.fetch_funding_rate_history.return_value = []
         records = await fetcher.fetch_funding_rates("BTC/USDT", 1000, 2000)
         assert records == []
@@ -74,7 +76,9 @@ class TestFetchFundingRates:
         assert records[0].funding_rate == Decimal("0.0001")
 
     @pytest.mark.asyncio()
-    async def test_pagination_stops_at_end(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_pagination_stops_at_end(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         """Timestamp > end_ts 인 레코드는 무시."""
         ts1 = 1000
         ts2 = 3000  # end_ts(2000) 초과
@@ -86,7 +90,9 @@ class TestFetchFundingRates:
         assert len(records) == 1
 
     @pytest.mark.asyncio()
-    async def test_pagination_advances(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_pagination_advances(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         """since가 last_ts+1 로 전진."""
         call_count = 0
 
@@ -103,7 +109,9 @@ class TestFetchFundingRates:
         assert call_count == 2
 
     @pytest.mark.asyncio()
-    async def test_stale_timestamp_breaks(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_stale_timestamp_breaks(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         """last_ts <= since 면 무한루프 방지."""
         mock_client.fetch_funding_rate_history.return_value = [
             {"timestamp": 0, "fundingRate": "0.0001", "markPrice": "42000"},
@@ -131,11 +139,21 @@ class TestFetchOpenInterest:
         assert records[0].sum_open_interest == Decimal(50000)
 
     @pytest.mark.asyncio()
-    async def test_respects_end_ts(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_respects_end_ts(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         mock_client.fetch_open_interest_history.side_effect = [
             [
-                {"timestamp": 500, "sumOpenInterest": "50000", "sumOpenInterestValue": "2100000000"},
-                {"timestamp": 1500, "sumOpenInterest": "60000", "sumOpenInterestValue": "2200000000"},
+                {
+                    "timestamp": 500,
+                    "sumOpenInterest": "50000",
+                    "sumOpenInterestValue": "2100000000",
+                },
+                {
+                    "timestamp": 1500,
+                    "sumOpenInterest": "60000",
+                    "sumOpenInterestValue": "2200000000",
+                },
             ],
         ]
         records = await fetcher.fetch_open_interest("BTC/USDT", 0, 1000)
@@ -152,7 +170,14 @@ class TestFetchLongShortRatio:
     async def test_single_record(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
         ts = 500
         mock_client.fetch_long_short_ratio.side_effect = [
-            [{"timestamp": ts, "longAccount": "0.55", "shortAccount": "0.45", "longShortRatio": "1.22"}],
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.55",
+                    "shortAccount": "0.45",
+                    "longShortRatio": "1.22",
+                }
+            ],
             [],
         ]
         records = await fetcher.fetch_long_short_ratio("BTC/USDT", 0, 1000)
@@ -188,7 +213,9 @@ class TestFetchYear:
         assert batch.is_empty
 
     @pytest.mark.asyncio()
-    async def test_combined_batch(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_combined_batch(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         ts = int(datetime(2024, 6, 1, tzinfo=UTC).timestamp() * 1000)
         mock_client.fetch_funding_rate_history.side_effect = [
             [{"timestamp": ts, "fundingRate": "0.0001", "markPrice": "42000"}],
@@ -199,7 +226,14 @@ class TestFetchYear:
             [],
         ]
         mock_client.fetch_long_short_ratio.side_effect = [
-            [{"timestamp": ts, "longAccount": "0.55", "shortAccount": "0.45", "longShortRatio": "1.22"}],
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.55",
+                    "shortAccount": "0.45",
+                    "longShortRatio": "1.22",
+                }
+            ],
             [],
         ]
         mock_client.fetch_taker_buy_sell_ratio.side_effect = [
@@ -218,7 +252,9 @@ class TestFetchYear:
 
 class TestRateLimiting:
     @pytest.mark.asyncio()
-    async def test_rate_limit_sleep_called(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+    async def test_rate_limit_sleep_called(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
         """Rate limiting이 요청 사이에 동작하는지 확인."""
         ts1, ts2 = 100, 500
         call_count = 0

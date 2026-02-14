@@ -19,14 +19,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 
-from src.strategy.tsmom.preprocessor import (
-    calculate_atr,
-    calculate_realized_volatility,
-    calculate_returns,
-    calculate_volatility_scalar,
+from src.market.indicators import (
+    atr,
+    log_returns,
+    realized_volatility,
+    rolling_zscore,
+    volatility_scalar,
 )
 
 if TYPE_CHECKING:
@@ -57,9 +57,7 @@ def calculate_momentum_factor(
         z-score 정규화된 모멘텀 팩터 시리즈
     """
     rolling_ret = close.pct_change(lookback)
-    mean = rolling_ret.rolling(zscore_window).mean()
-    std = rolling_ret.rolling(zscore_window).std()
-    zscore: pd.Series = (rolling_ret - mean) / std.replace(0, np.nan)  # type: ignore[assignment]
+    zscore = rolling_zscore(rolling_ret, zscore_window)
     return pd.Series(zscore, index=close.index, name="momentum_factor")
 
 
@@ -82,9 +80,7 @@ def calculate_volume_shock_factor(
         z-score 정규화된 거래량 충격 팩터 시리즈
     """
     short_vol = volume.rolling(window).mean()
-    long_vol = volume.rolling(zscore_window).mean()
-    long_std = volume.rolling(zscore_window).std()
-    zscore: pd.Series = (short_vol - long_vol) / long_std.replace(0, np.nan)  # type: ignore[assignment]
+    zscore = rolling_zscore(short_vol, zscore_window)
     return pd.Series(zscore, index=volume.index, name="volume_shock_factor")
 
 
@@ -107,10 +103,8 @@ def calculate_volatility_factor(
         z-score 정규화된 역변동성 팩터 시리즈 (낮은 vol -> 높은 점수)
     """
     rolling_vol = returns.rolling(window).std()
-    mean = rolling_vol.rolling(zscore_window).mean()
-    std = rolling_vol.rolling(zscore_window).std()
     # Inverse: lower vol gets higher score
-    zscore: pd.Series = -(rolling_vol - mean) / std.replace(0, np.nan)  # type: ignore[assignment]
+    zscore = -rolling_zscore(rolling_vol, zscore_window)
     return pd.Series(zscore, index=returns.index, name="volatility_factor")
 
 
@@ -170,11 +164,11 @@ def preprocess(
     volume_series: pd.Series = result["volume"]  # type: ignore[assignment]
 
     # 1. 수익률 계산 (로그 수익률)
-    result["returns"] = calculate_returns(close_series, use_log=True)
+    result["returns"] = log_returns(close_series)
     returns_series: pd.Series = result["returns"]  # type: ignore[assignment]
 
     # 2. 실현 변동성 계산 (연환산)
-    result["realized_vol"] = calculate_realized_volatility(
+    result["realized_vol"] = realized_volatility(
         returns_series,
         window=config.vol_window,
         annualization_factor=config.annualization_factor,
@@ -182,7 +176,7 @@ def preprocess(
     realized_vol_series: pd.Series = result["realized_vol"]  # type: ignore[assignment]
 
     # 3. 변동성 스케일러 계산
-    result["vol_scalar"] = calculate_volatility_scalar(
+    result["vol_scalar"] = volatility_scalar(
         realized_vol_series,
         vol_target=config.vol_target,
         min_volatility=config.min_volatility,
@@ -217,7 +211,7 @@ def preprocess(
     result["combined_score"] = (mom_factor + vol_shock_factor + vol_factor) / NUM_FACTORS
 
     # 8. ATR 계산 (Trailing Stop용)
-    result["atr"] = calculate_atr(high_series, low_series, close_series)
+    result["atr"] = atr(high_series, low_series, close_series)
 
     # 디버그: 팩터 통계
     valid_data = result.dropna()

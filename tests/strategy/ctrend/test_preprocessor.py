@@ -6,19 +6,21 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import (
+    bb_position,
+    cci,
+    chaikin_money_flow,
+    macd,
+    obv,
+    roc,
+    rsi,
+    stochastic,
+    volume_macd,
+    williams_r,
+)
 from src.strategy.ctrend.config import CTRENDConfig
 from src.strategy.ctrend.preprocessor import (
     compute_all_features,
-    compute_bb_position,
-    compute_cci,
-    compute_chaikin_mf,
-    compute_macd,
-    compute_obv,
-    compute_roc,
-    compute_rsi,
-    compute_stochastic,
-    compute_volume_macd,
-    compute_williams_r,
     preprocess,
 )
 
@@ -232,9 +234,9 @@ class TestIndividualFeatures:
         )
         return {"close": close, "high": high, "low": low, "volume": volume}
 
-    def test_compute_macd(self, close_series: pd.Series) -> None:
+    def test_macd(self, close_series: pd.Series) -> None:
         """MACD 계산 테스트."""
-        macd_line, signal_line, histogram = compute_macd(close_series)
+        macd_line, signal_line, histogram = macd(close_series)
 
         assert len(macd_line) == len(close_series)
         assert len(signal_line) == len(close_series)
@@ -248,33 +250,33 @@ class TestIndividualFeatures:
             atol=1e-10,
         )
 
-    def test_compute_rsi(self, close_series: pd.Series) -> None:
+    def test_rsi(self, close_series: pd.Series) -> None:
         """RSI 계산 테스트 (0-100 범위)."""
-        rsi = compute_rsi(close_series, period=14)
+        rsi_result = rsi(close_series, period=14)
 
-        valid_rsi = rsi.dropna()
+        valid_rsi = rsi_result.dropna()
         assert len(valid_rsi) > 0
         assert valid_rsi.min() >= 0.0
         assert valid_rsi.max() <= 100.0
 
-    def test_compute_cci(self, ohlcv_series: dict[str, pd.Series]) -> None:
+    def test_cci(self, ohlcv_series: dict[str, pd.Series]) -> None:
         """CCI 계산 테스트."""
-        cci = compute_cci(
+        cci_result = cci(
             ohlcv_series["high"],
             ohlcv_series["low"],
             ohlcv_series["close"],
             period=20,
         )
 
-        valid_cci = cci.dropna()
+        valid_cci = cci_result.dropna()
         assert len(valid_cci) > 0
         # CCI는 unbounded지만 대부분 -200 ~ +200 범위
         assert valid_cci.min() < 0
         assert valid_cci.max() > 0
 
-    def test_compute_williams_r(self, ohlcv_series: dict[str, pd.Series]) -> None:
+    def test_williams_r(self, ohlcv_series: dict[str, pd.Series]) -> None:
         """Williams %R 계산 테스트 (-100 ~ 0)."""
-        wr = compute_williams_r(
+        wr = williams_r(
             ohlcv_series["high"],
             ohlcv_series["low"],
             ohlcv_series["close"],
@@ -286,9 +288,9 @@ class TestIndividualFeatures:
         assert valid_wr.min() >= -100.0
         assert valid_wr.max() <= 0.0
 
-    def test_compute_stochastic(self, ohlcv_series: dict[str, pd.Series]) -> None:
+    def test_stochastic(self, ohlcv_series: dict[str, pd.Series]) -> None:
         """Stochastic 계산 테스트 (0-100)."""
-        k, _d = compute_stochastic(
+        k, _d = stochastic(
             ohlcv_series["high"],
             ohlcv_series["low"],
             ohlcv_series["close"],
@@ -299,35 +301,35 @@ class TestIndividualFeatures:
         assert valid_k.min() >= 0.0
         assert valid_k.max() <= 100.0
 
-    def test_compute_obv(self, close_series: pd.Series) -> None:
+    def test_obv(self, close_series: pd.Series) -> None:
         """OBV 계산 테스트."""
         np.random.seed(42)
         volume = pd.Series(
             np.random.randint(1000, 10000, len(close_series)).astype(float),
             index=close_series.index,
         )
-        obv = compute_obv(close_series, volume)
+        obv_result = obv(close_series, volume)
 
-        assert len(obv) == len(close_series)
+        assert len(obv_result) == len(close_series)
         # OBV는 cumulative이므로 단조 증가/감소는 아님
 
-    def test_compute_bb_position(self, close_series: pd.Series) -> None:
+    def test_bb_position(self, close_series: pd.Series) -> None:
         """Bollinger Band position 테스트."""
-        bb_pos = compute_bb_position(close_series, period=20)
+        bb_pos = bb_position(close_series, period=20)
 
         valid_bb = bb_pos.dropna()
         assert len(valid_bb) > 0
         # 대부분 0~1 범위이지만 극단 상황에서 벗어날 수 있음
 
-    def test_compute_roc(self, close_series: pd.Series) -> None:
+    def test_roc(self, close_series: pd.Series) -> None:
         """Rate of Change 테스트."""
-        roc = compute_roc(close_series, period=5)
+        roc_result = roc(close_series, period=5)
 
-        valid_roc = roc.dropna()
+        valid_roc = roc_result.dropna()
         assert len(valid_roc) > 0
         # ROC는 pct_change이므로 unbounded
 
-    def test_compute_volume_macd(self) -> None:
+    def test_volume_macd(self) -> None:
         """Volume MACD 테스트."""
         np.random.seed(42)
         n = 200
@@ -335,14 +337,14 @@ class TestIndividualFeatures:
             np.random.randint(1000, 10000, n).astype(float),
             index=pd.date_range("2024-01-01", periods=n, freq="D"),
         )
-        v_macd = compute_volume_macd(volume)
+        v_macd = volume_macd(volume)
 
         assert len(v_macd) == n
         # Volume MACD는 EMA 차이이므로 양수/음수 모두 가능
 
-    def test_compute_chaikin_mf(self, ohlcv_series: dict[str, pd.Series]) -> None:
+    def test_chaikin_money_flow(self, ohlcv_series: dict[str, pd.Series]) -> None:
         """Chaikin Money Flow 테스트."""
-        cmf = compute_chaikin_mf(
+        cmf = chaikin_money_flow(
             ohlcv_series["high"],
             ohlcv_series["low"],
             ohlcv_series["close"],

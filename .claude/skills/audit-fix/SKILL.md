@@ -1,10 +1,8 @@
 ---
 name: audit-fix
 description: >
-  Audit Finding/Action 수정 스킬. 감사에서 발견된 이슈를 코드 수정 + 테스트 작성으로 해결하고
-  YAML 상태를 자동 갱신한다.
-  사용 시점: (1) /audit-inspect 후 Finding 수정, (2) "fix", "수정", "audit-fix" 요청 시,
-  (3) Finding/Action ID를 지정하여 특정 이슈 해결.
+  Audit Finding/Action 수정 — 코드 수정 + 테스트 + YAML 상태 갱신.
+  사용 시점: /audit-inspect 후 Finding 수정, "fix" "audit-fix" 요청 시.
 context: fork
 allowed-tools:
   - Bash

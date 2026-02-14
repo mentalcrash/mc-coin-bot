@@ -1,0 +1,25 @@
+meta:
+  name: vov-mom
+  display_name: Vol-of-Vol Momentum
+  category: Volatility
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-14'
+  retired_at: null
+  economic_rationale: GK realized vol의 rolling std(VoV)로 vol regime 안정성 측정. Low VoV=안정적
+    추세→모멘텀 신뢰, High VoV=불안정→관망. 2차 moment 안정성 필터. Du et al. 2025 VoV risk premium.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 25
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점

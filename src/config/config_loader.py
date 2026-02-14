@@ -42,6 +42,10 @@ class StrategySection(BaseModel):
 
     name: str = "tsmom"
     params: dict[str, Any] = Field(default_factory=dict)
+    sub_strategies: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="앙상블 전략의 서브 전략 목록",
+    )
 
 
 class RunConfig(BaseModel):
@@ -90,6 +94,9 @@ def build_strategy(cfg: RunConfig) -> BaseStrategy:
         KeyError: 전략이 등록되지 않은 경우
     """
     strategy_cls = get_strategy(cfg.strategy.name)
-    if cfg.strategy.params:
-        return strategy_cls.from_params(**cfg.strategy.params)
+    params = dict(cfg.strategy.params)
+    if cfg.strategy.sub_strategies is not None:
+        params["strategies"] = cfg.strategy.sub_strategies
+    if params:
+        return strategy_cls.from_params(**params)
     return strategy_cls()

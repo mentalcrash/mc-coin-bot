@@ -461,7 +461,13 @@ class DerivativesSilverProcessor:
             errors.append("DataFrame is empty")
 
         # 가격/수량 컬럼 음수 검사 (경고만)
-        positive_cols = ["mark_price", "open_interest", "oi_value", "taker_buy_vol", "taker_sell_vol"]
+        positive_cols = [
+            "mark_price",
+            "open_interest",
+            "oi_value",
+            "taker_buy_vol",
+            "taker_sell_vol",
+        ]
         for col in positive_cols:
             if col in df.columns:
                 negative: int = (df[col].dropna() < 0).sum()  # type: ignore[assignment]

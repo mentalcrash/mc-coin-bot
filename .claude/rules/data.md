@@ -65,6 +65,20 @@ Silver 레이어 처리 시 검증:
 3. 가격 이상치 검증 (급등락 체크)
 4. 타임스탬프 정렬 확인
 
+## Derivatives Data Layer
+
+OHLCV 외 파생 데이터 (Funding Rate, OI, LS Ratio, Taker Ratio):
+
+| Layer | Path | Policy |
+|-------|------|--------|
+| **Bronze** | `data/{bronze}/{SYMBOL}/{YEAR}_deriv.parquet` | Append-only, raw |
+| **Silver** | `data/{silver}/{SYMBOL}/{YEAR}_deriv.parquet` | 1H resample + forward-fill |
+
+- **데이터 소스**: Binance Futures API
+- **Silver 처리**: 1시간 리샘플, forward-fill, 중복 제거
+- **스토리지**: `src/data/derivatives_storage.py` (Bronze/Silver 저장/로드)
+- **서비스**: `src/data/derivatives_service.py` (파이프라인 오케스트레이션)
+
 ## Pandas Best Practices
 
 ```python

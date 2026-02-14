@@ -40,6 +40,7 @@ dependencies = [
     "discord-py>=2.6.0",
     "statsmodels>=0.14.6",
     "scikit-learn>=1.8.0",
+    "scipy>=1.12.0",
     "prometheus-client>=0.24.1",
     "matplotlib>=3.10.8",
 ]

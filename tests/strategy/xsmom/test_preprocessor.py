@@ -4,10 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import rolling_return
 from src.strategy.xsmom.config import XSMOMConfig
 from src.strategy.xsmom.preprocessor import (
     calculate_holding_signal,
-    calculate_rolling_return,
     preprocess,
 )
 
@@ -62,7 +62,7 @@ class TestRollingReturn:
         dates = pd.date_range("2024-01-01", periods=5, freq="1D")
         close = pd.Series([100.0, 110.0, 121.0, 133.1, 146.41], index=dates)
 
-        result = calculate_rolling_return(close, lookback=2, use_log=True)
+        result = rolling_return(close, period=2, use_log=True)
 
         # index 2: ln(121/100) = ln(1.21)
         expected = np.log(121.0 / 100.0)
@@ -73,7 +73,7 @@ class TestRollingReturn:
         dates = pd.date_range("2024-01-01", periods=5, freq="1D")
         close = pd.Series([100.0, 110.0, 120.0, 130.0, 140.0], index=dates)
 
-        result = calculate_rolling_return(close, lookback=2, use_log=False)
+        result = rolling_return(close, period=2, use_log=False)
 
         # index 2: (120 - 100) / 100 = 0.20
         assert result.iloc[2] == pytest.approx(0.20)
@@ -87,8 +87,8 @@ class TestRollingReturn:
             dtype=float,
         )
 
-        log_ret = calculate_rolling_return(close, lookback=3, use_log=True)
-        simple_ret = calculate_rolling_return(close, lookback=3, use_log=False)
+        log_ret = rolling_return(close, period=3, use_log=True)
+        simple_ret = rolling_return(close, period=3, use_log=False)
 
         # 유효한 값에서 방향이 동일해야 함
         valid = log_ret.notna() & simple_ret.notna()
@@ -99,7 +99,7 @@ class TestRollingReturn:
         dates = pd.date_range("2024-01-01", periods=10, freq="1D")
         close = pd.Series(range(100, 110), index=dates, dtype=float)
 
-        result = calculate_rolling_return(close, lookback=5, use_log=True)
+        result = rolling_return(close, period=5, use_log=True)
 
         # index 0~4 should be NaN
         assert result.iloc[:5].isna().all()
@@ -109,7 +109,7 @@ class TestRollingReturn:
         """빈 시리즈에서 ValueError 발생."""
         empty = pd.Series([], dtype=float)
         with pytest.raises(ValueError, match="Empty Series"):
-            calculate_rolling_return(empty, lookback=5)
+            rolling_return(empty, period=5)
 
 
 class TestHoldingSignal:

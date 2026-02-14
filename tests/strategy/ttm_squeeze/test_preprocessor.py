@@ -4,13 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.market.indicators import bollinger_bands, squeeze_detect
 from src.strategy.ttm_squeeze.config import TtmSqueezeConfig
 from src.strategy.ttm_squeeze.preprocessor import (
-    calculate_bollinger_bands,
     calculate_exit_sma,
     calculate_keltner_channels,
     calculate_momentum,
-    calculate_squeeze,
     preprocess,
 )
 
@@ -158,7 +157,7 @@ class TestCalculateBollingerBands:
     def test_bollinger_bands_basic(self) -> None:
         """BB 기본 계산 검증."""
         close = pd.Series([10.0] * 20)
-        upper, middle, lower = calculate_bollinger_bands(close, period=20, std_dev=2.0)
+        upper, middle, lower = bollinger_bands(close, period=20, std_dev=2.0)
 
         # 상수 시리즈 → std=0, upper=middle=lower
         assert middle.iloc[-1] == pytest.approx(10.0)
@@ -168,7 +167,7 @@ class TestCalculateBollingerBands:
     def test_bollinger_bands_ordering(self, sample_ohlcv: pd.DataFrame) -> None:
         """BB upper > middle > lower 순서."""
         close: pd.Series = sample_ohlcv["close"]  # type: ignore[assignment]
-        upper, middle, lower = calculate_bollinger_bands(close, period=20, std_dev=2.0)
+        upper, middle, lower = bollinger_bands(close, period=20, std_dev=2.0)
 
         valid = middle.dropna().index
         assert (upper.loc[valid] >= middle.loc[valid]).all()
@@ -205,7 +204,7 @@ class TestCalculateSqueeze:
         kc_upper = pd.Series([12.0, 12.0, 12.0])
         kc_lower = pd.Series([3.0, 3.0, 3.0])
 
-        result = calculate_squeeze(bb_upper, bb_lower, kc_upper, kc_lower)
+        result = squeeze_detect(bb_upper, bb_lower, kc_upper, kc_lower)
         assert result.all()
         assert result.dtype == bool
 
@@ -216,7 +215,7 @@ class TestCalculateSqueeze:
         kc_upper = pd.Series([12.0, 12.0, 12.0])
         kc_lower = pd.Series([3.0, 3.0, 3.0])
 
-        result = calculate_squeeze(bb_upper, bb_lower, kc_upper, kc_lower)
+        result = squeeze_detect(bb_upper, bb_lower, kc_upper, kc_lower)
         assert not result.any()
 
 

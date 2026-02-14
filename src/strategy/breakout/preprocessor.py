@@ -13,97 +13,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
+
+from src.market.indicators import (
+    atr,
+    donchian_channel,
+    log_returns,
+    realized_volatility,
+)
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from src.strategy.breakout.config import AdaptiveBreakoutConfig
-
-
-def calculate_donchian_channel(
-    df: pd.DataFrame,
-    period: int,
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Donchian Channel을 계산합니다.
-
-    Args:
-        df: OHLC DataFrame
-        period: 채널 계산 기간
-
-    Returns:
-        (upper_band, lower_band, middle_band) 튜플
-
-    Note:
-        - upper_band: period 동안 고가의 최고점
-        - lower_band: period 동안 저가의 최저점
-        - middle_band: (upper + lower) / 2
-    """
-    high_series: pd.Series = df["high"]  # type: ignore[assignment]
-    low_series: pd.Series = df["low"]  # type: ignore[assignment]
-
-    upper_band: pd.Series = high_series.rolling(window=period, min_periods=period).max()  # type: ignore[assignment]
-    lower_band: pd.Series = low_series.rolling(window=period, min_periods=period).min()  # type: ignore[assignment]
-    middle_band: pd.Series = (upper_band + lower_band) / 2
-
-    return upper_band, lower_band, middle_band
-
-
-def calculate_atr(df: pd.DataFrame, period: int) -> pd.Series:
-    """Average True Range (ATR)를 계산합니다.
-
-    ATR = EMA(True Range, period)
-    True Range = max(high - low, |high - prev_close|, |low - prev_close|)
-
-    Args:
-        df: OHLC DataFrame
-        period: ATR 계산 기간
-
-    Returns:
-        ATR Series
-    """
-    high_series: pd.Series = df["high"]  # type: ignore[assignment]
-    low_series: pd.Series = df["low"]  # type: ignore[assignment]
-    close_series: pd.Series = df["close"]  # type: ignore[assignment]
-
-    # True Range 계산
-    prev_close = close_series.shift(1)
-    tr1 = high_series - low_series
-    tr2 = (high_series - prev_close).abs()
-    tr3 = (low_series - prev_close).abs()
-
-    true_range: pd.Series = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)  # type: ignore[assignment]
-
-    # ATR = EMA(True Range)
-    atr: pd.Series = true_range.ewm(span=period, adjust=False).mean()  # type: ignore[assignment]
-
-    return atr
-
-
-def calculate_volatility(
-    df: pd.DataFrame,
-    lookback: int,
-    annualization_factor: float,
-) -> pd.Series:
-    """실현 변동성을 계산합니다.
-
-    Args:
-        df: OHLC DataFrame (close 컬럼 필요)
-        lookback: 변동성 계산 윈도우
-        annualization_factor: 연환산 계수
-
-    Returns:
-        연환산된 변동성 Series
-    """
-    close_series: pd.Series = df["close"]  # type: ignore[assignment]
-
-    # 로그 수익률
-    log_returns: pd.Series = np.log(close_series / close_series.shift(1))
-
-    # 롤링 표준편차 (연환산)
-    volatility: pd.Series = log_returns.rolling(
-        window=lookback, min_periods=lookback
-    ).std() * np.sqrt(annualization_factor)
-
-    return volatility
 
 
 def calculate_volatility_ratio(
@@ -130,7 +51,7 @@ def calculate_volatility_ratio(
 
 
 def calculate_adaptive_threshold(
-    atr: pd.Series,
+    atr_val: pd.Series,
     k_value: float,
     volatility_ratio: pd.Series | None = None,
 ) -> pd.Series:
@@ -140,7 +61,7 @@ def calculate_adaptive_threshold(
     Adaptive: ATR * k_value / volatility_ratio (변동성 높을 때 임계값 낮춤)
 
     Args:
-        atr: ATR Series
+        atr_val: ATR Series
         k_value: ATR 배수
         volatility_ratio: 변동성 비율 (None이면 고정 임계값)
 
@@ -149,8 +70,8 @@ def calculate_adaptive_threshold(
     """
     if volatility_ratio is not None:
         # 변동성이 높을 때 임계값을 낮춰 더 많은 진입 기회
-        return atr * k_value / volatility_ratio
-    return atr * k_value
+        return atr_val * k_value / volatility_ratio
+    return atr_val * k_value
 
 
 def calculate_distance_to_band(
@@ -200,30 +121,37 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
     # 복사본 생성 (원본 보존)
     result = df.copy()
 
+    # 컬럼 추출
+    high_series: pd.Series = df["high"]  # type: ignore[assignment]
+    low_series: pd.Series = df["low"]  # type: ignore[assignment]
+    close_series: pd.Series = df["close"]  # type: ignore[assignment]
+
     # 1. Donchian Channel 계산
-    upper_band, lower_band, middle_band = calculate_donchian_channel(df, config.channel_period)
+    upper_band, middle_band, lower_band = donchian_channel(
+        high_series, low_series, config.channel_period
+    )
     result["upper_band"] = upper_band
     result["lower_band"] = lower_band
     result["middle_band"] = middle_band
 
     # 2. ATR 계산
-    atr = calculate_atr(df, config.atr_period)
-    result["atr"] = atr
+    atr_val = atr(high_series, low_series, close_series, config.atr_period)
+    result["atr"] = atr_val
 
-    # 3. 변동성 계산
-    volatility = calculate_volatility(
-        df,
-        config.volatility_lookback,
-        config.annualization_factor,
+    # 3. 변동성 계산 (log returns → realized_volatility)
+    returns_series = log_returns(close_series)
+    rv = realized_volatility(
+        returns_series,
+        window=config.volatility_lookback,
+        annualization_factor=config.annualization_factor,
     )
-    result["realized_vol"] = volatility
+    result["realized_vol"] = rv
 
     # 최소 변동성 클램프 적용
-    clamped_vol = volatility.clip(lower=config.min_volatility)
+    clamped_vol = rv.clip(lower=config.min_volatility)
 
     # 변동성 스케일러 (vol_target / realized_vol)
     # CRITICAL: shift(1)로 전봉 변동성 사용 (현재 봉의 변동성은 실시간에서 알 수 없음)
-    # shift(1): 이전 행의 값을 현재 행으로 가져옴 (과거 참조 = 안전)
     prev_clamped_vol = clamped_vol.shift(1)
     vol_scalar: pd.Series = config.vol_target / prev_clamped_vol
     result["vol_scalar"] = vol_scalar
@@ -231,23 +159,22 @@ def preprocess(df: pd.DataFrame, config: AdaptiveBreakoutConfig) -> pd.DataFrame
     # 4. 적응형 임계값 계산
     if config.adaptive_threshold:
         # 평균 변동성 계산 (더 긴 윈도우)
-        avg_vol: pd.Series = volatility.rolling(
+        avg_vol: pd.Series = rv.rolling(
             window=config.volatility_lookback * 2,
             min_periods=config.volatility_lookback,
         ).mean()  # type: ignore[assignment]
 
-        vol_ratio = calculate_volatility_ratio(volatility, avg_vol)
+        vol_ratio = calculate_volatility_ratio(rv, avg_vol)
         result["volatility_ratio"] = vol_ratio
 
-        threshold = calculate_adaptive_threshold(atr, config.k_value, vol_ratio)
+        threshold = calculate_adaptive_threshold(atr_val, config.k_value, vol_ratio)
     else:
         result["volatility_ratio"] = 1.0
-        threshold = calculate_adaptive_threshold(atr, config.k_value)
+        threshold = calculate_adaptive_threshold(atr_val, config.k_value)
 
     result["threshold"] = threshold
 
     # 5. 밴드까지 거리 계산 (진단용)
-    close_series: pd.Series = df["close"]  # type: ignore[assignment]
     dist_upper, dist_lower = calculate_distance_to_band(close_series, upper_band, lower_band)
     result["distance_to_upper"] = dist_upper
     result["distance_to_lower"] = dist_lower
