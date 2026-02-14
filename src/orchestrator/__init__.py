@@ -17,6 +17,8 @@ from src.orchestrator.models import (
     PodPosition,
     RebalanceTrigger,
 )
+from src.orchestrator.orchestrator import StrategyOrchestrator
+from src.orchestrator.pod import StrategyPod, build_pods
 
 __all__ = [
     "AllocationMethod",
@@ -29,4 +31,7 @@ __all__ = [
     "PodPosition",
     "RebalanceTrigger",
     "RetirementCriteria",
+    "StrategyOrchestrator",
+    "StrategyPod",
+    "build_pods",
 ]
