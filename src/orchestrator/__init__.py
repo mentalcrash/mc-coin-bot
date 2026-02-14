@@ -29,6 +29,7 @@ from src.orchestrator.netting import (
 )
 from src.orchestrator.orchestrator import StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod, build_pods
+from src.orchestrator.result import OrchestratedResult
 from src.orchestrator.risk_aggregator import RiskAggregator
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "GraduationCriteria",
     "LifecycleManager",
     "LifecycleState",
+    "OrchestratedResult",
     "OrchestratorConfig",
     "PageHinkleyDetector",
     "PodConfig",

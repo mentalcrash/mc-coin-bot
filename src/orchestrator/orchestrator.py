@@ -69,12 +69,14 @@ class StrategyOrchestrator:
         allocator: CapitalAllocator,
         lifecycle_manager: LifecycleManager | None = None,
         risk_aggregator: RiskAggregator | None = None,
+        target_timeframe: str | None = None,
     ) -> None:
         self._config = config
         self._pods = pods
         self._allocator = allocator
         self._lifecycle = lifecycle_manager
         self._risk_aggregator = risk_aggregator
+        self._target_timeframe = target_timeframe
         self._bus: EventBus | None = None
 
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
@@ -91,6 +93,11 @@ class StrategyOrchestrator:
         # 리밸런스 추적
         self._last_rebalance_ts: datetime | None = None
 
+        # History 추적
+        self._allocation_history: list[dict[str, object]] = []
+        self._lifecycle_events: list[dict[str, object]] = []
+        self._risk_contributions_history: list[dict[str, object]] = []
+
     # ── EventBus Integration ──────────────────────────────────────
 
     async def register(self, bus: EventBus) -> None:
@@ -105,6 +112,10 @@ class StrategyOrchestrator:
         """BarEvent 핸들러: Pod 라우팅 → 시그널 수집 → 넷팅."""
         assert isinstance(event, BarEvent)
         bar = event
+
+        # TF 필터: target_timeframe이 설정된 경우, 해당 TF bar만 처리
+        if self._target_timeframe is not None and bar.timeframe != self._target_timeframe:
+            return
 
         symbol = bar.symbol
 
@@ -171,14 +182,22 @@ class StrategyOrchestrator:
             return
 
         attributed = attribute_fill(
-            symbol, fill.fill_qty, fill.fill_price, fill.fee, pod_targets,
+            symbol,
+            fill.fill_qty,
+            fill.fill_price,
+            fill.fee,
+            pod_targets,
         )
 
         for pod_id, (attr_qty, attr_price, attr_fee) in attributed.items():
             pod = self._find_pod(pod_id)
             if pod is not None:
                 pod.update_position(
-                    symbol, attr_qty, attr_price, attr_fee, is_buy=is_buy,
+                    symbol,
+                    attr_qty,
+                    attr_price,
+                    attr_fee,
+                    is_buy=is_buy,
                 )
 
     # ── Signal Emission ──────────────────────────────────────────
@@ -191,7 +210,8 @@ class StrategyOrchestrator:
 
         # 레버리지 한도 적용
         scaled = scale_weights_to_leverage(
-            self._pending_net_weights, self._config.max_gross_leverage,
+            self._pending_net_weights,
+            self._config.max_gross_leverage,
         )
 
         for symbol, net_weight in scaled.items():
@@ -265,11 +285,7 @@ class StrategyOrchestrator:
         import pandas as pd
 
         # Lifecycle 평가 (weight 계산 전에 상태 전이)
-        if self._lifecycle is not None:
-            portfolio_returns_series = self._compute_portfolio_returns()
-            for pod in self._pods:
-                if pod.is_active:
-                    self._lifecycle.evaluate(pod, portfolio_returns_series)
+        self._evaluate_lifecycle()
 
         # Pod 수익률 DataFrame 구성
         pod_returns_data: dict[str, list[float]] = {}
@@ -302,22 +318,56 @@ class StrategyOrchestrator:
 
         logger.debug("Rebalanced: {}", {p.pod_id: p.capital_fraction for p in self._pods})
 
-        # Risk 한도 검사
-        if self._risk_aggregator is not None:
-            pod_performances = {
-                pod.pod_id: pod.performance for pod in self._pods if pod.is_active
-            }
-            pod_weights_map = {
-                pod.pod_id: pod.capital_fraction for pod in self._pods if pod.is_active
-            }
-            alerts = self._risk_aggregator.check_portfolio_limits(
-                net_weights=self._pending_net_weights,
-                pod_performances=pod_performances,
-                pod_weights=pod_weights_map,
-                pod_returns=pod_returns,
-            )
-            for alert in alerts:
-                logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
+        # Allocation history 기록
+        alloc_record: dict[str, object] = {"timestamp": self._pending_bar_ts}
+        for pod in self._pods:
+            alloc_record[pod.pod_id] = pod.capital_fraction
+        self._allocation_history.append(alloc_record)
+
+        # Risk 한도 검사 + history 기록
+        self._check_risk_limits(pod_returns)
+
+    def _evaluate_lifecycle(self) -> None:
+        """Lifecycle 평가 → 상태 전이 감지 → lifecycle_events 기록."""
+        if self._lifecycle is None:
+            return
+
+        portfolio_returns_series = self._compute_portfolio_returns()
+        for pod in self._pods:
+            if not pod.is_active:
+                continue
+            pre_state = pod.state.value
+            self._lifecycle.evaluate(pod, portfolio_returns_series)
+            if pod.state.value != pre_state:
+                self._lifecycle_events.append(
+                    {
+                        "pod_id": pod.pod_id,
+                        "from_state": pre_state,
+                        "to_state": pod.state.value,
+                        "timestamp": self._pending_bar_ts,
+                    }
+                )
+
+    def _check_risk_limits(self, pod_returns: pd.DataFrame) -> None:
+        """Risk 한도 검사 + risk contributions history 기록."""
+        if self._risk_aggregator is None:
+            return
+
+        pod_performances = {pod.pod_id: pod.performance for pod in self._pods if pod.is_active}
+        pod_weights_map = {pod.pod_id: pod.capital_fraction for pod in self._pods if pod.is_active}
+        alerts = self._risk_aggregator.check_portfolio_limits(
+            net_weights=self._pending_net_weights,
+            pod_performances=pod_performances,
+            pod_weights=pod_weights_map,
+            pod_returns=pod_returns,
+        )
+        for alert in alerts:
+            logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
+
+        # Risk contributions history 기록
+        risk_record: dict[str, object] = {"timestamp": self._pending_bar_ts}
+        risk_record.update(pod_weights_map)
+        self._risk_contributions_history.append(risk_record)
 
     # ── Query ────────────────────────────────────────────────────
 
@@ -344,6 +394,21 @@ class StrategyOrchestrator:
     def pods(self) -> list[StrategyPod]:
         """Pod 리스트."""
         return list(self._pods)
+
+    @property
+    def allocation_history(self) -> list[dict[str, object]]:
+        """자본 배분 이력."""
+        return self._allocation_history
+
+    @property
+    def lifecycle_events(self) -> list[dict[str, object]]:
+        """생애주기 상태 전이 이력."""
+        return self._lifecycle_events
+
+    @property
+    def risk_contributions_history(self) -> list[dict[str, object]]:
+        """리스크 기여도 이력."""
+        return self._risk_contributions_history
 
     # ── Private ──────────────────────────────────────────────────
 

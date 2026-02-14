@@ -49,6 +49,8 @@ if TYPE_CHECKING:
     from src.notification.health_scheduler import HealthCheckScheduler
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
+    from src.orchestrator.config import OrchestratorConfig
+    from src.orchestrator.orchestrator import StrategyOrchestrator
     from src.portfolio.config import PortfolioManagerConfig
     from src.regime.service import RegimeService, RegimeServiceConfig
     from src.strategy.base import BaseStrategy
@@ -141,6 +143,7 @@ class LiveRunner:
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
         self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
+        self._orchestrator: StrategyOrchestrator | None = None
 
     @classmethod
     def paper(
@@ -268,6 +271,167 @@ class LiveRunner:
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
         return runner
 
+    @classmethod
+    def orchestrated_paper(
+        cls,
+        orchestrator_config: OrchestratorConfig,
+        target_timeframe: str,
+        client: BinanceClient,
+        initial_capital: float = 100_000.0,
+        db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
+        metrics_port: int = 0,
+    ) -> LiveRunner:
+        """Orchestrated Paper 모드: LiveDataFeed + BacktestExecutor + Orchestrator.
+
+        Args:
+            orchestrator_config: OrchestratorConfig
+            target_timeframe: 집계 목표 TF
+            client: BinanceClient (데이터 스트리밍용)
+            initial_capital: 초기 자본
+            db_path: SQLite 경로
+            discord_config: Discord 설정
+            metrics_port: Prometheus 포트
+
+        Returns:
+            LiveRunner 인스턴스
+        """
+        from src.eda.orchestrated_runner import OrchestratedRunner
+        from src.orchestrator.allocator import CapitalAllocator
+        from src.orchestrator.lifecycle import LifecycleManager
+        from src.orchestrator.orchestrator import StrategyOrchestrator
+        from src.orchestrator.pod import build_pods
+        from src.orchestrator.risk_aggregator import RiskAggregator
+        from src.strategy.tsmom.strategy import TSMOMStrategy
+
+        symbols = list(orchestrator_config.all_symbols)
+        pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
+        feed = LiveDataFeed(symbols, target_timeframe, client)
+        executor = BacktestExecutor(cost_model=pm_config.cost_model)
+
+        # Dummy strategy (LiveRunner 생성자 필수)
+        dummy_strategy = TSMOMStrategy.from_params()
+
+        runner = cls(
+            strategy=dummy_strategy,
+            feed=feed,
+            executor=executor,
+            target_timeframe=target_timeframe,
+            config=pm_config,
+            mode=LiveMode.PAPER,
+            initial_capital=initial_capital,
+            asset_weights=dict.fromkeys(symbols, 1.0),
+            db_path=db_path,
+            discord_config=discord_config,
+            metrics_port=metrics_port,
+        )
+        runner._client = client
+        runner._symbols = symbols
+
+        # Orchestrator 생성
+        pods = build_pods(orchestrator_config)
+        allocator = CapitalAllocator(config=orchestrator_config)
+        lifecycle_mgr = LifecycleManager(
+            graduation=orchestrator_config.graduation,
+            retirement=orchestrator_config.retirement,
+        )
+        risk_aggregator = RiskAggregator(config=orchestrator_config)
+
+        runner._orchestrator = StrategyOrchestrator(
+            config=orchestrator_config,
+            pods=pods,
+            allocator=allocator,
+            lifecycle_manager=lifecycle_mgr,
+            risk_aggregator=risk_aggregator,
+            target_timeframe=target_timeframe,
+        )
+
+        return runner
+
+    @classmethod
+    def orchestrated_live(
+        cls,
+        orchestrator_config: OrchestratorConfig,
+        target_timeframe: str,
+        client: BinanceClient,
+        futures_client: BinanceFuturesClient,
+        initial_capital: float = 100_000.0,
+        db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
+        metrics_port: int = 0,
+    ) -> LiveRunner:
+        """Orchestrated Live 모드: LiveDataFeed + LiveExecutor + Orchestrator.
+
+        Args:
+            orchestrator_config: OrchestratorConfig
+            target_timeframe: 집계 목표 TF
+            client: BinanceClient (데이터 스트리밍용)
+            futures_client: BinanceFuturesClient (주문 실행용)
+            initial_capital: 초기 자본
+            db_path: SQLite 경로
+            discord_config: Discord 설정
+            metrics_port: Prometheus 포트
+
+        Returns:
+            LiveRunner 인스턴스
+        """
+        from src.eda.orchestrated_runner import OrchestratedRunner
+        from src.orchestrator.allocator import CapitalAllocator
+        from src.orchestrator.lifecycle import LifecycleManager
+        from src.orchestrator.orchestrator import StrategyOrchestrator
+        from src.orchestrator.pod import build_pods
+        from src.orchestrator.risk_aggregator import RiskAggregator
+        from src.strategy.tsmom.strategy import TSMOMStrategy
+
+        symbols = list(orchestrator_config.all_symbols)
+        pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
+        feed = LiveDataFeed(symbols, target_timeframe, client)
+        executor = LiveExecutor(futures_client)
+
+        # Dummy strategy
+        dummy_strategy = TSMOMStrategy.from_params()
+
+        runner = cls(
+            strategy=dummy_strategy,
+            feed=feed,
+            executor=executor,
+            target_timeframe=target_timeframe,
+            config=pm_config,
+            mode=LiveMode.LIVE,
+            initial_capital=initial_capital,
+            asset_weights=dict.fromkeys(symbols, 1.0),
+            db_path=db_path,
+            discord_config=discord_config,
+            metrics_port=metrics_port,
+        )
+        runner._client = client
+        runner._futures_client = futures_client
+        runner._symbols = symbols
+
+        # Orchestrator 생성
+        pods = build_pods(orchestrator_config)
+        allocator = CapitalAllocator(config=orchestrator_config)
+        lifecycle_mgr = LifecycleManager(
+            graduation=orchestrator_config.graduation,
+            retirement=orchestrator_config.retirement,
+        )
+        risk_aggregator = RiskAggregator(config=orchestrator_config)
+
+        runner._orchestrator = StrategyOrchestrator(
+            config=orchestrator_config,
+            pods=pods,
+            allocator=allocator,
+            lifecycle_manager=lifecycle_mgr,
+            risk_aggregator=risk_aggregator,
+            target_timeframe=target_timeframe,
+        )
+
+        # Live 모드에서 DerivativesFeed 자동 생성
+        from src.eda.derivatives_feed import LiveDerivativesFeed
+
+        runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
+        return runner
+
     async def run(self) -> None:
         """메인 루프. shutdown_event까지 실행."""
         from src.eda.persistence.database import Database
@@ -297,13 +461,15 @@ class LiveRunner:
             # FeatureStore (선택적)
             feature_store = self._create_feature_store()
 
-            strategy_engine = StrategyEngine(
-                self._strategy,
-                target_timeframe=self._target_timeframe,
-                regime_service=regime_service,
-                derivatives_provider=derivatives_provider,
-                feature_store=feature_store,
-            )
+            strategy_engine: StrategyEngine | None = None
+            if self._orchestrator is None:
+                strategy_engine = StrategyEngine(
+                    self._strategy,
+                    target_timeframe=self._target_timeframe,
+                    regime_service=regime_service,
+                    derivatives_provider=derivatives_provider,
+                    feature_store=feature_store,
+                )
             pm = EDAPortfolioManager(
                 config=self._config,
                 initial_capital=capital,
@@ -328,26 +494,24 @@ class LiveRunner:
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm)
 
-            # 4. 모든 컴포넌트 등록 (순서 중요)
-            # RegimeService → FeatureStore → StrategyEngine 순서
-            if regime_service is not None:
-                await regime_service.register(bus)
-            if feature_store is not None:
-                await feature_store.register(bus)
-            await strategy_engine.register(bus)
-            await pm.register(bus)
-            await rm.register(bus)
-            await oms.register(bus)
-            await analytics.register(bus)
-
-            # 4.5. REST API warmup — WebSocket 시작 전 버퍼 사전 채움
-            await self._warmup_strategy(
-                strategy_engine, regime_service=regime_service, feature_store=feature_store
+            # 4. 모든 컴포넌트 등록 + warmup
+            await self._register_and_warmup(
+                bus,
+                strategy_engine,
+                regime_service,
+                feature_store,
+                pm,
+                rm,
+                oms,
+                analytics,
             )
 
             # 5. TradePersistence 등록 (analytics 이후)
             if db:
-                persistence = TradePersistence(db, strategy_name=self._strategy.name)
+                strategy_name = (
+                    "orchestrator" if self._orchestrator is not None else self._strategy.name
+                )
+                persistence = TradePersistence(db, strategy_name=strategy_name)
                 await persistence.register(bus)
 
             # 5.5. Prometheus MetricsExporter (선택적)
@@ -400,6 +564,8 @@ class LiveRunner:
             # DerivativesFeed 종료
             await self._stop_derivatives_feed()
 
+            if self._orchestrator is not None:
+                await self._orchestrator.flush_pending_signals()
             await pm.flush_pending_signals()
             await bus.flush()
             await bus.stop()
@@ -617,6 +783,48 @@ class LiveRunner:
             except Exception:
                 logger.exception("Warmup failed for {}, continuing without warmup", symbol)
 
+    async def _warmup_orchestrator(self, orchestrator: StrategyOrchestrator) -> None:
+        """REST API로 과거 데이터를 가져와 Orchestrator의 각 Pod 버퍼에 주입.
+
+        _client가 None이면 스킵. Pod별·심볼별 독립 실행으로 1개 실패해도 나머지 진행.
+        """
+        if self._client is None:
+            logger.warning("No client available, skipping orchestrator warmup")
+            return
+
+        for pod in orchestrator.pods:
+            warmup_needed = pod.warmup_periods + 10  # 여유분
+            for symbol in pod.symbols:
+                try:
+                    bars, timestamps = await self._fetch_warmup_bars(
+                        symbol, self._target_timeframe, warmup_needed
+                    )
+                    if bars:
+                        pod.inject_warmup(symbol, bars, timestamps)
+                        logger.debug(
+                            "Warmup injected: pod={}, symbol={}, {} bars",
+                            pod.pod_id,
+                            symbol,
+                            len(bars),
+                        )
+                    else:
+                        logger.warning(
+                            "No warmup data for pod={}, symbol={}",
+                            pod.pod_id,
+                            symbol,
+                        )
+                except Exception:
+                    logger.exception(
+                        "Warmup failed for pod={}, symbol={}, continuing",
+                        pod.pod_id,
+                        symbol,
+                    )
+
+        logger.info(
+            "Orchestrator warmup complete: {} pods",
+            len(orchestrator.pods),
+        )
+
     async def _fetch_warmup_bars(
         self,
         symbol: str,
@@ -685,6 +893,42 @@ class LiveRunner:
             bus.subscribe(EventType.BAR, executor_bar_handler)
         elif isinstance(self._executor, LiveExecutor):
             self._executor.set_pm(pm)
+
+    async def _register_and_warmup(
+        self,
+        bus: EventBus,
+        strategy_engine: StrategyEngine | None,
+        regime_service: RegimeService | None,
+        feature_store: FeatureStore | None,
+        pm: EDAPortfolioManager,
+        rm: EDARiskManager,
+        oms: OMS,
+        analytics: AnalyticsEngine,
+    ) -> None:
+        """모든 컴포넌트 등록 + REST API warmup."""
+        # RegimeService → FeatureStore → StrategyEngine/Orchestrator 순서
+        if regime_service is not None:
+            await regime_service.register(bus)
+        if feature_store is not None:
+            await feature_store.register(bus)
+
+        if self._orchestrator is not None:
+            await self._orchestrator.register(bus)
+        elif strategy_engine is not None:
+            await strategy_engine.register(bus)
+
+        await pm.register(bus)
+        await rm.register(bus)
+        await oms.register(bus)
+        await analytics.register(bus)
+
+        # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
+        if self._orchestrator is not None:
+            await self._warmup_orchestrator(self._orchestrator)
+        elif strategy_engine is not None:
+            await self._warmup_strategy(
+                strategy_engine, regime_service=regime_service, feature_store=feature_store
+            )
 
     async def _setup_reconciler(
         self,
@@ -779,10 +1023,15 @@ class LiveRunner:
 
     def _log_startup_summary(self, capital: float) -> None:
         """구조화된 startup summary 로그."""
+        strategy_label = (
+            f"Orchestrator ({len(self._orchestrator.pods)} pods)"
+            if self._orchestrator is not None
+            else self._strategy.name
+        )
         summary = (
             f"=== LiveRunner Startup Summary ===\n"
             f"  Mode:       {self._mode.value}\n"
-            f"  Strategy:   {self._strategy.name}\n"
+            f"  Strategy:   {strategy_label}\n"
             f"  Symbols:    {', '.join(self._symbols) if self._symbols else 'N/A'}\n"
             f"  Timeframe:  {self._target_timeframe}\n"
             f"  Capital:    ${capital:,.2f}\n"
