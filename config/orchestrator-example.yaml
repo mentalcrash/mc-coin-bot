@@ -1,0 +1,46 @@
+backtest:
+  timeframe: "1D"
+  start: "2024-01-01"
+  end: "2025-12-31"
+  capital: 100000.0
+
+orchestrator:
+  allocation_method: risk_parity
+  rebalance_trigger: hybrid
+  rebalance_calendar_days: 7
+  rebalance_drift_threshold: 0.10
+  max_gross_leverage: 3.0
+  max_portfolio_drawdown: 0.15
+  daily_loss_limit: 0.03
+  cost_bps: 4.0
+
+  pods:
+    - pod_id: pod-tsmom
+      strategy_name: tsmom
+      strategy_params:
+        lookback: 30
+        vol_target: 0.35
+        short_mode: 1
+      symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
+      initial_fraction: 0.40
+      max_fraction: 0.60
+      use_trailing_stop: true
+      trailing_stop_atr_multiplier: 3.0
+
+    - pod_id: pod-donchian
+      strategy_name: donchian-ensemble
+      strategy_params:
+        lookbacks: [20, 60, 150]
+      symbols: [BTC/USDT, ETH/USDT, BNB/USDT]
+      initial_fraction: 0.30
+      max_fraction: 0.50
+
+    - pod_id: pod-anchor
+      strategy_name: anchor-mom
+      strategy_params:
+        nearness_lookback: 60
+        mom_lookback: 30
+      symbols: [DOGE/USDT, LINK/USDT, AVAX/USDT]
+      initial_fraction: 0.30
+      max_fraction: 0.50
+      max_drawdown: 0.20
