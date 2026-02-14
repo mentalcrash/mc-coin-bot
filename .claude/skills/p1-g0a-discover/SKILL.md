@@ -38,6 +38,7 @@ allowed-tools:
 6. **크립토 네이티브 edge**: 전통금융 전략의 단순 포팅은 위험. 크립토 24/7 시장 특성에 맞는 edge 필요 (교훈 #13~#16)
 7. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
 8. **RegimeService 활용**: 공유 레짐 인프라를 활용하여 레짐 적응형 전략 설계 가능 (아래 "레짐 적응형 전략 설계" 섹션 참조)
+9. **앙상블 기여도 관점**: 단독 Sharpe가 낮더라도(0.5+) 기존 전략과 **낮은 상관 + 독립적 alpha**를 가지면 앙상블로 결합하여 Sharpe 0.8~1.0 달성 가능. "단독 우승"보다 "포트폴리오 기여도"를 우선 평가한다 (아래 "앙상블 전략 프레임워크" 섹션 참조)
 
 ## 워크플로우 (7단계)
 
@@ -183,6 +184,10 @@ allowed-tools:
 ──────────────────────────────────────────────────────
   TOTAL: __/30
   판정: PASS (>=18) / WATCH (12-17) / FAIL (<12)
+
+  [선택] 앙상블 기여도 평가
+  기존 활성 전략과의 상관: 낮음(<0.3) / 중간(0.3~0.6) / 높음(>0.6)
+  → 상관 < 0.3이면 단독 Sharpe 0.5+ 수준에서도 앙상블 PASS 고려
 ══════════════════════════════════════════════════════
 ```
 
@@ -376,6 +381,8 @@ Derivatives (7): funding_rate_ma, funding_zscore, oi_momentum,
     → 활용 시: 어떤 컬럼을, 어떤 파라미터에 적용하는지 명시
 12. 데이터 요구사항: OHLCV only / Derivatives 필요 (funding_rate / open_interest / etc.)
 13. 백테스팅 데이터 가용성: 전 기간 가용 / 30일 제한 / 미확보
+14. 앙상블 활용: 단독 운용 / 앙상블 서브 전략 후보 / 앙상블 전용
+    → 단독 Sharpe < 1.0이더라도 기존 전략과 상관 < 0.3이면 앙상블 서브 전략으로 가치 있음
 ```
 
 **CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
@@ -458,6 +465,58 @@ uv run mcbot pipeline create {registry-name} \
 - strategy.py: @register(), from_params(), recommended_config()
 - warmup_periods(): 사용 지표 중 max(window) + 여유분
 ```
+
+### Step 5.5: 앙상블 전략 구성 (선택)
+
+발굴한 전략이 **단독 Sharpe < 1.0**이지만 기존 전략과 **낮은 상관**을 보이면,
+앙상블 프레임워크로 결합하여 포트폴리오 Sharpe를 높일 수 있다.
+
+#### 앙상블 프레임워크 개요
+
+`ensemble` 전략은 여러 서브 전략의 시그널을 하나로 결합하는 메타 전략이다.
+기존 인프라(BacktestEngine, EDARunner, CLI) 변경 없이 YAML 설정만으로 사용 가능.
+
+```yaml
+# config/ensemble-example.yaml
+strategy:
+  name: ensemble
+  params:
+    aggregation: inverse_volatility  # 4가지 방법 중 선택
+    vol_target: 0.35
+  sub_strategies:
+    - name: ctrend                   # 기존 활성 전략
+    - name: {new-strategy}           # 신규 발굴 전략
+    - name: {another-strategy}       # 추가 전략
+```
+
+#### 4가지 Aggregation 방법
+
+| 방법 | 적합 상황 |
+|------|----------|
+| `equal_weight` | 전략 간 성과 편차 작을 때 (기본값) |
+| `inverse_volatility` | 안정적인 전략에 가중치 부여 (권장) |
+| `majority_vote` | 3+ 전략의 방향 합의가 중요할 때 |
+| `strategy_momentum` | 시장 환경별 최적 전략이 바뀔 때 |
+
+#### 앙상블 후보 평가 기준
+
+```
+1. 개별 Sharpe ≥ 0.5 (앙상블 기여 최소 기준)
+2. 기존 활성 전략과 상관 < 0.3 (다양성 극대화)
+3. 독립적 alpha 소스 (동일 지표 조합 X)
+4. 앙상블 결합 후 Sharpe 개선 확인 (백테스트 필수)
+```
+
+#### 앙상블 백테스트
+
+```bash
+# 앙상블 YAML 작성 후
+uv run mcbot backtest run config/my-ensemble.yaml
+uv run mcbot eda run config/my-ensemble.yaml
+```
+
+> **주의**: 앙상블은 서브 전략이 모두 Gate 검증을 통과한 후에 구성하는 것이 이상적이다.
+> 단, 발굴 단계에서 앙상블 잠재력을 미리 평가하는 것은 권장한다.
 
 ### Step 6: 백테스트 실행 + 해석
 
@@ -640,5 +699,6 @@ Step 4.5의 절차를 따른다.
 - [ ] 설계 문서 10개 항목 모두 작성됨
 - [ ] Derivatives 데이터 필요 시 Silver _deriv 파일 존재 확인
 - [ ] 백테스팅 가능 데이터인지 확인 (funding_rate: O, OI/LS/Taker: X)
+- [ ] 앙상블 기여도 평가됨 (단독 Sharpe < 1.0 시 기존 전략과 상관 분석)
 - [ ] **`pipeline create` 실행하여 YAML 생성됨** (Gate 0A PASS 시 필수)
 - [ ] **`pipeline report` 실행하여 dashboard 갱신됨**

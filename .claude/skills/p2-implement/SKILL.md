@@ -33,6 +33,7 @@ argument-hint: <strategy-name>
 - **방어적 코딩**: NaN, 0 나눗셈, edge case를 사전 차단
 - **일관된 패턴**: 기존 전략과 동일한 코드 구조 유지
 - **테스트 우선**: 구현 완료 → 테스트 작성 → lint/typecheck/test 통과 → 등록
+- **앙상블 기여도**: 단독 Sharpe보다 기존 전략과의 상관성·다양성이 중요 — 구현된 전략은 `ensemble` 메타 전략의 서브 전략으로 활용 가능
 
 ---
 
@@ -856,6 +857,60 @@ uv run pytest --tb=short -q
 
 ---
 
+## Step 8.5: 앙상블 서브 전략 호환성 확인
+
+구현된 전략은 `ensemble` 메타 전략의 서브 전략으로 활용할 수 있다. 호환성을 확인한다.
+
+### 앙상블 프레임워크 개요
+
+`@register("ensemble")` EnsembleStrategy는 여러 서브 전략의 시그널을 집계하여 하나의 포지션을 결정한다.
+
+- **4가지 Aggregation**: equal_weight, inverse_volatility, majority_vote, strategy_momentum
+- **설정**: `src/strategy/ensemble/config.py` (SubStrategySpec, EnsembleConfig)
+- **참조 YAML**: `config/ensemble-example.yaml`
+
+### 호환성 요건
+
+모든 `BaseStrategy` 구현체는 자동으로 앙상블 호환된다. 단, 다음을 확인:
+
+| # | 항목 | 설명 |
+|---|------|------|
+| 1 | `from_params()` 정상 작동 | SubStrategySpec.params가 from_params()에 전달됨 |
+| 2 | `run()` 독립성 | df.copy()로 호출되므로 컬럼 충돌 없어야 함 |
+| 3 | `warmup_periods()` 정의 | 앙상블 warmup = max(sub warmup) + aggregation lookback |
+| 4 | direction 값 범위 | {-1, 0, 1}만 반환 (strength는 실수) |
+
+### 앙상블 활용 예시
+
+구현 완료 후 전략을 앙상블에 추가할 수 있다:
+
+```yaml
+# config/ensemble-example.yaml
+strategy:
+  name: ensemble
+  params:
+    aggregation: inverse_volatility
+  sub_strategies:
+    - name: {registry-key}       # 새로 구현한 전략
+      params: { ... }
+    - name: tsmom
+      params: { lookback: 30 }
+    - name: donchian-ensemble
+      params: { lookbacks: [20, 60, 150] }
+```
+
+### 앙상블 기여도 평가 기준
+
+전략을 앙상블에 편입할 때의 핵심 기준:
+
+- **상관 < 0.4**: 기존 서브 전략과의 return 상관이 0.4 미만이면 다양성 기여
+- **Sharpe > 0.3**: 단독으로 최소 양의 Sharpe 필요
+- **승률 불일치**: 다른 전략이 틀릴 때 맞추는 빈도가 높으면 가치 높음
+
+> 단독 Sharpe 0.5인 전략 3개가 상관 < 0.3이면 앙상블 Sharpe 0.8~1.0 가능.
+
+---
+
 ## Step 9: YAML 메타데이터 업데이트
 
 ### 9-1. YAML 메타데이터 업데이트 (필수)
@@ -923,6 +978,7 @@ uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
   다음 단계:
     1. /p3-g0b-verify {registry-key}  (Gate 0B 코드 검증)
     2. /p4-g1g4-gate {registry-key}    (G1~G4 검증)
+    3. 앙상블 편입 검토: config/ensemble-example.yaml에 서브 전략 추가
 
 ============================================================
 ```
@@ -960,3 +1016,5 @@ uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
 | `pipeline report` | 전략 상황판 (CLI) |
 | [.claude/rules/strategy.md](../../rules/strategy.md) | 전략 개발 규칙 |
 | [src/strategy/base.py](../../../src/strategy/base.py) | BaseStrategy ABC |
+| [src/strategy/ensemble/](../../../src/strategy/ensemble/) | 앙상블 메타 전략 (서브 전략 편입 시 참조) |
+| [config/ensemble-example.yaml](../../../config/ensemble-example.yaml) | 앙상블 YAML 예시 |

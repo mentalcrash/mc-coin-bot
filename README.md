@@ -64,6 +64,9 @@ strategy:
     short_mode: 1                   # 0=DISABLED, 1=HEDGE_ONLY, 2=FULL
     hedge_threshold: -0.07
     hedge_strength_ratio: 0.3
+  # sub_strategies:                 # (선택) 앙상블 전략 전용
+  #   - name: tsmom
+  #     params: { lookback: 30 }
 
 portfolio:
   max_leverage_cap: 2.0
@@ -85,6 +88,36 @@ portfolio:
 2. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
 3. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
 4. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
+
+### 앙상블 전략 설정
+
+여러 전략의 시그널을 하나로 결합하는 메타 전략입니다. `strategy.name: ensemble`로 지정하고 `sub_strategies`에 서브 전략을 나열합니다.
+
+```yaml
+# config/ensemble-example.yaml
+strategy:
+  name: ensemble
+  params:
+    aggregation: inverse_volatility  # equal_weight | inverse_volatility | majority_vote | strategy_momentum
+    vol_lookback: 63
+    vol_target: 0.35
+  sub_strategies:
+    - name: tsmom
+      params: { lookback: 30, vol_target: 0.35 }
+    - name: donchian-ensemble
+      params: { lookbacks: [20, 60, 150] }
+    - name: vol-adaptive
+      params: {}
+```
+
+**Aggregation 방법 4가지:**
+
+| 방법 | 설명 |
+|------|------|
+| `equal_weight` | 동일 가중 평균 (기본값) |
+| `inverse_volatility` | 안정적인 전략에 높은 가중치 |
+| `majority_vote` | 다수결 합의 (min_agreement 이상) |
+| `strategy_momentum` | 최근 Sharpe 상위 top_n 선택 |
 
 ---
 
