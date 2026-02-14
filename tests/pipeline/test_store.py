@@ -171,8 +171,11 @@ class TestAutoTransition:
     def test_implemented_pass_transitions_to_testing(self, store: StrategyStore) -> None:
         store.save(_make_implemented_record())
         updated = store.record_gate(
-            "impl-test", GateId.G0B, GateVerdict.PASS,
-            details={"C1": "PASS"}, rationale="C1-C7 PASS",
+            "impl-test",
+            GateId.G0B,
+            GateVerdict.PASS,
+            details={"C1": "PASS"},
+            rationale="C1-C7 PASS",
         )
         assert updated.meta.status == StrategyStatus.TESTING
 
@@ -182,8 +185,11 @@ class TestAutoTransition:
         rec = rec.model_copy(update={"meta": active_meta})
         store.save(rec)
         updated = store.record_gate(
-            "active-test", GateId.G1, GateVerdict.PASS,
-            details={}, rationale="PASS",
+            "active-test",
+            GateId.G1,
+            GateVerdict.PASS,
+            details={},
+            rationale="PASS",
         )
         assert updated.meta.status == StrategyStatus.ACTIVE
 
@@ -193,8 +199,11 @@ class TestAutoTransition:
         rec = rec.model_copy(update={"meta": testing_meta})
         store.save(rec)
         updated = store.record_gate(
-            "testing-test", GateId.G1, GateVerdict.PASS,
-            details={}, rationale="PASS",
+            "testing-test",
+            GateId.G1,
+            GateVerdict.PASS,
+            details={},
+            rationale="PASS",
         )
         assert updated.meta.status == StrategyStatus.TESTING
 
@@ -204,15 +213,21 @@ class TestAutoTransition:
         rec = rec.model_copy(update={"meta": cand_meta})
         store.save(rec)
         updated = store.record_gate(
-            "cand-test", GateId.G0B, GateVerdict.PASS,
-            details={}, rationale="PASS",
+            "cand-test",
+            GateId.G0B,
+            GateVerdict.PASS,
+            details={},
+            rationale="PASS",
         )
         assert updated.meta.status == StrategyStatus.CANDIDATE
 
     def test_implemented_fail_stays_implemented(self, store: StrategyStore) -> None:
         store.save(_make_implemented_record("fail-test"))
         updated = store.record_gate(
-            "fail-test", GateId.G0B, GateVerdict.FAIL,
-            details={}, rationale="C1 FAIL",
+            "fail-test",
+            GateId.G0B,
+            GateVerdict.FAIL,
+            details={},
+            rationale="C1 FAIL",
         )
         assert updated.meta.status == StrategyStatus.IMPLEMENTED

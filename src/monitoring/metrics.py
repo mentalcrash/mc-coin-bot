@@ -62,9 +62,7 @@ unrealized_pnl_gauge = Gauge("mcbot_unrealized_pnl_usdt", "Unrealized PnL", ["sy
 realized_pnl_counter = Counter(
     "mcbot_realized_pnl_usdt_total", "Cumulative realized PnL", ["symbol"]
 )
-aggregate_leverage_gauge = Gauge(
-    "mcbot_aggregate_leverage", "Portfolio aggregate leverage ratio"
-)
+aggregate_leverage_gauge = Gauge("mcbot_aggregate_leverage", "Portfolio aggregate leverage ratio")
 margin_used_gauge = Gauge("mcbot_margin_used_usdt", "Margin currently in use")
 
 # ==========================================================================
@@ -128,15 +126,11 @@ exchange_consecutive_failures_gauge = Gauge(
 # ==========================================================================
 # Layer 4: Bot Health
 # ==========================================================================
-heartbeat_timestamp_gauge = Gauge(
-    "mcbot_heartbeat_timestamp", "Last heartbeat Unix timestamp"
-)
+heartbeat_timestamp_gauge = Gauge("mcbot_heartbeat_timestamp", "Last heartbeat Unix timestamp")
 errors_counter = Counter(
     "mcbot_errors_total", "Error counts by component", ["component", "error_type"]
 )
-eventbus_queue_depth_gauge = Gauge(
-    "mcbot_eventbus_queue_depth", "EventBus pending event count"
-)
+eventbus_queue_depth_gauge = Gauge("mcbot_eventbus_queue_depth", "EventBus pending event count")
 eventbus_events_dropped_counter = Counter(
     "mcbot_eventbus_events_dropped_total", "EventBus dropped events"
 )

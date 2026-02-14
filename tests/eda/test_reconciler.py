@@ -180,9 +180,7 @@ class TestCheckBalance:
         pm = _make_pm({})
         pm.total_equity = 10000.0
         client = MagicMock()
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 10200.0, "free": 10000.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10200.0, "free": 10000.0}})
 
         reconciler = PositionReconciler()
         result = await reconciler.check_balance(pm, client)

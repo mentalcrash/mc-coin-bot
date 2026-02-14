@@ -501,14 +501,10 @@ class TestDirectionStdParity:
         log_returns = np.diff(np.log(np.array(buf)))
         returns_series = pd.Series(log_returns)
         window = config.direction_window
-        rolling_std = returns_series.rolling(
-            window=window, min_periods=max(2, window // 2)
-        ).std()
+        rolling_std = returns_series.rolling(window=window, min_periods=max(2, window // 2)).std()
         expected_std = float(rolling_std.iloc[-1])
 
-        ema_momentum = float(
-            returns_series.ewm(span=window, adjust=False).mean().iloc[-1]
-        )
+        ema_momentum = float(returns_series.ewm(span=window, adjust=False).mean().iloc[-1])
         expected_normalized = ema_momentum / expected_std
 
         if abs(expected_normalized) > config.direction_threshold:

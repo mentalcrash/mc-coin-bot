@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from src.eda.reconciler import PositionReconciler
     from src.exchange.binance_client import BinanceClient
     from src.exchange.binance_futures_client import BinanceFuturesClient
+    from src.market.feature_store import FeatureStore, FeatureStoreConfig
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
@@ -119,6 +120,7 @@ class LiveRunner:
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._feed = feed
@@ -134,6 +136,7 @@ class LiveRunner:
         self._discord_config = discord_config
         self._metrics_port = metrics_port
         self._regime_config = regime_config
+        self._feature_store_config = feature_store_config
         self._client: BinanceClient | None = None
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
@@ -153,6 +156,7 @@ class LiveRunner:
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -170,6 +174,7 @@ class LiveRunner:
             discord_config=discord_config,
             metrics_port=metrics_port,
             regime_config=regime_config,
+            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._symbols = symbols
@@ -189,6 +194,7 @@ class LiveRunner:
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -206,6 +212,7 @@ class LiveRunner:
             discord_config=discord_config,
             metrics_port=metrics_port,
             regime_config=regime_config,
+            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._symbols = symbols
@@ -226,6 +233,7 @@ class LiveRunner:
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
         regime_config: RegimeServiceConfig | None = None,
+        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Live 모드: LiveDataFeed(Spot) + LiveExecutor(Futures).
 
@@ -248,6 +256,7 @@ class LiveRunner:
             discord_config=discord_config,
             metrics_port=metrics_port,
             regime_config=regime_config,
+            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._futures_client = futures_client
@@ -285,11 +294,15 @@ class LiveRunner:
             # DerivativesFeed 라이프사이클 (Live 모드)
             derivatives_provider = await self._start_derivatives_feed()
 
+            # FeatureStore (선택적)
+            feature_store = self._create_feature_store()
+
             strategy_engine = StrategyEngine(
                 self._strategy,
                 target_timeframe=self._target_timeframe,
                 regime_service=regime_service,
                 derivatives_provider=derivatives_provider,
+                feature_store=feature_store,
             )
             pm = EDAPortfolioManager(
                 config=self._config,
@@ -316,9 +329,11 @@ class LiveRunner:
             state_mgr = await self._restore_state(db, pm, rm)
 
             # 4. 모든 컴포넌트 등록 (순서 중요)
-            # RegimeService는 StrategyEngine 앞에 등록 (BAR 처리 시 regime 먼저 업데이트)
+            # RegimeService → FeatureStore → StrategyEngine 순서
             if regime_service is not None:
                 await regime_service.register(bus)
+            if feature_store is not None:
+                await feature_store.register(bus)
             await strategy_engine.register(bus)
             await pm.register(bus)
             await rm.register(bus)
@@ -326,7 +341,9 @@ class LiveRunner:
             await analytics.register(bus)
 
             # 4.5. REST API warmup — WebSocket 시작 전 버퍼 사전 채움
-            await self._warmup_strategy(strategy_engine, regime_service=regime_service)
+            await self._warmup_strategy(
+                strategy_engine, regime_service=regime_service, feature_store=feature_store
+            )
 
             # 5. TradePersistence 등록 (analytics 이후)
             if db:
@@ -355,9 +372,7 @@ class LiveRunner:
             uptime_task: asyncio.Task[None] | None = None
             if metrics_exporter is not None:
                 uptime_task = asyncio.create_task(
-                    self._periodic_metrics_update(
-                        metrics_exporter, bus, self._futures_client
-                    )
+                    self._periodic_metrics_update(metrics_exporter, bus, self._futures_client)
                 )
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
@@ -375,11 +390,7 @@ class LiveRunner:
             logger.warning("Initiating graceful shutdown...")
 
             # 주기적 task 취소
-            for task in (save_task, uptime_task, reconciler_task):
-                if task is not None:
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
+            await self._cancel_periodic_tasks(save_task, uptime_task, reconciler_task)
 
             await self._feed.stop()
             feed_task.cancel()
@@ -406,6 +417,15 @@ class LiveRunner:
         finally:
             if db:
                 await db.close()
+
+    @staticmethod
+    async def _cancel_periodic_tasks(*tasks: asyncio.Task[None] | None) -> None:
+        """주기적 tasks를 안전하게 취소."""
+        for task in tasks:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     def request_shutdown(self) -> None:
         """외부에서 shutdown 요청 (테스트용)."""
@@ -501,7 +521,9 @@ class LiveRunner:
         )
         await health_scheduler.start()
 
-        logger.info("Discord Bot + NotificationEngine + ReportScheduler + HealthCheckScheduler enabled")
+        logger.info(
+            "Discord Bot + NotificationEngine + ReportScheduler + HealthCheckScheduler enabled"
+        )
 
         return _DiscordTasks(
             bot_service=bot_service,
@@ -539,11 +561,21 @@ class LiveRunner:
 
         return RegimeService(self._regime_config)
 
+    def _create_feature_store(self) -> FeatureStore | None:
+        """FeatureStore 생성 (feature_store_config가 None이면 None)."""
+        if self._feature_store_config is None:
+            return None
+
+        from src.market.feature_store import FeatureStore
+
+        return FeatureStore(self._feature_store_config)
+
     async def _warmup_strategy(
         self,
         strategy_engine: StrategyEngine,
         *,
         regime_service: RegimeService | None = None,
+        feature_store: FeatureStore | None = None,
     ) -> None:
         """REST API로 과거 데이터를 가져와 StrategyEngine 버퍼에 주입.
 
@@ -574,6 +606,12 @@ class LiveRunner:
                     if regime_service is not None:
                         closes = [bar["close"] for bar in bars]
                         regime_service.warmup(symbol, closes)
+                    # FeatureStore warmup
+                    if feature_store is not None:
+                        import pandas as pd
+
+                        warmup_df = pd.DataFrame(bars, index=pd.DatetimeIndex(timestamps))
+                        feature_store.warmup(symbol, warmup_df)
                 else:
                     logger.warning("No warmup data fetched for {}", symbol)
             except Exception:

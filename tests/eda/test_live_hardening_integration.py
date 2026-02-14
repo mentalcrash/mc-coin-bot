@@ -85,9 +85,7 @@ def _make_mock_futures_client() -> MagicMock:
         return_value={"id": "ord_001", "status": "closed", "filled": 0.001, "average": 50000.0}
     )
     client.fetch_positions = AsyncMock(return_value=[])
-    client.fetch_balance = AsyncMock(
-        return_value={"USDT": {"total": 10000.0, "free": 9500.0}}
-    )
+    client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10000.0, "free": 9500.0}})
     client.fetch_open_orders = AsyncMock(return_value=[])
     client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
     client.validate_min_notional = MagicMock(return_value=True)
@@ -325,9 +323,7 @@ class TestReconcilerBalanceSync:
     async def test_check_balance_returns_equity(self) -> None:
         """check_balance → exchange_equity → RM sync 연결."""
         client = _make_mock_futures_client()
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 9500.0, "free": 9000.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 9500.0, "free": 9000.0}})
 
         config = _make_config()
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)

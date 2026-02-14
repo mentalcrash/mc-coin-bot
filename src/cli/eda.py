@@ -469,7 +469,9 @@ def run_live(
         summary_table.add_row("Symbols", ", ".join(cfg.backtest.symbols))
         summary_table.add_row("Capital", f"${cfg.backtest.capital:,.0f}")
         summary_table.add_row("Leverage", f"{cfg.portfolio.max_leverage_cap:.1f}x")
-        sl_str = f"{cfg.portfolio.system_stop_loss:.0%}" if cfg.portfolio.system_stop_loss else "OFF"
+        sl_str = (
+            f"{cfg.portfolio.system_stop_loss:.0%}" if cfg.portfolio.system_stop_loss else "OFF"
+        )
         summary_table.add_row("System SL", sl_str)
         ts_str = (
             f"{cfg.portfolio.trailing_stop_atr_multiplier:.1f}x ATR"

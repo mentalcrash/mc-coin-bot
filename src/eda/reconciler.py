@@ -135,9 +135,7 @@ class PositionReconciler:
         try:
             balance = await futures_client.fetch_balance()
             usdt_info = balance.get("USDT", {})
-            exchange_equity = float(
-                usdt_info.get("total", 0) if isinstance(usdt_info, dict) else 0
-            )
+            exchange_equity = float(usdt_info.get("total", 0) if isinstance(usdt_info, dict) else 0)
         except Exception:
             logger.exception("PositionReconciler: Failed to fetch balance")
             return None
@@ -219,9 +217,7 @@ class PositionReconciler:
 
         return drifts
 
-    def _get_exchange_size(
-        self, pm_dir: Direction, ex_info: dict[str, float]
-    ) -> float:
+    def _get_exchange_size(self, pm_dir: Direction, ex_info: dict[str, float]) -> float:
         """PM 방향에 맞는 거래소 포지션 크기 반환."""
         if pm_dir == Direction.LONG:
             return ex_info["long_size"]

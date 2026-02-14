@@ -67,10 +67,12 @@ class TestBacktestDerivativesProvider:
         btc_deriv = pd.DataFrame({"funding_rate": [0.0001, 0.0002, 0.0003]}, index=index)
         eth_deriv = pd.DataFrame({"funding_rate": [0.0005, 0.0006, 0.0007]}, index=index)
 
-        provider = BacktestDerivativesProvider({
-            "BTC/USDT": btc_deriv,
-            "ETH/USDT": eth_deriv,
-        })
+        provider = BacktestDerivativesProvider(
+            {
+                "BTC/USDT": btc_deriv,
+                "ETH/USDT": eth_deriv,
+            }
+        )
 
         ohlcv = pd.DataFrame({"close": [42000, 42500, 43000]}, index=index)
         btc_enriched = provider.enrich_dataframe(ohlcv.copy(), "BTC/USDT")
@@ -148,14 +150,26 @@ class TestLiveDerivativesFeed:
 
     @pytest.mark.asyncio()
     async def test_start_creates_tasks(self, mock_client: AsyncMock) -> None:
-        feed = LiveDerivativesFeed(["BTC/USDT"], mock_client, poll_interval_fr=1, poll_interval_oi=1, poll_interval_ratios=1)
+        feed = LiveDerivativesFeed(
+            ["BTC/USDT"],
+            mock_client,
+            poll_interval_fr=1,
+            poll_interval_oi=1,
+            poll_interval_ratios=1,
+        )
         await feed.start()
         assert len(feed._tasks) == 3
         await feed.stop()
 
     @pytest.mark.asyncio()
     async def test_stop_cancels_tasks(self, mock_client: AsyncMock) -> None:
-        feed = LiveDerivativesFeed(["BTC/USDT"], mock_client, poll_interval_fr=1, poll_interval_oi=1, poll_interval_ratios=1)
+        feed = LiveDerivativesFeed(
+            ["BTC/USDT"],
+            mock_client,
+            poll_interval_fr=1,
+            poll_interval_oi=1,
+            poll_interval_ratios=1,
+        )
         await feed.start()
         assert len(feed._tasks) == 3
         await feed.stop()

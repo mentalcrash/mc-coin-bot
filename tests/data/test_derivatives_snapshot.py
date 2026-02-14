@@ -17,18 +17,12 @@ def _make_mock_futures_client() -> MagicMock:
     """BinanceFuturesClient mock 생성."""
     client = MagicMock()
     client.fetch_ticker = AsyncMock(return_value={"last": 97420.0})
-    client.fetch_funding_rate_history = AsyncMock(
-        return_value=[{"fundingRate": 0.00023}]
-    )
+    client.fetch_funding_rate_history = AsyncMock(return_value=[{"fundingRate": 0.00023}])
     client.fetch_open_interest_history = AsyncMock(
         return_value=[{"sumOpenInterestValue": 5_000_000_000}]
     )
-    client.fetch_long_short_ratio = AsyncMock(
-        return_value=[{"longShortRatio": 1.47}]
-    )
-    client.fetch_taker_buy_sell_ratio = AsyncMock(
-        return_value=[{"buySellRatio": 1.12}]
-    )
+    client.fetch_long_short_ratio = AsyncMock(return_value=[{"longShortRatio": 1.47}])
+    client.fetch_taker_buy_sell_ratio = AsyncMock(return_value=[{"buySellRatio": 1.12}])
     return client
 
 

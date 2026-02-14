@@ -734,9 +734,7 @@ class TestPreflightChecks:
         """잔고 0이면 RuntimeError."""
         client = _make_mock_client()
         futures_client = _make_mock_futures_client()
-        futures_client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 0.0, "free": 0.0}}
-        )
+        futures_client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 0.0, "free": 0.0}})
         futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
 
         runner = LiveRunner.live(

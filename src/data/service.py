@@ -169,9 +169,7 @@ class MarketDataService:
             resampled = filtered
 
         # 5.5. Derivatives enrichment (선택적)
-        resampled = self._maybe_enrich_derivatives(
-            resampled, request, include_derivatives
-        )
+        resampled = self._maybe_enrich_derivatives(resampled, request, include_derivatives)
 
         # 6. 실제 데이터 범위 추출
         logger.debug("[6/6] MarketDataSet 생성...")

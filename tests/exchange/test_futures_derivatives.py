@@ -36,7 +36,9 @@ def client(mock_exchange: MagicMock) -> BinanceFuturesClient:
 
 class TestFetchFundingRateHistory:
     @pytest.mark.asyncio()
-    async def test_returns_list(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_returns_list(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fetch_funding_rate_history.return_value = [
             {"timestamp": 1000, "fundingRate": 0.0001, "markPrice": 42000},
         ]
@@ -45,13 +47,17 @@ class TestFetchFundingRateHistory:
         assert len(result) == 1
 
     @pytest.mark.asyncio()
-    async def test_with_since_and_limit(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_with_since_and_limit(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fetch_funding_rate_history.return_value = []
         await client.fetch_funding_rate_history("BTC/USDT", since=1000, limit=100)
         mock_exchange.fetch_funding_rate_history.assert_called_once()
 
     @pytest.mark.asyncio()
-    async def test_symbol_conversion(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_symbol_conversion(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         """BTC/USDT → BTC/USDT:USDT 변환."""
         mock_exchange.fetch_funding_rate_history.return_value = []
         await client.fetch_funding_rate_history("BTC/USDT")
@@ -60,7 +66,9 @@ class TestFetchFundingRateHistory:
         assert "USDT" in str(call_args)
 
     @pytest.mark.asyncio()
-    async def test_empty_response(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_empty_response(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fetch_funding_rate_history.return_value = []
         result = await client.fetch_funding_rate_history("BTC/USDT")
         assert result == []
@@ -68,7 +76,9 @@ class TestFetchFundingRateHistory:
 
 class TestFetchOpenInterestHistory:
     @pytest.mark.asyncio()
-    async def test_returns_list(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_returns_list(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_openinteresthist.return_value = [
             {"timestamp": 1000, "sumOpenInterest": "50000", "sumOpenInterestValue": "2100000000"},
         ]
@@ -77,7 +87,9 @@ class TestFetchOpenInterestHistory:
         assert len(result) == 1
 
     @pytest.mark.asyncio()
-    async def test_bare_symbol_format(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_bare_symbol_format(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         """BTC/USDT → BTCUSDT 변환 (Binance-specific)."""
         mock_exchange.fapidata_get_openinteresthist.return_value = []
         await client.fetch_open_interest_history("BTC/USDT")
@@ -88,7 +100,9 @@ class TestFetchOpenInterestHistory:
         assert "/" not in params["symbol"]
 
     @pytest.mark.asyncio()
-    async def test_with_period(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_with_period(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_openinteresthist.return_value = []
         await client.fetch_open_interest_history("BTC/USDT", period="4h")
         assert mock_exchange.fapidata_get_openinteresthist.called
@@ -96,16 +110,25 @@ class TestFetchOpenInterestHistory:
 
 class TestFetchLongShortRatio:
     @pytest.mark.asyncio()
-    async def test_returns_list(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_returns_list(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_globallongshortaccountratio.return_value = [
-            {"timestamp": 1000, "longAccount": "0.55", "shortAccount": "0.45", "longShortRatio": "1.22"},
+            {
+                "timestamp": 1000,
+                "longAccount": "0.55",
+                "shortAccount": "0.45",
+                "longShortRatio": "1.22",
+            },
         ]
         result = await client.fetch_long_short_ratio("BTC/USDT")
         assert isinstance(result, list)
         assert len(result) == 1
 
     @pytest.mark.asyncio()
-    async def test_empty_response(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_empty_response(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_globallongshortaccountratio.return_value = []
         result = await client.fetch_long_short_ratio("BTC/USDT")
         assert result == []
@@ -113,7 +136,9 @@ class TestFetchLongShortRatio:
 
 class TestFetchTakerBuySellRatio:
     @pytest.mark.asyncio()
-    async def test_returns_list(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_returns_list(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_takerlongshortratio.return_value = [
             {"timestamp": 1000, "buyVol": "1000", "sellVol": "800", "buySellRatio": "1.25"},
         ]
@@ -122,7 +147,9 @@ class TestFetchTakerBuySellRatio:
         assert len(result) == 1
 
     @pytest.mark.asyncio()
-    async def test_empty_response(self, client: BinanceFuturesClient, mock_exchange: MagicMock) -> None:
+    async def test_empty_response(
+        self, client: BinanceFuturesClient, mock_exchange: MagicMock
+    ) -> None:
         mock_exchange.fapidata_get_takerlongshortratio.return_value = []
         result = await client.fetch_taker_buy_sell_ratio("BTC/USDT")
         assert result == []

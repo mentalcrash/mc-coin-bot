@@ -141,9 +141,7 @@ class DerivativesDataService:
             direction="backward",
         )
 
-        logger.debug(
-            f"Enriched OHLCV with {len(available_cols)} derivatives columns for {symbol}"
-        )
+        logger.debug(f"Enriched OHLCV with {len(available_cols)} derivatives columns for {symbol}")
         return result
 
     def precompute(
