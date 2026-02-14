@@ -25,6 +25,7 @@ from src.core.events import (
     BarEvent,
     EventType,
     FillEvent,
+    RiskAlertEvent,
     SignalEvent,
 )
 from src.models.types import Direction
@@ -379,9 +380,11 @@ class StrategyOrchestrator:
         self._check_risk_limits(pod_returns, net_weights=net_weights)
 
     def _evaluate_lifecycle(self) -> None:
-        """Lifecycle 평가 → 상태 전이 감지 → lifecycle_events 기록."""
+        """Lifecycle 평가 → 상태 전이 감지 → lifecycle_events 기록 → GBM alerts."""
         if self._lifecycle is None:
             return
+
+        from src.monitoring.anomaly.gbm_drawdown import DrawdownSeverity
 
         portfolio_returns_series = self._compute_portfolio_returns()
         for pod in self._pods:
@@ -409,6 +412,32 @@ class StrategyOrchestrator:
                             timestamp=str(self._pending_bar_ts),
                         )
                     )
+
+            # GBM drawdown alert
+            self._check_gbm_alert(pod, DrawdownSeverity)
+
+    def _check_gbm_alert(self, pod: StrategyPod, drawdown_severity: type) -> None:
+        """GBM drawdown 결과가 비정상이면 RiskAlertEvent 발행."""
+        if self._lifecycle is None or self._bus is None:
+            return
+
+        gbm_result = self._lifecycle.get_gbm_result(pod.pod_id)
+        if gbm_result is None or gbm_result.severity == drawdown_severity.NORMAL:
+            return
+
+        severity: str = (
+            "CRITICAL" if gbm_result.severity == drawdown_severity.CRITICAL else "WARNING"
+        )
+        alert = RiskAlertEvent(
+            alert_level=severity,  # type: ignore[arg-type]
+            message=(
+                f"GBM [{pod.pod_id}]: depth={gbm_result.current_depth:.1%} "
+                f"(limit {gbm_result.expected_max_depth:.1%}), "
+                f"duration={gbm_result.current_duration_days}d"
+            ),
+            source="GBMDrawdownMonitor",
+        )
+        self._fire_notification(self._bus.publish(alert))
 
     def _compute_daily_pnl_pct(self) -> float:
         """활성 Pod의 가중 평균 최신 일간 수익률."""

@@ -73,6 +73,9 @@ class StrategyPod:
         self._performance = PodPerformance(pod_id=config.pod_id)
         self._daily_returns: list[float] = []
 
+        # pause 상태
+        self._paused: bool = False
+
         # warmup 감지
         self._warmup = self._detect_warmup()
 
@@ -112,9 +115,24 @@ class StrategyPod:
         return self._performance
 
     @property
+    def paused(self) -> bool:
+        """일시 중지 상태."""
+        return self._paused
+
+    def pause(self) -> None:
+        """Pod를 일시 중지합니다."""
+        self._paused = True
+        logger.info("Pod {} paused", self.pod_id)
+
+    def resume(self) -> None:
+        """Pod 일시 중지를 해제합니다."""
+        self._paused = False
+        logger.info("Pod {} resumed", self.pod_id)
+
+    @property
     def is_active(self) -> bool:
-        """RETIRED가 아니면 활성."""
-        return self._state != LifecycleState.RETIRED
+        """RETIRED가 아니고 paused가 아니면 활성."""
+        return not self._paused and self._state != LifecycleState.RETIRED
 
     @property
     def warmup_periods(self) -> int:
@@ -413,6 +431,7 @@ class StrategyPod:
             "target_weights": dict(self._target_weights),
             "positions": positions_data,
             "performance": performance_data,
+            "paused": self._paused,
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -429,6 +448,11 @@ class StrategyPod:
         fraction_val = data.get("capital_fraction")
         if isinstance(fraction_val, int | float):
             self._capital_fraction = float(fraction_val)
+
+        # Paused
+        paused_val = data.get("paused")
+        if isinstance(paused_val, bool):
+            self._paused = paused_val
 
         # Target weights
         weights_val = data.get("target_weights")

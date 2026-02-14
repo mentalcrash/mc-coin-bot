@@ -25,6 +25,18 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from src.monitoring.anomaly.conformal_ransac import (
+    ConformalRANSACDetector,
+    DecayCheckResult,
+)
+from src.monitoring.anomaly.distribution import (
+    DistributionDriftDetector,
+    DriftCheckResult,
+)
+from src.monitoring.anomaly.gbm_drawdown import (
+    DrawdownCheckResult,
+    GBMDrawdownMonitor,
+)
 from src.orchestrator.degradation import PageHinkleyDetector
 from src.orchestrator.models import LifecycleState
 
@@ -55,6 +67,12 @@ class _PodLifecycleState:
     state_entered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     consecutive_loss_months: int = 0
     last_monthly_check_day: int = 0
+    gbm_monitor: GBMDrawdownMonitor | None = None
+    last_gbm_result: DrawdownCheckResult | None = None
+    dist_detector: DistributionDriftDetector | None = None
+    last_dist_result: DriftCheckResult | None = None
+    ransac_detector: ConformalRANSACDetector | None = None
+    last_ransac_result: DecayCheckResult | None = None
 
 
 # ── LifecycleManager ─────────────────────────────────────────────
@@ -284,6 +302,8 @@ class LifecycleManager:
     ) -> bool:
         """PH detector에 최신 daily return 입력 → 열화 감지.
 
+        GBM monitor가 설정된 경우 drawdown 이상도 함께 체크합니다.
+
         Returns:
             True if degradation detected.
         """
@@ -293,6 +313,19 @@ class LifecycleManager:
 
         # Feed only the latest return
         latest_return = returns[-1]
+
+        # GBM drawdown check (결과만 저장, 상태 전이에는 미반영)
+        if pod_ls.gbm_monitor is not None:
+            pod_ls.last_gbm_result = pod_ls.gbm_monitor.update(latest_return)
+
+        # Distribution drift check (결과만 저장, 상태 전이에는 미반영)
+        if pod_ls.dist_detector is not None:
+            pod_ls.last_dist_result = pod_ls.dist_detector.update(latest_return)
+
+        # Conformal-RANSAC check (결과만 저장, 상태 전이에는 미반영)
+        if pod_ls.ransac_detector is not None:
+            pod_ls.last_ransac_result = pod_ls.ransac_detector.update(latest_return)
+
         return pod_ls.ph_detector.update(latest_return)
 
     # ── Consecutive Loss Months ───────────────────────────────────
@@ -400,18 +433,113 @@ class LifecycleManager:
             new_state.value,
         )
 
+    # ── GBM Configuration ────────────────────────────────────────
+
+    def set_gbm_params(
+        self,
+        pod_id: str,
+        mu: float,
+        sigma: float,
+        confidence: float = 0.95,
+    ) -> None:
+        """Pod에 GBM Drawdown Monitor를 설정합니다.
+
+        백테스트 결과 기반 파라미터로 호출합니다.
+
+        Args:
+            pod_id: Pod 식별자
+            mu: 일별 기대 수익률
+            sigma: 일별 변동성
+            confidence: 신뢰 수준 (default 0.95)
+        """
+        if pod_id not in self._pod_states:
+            self._pod_states[pod_id] = _PodLifecycleState()
+        self._pod_states[pod_id].gbm_monitor = GBMDrawdownMonitor(
+            mu=mu, sigma=sigma, confidence=confidence
+        )
+
+    def get_gbm_result(self, pod_id: str) -> DrawdownCheckResult | None:
+        """Pod의 최신 GBM drawdown 결과 조회."""
+        pls = self._pod_states.get(pod_id)
+        if pls is None:
+            return None
+        return pls.last_gbm_result
+
+    # ── Distribution Drift Configuration ──────────────────────────
+
+    def set_distribution_reference(
+        self,
+        pod_id: str,
+        backtest_returns: list[float],
+        window_size: int = 60,
+    ) -> None:
+        """Pod에 Distribution Drift Detector를 설정합니다.
+
+        Args:
+            pod_id: Pod 식별자
+            backtest_returns: 백테스트 일별 수익률 (기준 분포)
+            window_size: rolling window 크기 (default 60)
+        """
+        if pod_id not in self._pod_states:
+            self._pod_states[pod_id] = _PodLifecycleState()
+        self._pod_states[pod_id].dist_detector = DistributionDriftDetector(
+            reference_returns=backtest_returns, window_size=window_size
+        )
+
+    def get_distribution_result(self, pod_id: str) -> DriftCheckResult | None:
+        """Pod의 최신 distribution drift 결과 조회."""
+        pls = self._pod_states.get(pod_id)
+        if pls is None:
+            return None
+        return pls.last_dist_result
+
+    # ── Conformal-RANSAC Configuration ────────────────────────────
+
+    def set_ransac_params(
+        self,
+        pod_id: str,
+        window_size: int = 180,
+        alpha: float = 0.05,
+    ) -> None:
+        """Pod에 Conformal-RANSAC Detector를 설정합니다.
+
+        Args:
+            pod_id: Pod 식별자
+            window_size: 관측 윈도우 크기 (default 180)
+            alpha: conformal prediction 유의 수준 (default 0.05)
+        """
+        if pod_id not in self._pod_states:
+            self._pod_states[pod_id] = _PodLifecycleState()
+        self._pod_states[pod_id].ransac_detector = ConformalRANSACDetector(
+            window_size=window_size, alpha=alpha
+        )
+
+    def get_ransac_result(self, pod_id: str) -> DecayCheckResult | None:
+        """Pod의 최신 RANSAC decay 결과 조회."""
+        pls = self._pod_states.get(pod_id)
+        if pls is None:
+            return None
+        return pls.last_ransac_result
+
     # ── Serialization ──────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, dict[str, object]]:
         """Serialize lifecycle state for all tracked pods."""
         result: dict[str, dict[str, object]] = {}
         for pod_id, pls in self._pod_states.items():
-            result[pod_id] = {
+            entry: dict[str, object] = {
                 "state_entered_at": pls.state_entered_at.isoformat(),
                 "consecutive_loss_months": pls.consecutive_loss_months,
                 "last_monthly_check_day": pls.last_monthly_check_day,
                 "ph_detector": pls.ph_detector.to_dict(),
             }
+            if pls.gbm_monitor is not None:
+                entry["gbm_monitor"] = pls.gbm_monitor.to_dict()
+            if pls.dist_detector is not None:
+                entry["dist_detector"] = pls.dist_detector.to_dict()
+            if pls.ransac_detector is not None:
+                entry["ransac_detector"] = pls.ransac_detector.to_dict()
+            result[pod_id] = entry
         return result
 
     def restore_from_dict(self, data: dict[str, Any]) -> None:
@@ -443,6 +571,18 @@ class LifecycleManager:
             ph_data = pls_data.get("ph_detector")
             if isinstance(ph_data, dict):
                 pls.ph_detector.restore_from_dict(ph_data)
+
+            gbm_data = pls_data.get("gbm_monitor")
+            if isinstance(gbm_data, dict) and pls.gbm_monitor is not None:
+                pls.gbm_monitor.restore_from_dict(gbm_data)
+
+            dist_data = pls_data.get("dist_detector")
+            if isinstance(dist_data, dict) and pls.dist_detector is not None:
+                pls.dist_detector.restore_from_dict(dist_data)
+
+            ransac_data = pls_data.get("ransac_detector")
+            if isinstance(ransac_data, dict) and pls.ransac_detector is not None:
+                pls.ransac_detector.restore_from_dict(ransac_data)
 
     # ── Internal ──────────────────────────────────────────────────
 
