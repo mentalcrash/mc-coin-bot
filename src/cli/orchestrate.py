@@ -270,7 +270,7 @@ def launch_orchestrated_live(
                 async with BinanceFuturesClient() as futures_client:
                     await futures_client.setup_account(
                         symbols,
-                        leverage=int(orch_config.max_gross_leverage),
+                        leverage=round(orch_config.max_gross_leverage),
                     )
                     runner = LiveRunner.orchestrated_live(
                         orchestrator_config=orch_config,

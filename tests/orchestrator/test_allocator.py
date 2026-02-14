@@ -36,11 +36,13 @@ def _make_config(
     method: AllocationMethod = AllocationMethod.EQUAL_WEIGHT,
     **overrides: object,
 ) -> OrchestratorConfig:
+    per_pod_max = min(0.60, 1.5 / max(n_pods, 1))
     pods = [
         _make_pod_config(
             pod_id=f"pod-{i}",
             symbols=(f"SYM{i}/USDT",),
             initial_fraction=min(0.10, 1.0 / max(n_pods, 1)),
+            max_fraction=per_pod_max,
         )
         for i in range(n_pods)
     ]

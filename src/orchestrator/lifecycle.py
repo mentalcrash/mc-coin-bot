@@ -369,7 +369,7 @@ class LifecycleManager:
         if pd.isna(corr):
             return 0.0
 
-        return float(abs(corr))
+        return float(corr)
 
     # ── State Transition ──────────────────────────────────────────
 

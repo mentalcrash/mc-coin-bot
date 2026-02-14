@@ -109,7 +109,7 @@ def _make_pod_config(
         strategy_name="tsmom",
         symbols=symbols,
         initial_fraction=initial_fraction,
-        max_fraction=max(0.80, initial_fraction),
+        max_fraction=max(0.50, initial_fraction),
         min_fraction=min(0.02, initial_fraction),
     )
 

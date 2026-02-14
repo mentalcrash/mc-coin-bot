@@ -32,7 +32,7 @@ class PageHinkleyDetector:
     Args:
         delta: Magnitude threshold — minimum shift to detect. Default 0.005.
         lambda_: Detection threshold — higher = fewer false alarms. Default 50.0.
-        alpha: EWMA smoothing factor for running mean. Default 0.9999.
+        alpha: EWMA smoothing factor for running mean. Default 0.99 (~69-day half-life).
     """
 
     __slots__ = ("_alpha", "_delta", "_lambda", "_m_min", "_m_t", "_n", "_x_mean")
@@ -41,7 +41,7 @@ class PageHinkleyDetector:
         self,
         delta: float = 0.005,
         lambda_: float = 50.0,
-        alpha: float = 0.9999,
+        alpha: float = 0.99,
     ) -> None:
         self._delta = delta
         self._lambda = lambda_

@@ -390,6 +390,12 @@ class OrchestratorConfig(BaseModel):
             msg = f"Sum of initial_fraction ({total_initial:.2f}) exceeds 1.0"
             raise ValueError(msg)
 
+        _max_fraction_cap = 1.5
+        total_max = sum(p.max_fraction for p in self.pods)
+        if total_max > _max_fraction_cap:
+            msg = f"Sum of max_fraction ({total_max:.2f}) exceeds {_max_fraction_cap}"
+            raise ValueError(msg)
+
         return self
 
     @property

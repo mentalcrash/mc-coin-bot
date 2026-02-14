@@ -409,12 +409,6 @@ class CapitalAllocator:
             clamped = self._clamp_single(w, state, cfg)
             result[pid] = clamped
 
-        # Clamp 후 합계 > 1.0이면 비례 축소
-        total = sum(result.values())
-        if total > 1.0:
-            for pid in result:
-                result[pid] /= total
-
         return result
 
     def _clamp_single(

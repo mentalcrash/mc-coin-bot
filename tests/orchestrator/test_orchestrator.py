@@ -306,11 +306,23 @@ class TestOrchestratorNetting:
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         # pod_long warmup: close > open (LONG)
         for i in range(2):
-            bar_data = {"open": 100.0 + i, "high": 111.0 + i, "low": 99.0 + i, "close": 110.0 + i, "volume": 1000.0}
+            bar_data = {
+                "open": 100.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 110.0 + i,
+                "volume": 1000.0,
+            }
             pod_long.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
         # pod_short warmup: close < open (SHORT)
         for i in range(2):
-            bar_data = {"open": 110.0 + i, "high": 111.0 + i, "low": 99.0 + i, "close": 100.0 + i, "volume": 1000.0}
+            bar_data = {
+                "open": 110.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 100.0 + i,
+                "volume": 1000.0,
+            }
             pod_short.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
 
         # pod_long → LONG, pod_short → SHORT (같은 bar 데이터로도 전략 히스토리가 다름)
@@ -686,7 +698,10 @@ class TestOrchestratorRiskIntegration:
         allocator = CapitalAllocator(config)
         ra = RiskAggregator(config)
         orch = StrategyOrchestrator(
-            config, [pod_a, pod_b], allocator, risk_aggregator=ra,
+            config,
+            [pod_a, pod_b],
+            allocator,
+            risk_aggregator=ra,
         )
 
         pod_a.record_daily_return(0.01)

@@ -90,6 +90,9 @@ class StrategyOrchestrator:
         self._symbol_pod_map: dict[str, list[int]] = {}
         self._build_routing_table()
 
+        # pod_id → Pod O(1) lookup
+        self._pod_map: dict[str, StrategyPod] = {p.pod_id: p for p in pods}
+
         # 배치 시그널
         self._pending_bar_ts: datetime | None = None
         self._pending_net_weights: dict[str, float] = {}
@@ -99,6 +102,7 @@ class StrategyOrchestrator:
 
         # 리밸런스 추적
         self._last_rebalance_ts: datetime | None = None
+        self._last_allocated_weights: dict[str, float] = {}
 
         # Fire-and-forget notification tasks (prevent GC)
         self._notification_tasks: set[asyncio.Task[None]] = set()
@@ -299,11 +303,14 @@ class StrategyOrchestrator:
             self._last_rebalance_ts = bar_timestamp
 
     def _check_drift_threshold(self) -> bool:
-        """현재 capital_fraction과 initial 비교하여 drift 확인."""
+        """현재 capital_fraction과 last allocated weight 비교하여 drift 확인."""
         for pod in self._pods:
             if not pod.is_active:
                 continue
-            drift = abs(pod.capital_fraction - pod.config.initial_fraction)
+            target = self._last_allocated_weights.get(
+                pod.pod_id, pod.config.initial_fraction
+            )
+            drift = abs(pod.capital_fraction - target)
             if drift > self._config.rebalance_drift_threshold:
                 return True
         return False
@@ -345,6 +352,8 @@ class StrategyOrchestrator:
         for pod in self._pods:
             if pod.pod_id in new_weights:
                 pod.capital_fraction = new_weights[pod.pod_id]
+
+        self._last_allocated_weights = dict(new_weights)
 
         logger.debug("Rebalanced: {}", {p.pod_id: p.capital_fraction for p in self._pods})
 
@@ -591,8 +600,5 @@ class StrategyOrchestrator:
                 self._symbol_pod_map[symbol].append(idx)
 
     def _find_pod(self, pod_id: str) -> StrategyPod | None:
-        """pod_id로 Pod 조회."""
-        for pod in self._pods:
-            if pod.pod_id == pod_id:
-                return pod
-        return None
+        """pod_id로 Pod 조회 (O(1))."""
+        return self._pod_map.get(pod_id)

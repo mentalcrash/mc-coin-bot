@@ -179,17 +179,17 @@ class StrategyPod:
         if len(self._buffers[symbol]) < self._warmup:
             return None
 
-        # 3. DataFrame 구성 + strategy.run()
+        # 3. DataFrame 구성 + strategy.run_incremental()
         df = pd.DataFrame(
             self._buffers[symbol],
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
         )
 
         try:
-            _, signals = self._strategy.run(df)
+            _, signals = self._strategy.run_incremental(df)
         except (ValueError, TypeError) as exc:
             logger.warning(
-                "Pod {}: strategy.run() failed for {}: {}",
+                "Pod {}: strategy.run_incremental() failed for {}: {}",
                 self.pod_id,
                 symbol,
                 exc,
@@ -247,13 +247,19 @@ class StrategyPod:
         signed_fill = fill_qty if is_buy else -fill_qty
 
         # Realized PnL: 기존 포지션과 반대 방향 체결 시
-        realized_delta = self._compute_realized_pnl(old_qty, signed_fill, fill_price, pos.avg_entry_price)
+        realized_delta = self._compute_realized_pnl(
+            old_qty, signed_fill, fill_price, pos.avg_entry_price
+        )
         realized_delta -= fee
 
         # 새 quantity / avg_entry_price 계산
         new_qty = old_qty + signed_fill
         new_avg = self._compute_new_avg_entry(
-            old_qty, pos.avg_entry_price, signed_fill, fill_price, new_qty,
+            old_qty,
+            pos.avg_entry_price,
+            signed_fill,
+            fill_price,
+            new_qty,
         )
         new_notional = abs(new_qty) * fill_price
 
