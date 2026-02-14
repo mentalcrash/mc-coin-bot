@@ -32,6 +32,7 @@ from src.orchestrator.orchestrator import StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod, build_pods
 from src.orchestrator.result import OrchestratedResult
 from src.orchestrator.risk_aggregator import RiskAggregator
+from src.orchestrator.state_persistence import OrchestratorStatePersistence
 
 __all__ = [
     "AllocationMethod",
@@ -42,6 +43,7 @@ __all__ = [
     "OrchestratedResult",
     "OrchestratorConfig",
     "OrchestratorMetrics",
+    "OrchestratorStatePersistence",
     "PageHinkleyDetector",
     "PodConfig",
     "PodPerformance",

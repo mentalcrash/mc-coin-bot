@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -373,6 +373,50 @@ class LifecycleManager:
             old_state.value,
             new_state.value,
         )
+
+    # ── Serialization ──────────────────────────────────────────────
+
+    def to_dict(self) -> dict[str, dict[str, object]]:
+        """Serialize lifecycle state for all tracked pods."""
+        result: dict[str, dict[str, object]] = {}
+        for pod_id, pls in self._pod_states.items():
+            result[pod_id] = {
+                "state_entered_at": pls.state_entered_at.isoformat(),
+                "consecutive_loss_months": pls.consecutive_loss_months,
+                "last_monthly_check_day": pls.last_monthly_check_day,
+                "ph_detector": pls.ph_detector.to_dict(),
+            }
+        return result
+
+    def restore_from_dict(self, data: dict[str, Any]) -> None:
+        """Restore lifecycle state from persisted dict.
+
+        Pod IDs not in data are left at defaults. Unrecognized IDs are ignored.
+        """
+        for pod_id, pls_data in data.items():
+            if not isinstance(pls_data, dict):
+                continue
+
+            pls = self._pod_states.get(pod_id)
+            if pls is None:
+                pls = _PodLifecycleState()
+                self._pod_states[pod_id] = pls
+
+            entered_at = pls_data.get("state_entered_at")
+            if isinstance(entered_at, str):
+                pls.state_entered_at = datetime.fromisoformat(entered_at)
+
+            loss_months = pls_data.get("consecutive_loss_months")
+            if isinstance(loss_months, int | float):
+                pls.consecutive_loss_months = int(loss_months)
+
+            check_day = pls_data.get("last_monthly_check_day")
+            if isinstance(check_day, int | float):
+                pls.last_monthly_check_day = int(check_day)
+
+            ph_data = pls_data.get("ph_detector")
+            if isinstance(ph_data, dict):
+                pls.ph_detector.restore_from_dict(ph_data)
 
     # ── Internal ──────────────────────────────────────────────────
 

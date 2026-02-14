@@ -12,7 +12,7 @@ Rules Applied:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
@@ -211,10 +211,7 @@ class StrategyPod:
 
     def get_global_weights(self) -> dict[str, float]:
         """전체 포트폴리오 기준 가중치 (internal * capital_fraction)."""
-        return {
-            sym: w * self._capital_fraction
-            for sym, w in self._target_weights.items()
-        }
+        return {sym: w * self._capital_fraction for sym, w in self._target_weights.items()}
 
     def update_position(
         self,
@@ -304,6 +301,112 @@ class StrategyPod:
     def accepts_symbol(self, symbol: str) -> bool:
         """이 Pod이 해당 심볼을 처리하는지 여부."""
         return symbol in self._config.symbols
+
+    # ── Serialization ──────────────────────────────────────────────
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize Pod state for persistence.
+
+        Excludes _buffers, _timestamps (REST warmup), and _daily_returns
+        (stored separately in orchestrator_daily_returns key).
+        """
+        positions_data: dict[str, dict[str, float]] = {}
+        for symbol, pos in self._positions.items():
+            positions_data[symbol] = {
+                "notional_usd": pos.notional_usd,
+                "unrealized_pnl": pos.unrealized_pnl,
+                "realized_pnl": pos.realized_pnl,
+                "target_weight": pos.target_weight,
+                "global_weight": pos.global_weight,
+            }
+
+        perf = self._performance
+        performance_data: dict[str, object] = {
+            "total_return": perf.total_return,
+            "sharpe_ratio": perf.sharpe_ratio,
+            "max_drawdown": perf.max_drawdown,
+            "calmar_ratio": perf.calmar_ratio,
+            "win_rate": perf.win_rate,
+            "trade_count": perf.trade_count,
+            "live_days": perf.live_days,
+            "rolling_volatility": perf.rolling_volatility,
+            "peak_equity": perf.peak_equity,
+            "current_equity": perf.current_equity,
+            "current_drawdown": perf.current_drawdown,
+            "last_updated": perf.last_updated.isoformat(),
+        }
+
+        return {
+            "state": self._state.value,
+            "capital_fraction": self._capital_fraction,
+            "target_weights": dict(self._target_weights),
+            "positions": positions_data,
+            "performance": performance_data,
+        }
+
+    def restore_from_dict(self, data: dict[str, object]) -> None:
+        """Restore Pod state from persisted dict.
+
+        Uses defensive .get() with defaults for forward-compatibility.
+        """
+        # State
+        state_val = data.get("state")
+        if isinstance(state_val, str):
+            self._state = LifecycleState(state_val)
+
+        # Capital fraction
+        fraction_val = data.get("capital_fraction")
+        if isinstance(fraction_val, int | float):
+            self._capital_fraction = float(fraction_val)
+
+        # Target weights
+        weights_val = data.get("target_weights")
+        if isinstance(weights_val, dict):
+            self._target_weights = {str(k): float(v) for k, v in weights_val.items()}
+
+        # Positions
+        positions_val = data.get("positions")
+        if isinstance(positions_val, dict):
+            self._positions = {}
+            for symbol, pos_data in positions_val.items():
+                if isinstance(pos_data, dict):
+                    self._positions[str(symbol)] = PodPosition(
+                        pod_id=self.pod_id,
+                        symbol=str(symbol),
+                        notional_usd=float(pos_data.get("notional_usd", 0.0)),
+                        unrealized_pnl=float(pos_data.get("unrealized_pnl", 0.0)),
+                        realized_pnl=float(pos_data.get("realized_pnl", 0.0)),
+                        target_weight=float(pos_data.get("target_weight", 0.0)),
+                        global_weight=float(pos_data.get("global_weight", 0.0)),
+                    )
+
+        # Performance
+        perf_val = data.get("performance")
+        if isinstance(perf_val, dict):
+            self._restore_performance(perf_val)
+
+    def restore_daily_returns(self, returns: list[float]) -> None:
+        """Restore daily_returns and sync live_days (persistence용)."""
+        self._daily_returns = list(returns)
+        self._performance.live_days = len(self._daily_returns)
+
+    def _restore_performance(self, data: dict[str, Any]) -> None:
+        """Restore PodPerformance fields (PLR0912 sub-method)."""
+        perf = self._performance
+        perf.total_return = float(data.get("total_return", 0.0))
+        perf.sharpe_ratio = float(data.get("sharpe_ratio", 0.0))
+        perf.max_drawdown = float(data.get("max_drawdown", 0.0))
+        perf.calmar_ratio = float(data.get("calmar_ratio", 0.0))
+        perf.win_rate = float(data.get("win_rate", 0.0))
+        perf.trade_count = int(data.get("trade_count", 0))
+        perf.live_days = int(data.get("live_days", 0))
+        perf.rolling_volatility = float(data.get("rolling_volatility", 0.0))
+        perf.peak_equity = float(data.get("peak_equity", 0.0))
+        perf.current_equity = float(data.get("current_equity", 0.0))
+        perf.current_drawdown = float(data.get("current_drawdown", 0.0))
+        last_updated = data.get("last_updated")
+        if isinstance(last_updated, str):
+            perf.last_updated = datetime.fromisoformat(last_updated)
 
     # ── Private ──────────────────────────────────────────────────────
 

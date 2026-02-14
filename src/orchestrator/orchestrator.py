@@ -436,6 +436,11 @@ class StrategyOrchestrator:
         return list(self._pods)
 
     @property
+    def lifecycle(self) -> LifecycleManager | None:
+        """Lifecycle 매니저."""
+        return self._lifecycle
+
+    @property
     def allocation_history(self) -> list[dict[str, object]]:
         """자본 배분 이력."""
         return self._allocation_history
@@ -449,6 +454,41 @@ class StrategyOrchestrator:
     def risk_contributions_history(self) -> list[dict[str, object]]:
         """리스크 기여도 이력."""
         return self._risk_contributions_history
+
+    # ── Serialization ──────────────────────────────────────────────
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize orchestrator-level state for persistence.
+
+        Excludes in-memory histories (_allocation_history, _lifecycle_events,
+        _risk_contributions_history) — deferred to Phase 11.
+        """
+        return {
+            "last_rebalance_ts": (
+                self._last_rebalance_ts.isoformat() if self._last_rebalance_ts is not None else None
+            ),
+            "last_pod_targets": {
+                pod_id: dict(targets) for pod_id, targets in self._last_pod_targets.items()
+            },
+        }
+
+    def restore_from_dict(self, data: dict[str, object]) -> None:
+        """Restore orchestrator-level state from persisted dict."""
+        from datetime import datetime
+
+        ts_val = data.get("last_rebalance_ts")
+        if isinstance(ts_val, str):
+            self._last_rebalance_ts = datetime.fromisoformat(ts_val)
+        else:
+            self._last_rebalance_ts = None
+
+        targets_val = data.get("last_pod_targets")
+        if isinstance(targets_val, dict):
+            self._last_pod_targets = {
+                str(pod_id): {str(sym): float(w) for sym, w in syms.items()}
+                for pod_id, syms in targets_val.items()
+                if isinstance(syms, dict)
+            }
 
     # ── Private ──────────────────────────────────────────────────
 

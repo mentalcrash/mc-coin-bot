@@ -96,3 +96,24 @@ class PageHinkleyDetector:
     def n_observations(self) -> int:
         """Number of observations ingested."""
         return self._n
+
+    # ── Serialization ──────────────────────────────────────────────
+
+    def to_dict(self) -> dict[str, float | int]:
+        """Serialize mutable state for persistence (config excluded)."""
+        return {
+            "n": self._n,
+            "x_mean": self._x_mean,
+            "m_t": self._m_t,
+            "m_min": self._m_min,
+        }
+
+    def restore_from_dict(self, data: dict[str, float | int]) -> None:
+        """Restore mutable state from persisted dict.
+
+        Missing fields default to initial values (forward-compatible).
+        """
+        self._n = int(data.get("n", 0))
+        self._x_mean = float(data.get("x_mean", 0.0))
+        self._m_t = float(data.get("m_t", 0.0))
+        self._m_min = float(data.get("m_min", 0.0))
