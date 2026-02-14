@@ -119,6 +119,11 @@ class StrategyPod:
         return self._warmup
 
     @property
+    def daily_returns(self) -> list[float]:
+        """일별 수익률 리스트 (읽기 전용 뷰)."""
+        return self._daily_returns
+
+    @property
     def daily_returns_series(self) -> pd.Series:
         """Allocator용 일별 수익률 Series."""
         return pd.Series(self._daily_returns, dtype=float)

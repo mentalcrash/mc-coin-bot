@@ -10,6 +10,8 @@ from src.orchestrator.config import (
     PodConfig,
     RetirementCriteria,
 )
+from src.orchestrator.degradation import PageHinkleyDetector
+from src.orchestrator.lifecycle import LifecycleManager
 from src.orchestrator.models import (
     AllocationMethod,
     LifecycleState,
@@ -24,8 +26,10 @@ __all__ = [
     "AllocationMethod",
     "CapitalAllocator",
     "GraduationCriteria",
+    "LifecycleManager",
     "LifecycleState",
     "OrchestratorConfig",
+    "PageHinkleyDetector",
     "PodConfig",
     "PodPerformance",
     "PodPosition",

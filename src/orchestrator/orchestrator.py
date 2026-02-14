@@ -31,9 +31,12 @@ from src.models.types import Direction
 if TYPE_CHECKING:
     from datetime import datetime
 
+    import pandas as pd
+
     from src.core.event_bus import EventBus
     from src.orchestrator.allocator import CapitalAllocator
     from src.orchestrator.config import OrchestratorConfig
+    from src.orchestrator.lifecycle import LifecycleManager
     from src.orchestrator.pod import StrategyPod
 
 # ── Constants ─────────────────────────────────────────────────────
@@ -62,10 +65,12 @@ class StrategyOrchestrator:
         config: OrchestratorConfig,
         pods: list[StrategyPod],
         allocator: CapitalAllocator,
+        lifecycle_manager: LifecycleManager | None = None,
     ) -> None:
         self._config = config
         self._pods = pods
         self._allocator = allocator
+        self._lifecycle = lifecycle_manager
         self._bus: EventBus | None = None
 
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
@@ -259,6 +264,13 @@ class StrategyOrchestrator:
         """Allocator.compute_weights() 호출 → Pod capital_fraction 업데이트."""
         import pandas as pd
 
+        # Lifecycle 평가 (weight 계산 전에 상태 전이)
+        if self._lifecycle is not None:
+            portfolio_returns_series = self._compute_portfolio_returns()
+            for pod in self._pods:
+                if pod.is_active:
+                    self._lifecycle.evaluate(pod, portfolio_returns_series)
+
         # Pod 수익률 DataFrame 구성
         pod_returns_data: dict[str, list[float]] = {}
         for pod in self._pods:
@@ -317,6 +329,29 @@ class StrategyOrchestrator:
         return list(self._pods)
 
     # ── Private ──────────────────────────────────────────────────
+
+    def _compute_portfolio_returns(self) -> pd.Series | None:
+        """활성 Pod의 가중 평균 일별 수익률 계산."""
+        import pandas as pd
+
+        active_pods = [p for p in self._pods if p.is_active and len(p.daily_returns) > 0]
+        if not active_pods:
+            return None
+
+        total_fraction = sum(p.capital_fraction for p in active_pods)
+        if total_fraction == 0.0:
+            return None
+
+        max_len = max(len(p.daily_returns) for p in active_pods)
+        weighted_sum = pd.Series([0.0] * max_len, dtype=float)
+
+        for pod in active_pods:
+            returns = pod.daily_returns
+            padded = [0.0] * (max_len - len(returns)) + list(returns)
+            weight = pod.capital_fraction / total_fraction
+            weighted_sum += pd.Series(padded, dtype=float) * weight
+
+        return weighted_sum
 
     def _build_routing_table(self) -> None:
         """심볼 → Pod 인덱스 라우팅 테이블 구축."""

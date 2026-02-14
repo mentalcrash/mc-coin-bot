@@ -1,0 +1,383 @@
+"""Lifecycle Manager — Pod 생애주기 자동 관리.
+
+Pod의 성과를 실시간으로 평가하여 상태 전이를 수행합니다.
+
+State Machine:
+    INCUBATION → PRODUCTION  (졸업 기준 ALL 충족)
+    PRODUCTION → WARNING     (PH detector 열화 감지)
+    WARNING    → PRODUCTION  (PH score 회복)
+    WARNING    → PROBATION   (30일 미회복)
+    PROBATION  → PRODUCTION  (강한 회복)
+    PROBATION  → RETIRED     (유예 만료)
+    ANY        → RETIRED     (hard stops: MDD ≥ 25% 또는 연속 6개월 손실)
+
+Rules Applied:
+    - #10 Python Standards: Modern typing, named constants
+    - PLR0912: 서브메서드 분리로 branch count 제한
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from loguru import logger
+
+from src.orchestrator.degradation import PageHinkleyDetector
+from src.orchestrator.models import LifecycleState
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from src.orchestrator.config import GraduationCriteria, RetirementCriteria
+    from src.orchestrator.pod import StrategyPod
+
+
+# ── Constants ─────────────────────────────────────────────────────
+
+_DAYS_PER_MONTH = 30
+_WARNING_TIMEOUT_DAYS = 30
+_MIN_CORRELATION_SAMPLES = 2
+
+
+# ── Internal State ────────────────────────────────────────────────
+
+
+@dataclass
+class _PodLifecycleState:
+    """Pod별 내부 생애주기 상태 추적."""
+
+    ph_detector: PageHinkleyDetector = field(default_factory=PageHinkleyDetector)
+    state_entered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    consecutive_loss_months: int = 0
+    last_monthly_check_day: int = 0
+
+
+# ── LifecycleManager ─────────────────────────────────────────────
+
+
+class LifecycleManager:
+    """Pod 생애주기 자동 관리자.
+
+    각 Pod의 성과를 평가하여 상태 전이를 수행합니다.
+    Orchestrator._execute_rebalance()에서 호출됩니다.
+
+    Args:
+        graduation: Incubation → Production 졸업 기준
+        retirement: 퇴출 기준 (hard stops + probation)
+    """
+
+    def __init__(
+        self,
+        graduation: GraduationCriteria,
+        retirement: RetirementCriteria,
+    ) -> None:
+        self._graduation = graduation
+        self._retirement = retirement
+        self._pod_states: dict[str, _PodLifecycleState] = {}
+
+    def evaluate(
+        self,
+        pod: StrategyPod,
+        portfolio_returns: pd.Series | None = None,
+    ) -> LifecycleState:
+        """Pod 상태를 평가하고 필요 시 전이를 수행합니다.
+
+        Args:
+            pod: 평가 대상 StrategyPod
+            portfolio_returns: 전체 포트폴리오 일별 수익률 (correlation 계산용)
+
+        Returns:
+            평가 후 Pod의 LifecycleState
+        """
+        pod_ls = self._get_or_create_state(pod)
+
+        # 1. RETIRED는 terminal → 즉시 반환
+        if pod.state == LifecycleState.RETIRED:
+            return LifecycleState.RETIRED
+
+        # 2. 연속 손실 개월 업데이트
+        self._update_consecutive_loss_months(pod, pod_ls)
+
+        # 3. Hard stops 체크 (ANY → RETIRED)
+        if self._check_hard_stops(pod, pod_ls):
+            return pod.state
+
+        # 4. 상태별 전이 평가
+        self._evaluate_state_specific(pod, pod_ls, portfolio_returns)
+
+        return pod.state
+
+    # ── State-specific dispatchers ────────────────────────────────
+
+    def _evaluate_state_specific(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+        portfolio_returns: pd.Series | None,
+    ) -> None:
+        """상태별 전이 로직 디스패치 (PLR0912 대응)."""
+        state = pod.state
+        if state == LifecycleState.INCUBATION:
+            self._evaluate_incubation(pod, pod_ls, portfolio_returns)
+        elif state == LifecycleState.PRODUCTION:
+            self._evaluate_production(pod, pod_ls)
+        elif state == LifecycleState.WARNING:
+            self._evaluate_warning(pod, pod_ls)
+        elif state == LifecycleState.PROBATION:
+            self._evaluate_probation(pod, pod_ls)
+
+    def _evaluate_incubation(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+        portfolio_returns: pd.Series | None,
+    ) -> None:
+        """INCUBATION → PRODUCTION 졸업 평가."""
+        if self._check_graduation(pod, portfolio_returns):
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+
+    def _evaluate_production(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> None:
+        """PRODUCTION → WARNING 열화 평가."""
+        if self._check_degradation(pod, pod_ls):
+            self._transition(pod, pod_ls, LifecycleState.WARNING)
+
+    def _evaluate_warning(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> None:
+        """WARNING → PRODUCTION (recovery) 또는 → PROBATION (timeout)."""
+        # Recovery: PH score below floor → back to PRODUCTION
+        if pod_ls.ph_detector.score < self._retirement.rolling_sharpe_floor:
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+            return
+
+        # Timeout: 30 days without recovery → PROBATION
+        days_in_warning = (datetime.now(UTC) - pod_ls.state_entered_at).days
+        if days_in_warning >= _WARNING_TIMEOUT_DAYS:
+            self._transition(pod, pod_ls, LifecycleState.PROBATION)
+
+    def _evaluate_probation(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> None:
+        """PROBATION → PRODUCTION (strong recovery) 또는 → RETIRED (expired)."""
+        # Strong recovery: sharpe >= min_sharpe AND ph_score <= 0
+        perf = pod.performance
+        if perf.sharpe_ratio >= self._graduation.min_sharpe and pod_ls.ph_detector.score <= 0.0:
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+            return
+
+        # Expired: probation_days 경과 → RETIRED
+        days_in_probation = (datetime.now(UTC) - pod_ls.state_entered_at).days
+        if days_in_probation >= self._retirement.probation_days:
+            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+
+    # ── Hard Stops ────────────────────────────────────────────────
+
+    def _check_hard_stops(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> bool:
+        """MDD breach 또는 연속 손실 개월 초과 시 즉시 RETIRED.
+
+        Returns:
+            True if hard stop triggered (state changed to RETIRED).
+        """
+        perf = pod.performance
+
+        # MDD breach
+        if perf.max_drawdown >= self._retirement.max_drawdown_breach:
+            logger.warning(
+                "Pod {}: MDD {:.1%} >= {:.1%} breach → RETIRED",
+                pod.pod_id,
+                perf.max_drawdown,
+                self._retirement.max_drawdown_breach,
+            )
+            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+            return True
+
+        # Consecutive loss months
+        if pod_ls.consecutive_loss_months >= self._retirement.consecutive_loss_months:
+            logger.warning(
+                "Pod {}: {} consecutive loss months → RETIRED",
+                pod.pod_id,
+                pod_ls.consecutive_loss_months,
+            )
+            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+            return True
+
+        return False
+
+    # ── Graduation Check ──────────────────────────────────────────
+
+    def _check_graduation(
+        self,
+        pod: StrategyPod,
+        portfolio_returns: pd.Series | None,
+    ) -> bool:
+        """7개 졸업 기준 중 6개 평가 (backtest_live_gap deferred).
+
+        Returns:
+            True if all criteria met.
+        """
+        perf = pod.performance
+        grad = self._graduation
+
+        # 5 quantitative criteria (backtest_live_gap deferred)
+        quant_ok = (
+            perf.live_days >= grad.min_live_days
+            and perf.sharpe_ratio >= grad.min_sharpe
+            and perf.max_drawdown <= grad.max_drawdown
+            and perf.trade_count >= grad.min_trade_count
+            and perf.calmar_ratio >= grad.min_calmar
+        )
+        if not quant_ok:
+            return False
+
+        # Portfolio correlation (skip if no portfolio returns)
+        if portfolio_returns is not None:
+            corr = self._compute_portfolio_correlation(pod, portfolio_returns)
+            if corr > grad.max_portfolio_correlation:
+                return False
+
+        return True
+
+    # ── Degradation Check ─────────────────────────────────────────
+
+    def _check_degradation(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> bool:
+        """PH detector에 최신 daily return 입력 → 열화 감지.
+
+        Returns:
+            True if degradation detected.
+        """
+        returns = pod.daily_returns
+        if not returns:
+            return False
+
+        # Feed only the latest return
+        latest_return = returns[-1]
+        return pod_ls.ph_detector.update(latest_return)
+
+    # ── Consecutive Loss Months ───────────────────────────────────
+
+    def _update_consecutive_loss_months(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+    ) -> None:
+        """일별 수익률을 30일 청크로 분할하여 연속 손실 개월 카운트."""
+        live_days = pod.performance.live_days
+
+        # 새 30일 청크가 완료되지 않았으면 skip
+        if live_days < _DAYS_PER_MONTH:
+            return
+        latest_month_idx = live_days // _DAYS_PER_MONTH
+        if latest_month_idx <= pod_ls.last_monthly_check_day:
+            return
+
+        returns = pod.daily_returns
+
+        # Process all pending monthly chunks
+        start_idx = pod_ls.last_monthly_check_day + 1
+        for month_idx in range(start_idx, latest_month_idx + 1):
+            chunk_start = (month_idx - 1) * _DAYS_PER_MONTH
+            chunk_end = month_idx * _DAYS_PER_MONTH
+            chunk = returns[chunk_start:chunk_end]
+
+            if not chunk:
+                continue
+
+            monthly_return = sum(chunk)
+            if monthly_return < 0.0:
+                pod_ls.consecutive_loss_months += 1
+            else:
+                pod_ls.consecutive_loss_months = 0
+
+        pod_ls.last_monthly_check_day = latest_month_idx
+
+    # ── Portfolio Correlation ─────────────────────────────────────
+
+    def _compute_portfolio_correlation(
+        self,
+        pod: StrategyPod,
+        portfolio_returns: pd.Series,
+    ) -> float:
+        """Pod returns vs portfolio returns 상관계수.
+
+        Returns:
+            Pearson correlation coefficient. 0.0 if insufficient data.
+        """
+        import pandas as pd
+
+        pod_returns = pd.Series(pod.daily_returns, dtype=float)
+
+        if (
+            len(pod_returns) < _MIN_CORRELATION_SAMPLES
+            or len(portfolio_returns) < _MIN_CORRELATION_SAMPLES
+        ):
+            return 0.0
+
+        # Align lengths (use shorter)
+        min_len = min(len(pod_returns), len(portfolio_returns))
+        pod_tail = pod_returns.iloc[-min_len:]
+        port_tail = portfolio_returns.iloc[-min_len:]
+
+        # Reset index for alignment
+        pod_tail = pod_tail.reset_index(drop=True)
+        port_tail = port_tail.reset_index(drop=True)
+
+        corr = pod_tail.corr(port_tail)
+
+        # NaN → 0.0 (e.g. zero variance)
+        if pd.isna(corr):
+            return 0.0
+
+        return float(abs(corr))
+
+    # ── State Transition ──────────────────────────────────────────
+
+    def _transition(
+        self,
+        pod: StrategyPod,
+        pod_ls: _PodLifecycleState,
+        new_state: LifecycleState,
+    ) -> None:
+        """상태 전이를 수행합니다."""
+        old_state = pod.state
+        pod.state = new_state
+        pod_ls.state_entered_at = datetime.now(UTC)
+
+        # WARNING/PROBATION → PRODUCTION 복귀 시 detector reset
+        if (
+            old_state in (LifecycleState.WARNING, LifecycleState.PROBATION)
+            and new_state == LifecycleState.PRODUCTION
+        ):
+            pod_ls.ph_detector.reset()
+
+        logger.info(
+            "Pod {}: {} → {}",
+            pod.pod_id,
+            old_state.value,
+            new_state.value,
+        )
+
+    # ── Internal ──────────────────────────────────────────────────
+
+    def _get_or_create_state(self, pod: StrategyPod) -> _PodLifecycleState:
+        """Pod별 내부 상태를 가져오거나 생성합니다."""
+        if pod.pod_id not in self._pod_states:
+            self._pod_states[pod.pod_id] = _PodLifecycleState()
+        return self._pod_states[pod.pod_id]
