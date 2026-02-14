@@ -1,0 +1,15 @@
+id: 35
+title: Rolling ML의 forward_return 학습 시 prediction_horizon 오프셋 필수
+body: 'Rolling ML에서 forward_return[i] = close[i+H]/close[i]-1을 학습 target으로 사용할 때,
+  시점 t에서 학습 데이터의 상한은 t-H까지여야 한다. forward_return[t-1]은 close[t-1+H]가 필요하므로 미래 데이터.
+  y_train = forward_returns[start:t]가 아니라 forward_returns[start:t-H]로 제한해야 look-ahead
+  bias 방지. 영향: 학습 데이터의 마지막 H-1개가 미래 close를 포함하여 모델 성능 과대평가.'
+category: strategy-design
+tags:
+- ML
+- look-ahead
+- forward-return
+strategies:
+- ml-deriv-regime
+timeframes: []
+added_at: '2026-02-14'

@@ -224,6 +224,26 @@ def format_strategy_health_embed(snapshot: StrategyHealthSnapshot) -> dict[str, 
     else:
         fields.append({"name": "Open Positions", "value": "None", "inline": False})
 
+    # Per-strategy breakdown
+    if snapshot.strategy_breakdown:
+        _status_icons = {"HEALTHY": "+", "WATCH": "~", "DEGRADING": "-"}
+        breakdown_lines: list[str] = []
+        for sp in snapshot.strategy_breakdown:
+            icon = _status_icons.get(sp.status, "?")
+            breakdown_lines.append(
+                f"[{icon}] **{sp.strategy_name}**  "
+                + f"Sharpe {sp.rolling_sharpe:.2f} | "
+                + f"WR {sp.win_rate:.0%} | "
+                + f"PnL ${sp.total_pnl:+,.0f} ({sp.trade_count})"
+            )
+        fields.append(
+            {
+                "name": "Strategy Breakdown (30d)",
+                "value": "\n".join(breakdown_lines),
+                "inline": False,
+            }
+        )
+
     cb_label = "ACTIVE" if snapshot.is_circuit_breaker_active else "OK"
     fields.append({"name": "CB Status", "value": cb_label, "inline": True})
 

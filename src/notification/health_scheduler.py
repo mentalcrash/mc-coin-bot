@@ -33,6 +33,7 @@ from src.notification.health_models import (
     MarketRegimeReport,
     PositionStatus,
     StrategyHealthSnapshot,
+    StrategyPerformanceSnapshot,
     SystemHealthSnapshot,
 )
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -124,6 +125,14 @@ class HealthCheckScheduler:
 
         await self._snapshot_fetcher.stop()
         logger.info("HealthCheckScheduler stopped")
+
+    async def trigger_health_check(self) -> None:
+        """즉시 heartbeat 전송 (Discord /health 명령용)."""
+        try:
+            await self._send_heartbeat()
+            logger.info("Health check triggered manually")
+        except Exception:
+            logger.exception("Failed to trigger health check")
 
     # ─── Loops ────────────────────────────────────────────────
 
@@ -287,6 +296,9 @@ class HealthCheckScheduler:
                     )
                 )
 
+        # 전략별 breakdown (client_order_id에서 전략명 추출)
+        strategy_breakdown = self._build_strategy_breakdown(recent_trades_30d)
+
         return StrategyHealthSnapshot(
             timestamp=now,
             rolling_sharpe_30d=rolling_sharpe,
@@ -296,9 +308,64 @@ class HealthCheckScheduler:
             open_positions=tuple(positions),
             is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
             alpha_decay_detected=alpha_decay,
+            strategy_breakdown=tuple(strategy_breakdown),
         )
 
     # ─── Helper Functions ─────────────────────────────────────
+
+    def _build_strategy_breakdown(
+        self,
+        trades_30d: Sequence[object],
+    ) -> list[StrategyPerformanceSnapshot]:
+        """client_order_id에서 전략별로 그룹핑하여 성과 스냅샷 생성.
+
+        Args:
+            trades_30d: 최근 30일 TradeRecord 리스트
+
+        Returns:
+            전략별 성과 스냅샷 리스트
+        """
+        from collections import defaultdict
+
+        # 전략별 그룹핑
+        by_strategy: dict[str, list[object]] = defaultdict(list)
+        for t in trades_30d:
+            oid = getattr(t, "client_order_id", None) or ""
+            parts = str(oid).rsplit("-", 2)
+            name = parts[0] if len(parts) >= 3 else "unknown"  # noqa: PLR2004
+            by_strategy[name].append(t)
+
+        result: list[StrategyPerformanceSnapshot] = []
+        for strategy_name, strades in sorted(by_strategy.items()):
+            sharpe = self._compute_rolling_sharpe(strades)
+            win_rate, _ = self._compute_trade_stats(strades)
+            total_pnl = sum(
+                float(t.pnl)  # type: ignore[union-attr]
+                for t in strades
+                if getattr(t, "pnl", None) is not None
+            )
+
+            # 상태 아이콘 결정
+            _sharpe_healthy = 0.5
+            if sharpe > _sharpe_healthy:
+                status = "HEALTHY"
+            elif sharpe >= 0:
+                status = "WATCH"
+            else:
+                status = "DEGRADING"
+
+            result.append(
+                StrategyPerformanceSnapshot(
+                    strategy_name=strategy_name,
+                    rolling_sharpe=sharpe,
+                    win_rate=win_rate,
+                    total_pnl=total_pnl,
+                    trade_count=len(strades),
+                    status=status,
+                )
+            )
+
+        return result
 
     @staticmethod
     def _compute_rolling_sharpe(

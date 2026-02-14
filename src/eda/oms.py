@@ -25,6 +25,7 @@ from src.core.events import (
     OrderRequestEvent,
 )
 from src.eda.ports import ExecutorPort
+from src.logging.tracing import component_span_with_context
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
@@ -101,6 +102,12 @@ class OMS:
         if not order.validated:
             return
 
+        corr_id = str(order.correlation_id) if order.correlation_id else None
+        with component_span_with_context("oms.submit_order", corr_id, {"symbol": order.symbol}):
+            await self._on_order_request_inner(order, bus)
+
+    async def _on_order_request_inner(self, order: OrderRequestEvent, bus: EventBus) -> None:
+        """_on_order_request 본체 (tracing span 내부)."""
         # 멱등성 체크
         if order.client_order_id in self._processed_orders:
             logger.warning("Duplicate order ignored: {}", order.client_order_id)

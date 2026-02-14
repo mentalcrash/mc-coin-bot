@@ -1,0 +1,91 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_fills_total, symbol)",
+        "name": "symbol",
+        "type": "query",
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Row 1: Fill Latency",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Fill Latency (P50 / P95 / P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P50 {{symbol}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P95 {{symbol}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(mcbot_order_latency_seconds_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P99 {{symbol}}", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "title": "Slippage (P50 / P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_slippage_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P50 bps {{symbol}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_slippage_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P95 bps {{symbol}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "title": "Row 2: Fees & Orders",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false
+    },
+    {
+      "title": "Fee per Symbol",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "mcbot_fees_usdt_total{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Order Status Breakdown",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "targets": [
+        { "expr": "rate(mcbot_orders_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "{{symbol}} {{side}} {{status}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Rejection Reasons",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "targets": [
+        { "expr": "rate(mcbot_order_rejected_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "{{symbol}} ({{reason}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["trading", "mc-coin-bot"],
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "MC Coin Bot — Execution",
+  "uid": "mc-execution",
+  "version": 1
+}

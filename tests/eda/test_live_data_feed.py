@@ -611,3 +611,70 @@ class TestStalenessDetection:
         await monitor_task
 
         assert "BTC/USDT" in feed.stale_symbols
+
+    async def test_staleness_publishes_risk_alert(self) -> None:
+        """stale 감지 시 RiskAlertEvent가 EventBus에 발행됨."""
+        import time
+
+        from src.core.events import RiskAlertEvent
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=0.1,
+        )
+
+        bus = EventBus(queue_size=100)
+        feed._bus = bus
+
+        # RiskAlertEvent 캡처
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture(event: AnyEvent) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe(EventType.RISK_ALERT, capture)
+        bus_task = asyncio.create_task(bus.start())
+
+        # heartbeat를 과거로 설정
+        feed._last_received["BTC/USDT"] = time.monotonic() - 1.0
+
+        monitor_task = asyncio.create_task(feed._staleness_monitor())
+        await asyncio.sleep(0.15)
+        feed._shutdown_event.set()
+        await monitor_task
+        await bus.flush()
+        await bus.stop()
+        await bus_task
+
+        assert len(alerts) >= 1
+        assert "STALE DATA" in alerts[0].message
+        assert alerts[0].alert_level == "WARNING"
+
+    async def test_staleness_no_alert_without_bus(self) -> None:
+        """bus가 None이면 RiskAlertEvent 발행 안 함 (에러 없음)."""
+        import time
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=0.1,
+        )
+
+        # _bus is None (default)
+        feed._last_received["BTC/USDT"] = time.monotonic() - 1.0
+
+        monitor_task = asyncio.create_task(feed._staleness_monitor())
+        await asyncio.sleep(0.15)
+        feed._shutdown_event.set()
+        await monitor_task
+
+        # No error raised, stale is still detected
+        assert "BTC/USDT" in feed.stale_symbols

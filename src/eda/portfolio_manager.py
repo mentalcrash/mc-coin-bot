@@ -25,6 +25,7 @@ from src.core.events import (
     PositionUpdateEvent,
     SignalEvent,
 )
+from src.logging.tracing import component_span_with_context
 from src.models.types import Direction
 
 if TYPE_CHECKING:
@@ -235,6 +236,29 @@ class EDAPortfolioManager:
         assert isinstance(let, dict)
         self._last_executed_targets = {k: float(v) for k, v in let.items()}
 
+    def sync_capital(self, exchange_equity: float) -> None:
+        """LIVE 모드: 거래소 잔고 기준으로 capital 동기화.
+
+        State 복원 후 PM cash가 이전 세션(paper 등) 값으로 남는 문제 방지.
+        포지션 notional을 고려하여 cash를 역산합니다.
+
+        Args:
+            exchange_equity: 거래소 총 equity (USDT)
+        """
+        long_notional = sum(
+            p.notional
+            for p in self._positions.values()
+            if p.is_open and p.direction == Direction.LONG
+        )
+        short_notional = sum(
+            p.notional
+            for p in self._positions.values()
+            if p.is_open and p.direction == Direction.SHORT
+        )
+        # equity = cash + long - short → cash = equity - long + short
+        self._cash = exchange_equity - long_notional + short_notional
+        self._initial_capital = exchange_equity
+
     # =========================================================================
     # Cash Sufficiency Check
     # =========================================================================
@@ -283,7 +307,12 @@ class EDAPortfolioManager:
         """SignalEvent → target weight 저장 + 리밸런스 평가."""
         assert isinstance(event, SignalEvent)
         signal = event
+        corr_id = str(signal.correlation_id) if signal.correlation_id else None
+        with component_span_with_context("pm.process_signal", corr_id, {"symbol": signal.symbol}):
+            await self._on_signal_inner(signal)
 
+    async def _on_signal_inner(self, signal: SignalEvent) -> None:
+        """_on_signal 본체 (tracing span 내부)."""
         symbol = signal.symbol
 
         # 1. 에셋 가중치 적용

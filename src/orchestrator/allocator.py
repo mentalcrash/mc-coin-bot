@@ -37,6 +37,7 @@ _WARNING_SCALE = 0.5
 _ANNUALIZATION_FACTOR = 365.0
 _NAN_MAJORITY_THRESHOLD = 0.5
 _CONDITION_NUMBER_THRESHOLD = 1e10
+_MIN_COV_ROWS = 3  # cov() 계산에 필요한 최소 행 수 (ddof=1이므로 최소 2, 안전 마진 3)
 
 
 # ── Spinu Objective (Module-level pure functions) ─────────────────
@@ -87,6 +88,10 @@ def _regularize_cov(cov: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
 def _compute_cov_matrix(pod_returns: pd.DataFrame, lookback: int) -> npt.NDArray[np.float64]:
     """수익률 DataFrame에서 공분산 행렬 계산 (lookback 적용, 연간화)."""
     tail = pod_returns.tail(lookback)
+    n = tail.shape[1]
+    if len(tail) < _MIN_COV_ROWS:
+        # 데이터 부족 시 단위 행렬 반환 → EW fallback과 동일 효과
+        return np.eye(n) * _MIN_WEIGHT
     cov: npt.NDArray[np.float64] = (
         tail.cov().to_numpy() * _ANNUALIZATION_FACTOR  # type: ignore[union-attr]
     )

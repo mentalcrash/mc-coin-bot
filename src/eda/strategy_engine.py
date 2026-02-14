@@ -18,6 +18,7 @@ import pandas as pd
 from loguru import logger
 
 from src.core.events import AnyEvent, BarEvent, EventType, RiskAlertEvent, SignalEvent
+from src.logging.tracing import trade_cycle_span
 from src.models.types import Direction
 
 if TYPE_CHECKING:
@@ -189,6 +190,7 @@ class StrategyEngine:
         # 4. 최신 시그널 추출 + SignalEvent 발행 (매 bar)
         latest_direction = int(signals.direction.iloc[-1])
         latest_strength = float(signals.strength.iloc[-1])
+        corr_id = str(bar.correlation_id) if bar.correlation_id else None
         signal_event = SignalEvent(
             symbol=symbol,
             strategy_name=self._strategy.name,
@@ -198,7 +200,8 @@ class StrategyEngine:
             correlation_id=bar.correlation_id,
             source="StrategyEngine",
         )
-        await bus.publish(signal_event)
+        with trade_cycle_span(symbol, self._strategy.name, corr_id):
+            await bus.publish(signal_event)
 
     async def _on_bar_precomputed(self, bar: BarEvent, bus: EventBus) -> None:
         """Precomputed signals 모드: timestamp로 사전 계산된 시그널을 조회하여 발행."""

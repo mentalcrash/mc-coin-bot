@@ -69,6 +69,14 @@ class ReportScheduler:
                     await task
         logger.info("ReportScheduler stopped")
 
+    async def trigger_daily_report(self) -> None:
+        """즉시 daily report 생성 + enqueue (Discord /report 명령용)."""
+        try:
+            await self._send_daily_report()
+            logger.info("Daily report triggered manually")
+        except Exception:
+            logger.exception("Failed to trigger daily report")
+
     async def _daily_loop(self) -> None:
         """매일 00:00 UTC 일일 리포트."""
         while True:

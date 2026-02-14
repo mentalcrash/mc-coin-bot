@@ -1,0 +1,54 @@
+meta:
+  name: ms-vol-ratio
+  display_name: Multi-Scale Volatility Ratio
+  category: Volatility Structure
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-15'
+  economic_rationale: Vol term structure inversion = 정보 도착 프록시. 단기vol/장기vol ratio로
+    breakout timing 포착. Corsi(2009) HAR-RV 이론 기반. 동일 측정법의 다른 scale 비교로 Dual Vol Trend와
+    차별화.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 25
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-15'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-15'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. shift(1) 전수 확인, long_vol clip(1e-10) 보호, ShortMode 3-way
+    완비.
+- date: '2026-02-15'
+  gate: G1
+  verdict: FAIL
+  rationale: Best Asset DOGE Sharpe 0.78(<1.0), CAGR +16.3%(<20%). BTC -0.61, BNB
+    -0.26. DOGE 편향(DOGE-only alpha). Vol ratio breakout이 BTC/ETH에서 무효

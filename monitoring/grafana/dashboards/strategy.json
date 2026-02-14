@@ -1,0 +1,73 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_strategy_signals_total, strategy)",
+        "name": "strategy",
+        "type": "query",
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Row 1: Strategy Performance",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Strategy PnL",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_strategy_pnl_usdt{strategy=~\"$strategy\"}", "legendFormat": "{{strategy}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Signal Rate (per hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        { "expr": "rate(mcbot_strategy_signals_total{strategy=~\"$strategy\"}[1h]) * 3600", "legendFormat": "{{strategy}} ({{side}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "title": "Fill Rate (per hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "rate(mcbot_strategy_fills_total{strategy=~\"$strategy\"}[1h]) * 3600", "legendFormat": "{{strategy}} ({{side}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "title": "Fee Accumulation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "targets": [
+        { "expr": "mcbot_strategy_fees_usdt_total{strategy=~\"$strategy\"}", "legendFormat": "{{strategy}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["trading", "mc-coin-bot"],
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "MC Coin Bot — Strategy",
+  "uid": "mc-strategy",
+  "version": 1
+}

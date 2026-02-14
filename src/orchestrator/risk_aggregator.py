@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 _MIN_VARIANCE = 1e-12
 _WARNING_RATIO = 0.8  # 임계값의 80%에서 warning 발행
 _MIN_PODS_FOR_CORRELATION = 2
+_MIN_COV_ROWS = 3  # cov()/corr() 계산 최소 행 수
 
 
 # ── Pure Functions ────────────────────────────────────────────────
@@ -56,6 +57,10 @@ def compute_risk_contributions(
         return {}
 
     n = len(pod_ids)
+    if len(pod_returns) < _MIN_COV_ROWS:
+        equal = 1.0 / n if n > 0 else 0.0
+        return dict.fromkeys(pod_ids, equal)
+
     w = np.array([weights[pid] for pid in pod_ids])
     cov: np.ndarray = pod_returns[pod_ids].cov().to_numpy()  # type: ignore[assignment]
 
@@ -117,6 +122,8 @@ def check_correlation_stress(
         Pod < 2개이면 (False, 0.0).
     """
     if pod_returns.shape[1] < _MIN_PODS_FOR_CORRELATION:
+        return (False, 0.0)
+    if pod_returns.shape[0] < _MIN_COV_ROWS:
         return (False, 0.0)
 
     corr_matrix = pod_returns.corr()

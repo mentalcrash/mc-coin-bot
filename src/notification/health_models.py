@@ -121,6 +121,28 @@ class PositionStatus(BaseModel):
     current_weight: float
 
 
+class StrategyPerformanceSnapshot(BaseModel):
+    """개별 전략 성과 스냅샷 (8h 리포트 전략별 breakdown).
+
+    Attributes:
+        strategy_name: 전략 이름
+        rolling_sharpe: 최근 30일 rolling Sharpe
+        win_rate: win rate
+        total_pnl: 누적 PnL
+        trade_count: 거래 건수
+        status: 전략 상태 아이콘 (HEALTHY/WATCH/DEGRADING)
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    strategy_name: str
+    rolling_sharpe: float
+    win_rate: float
+    total_pnl: float
+    trade_count: int
+    status: str
+
+
 class StrategyHealthSnapshot(BaseModel):
     """Tier 3: Strategy Health 리포트.
 
@@ -133,6 +155,7 @@ class StrategyHealthSnapshot(BaseModel):
         open_positions: 오픈 포지션 목록
         is_circuit_breaker_active: CB 발동 여부
         alpha_decay_detected: 3연속 Sharpe 하락 감지
+        strategy_breakdown: 전략별 성과 스냅샷
     """
 
     model_config = ConfigDict(frozen=True)
@@ -145,3 +168,4 @@ class StrategyHealthSnapshot(BaseModel):
     open_positions: tuple[PositionStatus, ...]
     is_circuit_breaker_active: bool
     alpha_decay_detected: bool
+    strategy_breakdown: tuple[StrategyPerformanceSnapshot, ...] = ()

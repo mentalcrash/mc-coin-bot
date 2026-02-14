@@ -28,8 +28,10 @@ from src.monitoring.metrics import (
     MetricsExporter,
     PrometheusApiCallback,
     PrometheusWsCallback,
+    PrometheusWsDetailCallback,
     _calculate_slippage_bps,
     _categorize_reason,
+    _extract_strategy,
 )
 
 
@@ -625,3 +627,313 @@ class TestInfoAndEnumMetrics:
         trading_mode_enum.state("paper")
         val = _sample("mcbot_trading_mode", {"mcbot_trading_mode": "paper"})
         assert val == 1.0
+
+
+class TestExtractStrategy:
+    """_extract_strategy() 단위 테스트."""
+
+    def test_standard_format(self) -> None:
+        assert _extract_strategy("ctrend-BTCUSDT-42") == "ctrend"
+
+    def test_hyphenated_strategy_name(self) -> None:
+        assert _extract_strategy("anchor-mom-ETHUSDT-7") == "anchor-mom"
+
+    def test_too_few_parts(self) -> None:
+        assert _extract_strategy("simple") == "unknown"
+
+    def test_two_parts(self) -> None:
+        assert _extract_strategy("strategy-only") == "unknown"
+
+    def test_empty_string(self) -> None:
+        assert _extract_strategy("") == "unknown"
+
+
+class TestStrategySignalCounter:
+    """Per-strategy signal counter 검증."""
+
+    async def test_signal_increments_strategy_counter(self) -> None:
+        exporter = MetricsExporter(port=0)
+        before = (
+            _sample(
+                "mcbot_strategy_signals_total",
+                {"strategy": "tsmom", "side": "LONG"},
+            )
+            or 0.0
+        )
+
+        event = SignalEvent(
+            symbol="BTC/USDT",
+            strategy_name="tsmom",
+            direction=Direction.LONG,
+            strength=0.8,
+            bar_timestamp=datetime.now(UTC),
+        )
+        await _run_with_bus(exporter, [event])
+
+        after = _sample(
+            "mcbot_strategy_signals_total",
+            {"strategy": "tsmom", "side": "LONG"},
+        )
+        assert after is not None
+        assert after > before
+
+
+class TestStrategyFillCounter:
+    """Per-strategy fill/fee counter 검증."""
+
+    async def test_fill_increments_strategy_counters(self) -> None:
+        exporter = MetricsExporter(port=0)
+        before_fills = (
+            _sample(
+                "mcbot_strategy_fills_total",
+                {"strategy": "ctrend", "side": "BUY"},
+            )
+            or 0.0
+        )
+        before_fees = _sample("mcbot_strategy_fees_usdt_total", {"strategy": "ctrend"}) or 0.0
+
+        order = OrderRequestEvent(
+            client_order_id="ctrend-BTCUSDT-99",
+            symbol="BTC/USDT",
+            side="BUY",
+            order_type="MARKET",
+            target_weight=0.5,
+            notional_usd=5000.0,
+        )
+        fill = FillEvent(
+            client_order_id="ctrend-BTCUSDT-99",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_price=40000.0,
+            fill_qty=0.1,
+            fee=4.0,
+            fill_timestamp=datetime.now(UTC),
+        )
+        await _run_with_bus(exporter, [order, fill])
+
+        after_fills = _sample(
+            "mcbot_strategy_fills_total",
+            {"strategy": "ctrend", "side": "BUY"},
+        )
+        after_fees = _sample("mcbot_strategy_fees_usdt_total", {"strategy": "ctrend"})
+        assert after_fills is not None
+        assert after_fills > before_fills
+        assert after_fees is not None
+        assert after_fees >= before_fees + 4.0
+
+    async def test_pending_order_captures_strategy_name(self) -> None:
+        exporter = MetricsExporter(port=0)
+        order = OrderRequestEvent(
+            client_order_id="anchor-mom-ETHUSDT-5",
+            symbol="ETH/USDT",
+            side="SELL",
+            order_type="MARKET",
+            target_weight=0.0,
+            notional_usd=3000.0,
+        )
+        await _run_with_bus(exporter, [order])
+        pending = exporter._pending_orders["anchor-mom-ETHUSDT-5"]
+        assert pending.strategy_name == "anchor-mom"
+
+
+class TestExecutionQualityAlerts:
+    """MetricsExporter execution quality alert 검증."""
+
+    async def test_high_slippage_publishes_risk_alert(self) -> None:
+        """슬리피지 > 30bps → CRITICAL RiskAlertEvent 발행."""
+        bus = EventBus(queue_size=100)
+        exporter = MetricsExporter(port=0)
+        await exporter.register(bus)
+
+        # RiskAlertEvent 캡처
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture_alert(event: object) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe("risk_alert", capture_alert)
+
+        bus_task = asyncio.create_task(bus.start())
+        try:
+            # bar close 설정 → order → fill with high slippage
+            bar = BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=40000.0,
+                high=41000.0,
+                low=39000.0,
+                close=40000.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+            order = OrderRequestEvent(
+                client_order_id="slip-crit-001",
+                symbol="BTC/USDT",
+                side="BUY",
+                order_type="MARKET",
+                target_weight=0.5,
+                notional_usd=5000.0,
+            )
+            # 40000 → 40200 = 50 bps (> 30 CRITICAL)
+            fill = FillEvent(
+                client_order_id="slip-crit-001",
+                symbol="BTC/USDT",
+                side="BUY",
+                fill_price=40200.0,
+                fill_qty=0.1,
+                fee=4.0,
+                fill_timestamp=datetime.now(UTC),
+            )
+            for evt in [bar, order, fill]:
+                await bus.publish(evt)  # type: ignore[arg-type]
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        assert len(alerts) >= 1
+        critical_alerts = [a for a in alerts if a.alert_level == "CRITICAL"]
+        assert len(critical_alerts) >= 1
+        assert "slippage" in critical_alerts[0].message.lower()
+
+    async def test_normal_slippage_no_alert(self) -> None:
+        """슬리피지 < 15bps → alert 미발행."""
+        bus = EventBus(queue_size=100)
+        exporter = MetricsExporter(port=0)
+        await exporter.register(bus)
+
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture_alert(event: object) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe("risk_alert", capture_alert)
+
+        bus_task = asyncio.create_task(bus.start())
+        try:
+            bar = BarEvent(
+                symbol="ETH/USDT",
+                timeframe="1D",
+                open=3000.0,
+                high=3100.0,
+                low=2900.0,
+                close=3000.0,
+                volume=500.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+            order = OrderRequestEvent(
+                client_order_id="slip-ok-001",
+                symbol="ETH/USDT",
+                side="BUY",
+                order_type="MARKET",
+                target_weight=0.3,
+                notional_usd=3000.0,
+            )
+            # 3000 → 3001 = 3.3 bps (< 15, no alert)
+            fill = FillEvent(
+                client_order_id="slip-ok-001",
+                symbol="ETH/USDT",
+                side="BUY",
+                fill_price=3001.0,
+                fill_qty=1.0,
+                fee=3.0,
+                fill_timestamp=datetime.now(UTC),
+            )
+            for evt in [bar, order, fill]:
+                await bus.publish(evt)  # type: ignore[arg-type]
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        # execution_quality 관련 alert만 필터
+        exec_alerts = [a for a in alerts if "MetricsExporter:execution_quality" in (a.source or "")]
+        assert len(exec_alerts) == 0
+
+
+class TestBarAgeMetrics:
+    """last_bar_age_seconds gauge 검증."""
+
+    async def test_bar_resets_age(self) -> None:
+        exporter = MetricsExporter(port=0)
+        bar = BarEvent(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            open=40000.0,
+            high=41000.0,
+            low=39000.0,
+            close=40500.0,
+            volume=1000.0,
+            bar_timestamp=datetime.now(UTC),
+        )
+        await _run_with_bus(exporter, [bar])
+
+        val = _sample("mcbot_last_bar_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val == 0.0
+
+    def test_update_bar_ages(self) -> None:
+        exporter = MetricsExporter(port=0)
+        exporter._last_bar_time["BTC/USDT"] = time.monotonic() - 60
+        exporter.update_bar_ages()
+
+        val = _sample("mcbot_last_bar_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val >= 59.0
+
+
+class TestPrometheusWsDetailCallback:
+    """PrometheusWsDetailCallback 테스트."""
+
+    def test_on_ws_status_connected(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_status("BTC/USDT", connected=True)
+        val = _sample("mcbot_exchange_ws_connected", {"symbol": "BTC/USDT"})
+        assert val == 1.0
+
+    def test_on_ws_status_disconnected(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_status("BTC/USDT", connected=False)
+        val = _sample("mcbot_exchange_ws_connected", {"symbol": "BTC/USDT"})
+        assert val == 0.0
+
+    def test_on_ws_message_increments_counter(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        before = _sample("mcbot_ws_messages_received_total", {"symbol": "ETH/USDT"}) or 0
+        cb.on_ws_message("ETH/USDT")
+        cb.on_ws_message("ETH/USDT")
+        after = _sample("mcbot_ws_messages_received_total", {"symbol": "ETH/USDT"})
+        assert after is not None
+        assert after - before == 2
+
+    def test_on_ws_reconnect_increments_counter(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        before = _sample("mcbot_ws_reconnects_total", {"symbol": "SOL/USDT"}) or 0
+        cb.on_ws_reconnect("SOL/USDT")
+        after = _sample("mcbot_ws_reconnects_total", {"symbol": "SOL/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+    def test_update_message_ages(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb.on_ws_message("BTC/USDT")
+        # 즉시 update → 0에 가까워야 함
+        cb.update_message_ages()
+        val = _sample("mcbot_ws_last_message_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val < 1.0
+
+    def test_update_message_ages_stale(self) -> None:
+        cb = PrometheusWsDetailCallback()
+        cb._last_message_time["BTC/USDT"] = time.monotonic() - 30
+        cb.update_message_ages()
+        val = _sample("mcbot_ws_last_message_age_seconds", {"symbol": "BTC/USDT"})
+        assert val is not None
+        assert val >= 29.0
+
+    def test_satisfies_ws_status_protocol(self) -> None:
+        """WsStatusCallback Protocol 호환 확인."""
+        cb = PrometheusWsDetailCallback()
+        assert isinstance(cb, PrometheusWsCallback.__class__) or hasattr(cb, "on_ws_status")
