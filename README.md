@@ -272,8 +272,10 @@ DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실�
 | 환경 변수 | 기본값 | 설명 |
 |----------|--------|------|
 | `MC_EXECUTION_MODE` | `paper` | 실행 모드 (`paper` / `shadow` / `live`) |
-| `MC_CONFIG_PATH` | `config/paper.yaml` | YAML 설정 파일 경로 |
+| `MC_CONFIG_PATH` | `config/paper.yaml` | YAML 설정 파일 경로 (orchestrator YAML 자동 감지) |
 | `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 (USD) |
+| `MC_DB_PATH` | `data/trading.db` | SQLite DB 경로 (상태 영속화, 빈 문자열=비활성) |
+| `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
 | `MC_METRICS_PORT` | `8000` | Prometheus metrics 포트 (`0`이면 비활성) |
 
 Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
