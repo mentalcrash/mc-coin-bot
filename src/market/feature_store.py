@@ -119,6 +119,10 @@ def _call_indicator(spec: IndicatorSpec, df: pd.DataFrame) -> pd.Series:
     return result  # type: ignore[no-any-return]
 
 
+# Public alias for _call_indicator (used by CLI ic-check)
+compute_indicator = _call_indicator
+
+
 # ---------------------------------------------------------------------------
 # FeatureStore
 # ---------------------------------------------------------------------------
