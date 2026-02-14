@@ -159,6 +159,19 @@ gates:
           operator: ">="
           value: 15
 
+  # ─── Gate 2H: 파라미터 최적화 ──────────────────────────────────
+  - gate_id: G2H
+    name: 파라미터 최적화
+    description: "IS 데이터에서 Optuna TPE로 최적 파라미터 탐색. Always PASS (정보 제공)"
+    gate_type: threshold
+    cli_command: "pipeline gate2h-run"
+    threshold:
+      pass_metrics:
+        - name: Optimization Completed
+          operator: "=="
+          value: 1.0
+          description: "최적화 정상 완료 여부"
+
   # ─── Gate 3: 파라미터 안정성 ───────────────────────────────────
   - gate_id: G3
     name: 파라미터 안정성

@@ -67,8 +67,8 @@ class DashboardGenerator:
         return (
             "## 평가 파이프라인\n\n"
             "```\n"
-            "Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 3 → Gate 4 → Gate 5 → Gate 6 → Gate 7\n"
-            "아이디어   코드검증  백테스트  IS/OOS   파라미터  심층검증   EDA     Paper   실전배포\n"
+            "Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 2H → Gate 3 → Gate 4 → Gate 5 → Gate 6 → Gate 7\n"
+            "아이디어   코드검증  백테스트  IS/OOS   파라미터최적화  안정성  심층검증   EDA     Paper   실전배포\n"
             "```"
         )
 
@@ -435,7 +435,7 @@ def _gate_badge(record: StrategyRecord, gid: GateId) -> str:
     return "[red]F[/red]"
 
 
-_GATE_DISPLAY = ("G0A", "G0B", "G1", "G2", "G3", "G4", "G5", "G6", "G7")
+_GATE_DISPLAY = ("G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5", "G6", "G7")
 
 _RETIRED_GROUP_LABELS: dict[str, str] = {
     "G4": "G4 WFA 심층검증",
