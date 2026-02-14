@@ -37,6 +37,7 @@ from src.backtest.beta_attribution import (
 )
 from src.backtest.cost_model import CostModel
 from src.backtest.engine import BacktestEngine, run_parameter_sweep
+from src.backtest.ic_analyzer import ICAnalyzer, ICResult, ICVerdict
 from src.backtest.metrics import (
     calculate_all_metrics,
     calculate_cagr,
@@ -63,6 +64,9 @@ __all__ = [
     "BacktestEngine",
     "BacktestRequest",
     "CostModel",
+    "ICAnalyzer",
+    "ICResult",
+    "ICVerdict",
     "MultiAssetBacktestRequest",
     "PerformanceAnalyzer",
     "Portfolio",

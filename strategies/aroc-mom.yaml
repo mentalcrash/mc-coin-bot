@@ -1,0 +1,45 @@
+meta:
+  name: aroc-mom
+  display_name: Adaptive ROC Momentum
+  category: Adaptive Momentum
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: 변동성에 따라 모멘텀 lookback을 동적 조절. 고변동=짧은 lookback, 저변동=긴 lookback.
+    Barroso & Santa-Clara(2015) 동적 리스크 관리의 lookback 확장.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 26
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details: {}
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.51
+      cagr: 1306.0%
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.51 < 1.0; BTC/ETH/BNB 음수 Sharpe; 4H 노이즈 매매 과다

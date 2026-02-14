@@ -326,7 +326,11 @@ class DashboardGenerator:
         for r in records:
             link = r.meta.display_name
             g0 = r.gates.get(GateId.G0A)
-            score = f"{g0.details.get('score', '?')}/30" if g0 else "-"
+            if g0:
+                g0_max = g0.details.get("max_score", 30)
+                score = f"{g0.details.get('score', '?')}/{g0_max}"
+            else:
+                score = "-"
             note = _fail_rationale(r, GateId.G1)
             lines.append(f"| {link} | {score} | {note} |")
         return "\n".join(lines)

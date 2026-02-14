@@ -1,0 +1,17 @@
+id: 34
+title: 4H 단순 모멘텀/볼륨 지표 배치(8종) 전량 FAIL — 구조적 Sharpe 상한 ~1.0
+body: Batch 8 전략 8종(aroc-mom, cmf-persist, dual-vol, eff-brk, mcr-mom, obv-accel,
+  ret-persist, vmacd-mom) 전량 RETIRED. G1 Best Sharpe 범위 -0.52~1.01. 유일한 G1 PASS(cmf-persist
+  Sharpe 1.01)도 G2 OOS에서 Sharpe -0.40으로 붕괴(Decay 125%). 4H TF에서 단일 지표 기반 단순 모멘텀/볼륨
+  전략은 (1) BTC/ETH 같은 효율적 자산에서 음수 Sharpe 빈발 (2) DOGE에서만 양수 — 고변동 bias (3) IS→OOS Decay
+  극심 — regime sensitivity. 4H에서 Sharpe > 1.5 달성하려면 앙상블 또는 멀티에셋 분산이 필수.
+category: strategy-design
+tags:
+- 4H
+- batch-FAIL
+- momentum
+- volume
+- overtrading
+strategies: []
+timeframes: []
+added_at: '2026-02-14'

@@ -18,6 +18,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -39,6 +40,8 @@ if TYPE_CHECKING:
 _DAYS_PER_MONTH = 30
 _WARNING_TIMEOUT_DAYS = 30
 _MIN_CORRELATION_SAMPLES = 2
+_MIN_WARNING_OBSERVATION_DAYS = 5
+_PH_RECOVERY_RATIO = 0.2
 
 
 # ── Internal State ────────────────────────────────────────────────
@@ -81,17 +84,21 @@ class LifecycleManager:
         self,
         pod: StrategyPod,
         portfolio_returns: pd.Series | None = None,
+        *,
+        bar_timestamp: datetime | None = None,
     ) -> LifecycleState:
         """Pod 상태를 평가하고 필요 시 전이를 수행합니다.
 
         Args:
             pod: 평가 대상 StrategyPod
             portfolio_returns: 전체 포트폴리오 일별 수익률 (correlation 계산용)
+            bar_timestamp: 현재 bar의 타임스탬프 (None이면 wall clock 사용)
 
         Returns:
             평가 후 Pod의 LifecycleState
         """
         pod_ls = self._get_or_create_state(pod)
+        _now = bar_timestamp or datetime.now(UTC)
 
         # 1. RETIRED는 terminal → 즉시 반환
         if pod.state == LifecycleState.RETIRED:
@@ -101,11 +108,11 @@ class LifecycleManager:
         self._update_consecutive_loss_months(pod, pod_ls)
 
         # 3. Hard stops 체크 (ANY → RETIRED)
-        if self._check_hard_stops(pod, pod_ls):
+        if self._check_hard_stops(pod, pod_ls, now=_now):
             return pod.state
 
         # 4. 상태별 전이 평가
-        self._evaluate_state_specific(pod, pod_ls, portfolio_returns)
+        self._evaluate_state_specific(pod, pod_ls, portfolio_returns, now=_now)
 
         return pod.state
 
@@ -116,69 +123,84 @@ class LifecycleManager:
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
         portfolio_returns: pd.Series | None,
+        *,
+        now: datetime,
     ) -> None:
         """상태별 전이 로직 디스패치 (PLR0912 대응)."""
         state = pod.state
         if state == LifecycleState.INCUBATION:
-            self._evaluate_incubation(pod, pod_ls, portfolio_returns)
+            self._evaluate_incubation(pod, pod_ls, portfolio_returns, now=now)
         elif state == LifecycleState.PRODUCTION:
-            self._evaluate_production(pod, pod_ls)
+            self._evaluate_production(pod, pod_ls, now=now)
         elif state == LifecycleState.WARNING:
-            self._evaluate_warning(pod, pod_ls)
+            self._evaluate_warning(pod, pod_ls, now=now)
         elif state == LifecycleState.PROBATION:
-            self._evaluate_probation(pod, pod_ls)
+            self._evaluate_probation(pod, pod_ls, now=now)
 
     def _evaluate_incubation(
         self,
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
         portfolio_returns: pd.Series | None,
+        *,
+        now: datetime,
     ) -> None:
         """INCUBATION → PRODUCTION 졸업 평가."""
         if self._check_graduation(pod, portfolio_returns):
-            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION, now=now)
 
     def _evaluate_production(
         self,
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
+        *,
+        now: datetime,
     ) -> None:
         """PRODUCTION → WARNING 열화 평가."""
         if self._check_degradation(pod, pod_ls):
-            self._transition(pod, pod_ls, LifecycleState.WARNING)
+            self._transition(pod, pod_ls, LifecycleState.WARNING, now=now)
 
     def _evaluate_warning(
         self,
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
+        *,
+        now: datetime,
     ) -> None:
         """WARNING → PRODUCTION (recovery) 또는 → PROBATION (timeout)."""
-        # Recovery: PH score below floor → back to PRODUCTION
-        if pod_ls.ph_detector.score < self._retirement.rolling_sharpe_floor:
-            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+        days_in_warning = (now - pod_ls.state_entered_at).days
+
+        # Recovery: PH score < lambda * 0.2 AND 최소 관찰 기간 경과
+        ph_recovery_threshold = pod_ls.ph_detector.lambda_threshold * _PH_RECOVERY_RATIO
+        if (
+            days_in_warning >= _MIN_WARNING_OBSERVATION_DAYS
+            and pod_ls.ph_detector.score < ph_recovery_threshold
+        ):
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION, now=now)
             return
 
         # Timeout: 30 days without recovery → PROBATION
-        days_in_warning = (datetime.now(UTC) - pod_ls.state_entered_at).days
         if days_in_warning >= _WARNING_TIMEOUT_DAYS:
-            self._transition(pod, pod_ls, LifecycleState.PROBATION)
+            self._transition(pod, pod_ls, LifecycleState.PROBATION, now=now)
 
     def _evaluate_probation(
         self,
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
+        *,
+        now: datetime,
     ) -> None:
         """PROBATION → PRODUCTION (strong recovery) 또는 → RETIRED (expired)."""
         # Strong recovery: sharpe >= min_sharpe AND ph_score <= 0
         perf = pod.performance
         if perf.sharpe_ratio >= self._graduation.min_sharpe and pod_ls.ph_detector.score <= 0.0:
-            self._transition(pod, pod_ls, LifecycleState.PRODUCTION)
+            self._transition(pod, pod_ls, LifecycleState.PRODUCTION, now=now)
             return
 
         # Expired: probation_days 경과 → RETIRED
-        days_in_probation = (datetime.now(UTC) - pod_ls.state_entered_at).days
+        days_in_probation = (now - pod_ls.state_entered_at).days
         if days_in_probation >= self._retirement.probation_days:
-            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+            self._transition(pod, pod_ls, LifecycleState.RETIRED, now=now)
 
     # ── Hard Stops ────────────────────────────────────────────────
 
@@ -186,6 +208,8 @@ class LifecycleManager:
         self,
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
+        *,
+        now: datetime,
     ) -> bool:
         """MDD breach 또는 연속 손실 개월 초과 시 즉시 RETIRED.
 
@@ -202,7 +226,7 @@ class LifecycleManager:
                 perf.max_drawdown,
                 self._retirement.max_drawdown_breach,
             )
-            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+            self._transition(pod, pod_ls, LifecycleState.RETIRED, now=now)
             return True
 
         # Consecutive loss months
@@ -212,7 +236,7 @@ class LifecycleManager:
                 pod.pod_id,
                 pod_ls.consecutive_loss_months,
             )
-            self._transition(pod, pod_ls, LifecycleState.RETIRED)
+            self._transition(pod, pod_ls, LifecycleState.RETIRED, now=now)
             return True
 
         return False
@@ -300,7 +324,7 @@ class LifecycleManager:
             if not chunk:
                 continue
 
-            monthly_return = sum(chunk)
+            monthly_return = math.prod(1.0 + r for r in chunk) - 1.0
             if monthly_return < 0.0:
                 pod_ls.consecutive_loss_months += 1
             else:
@@ -345,7 +369,7 @@ class LifecycleManager:
         if pd.isna(corr):
             return 0.0
 
-        return float(abs(corr))
+        return float(corr)
 
     # ── State Transition ──────────────────────────────────────────
 
@@ -354,11 +378,13 @@ class LifecycleManager:
         pod: StrategyPod,
         pod_ls: _PodLifecycleState,
         new_state: LifecycleState,
+        *,
+        now: datetime,
     ) -> None:
         """상태 전이를 수행합니다."""
         old_state = pod.state
         pod.state = new_state
-        pod_ls.state_entered_at = datetime.now(UTC)
+        pod_ls.state_entered_at = now
 
         # WARNING/PROBATION → PRODUCTION 복귀 시 detector reset
         if (

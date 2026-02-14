@@ -1,0 +1,18 @@
+id: 33
+title: Funding Rate 조건부/divergence 전략의 G1 실패 — 단독 alpha 소스 불충분
+body: 'fr-cond-mom(6H): FR z-score로 모멘텀 conviction 조절 → Best Sharpe 0.82 미달. fund-div-mom(4H):
+  가격모멘텀-FR 추세 divergence → 전 에셋 Sharpe < 0.5. Funding rate가 모멘텀 필터/conviction 용도로는
+  alpha 부족. FR은 carry 전략(수취)이나 극단 시그널(z>3)에서만 유의미할 가능성.'
+category: strategy-design
+tags:
+- funding-rate
+- derivatives
+- conviction-filter
+- 4H
+- 6H
+strategies:
+- fr-cond-mom
+- fund-div-mom
+timeframes:
+- 4H
+added_at: '2026-02-14'

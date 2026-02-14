@@ -20,6 +20,8 @@ Rules Applied:
 
 from __future__ import annotations
 
+import math
+
 
 class PageHinkleyDetector:
     """Page-Hinkley mean-shift detector.
@@ -30,7 +32,7 @@ class PageHinkleyDetector:
     Args:
         delta: Magnitude threshold — minimum shift to detect. Default 0.005.
         lambda_: Detection threshold — higher = fewer false alarms. Default 50.0.
-        alpha: EWMA smoothing factor for running mean. Default 0.9999.
+        alpha: EWMA smoothing factor for running mean. Default 0.99 (~69-day half-life).
     """
 
     __slots__ = ("_alpha", "_delta", "_lambda", "_m_min", "_m_t", "_n", "_x_mean")
@@ -39,7 +41,7 @@ class PageHinkleyDetector:
         self,
         delta: float = 0.005,
         lambda_: float = 50.0,
-        alpha: float = 0.9999,
+        alpha: float = 0.99,
     ) -> None:
         self._delta = delta
         self._lambda = lambda_
@@ -48,6 +50,11 @@ class PageHinkleyDetector:
         self._x_mean: float = 0.0
         self._m_t: float = 0.0
         self._m_min: float = 0.0
+
+    @property
+    def lambda_threshold(self) -> float:
+        """Detection threshold (lambda)."""
+        return self._lambda
 
     def update(self, value: float) -> bool:
         """Ingest a new observation and check for degradation.
@@ -58,6 +65,9 @@ class PageHinkleyDetector:
         Returns:
             True if degradation detected (m_t - m_min > lambda_).
         """
+        if math.isnan(value) or math.isinf(value):
+            return False
+
         self._n += 1
 
         if self._n == 1:

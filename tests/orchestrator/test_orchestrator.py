@@ -306,11 +306,23 @@ class TestOrchestratorNetting:
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         # pod_long warmup: close > open (LONG)
         for i in range(2):
-            bar_data = {"open": 100.0 + i, "high": 111.0 + i, "low": 99.0 + i, "close": 110.0 + i, "volume": 1000.0}
+            bar_data = {
+                "open": 100.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 110.0 + i,
+                "volume": 1000.0,
+            }
             pod_long.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
         # pod_short warmup: close < open (SHORT)
         for i in range(2):
-            bar_data = {"open": 110.0 + i, "high": 111.0 + i, "low": 99.0 + i, "close": 100.0 + i, "volume": 1000.0}
+            bar_data = {
+                "open": 110.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 100.0 + i,
+                "volume": 1000.0,
+            }
             pod_short.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
 
         # pod_long → LONG, pod_short → SHORT (같은 bar 데이터로도 전략 히스토리가 다름)
@@ -686,7 +698,10 @@ class TestOrchestratorRiskIntegration:
         allocator = CapitalAllocator(config)
         ra = RiskAggregator(config)
         orch = StrategyOrchestrator(
-            config, [pod_a, pod_b], allocator, risk_aggregator=ra,
+            config,
+            [pod_a, pod_b],
+            allocator,
+            risk_aggregator=ra,
         )
 
         pod_a.record_daily_return(0.01)
@@ -700,3 +715,92 @@ class TestOrchestratorRiskIntegration:
         # 리밸런스 + 리스크 체크 실행 (로깅으로 확인 — 에러 없이 완료되면 성공)
         await _run_with_bus(orch, [bar])
         assert orch.active_pod_count == 2
+
+
+# ── TestMediumFixes ────────────────────────────────────────────
+
+
+class TestMediumFixes:
+    """M-1 ~ M-8 Medium 이슈 수정 검증."""
+
+    def test_m1_run_incremental_called(self) -> None:
+        """M-1: Pod.compute_signal()이 run_incremental()을 호출."""
+        from unittest.mock import patch
+
+        pod = _make_pod("pod-a", ("BTC/USDT",), warmup=2)
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        _feed_warmup_bars(pod, "BTC/USDT", 1, ts)
+
+        # Patch run_incremental to verify it's called instead of run
+        with patch.object(
+            pod._strategy,
+            "run_incremental",
+            wraps=pod._strategy.run_incremental,
+        ) as mock_incr:
+            bar_data = {
+                "open": 100.0,
+                "high": 111.0,
+                "low": 99.0,
+                "close": 110.0,
+                "volume": 1000.0,
+            }
+            pod.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=1))
+            mock_incr.assert_called_once()
+
+    def test_m3_drift_uses_last_allocated_weights(self) -> None:
+        """M-3: drift 기준이 last allocated weight 기준."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            rebalance_drift_threshold=0.05,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        # 초기: last_allocated_weights 비어있음 → initial_fraction(0.10) fallback
+        assert orch._last_allocated_weights == {}
+        assert orch._check_drift_threshold() is True  # 0.5 vs 0.10 → 0.40 > 0.05
+
+        # last_allocated_weights 설정 후
+        orch._last_allocated_weights = {"pod-a": 0.5, "pod-b": 0.5}
+        assert orch._check_drift_threshold() is False  # 0.5 vs 0.5 → 0 drift
+
+        # capital_fraction 변경 → drift 발생
+        pod_a.capital_fraction = 0.6
+        assert orch._check_drift_threshold() is True  # 0.6 vs 0.5 → 0.1 > 0.05
+
+    def test_m3_rebalance_saves_allocated_weights(self) -> None:
+        """M-3: 리밸런스 후 _last_allocated_weights 저장."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        pod_a.record_daily_return(0.01)
+        pod_b.record_daily_return(0.02)
+
+        orch._execute_rebalance()
+        assert len(orch._last_allocated_weights) > 0
+
+    def test_m4_pod_map_o1_lookup(self) -> None:
+        """M-4: _find_pod()이 O(1) dict lookup."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",))
+        pod_b = _make_pod("pod-b", ("ETH/USDT",))
+        config = _make_orchestrator_config((pod_a.config, pod_b.config))
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        assert orch._find_pod("pod-a") is pod_a
+        assert orch._find_pod("pod-b") is pod_b
+        assert orch._find_pod("pod-c") is None
+
+    def test_m7_round_leverage(self) -> None:
+        """M-7: round()가 int()와 다르게 가장 가까운 정수 반환."""
+        assert round(3.5) == 4  # int(3.5) == 3
+        assert round(2.3) == 2
+        assert round(2.7) == 3

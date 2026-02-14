@@ -137,6 +137,7 @@ class CapitalAllocator:
         pod_returns: pd.DataFrame,
         pod_states: dict[str, LifecycleState],
         lookback: int = 90,
+        pod_live_days: dict[str, int] | None = None,
     ) -> dict[str, float]:
         """자본 배분 가중치 계산.
 
@@ -144,6 +145,7 @@ class CapitalAllocator:
             pod_returns: columns=pod_ids, index=dates 일별 수익률
             pod_states: pod_id -> LifecycleState 매핑
             lookback: 수익률 lookback 기간 (일)
+            pod_live_days: pod_id -> 실제 live_days 매핑 (None이면 heuristic)
 
         Returns:
             pod_id -> fraction 매핑, sum <= 1.0, 모든 값 >= 0.0
@@ -181,7 +183,7 @@ class CapitalAllocator:
 
         # 4. 배분 알고리즘 호출
         method = self._config.allocation_method
-        raw_weights = self._dispatch[method](returns_clean, pod_states)
+        raw_weights = self._dispatch[method](returns_clean, pod_states, pod_live_days)
 
         # 5. 비활성 pod는 0.0
         result = dict.fromkeys(all_pod_ids, 0.0)
@@ -205,6 +207,7 @@ class CapitalAllocator:
         self,
         returns: pd.DataFrame,
         pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
     ) -> dict[str, float]:
         """균등 배분."""
         n = len(returns.columns)
@@ -215,6 +218,7 @@ class CapitalAllocator:
         self,
         returns: pd.DataFrame,
         pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
     ) -> dict[str, float]:
         """변동성 역비례 배분."""
         vol: Any = returns.std()
@@ -232,6 +236,7 @@ class CapitalAllocator:
         self,
         returns: pd.DataFrame,
         pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
     ) -> dict[str, float]:
         """Spinu(2013) Risk Parity via L-BFGS-B."""
         cov = _compute_cov_matrix(returns, len(returns))
@@ -291,6 +296,7 @@ class CapitalAllocator:
         self,
         returns: pd.DataFrame,
         pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
     ) -> dict[str, float]:
         """Adaptive Kelly: Risk Parity + Kelly blend."""
         n = len(returns.columns)
@@ -322,9 +328,9 @@ class CapitalAllocator:
         f_norm = f_frac / f_sum
 
         # Confidence ramp
-        avg_live_days = self._avg_live_days(col_names, pod_states)
+        avg_live_days = self._avg_live_days(col_names, pod_states, pod_live_days)
         confidence = _compute_confidence(avg_live_days, self._config.kelly_confidence_ramp)
-        alpha = confidence * self._config.kelly_fraction
+        alpha = confidence
 
         # Blend
         blended: npt.NDArray[np.float64] = (1.0 - alpha) * rp_arr + alpha * f_norm
@@ -353,8 +359,17 @@ class CapitalAllocator:
         self,
         pod_ids: list[Any],
         pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
     ) -> int:
-        """pod_states에서 평균 live_days 추정 (state 기반 heuristic)."""
+        """평균 live_days 계산.
+
+        pod_live_days가 주어지면 실제 값을 사용하고,
+        없으면 state 기반 heuristic으로 추정합니다.
+        """
+        if pod_live_days is not None:
+            total = sum(pod_live_days.get(str(pid), 0) for pid in pod_ids)
+            return total // max(len(pod_ids), 1)
+
         days_by_state = {
             LifecycleState.INCUBATION: 30,
             LifecycleState.PRODUCTION: 180,
@@ -393,12 +408,6 @@ class CapitalAllocator:
 
             clamped = self._clamp_single(w, state, cfg)
             result[pid] = clamped
-
-        # Clamp 후 합계 > 1.0이면 비례 축소
-        total = sum(result.values())
-        if total > 1.0:
-            for pid in result:
-                result[pid] /= total
 
         return result
 

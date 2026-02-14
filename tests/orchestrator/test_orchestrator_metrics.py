@@ -56,9 +56,7 @@ def _make_mock_orchestrator(
             _make_mock_pod("pod-b", equity=10000.0, fraction=0.4, sharpe=1.2, drawdown=0.07),
         ]
     type(orch).pods = PropertyMock(return_value=pods)
-    type(orch).active_pod_count = PropertyMock(
-        return_value=sum(1 for p in pods if p.is_active)
-    )
+    type(orch).active_pod_count = PropertyMock(return_value=sum(1 for p in pods if p.is_active))
     return orch
 
 

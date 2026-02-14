@@ -13,6 +13,8 @@ from src.pipeline.models import (
     GateId,
     GateResult,
     GateVerdict,
+    RationaleReference,
+    RationaleRefType,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
@@ -56,6 +58,68 @@ class TestStrategyMeta:
     def test_frozen(self, sample_meta: StrategyMeta) -> None:
         with pytest.raises(Exception):  # noqa: B017
             sample_meta.name = "changed"  # type: ignore[misc]
+
+
+class TestRationaleReference:
+    def test_creation(self) -> None:
+        ref = RationaleReference(
+            type=RationaleRefType.PAPER,
+            title="Moskowitz et al. (2012)",
+            source="JFE",
+            url="https://example.com",
+            relevance="TSMOM 원본 논문",
+        )
+        assert ref.type == RationaleRefType.PAPER
+        assert ref.title == "Moskowitz et al. (2012)"
+
+    def test_frozen(self) -> None:
+        ref = RationaleReference(type=RationaleRefType.LESSON, title="Test")
+        with pytest.raises(Exception):  # noqa: B017
+            ref.title = "Changed"  # type: ignore[misc]
+
+    def test_default_fields(self) -> None:
+        ref = RationaleReference(type=RationaleRefType.PRIOR_STRATEGY)
+        assert ref.title == ""
+        assert ref.source == ""
+        assert ref.url == ""
+        assert ref.relevance == ""
+
+    def test_ref_type_values(self) -> None:
+        assert RationaleRefType.PAPER == "paper"
+        assert RationaleRefType.LESSON == "lesson"
+        assert RationaleRefType.PRIOR_STRATEGY == "prior_strategy"
+
+
+class TestStrategyMetaRationale:
+    def test_default_rationale_fields(self) -> None:
+        meta = StrategyMeta(
+            name="test",
+            display_name="Test",
+            category="Test",
+            timeframe="1D",
+            short_mode="DISABLED",
+            status=StrategyStatus.CANDIDATE,
+            created_at=date(2026, 1, 1),
+        )
+        assert meta.rationale_references == []
+        assert meta.rationale_category is None
+
+    def test_with_rationale_fields(self) -> None:
+        ref = RationaleReference(type=RationaleRefType.PAPER, title="Test Paper")
+        meta = StrategyMeta(
+            name="test",
+            display_name="Test",
+            category="Test",
+            timeframe="1D",
+            short_mode="DISABLED",
+            status=StrategyStatus.CANDIDATE,
+            created_at=date(2026, 1, 1),
+            rationale_references=[ref],
+            rationale_category="momentum",
+        )
+        assert len(meta.rationale_references) == 1
+        assert meta.rationale_references[0].type == RationaleRefType.PAPER
+        assert meta.rationale_category == "momentum"
 
 
 class TestAssetMetrics:

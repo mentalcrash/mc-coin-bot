@@ -62,6 +62,29 @@ class GateVerdict(StrEnum):
     FAIL = "FAIL"
 
 
+# ─── Rationale Reference ─────────────────────────────────────────────
+
+
+class RationaleRefType(StrEnum):
+    """학술 근거 참조 유형."""
+
+    PAPER = "paper"
+    LESSON = "lesson"
+    PRIOR_STRATEGY = "prior_strategy"
+
+
+class RationaleReference(BaseModel):
+    """학술 근거 참조."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: RationaleRefType
+    title: str = ""
+    source: str = ""
+    url: str = ""
+    relevance: str = ""
+
+
 # ─── Models ──────────────────────────────────────────────────────────
 
 
@@ -79,6 +102,10 @@ class StrategyMeta(BaseModel):
     created_at: date = Field(description="생성일")
     retired_at: date | None = Field(default=None, description="폐기일")
     economic_rationale: str = Field(default="", description="경제적 논거")
+    rationale_references: list[RationaleReference] = Field(
+        default_factory=list, description="학술 근거 참조 목록"
+    )
+    rationale_category: str | None = Field(default=None, description="논거 카테고리")
 
 
 class AssetMetrics(BaseModel):

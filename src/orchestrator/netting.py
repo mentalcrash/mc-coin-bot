@@ -64,8 +64,12 @@ def attribute_fill(
     price: float,
     fee: float,
     pod_targets: dict[str, float],
+    *,
+    is_buy: bool,
 ) -> dict[str, tuple[float, float, float]]:
     """Fill을 Pod별 타겟 비율에 따라 비례 귀속합니다.
+
+    BUY fill은 target > 0(long) pods에만, SELL fill은 target < 0(short) pods에만 귀속합니다.
 
     Args:
         symbol: 체결 심볼
@@ -73,20 +77,31 @@ def attribute_fill(
         price: 체결 가격
         fee: 수수료
         pod_targets: {pod_id: global_target_weight} — 해당 심볼에 대한 Pod별 타겟
+        is_buy: True면 BUY fill, False면 SELL fill
 
     Returns:
         {pod_id: (attributed_qty, price, attributed_fee)} 매핑.
-        타겟이 없거나 합이 0이면 빈 dict 반환.
+        매칭 pods가 없거나 합이 0이면 빈 dict 반환.
     """
     if not pod_targets:
         return {}
 
-    total_abs = sum(abs(t) for t in pod_targets.values())
+    # 방향 필터: BUY → long pods, SELL → short pods
+    matching = {
+        pid: t
+        for pid, t in pod_targets.items()
+        if (is_buy and t > _MIN_WEIGHT) or (not is_buy and t < -_MIN_WEIGHT)
+    }
+
+    if not matching:
+        return {}
+
+    total_abs = sum(abs(t) for t in matching.values())
     if total_abs < _MIN_WEIGHT:
         return {}
 
     result: dict[str, tuple[float, float, float]] = {}
-    for pod_id, target in pod_targets.items():
+    for pod_id, target in matching.items():
         share = abs(target) / total_abs
         result[pod_id] = (qty * share, price, fee * share)
 

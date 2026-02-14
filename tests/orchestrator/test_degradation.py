@@ -67,12 +67,12 @@ class TestNoDetection:
 class TestDetection:
     def test_mean_shift_detected(self) -> None:
         """양수 → 음수 mean shift 감지."""
-        det = PageHinkleyDetector(delta=0.005, lambda_=50.0)
+        det = PageHinkleyDetector(delta=0.005, lambda_=50.0, alpha=0.9999)
         # 정상 기간
         for _ in range(100):
             det.update(0.01)
 
-        # Mean shift: 큰 음수 값 지속 (lambda_=50 기준 ~1000 steps 필요)
+        # Mean shift: 큰 음수 값 지속 (alpha=0.9999 slow-adapting baseline)
         detected = False
         for _ in range(1500):
             if det.update(-0.05):
@@ -83,7 +83,7 @@ class TestDetection:
 
     def test_gradual_drift_detected(self) -> None:
         """점진적 하락도 결국 감지."""
-        det = PageHinkleyDetector(delta=0.001, lambda_=20.0)
+        det = PageHinkleyDetector(delta=0.001, lambda_=20.0, alpha=0.9999)
         for _ in range(50):
             det.update(0.01)
 
@@ -99,7 +99,7 @@ class TestDetection:
 
     def test_score_increases_under_shift(self) -> None:
         """음수 shift 시 score 단조 증가."""
-        det = PageHinkleyDetector(delta=0.005, lambda_=50.0)
+        det = PageHinkleyDetector(delta=0.005, lambda_=50.0, alpha=0.9999)
         for _ in range(50):
             det.update(0.01)
 
@@ -114,7 +114,7 @@ class TestDetection:
 
     def test_large_sudden_drop_detected(self) -> None:
         """큰 급락 감지."""
-        det = PageHinkleyDetector(delta=0.001, lambda_=10.0)
+        det = PageHinkleyDetector(delta=0.001, lambda_=10.0, alpha=0.9999)
         for _ in range(50):
             det.update(0.01)
 
@@ -183,7 +183,7 @@ class TestParameterSensitivity:
         lambda_: float = 50.0,
     ) -> int:
         """음수 shift 후 감지까지 step 수."""
-        det = PageHinkleyDetector(delta=delta, lambda_=lambda_)
+        det = PageHinkleyDetector(delta=delta, lambda_=lambda_, alpha=0.9999)
         for _ in range(50):
             det.update(0.01)
 
@@ -195,6 +195,86 @@ class TestParameterSensitivity:
 
 
 # ── TestEdgeCases ────────────────────────────────────────────────
+
+
+class TestNaNInfGuard:
+    """H-7: NaN/Inf 입력 시 상태 미오염 검증."""
+
+    def test_nan_returns_false(self) -> None:
+        """NaN → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        n_before = det.n_observations
+        result = det.update(float("nan"))
+        assert result is False
+        assert det.n_observations == n_before
+
+    def test_inf_returns_false(self) -> None:
+        """Inf → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        n_before = det.n_observations
+        score_before = det.score
+        result = det.update(float("inf"))
+        assert result is False
+        assert det.n_observations == n_before
+        assert det.score == pytest.approx(score_before)
+
+    def test_neg_inf_returns_false(self) -> None:
+        """-Inf → False, 상태 미오염."""
+        det = PageHinkleyDetector()
+        det.update(0.01)
+        result = det.update(float("-inf"))
+        assert result is False
+        assert det.n_observations == 1
+
+    def test_nan_then_normal_works(self) -> None:
+        """NaN 후 정상값 → 정상 동작."""
+        det = PageHinkleyDetector()
+        det.update(float("nan"))
+        assert det.n_observations == 0
+        det.update(0.01)
+        assert det.n_observations == 1
+        det.update(0.02)
+        assert det.n_observations == 2
+
+    def test_first_observation_nan_skip(self) -> None:
+        """첫 관측값 NaN → skip, 다음 값으로 초기화."""
+        det = PageHinkleyDetector()
+        det.update(float("nan"))
+        assert det.n_observations == 0
+        det.update(0.05)
+        assert det.n_observations == 1
+        # 두번째 값이 첫 관측으로 초기화됨
+        assert det.score == pytest.approx(0.0)
+
+
+class TestM6DefaultAlpha:
+    """M-6: 기본 alpha=0.99 → 반감기 ~69일, 빠른 적응."""
+
+    def test_default_alpha_is_099(self) -> None:
+        """기본 alpha가 0.99로 설정됨."""
+        det = PageHinkleyDetector()
+        assert det._alpha == pytest.approx(0.99)
+
+    def test_alpha_099_adapts_faster(self) -> None:
+        """alpha=0.99는 0.9999보다 x_mean이 빠르게 적응."""
+        det_fast = PageHinkleyDetector(alpha=0.99)
+        det_slow = PageHinkleyDetector(alpha=0.9999)
+
+        # 동일 데이터 입력
+        for _ in range(50):
+            det_fast.update(0.10)
+            det_slow.update(0.10)
+
+        # 이후 방향 전환
+        for _ in range(50):
+            det_fast.update(-0.10)
+            det_slow.update(-0.10)
+
+        # alpha=0.99: x_mean이 빠르게 -0.10쪽으로 이동 → score 낮음
+        # alpha=0.9999: x_mean이 느리게 이동 → score 높음
+        assert det_fast.score < det_slow.score
 
 
 class TestEdgeCases:

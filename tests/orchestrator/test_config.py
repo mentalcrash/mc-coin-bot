@@ -187,6 +187,30 @@ class TestOrchestratorConfig:
         restored = OrchestratorConfig.model_validate(data)
         assert restored == cfg
 
+    def test_max_fraction_sum_exceeds_cap_rejected(self) -> None:
+        """M-8: max_fraction 합계 > 1.5 → 거부."""
+        p1 = _make_pod(pod_id="a", initial_fraction=0.30, max_fraction=0.80)
+        p2 = _make_pod(
+            pod_id="b",
+            initial_fraction=0.30,
+            max_fraction=0.80,
+            symbols=("ETH/USDT",),
+        )
+        with pytest.raises(ValidationError, match="max_fraction"):
+            OrchestratorConfig(pods=(p1, p2))
+
+    def test_max_fraction_sum_at_cap_valid(self) -> None:
+        """M-8: max_fraction 합계 == 1.5 → 통과."""
+        p1 = _make_pod(pod_id="a", initial_fraction=0.30, max_fraction=0.75)
+        p2 = _make_pod(
+            pod_id="b",
+            initial_fraction=0.30,
+            max_fraction=0.75,
+            symbols=("ETH/USDT",),
+        )
+        cfg = OrchestratorConfig(pods=(p1, p2))
+        assert cfg.n_pods == 2
+
     def test_custom_allocation(self) -> None:
         cfg = OrchestratorConfig(
             pods=(_make_pod(),),

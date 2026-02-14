@@ -116,10 +116,12 @@ class TestComputeEffectiveN:
 class TestCheckCorrelationStress:
     def test_uncorrelated_no_stress(self) -> None:
         rng = np.random.default_rng(42)
-        returns = pd.DataFrame({
-            "pod-a": rng.normal(0, 0.01, 200),
-            "pod-b": rng.normal(0, 0.01, 200),
-        })
+        returns = pd.DataFrame(
+            {
+                "pod-a": rng.normal(0, 0.01, 200),
+                "pod-b": rng.normal(0, 0.01, 200),
+            }
+        )
         is_stressed, avg_corr = check_correlation_stress(returns, 0.70)
         assert is_stressed is False
         assert avg_corr < 0.70
@@ -127,10 +129,12 @@ class TestCheckCorrelationStress:
     def test_highly_correlated_stress(self) -> None:
         rng = np.random.default_rng(42)
         base = rng.normal(0, 0.01, 200)
-        returns = pd.DataFrame({
-            "pod-a": base,
-            "pod-b": base + rng.normal(0, 0.001, 200),  # 높은 상관
-        })
+        returns = pd.DataFrame(
+            {
+                "pod-a": base,
+                "pod-b": base + rng.normal(0, 0.001, 200),  # 높은 상관
+            }
+        )
         is_stressed, avg_corr = check_correlation_stress(returns, 0.70)
         assert is_stressed is True
         assert avg_corr > 0.70
@@ -331,10 +335,12 @@ class TestRiskAggregatorCorrelation:
         ra = RiskAggregator(config)
         rng = np.random.default_rng(42)
         base = rng.normal(0, 0.01, 200)
-        returns = pd.DataFrame({
-            "pod-a": base,
-            "pod-b": base + rng.normal(0, 0.001, 200),
-        })
+        returns = pd.DataFrame(
+            {
+                "pod-a": base,
+                "pod-b": base + rng.normal(0, 0.001, 200),
+            }
+        )
         alerts = ra.check_portfolio_limits(
             net_weights={},
             pod_performances={},
@@ -349,10 +355,12 @@ class TestRiskAggregatorCorrelation:
         config = _make_config(correlation_stress_threshold=0.70)
         ra = RiskAggregator(config)
         rng = np.random.default_rng(42)
-        returns = pd.DataFrame({
-            "pod-a": rng.normal(0, 0.01, 200),
-            "pod-b": rng.normal(0, 0.01, 200),
-        })
+        returns = pd.DataFrame(
+            {
+                "pod-a": rng.normal(0, 0.01, 200),
+                "pod-b": rng.normal(0, 0.01, 200),
+            }
+        )
         alerts = ra.check_portfolio_limits(
             net_weights={},
             pod_performances={},
@@ -389,3 +397,38 @@ class TestRiskAggregatorHasCritical:
             daily_pnl_pct=-0.05,
         )
         assert RiskAlert.has_critical(alerts) is True
+
+
+# ── TestM5SignedCorrelation ──────────────────────────────────────
+
+
+class TestM5SignedCorrelation:
+    """M-5: check_correlation_stress()가 signed mean 사용."""
+
+    def test_negative_correlation_no_stress(self) -> None:
+        """음의 상관 = 분산 이득 → stress 아님."""
+        rng = np.random.default_rng(42)
+        base = rng.normal(0, 0.01, 200)
+        returns = pd.DataFrame(
+            {
+                "pod-a": base,
+                "pod-b": -base + rng.normal(0, 0.001, 200),  # 음의 상관
+            }
+        )
+        is_stressed, avg_corr = check_correlation_stress(returns, 0.70)
+        assert is_stressed is False
+        assert avg_corr < 0  # signed mean이 음수
+
+    def test_positive_high_correlation_stress(self) -> None:
+        """강한 양의 상관 → stress."""
+        rng = np.random.default_rng(42)
+        base = rng.normal(0, 0.01, 200)
+        returns = pd.DataFrame(
+            {
+                "pod-a": base,
+                "pod-b": base + rng.normal(0, 0.001, 200),
+            }
+        )
+        is_stressed, avg_corr = check_correlation_stress(returns, 0.70)
+        assert is_stressed is True
+        assert avg_corr > 0.70

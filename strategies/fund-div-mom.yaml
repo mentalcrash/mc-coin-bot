@@ -4,9 +4,9 @@ meta:
   category: Derivatives
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-14'
-  retired_at: null
+  retired_at: '2026-02-14'
   economic_rationale: 가격 모멘텀과 funding rate 추세의 divergence가 추세 지속 가능성을 예측. FR 하락+가격
     상승=유기적 수요(지속), FR 급등+가격 상승=투기과열(청산위험). 크립토 영구선물 고유 edge.
 parameters: {}
@@ -29,6 +29,10 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -40,3 +44,8 @@ decisions:
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. .mean()/.std() 스캔경고 4건 모두 rolling() 체인 false
     positive. FR ffill 처리 정상.
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: 전 에셋 Sharpe < 0.5 (Best ETH 0.21). BNB MDD 80%, 4개 에셋 MDD > 40%. 4H Funding
+    Divergence 시그널 구조적 무효

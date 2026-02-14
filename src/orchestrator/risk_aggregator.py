@@ -130,7 +130,7 @@ def check_correlation_stress(
     if len(off_diag) == 0:
         return (False, 0.0)
 
-    avg_corr = float(np.mean(np.abs(off_diag)))
+    avg_corr = float(np.mean(off_diag))
     return (avg_corr >= threshold, avg_corr)
 
 
@@ -153,8 +153,7 @@ def compute_portfolio_drawdown(
         return 0.0
 
     weighted_dd = sum(
-        perf.current_drawdown * abs(weights.get(pid, 0.0))
-        for pid, perf in pod_performances.items()
+        perf.current_drawdown * abs(weights.get(pid, 0.0)) for pid, perf in pod_performances.items()
     )
     return weighted_dd / total_weight
 
@@ -271,23 +270,27 @@ class RiskAggregator:
         for pod_id, contribution in prc.items():
             abs_contrib = abs(contribution)
             if abs_contrib >= threshold:
-                alerts.append(RiskAlert(
-                    alert_type="single_pod_risk",
-                    severity="critical",
-                    message=f"Pod {pod_id} PRC {abs_contrib:.2%} vs limit {threshold:.1%}",
-                    current_value=abs_contrib,
-                    threshold=threshold,
-                    pod_id=pod_id,
-                ))
+                alerts.append(
+                    RiskAlert(
+                        alert_type="single_pod_risk",
+                        severity="critical",
+                        message=f"Pod {pod_id} PRC {abs_contrib:.2%} vs limit {threshold:.1%}",
+                        current_value=abs_contrib,
+                        threshold=threshold,
+                        pod_id=pod_id,
+                    )
+                )
             elif abs_contrib >= threshold * _WARNING_RATIO:
-                alerts.append(RiskAlert(
-                    alert_type="single_pod_risk",
-                    severity="warning",
-                    message=f"Pod {pod_id} PRC {abs_contrib:.2%} approaching limit {threshold:.1%}",
-                    current_value=abs_contrib,
-                    threshold=threshold,
-                    pod_id=pod_id,
-                ))
+                alerts.append(
+                    RiskAlert(
+                        alert_type="single_pod_risk",
+                        severity="warning",
+                        message=f"Pod {pod_id} PRC {abs_contrib:.2%} approaching limit {threshold:.1%}",
+                        current_value=abs_contrib,
+                        threshold=threshold,
+                        pod_id=pod_id,
+                    )
+                )
 
     def _check_correlation_stress(
         self,
@@ -298,21 +301,25 @@ class RiskAggregator:
         is_stressed, avg_corr = check_correlation_stress(pod_returns, threshold)
 
         if is_stressed:
-            alerts.append(RiskAlert(
-                alert_type="correlation_stress",
-                severity="critical",
-                message=f"Avg correlation {avg_corr:.2%} vs threshold {threshold:.1%}",
-                current_value=avg_corr,
-                threshold=threshold,
-            ))
+            alerts.append(
+                RiskAlert(
+                    alert_type="correlation_stress",
+                    severity="critical",
+                    message=f"Avg correlation {avg_corr:.2%} vs threshold {threshold:.1%}",
+                    current_value=avg_corr,
+                    threshold=threshold,
+                )
+            )
         elif avg_corr >= threshold * _WARNING_RATIO:
-            alerts.append(RiskAlert(
-                alert_type="correlation_stress",
-                severity="warning",
-                message=f"Avg correlation {avg_corr:.2%} approaching threshold {threshold:.1%}",
-                current_value=avg_corr,
-                threshold=threshold,
-            ))
+            alerts.append(
+                RiskAlert(
+                    alert_type="correlation_stress",
+                    severity="warning",
+                    message=f"Avg correlation {avg_corr:.2%} approaching threshold {threshold:.1%}",
+                    current_value=avg_corr,
+                    threshold=threshold,
+                )
+            )
 
     # ── Alert helper ──────────────────────────────────────────────
 
@@ -326,18 +333,22 @@ class RiskAggregator:
     ) -> None:
         """임계값 대비 current를 검사하여 warning/critical alert 발행."""
         if current >= threshold:
-            alerts.append(RiskAlert(
-                alert_type=alert_type,
-                severity="critical",
-                message=message_template.format(current=current, threshold=threshold),
-                current_value=current,
-                threshold=threshold,
-            ))
+            alerts.append(
+                RiskAlert(
+                    alert_type=alert_type,
+                    severity="critical",
+                    message=message_template.format(current=current, threshold=threshold),
+                    current_value=current,
+                    threshold=threshold,
+                )
+            )
         elif current >= threshold * _WARNING_RATIO:
-            alerts.append(RiskAlert(
-                alert_type=alert_type,
-                severity="warning",
-                message=message_template.format(current=current, threshold=threshold),
-                current_value=current,
-                threshold=threshold,
-            ))
+            alerts.append(
+                RiskAlert(
+                    alert_type=alert_type,
+                    severity="warning",
+                    message=message_template.format(current=current, threshold=threshold),
+                    current_value=current,
+                    threshold=threshold,
+                )
+            )

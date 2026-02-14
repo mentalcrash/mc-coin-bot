@@ -41,12 +41,15 @@ if TYPE_CHECKING:
 
 # ── Constants ─────────────────────────────────────────────────────
 _MIN_STD_THRESHOLD = 1e-12
+_PM_STOP_LOSS_HEADROOM = 1.5
+_PM_STOP_LOSS_CAP = 0.30
 
 
 def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig:
     """OrchestratorConfig에서 PM config를 유도합니다.
 
-    Orchestrator가 리스크를 관리하므로 PM은 최소한의 가드레일만 설정합니다.
+    Orchestrator가 리스크를 관리하므로 PM은 safety-net 가드레일만 설정합니다.
+    PM stop-loss = max_portfolio_drawdown * 1.5 (cap 30%).
 
     Args:
         orch_config: OrchestratorConfig
@@ -54,9 +57,13 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
     Returns:
         유도된 PortfolioManagerConfig
     """
+    pm_stop_loss = min(
+        orch_config.max_portfolio_drawdown * _PM_STOP_LOSS_HEADROOM,
+        _PM_STOP_LOSS_CAP,
+    )
     return PortfolioManagerConfig(
         max_leverage_cap=orch_config.max_gross_leverage,
-        system_stop_loss=None,
+        system_stop_loss=pm_stop_loss,
         use_trailing_stop=False,
         rebalance_threshold=0.01,
         cash_sharing=True,

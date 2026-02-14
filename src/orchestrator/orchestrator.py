@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from src.orchestrator.allocator import CapitalAllocator
     from src.orchestrator.config import OrchestratorConfig
     from src.orchestrator.lifecycle import LifecycleManager
+    from src.orchestrator.models import RiskAlert
     from src.orchestrator.pod import StrategyPod
     from src.orchestrator.risk_aggregator import RiskAggregator
 
@@ -47,6 +48,8 @@ if TYPE_CHECKING:
 
 _ORCHESTRATOR_SOURCE = "StrategyOrchestrator"
 _MIN_NET_WEIGHT = 1e-8
+_RISK_DEFENSE_SCALE = 0.5
+_MIN_FRACTION_EPSILON = 1e-12
 
 
 # ── StrategyOrchestrator ─────────────────────────────────────────
@@ -87,6 +90,9 @@ class StrategyOrchestrator:
         self._symbol_pod_map: dict[str, list[int]] = {}
         self._build_routing_table()
 
+        # pod_id → Pod O(1) lookup
+        self._pod_map: dict[str, StrategyPod] = {p.pod_id: p for p in pods}
+
         # 배치 시그널
         self._pending_bar_ts: datetime | None = None
         self._pending_net_weights: dict[str, float] = {}
@@ -96,9 +102,13 @@ class StrategyOrchestrator:
 
         # 리밸런스 추적
         self._last_rebalance_ts: datetime | None = None
+        self._last_allocated_weights: dict[str, float] = {}
 
         # Fire-and-forget notification tasks (prevent GC)
         self._notification_tasks: set[asyncio.Task[None]] = set()
+
+        # Risk defense
+        self._risk_breached: bool = False
 
         # History 추적
         self._allocation_history: list[dict[str, object]] = []
@@ -204,6 +214,7 @@ class StrategyOrchestrator:
             fill.fill_price,
             fill.fee,
             pod_targets,
+            is_buy=is_buy,
         )
 
         for pod_id, (attr_qty, attr_price, attr_fee) in attributed.items():
@@ -224,6 +235,10 @@ class StrategyOrchestrator:
         bus = self._bus
         if bus is None or self._pending_bar_ts is None:
             return
+
+        # Risk breached → 모든 weight 0으로 억제
+        if self._risk_breached:
+            self._pending_net_weights = dict.fromkeys(self._pending_net_weights, 0.0)
 
         # 레버리지 한도 적용
         scaled = scale_weights_to_leverage(
@@ -288,11 +303,14 @@ class StrategyOrchestrator:
             self._last_rebalance_ts = bar_timestamp
 
     def _check_drift_threshold(self) -> bool:
-        """현재 capital_fraction과 initial 비교하여 drift 확인."""
+        """현재 capital_fraction과 last allocated weight 비교하여 drift 확인."""
         for pod in self._pods:
             if not pod.is_active:
                 continue
-            drift = abs(pod.capital_fraction - pod.config.initial_fraction)
+            target = self._last_allocated_weights.get(
+                pod.pod_id, pod.config.initial_fraction
+            )
+            drift = abs(pod.capital_fraction - target)
             if drift > self._config.rebalance_drift_threshold:
                 return True
         return False
@@ -322,16 +340,20 @@ class StrategyOrchestrator:
         pod_returns = pd.DataFrame(pod_returns_data)
 
         pod_states = {pod.pod_id: pod.state for pod in self._pods}
+        pod_live_days = {pod.pod_id: pod.performance.live_days for pod in self._pods}
 
         new_weights = self._allocator.compute_weights(
             pod_returns,
             pod_states,
             lookback=self._config.correlation_lookback,
+            pod_live_days=pod_live_days,
         )
 
         for pod in self._pods:
             if pod.pod_id in new_weights:
                 pod.capital_fraction = new_weights[pod.pod_id]
+
+        self._last_allocated_weights = dict(new_weights)
 
         logger.debug("Rebalanced: {}", {p.pod_id: p.capital_fraction for p in self._pods})
 
@@ -353,7 +375,8 @@ class StrategyOrchestrator:
             )
 
         # Risk 한도 검사 + history 기록
-        self._check_risk_limits(pod_returns)
+        net_weights = self._compute_current_net_weights()
+        self._check_risk_limits(pod_returns, net_weights=net_weights)
 
     def _evaluate_lifecycle(self) -> None:
         """Lifecycle 평가 → 상태 전이 감지 → lifecycle_events 기록."""
@@ -365,7 +388,9 @@ class StrategyOrchestrator:
             if not pod.is_active:
                 continue
             pre_state = pod.state.value
-            self._lifecycle.evaluate(pod, portfolio_returns_series)
+            self._lifecycle.evaluate(
+                pod, portfolio_returns_series, bar_timestamp=self._pending_bar_ts
+            )
             if pod.state.value != pre_state:
                 self._lifecycle_events.append(
                     {
@@ -385,18 +410,46 @@ class StrategyOrchestrator:
                         )
                     )
 
-    def _check_risk_limits(self, pod_returns: pd.DataFrame) -> None:
+    def _compute_daily_pnl_pct(self) -> float:
+        """활성 Pod의 가중 평균 최신 일간 수익률."""
+        active_pods = [p for p in self._pods if p.is_active and len(p.daily_returns) > 0]
+        if not active_pods:
+            return 0.0
+        total_fraction = sum(p.capital_fraction for p in active_pods)
+        if total_fraction < _MIN_FRACTION_EPSILON:
+            return 0.0
+        weighted = sum(p.daily_returns[-1] * p.capital_fraction for p in active_pods)
+        return weighted / total_fraction
+
+    def _compute_current_net_weights(self) -> dict[str, float]:
+        """last_pod_targets에서 현재 net weights 재구성."""
+        net: dict[str, float] = {}
+        for targets in self._last_pod_targets.values():
+            for symbol, weight in targets.items():
+                net[symbol] = net.get(symbol, 0.0) + weight
+        return net
+
+    def _check_risk_limits(
+        self,
+        pod_returns: pd.DataFrame,
+        *,
+        net_weights: dict[str, float] | None = None,
+    ) -> list[RiskAlert]:
         """Risk 한도 검사 + risk contributions history 기록."""
         if self._risk_aggregator is None:
-            return
+            return []
+
+        weights_to_check = net_weights if net_weights is not None else self._pending_net_weights
 
         pod_performances = {pod.pod_id: pod.performance for pod in self._pods if pod.is_active}
         pod_weights_map = {pod.pod_id: pod.capital_fraction for pod in self._pods if pod.is_active}
+        daily_pnl = self._compute_daily_pnl_pct()
         alerts = self._risk_aggregator.check_portfolio_limits(
-            net_weights=self._pending_net_weights,
+            net_weights=weights_to_check,
             pod_performances=pod_performances,
             pod_weights=pod_weights_map,
             pod_returns=pod_returns,
+            daily_pnl_pct=daily_pnl,
         )
         for alert in alerts:
             logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
@@ -408,6 +461,28 @@ class StrategyOrchestrator:
         risk_record: dict[str, object] = {"timestamp": self._pending_bar_ts}
         risk_record.update(pod_weights_map)
         self._risk_contributions_history.append(risk_record)
+
+        # Risk defense: critical alert → capital 축소
+        critical_alerts = [a for a in alerts if a.severity == "critical"]
+        if critical_alerts:
+            self._apply_risk_defense(critical_alerts)
+        elif self._risk_breached:
+            self._risk_breached = False
+            logger.info("Risk defense deactivated — no critical alerts")
+
+        return alerts
+
+    def _apply_risk_defense(self, alerts: list[RiskAlert]) -> None:
+        """CRITICAL alert 시 활성 Pod의 capital_fraction을 축소."""
+        self._risk_breached = True
+        for pod in self._pods:
+            if pod.is_active:
+                pod.capital_fraction *= _RISK_DEFENSE_SCALE
+        logger.warning(
+            "Risk defense: {} critical alerts, capital scaled by {:.0%}",
+            len(alerts),
+            _RISK_DEFENSE_SCALE,
+        )
 
     # ── Query ────────────────────────────────────────────────────
 
@@ -525,8 +600,5 @@ class StrategyOrchestrator:
                 self._symbol_pod_map[symbol].append(idx)
 
     def _find_pod(self, pod_id: str) -> StrategyPod | None:
-        """pod_id로 Pod 조회."""
-        for pod in self._pods:
-            if pod.pod_id == pod_id:
-                return pod
-        return None
+        """pod_id로 Pod 조회 (O(1))."""
+        return self._pod_map.get(pod_id)

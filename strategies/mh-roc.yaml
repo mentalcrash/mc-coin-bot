@@ -4,9 +4,9 @@ meta:
   category: Momentum
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-14'
-  retired_at: null
+  retired_at: '2026-02-14'
   economic_rationale: '다중 룩백(6/18/42/90 bars) ROC의 부호 투표(voting)가 단일 모멘텀보다 robust한
     추세 신호 생성. 교훈 #1 앙상블 원리. 비선형 결합으로 conviction scalar 천장(#29) 회피.'
 parameters: {}
@@ -29,6 +29,12 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.91
+      cagr: 25.7
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -40,3 +46,8 @@ decisions:
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 모든 feature shift(1) 적용 확인. 벡터화 완전. ShortMode
     3-way 분기 정상.
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.91 < 1.0. BTC/ETH/BNB MDD 77-81% 즉시폐기 수준. DOGE 외 에셋
+    손실

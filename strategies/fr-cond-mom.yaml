@@ -1,0 +1,52 @@
+meta:
+  name: fr-cond-mom
+  display_name: FR Conditional Momentum
+  category: Derivatives
+  timeframe: 6H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-14'
+  retired_at: '2026-02-14'
+  economic_rationale: FR z-score 극단치=과밀 포지셔닝 → 모멘텀 conviction 조건부 조절. BIS WP 1087
+    + Inan 2025.
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      score: 26
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  G1:
+    status: FAIL
+    date: '2026-02-14'
+    details:
+      sharpe: 0.82
+      cagr: 24.2
+asset_performance: []
+decisions:
+- date: '2026-02-14'
+  gate: G0A
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-14'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 55 tests 전수 통과.
+- date: '2026-02-14'
+  gate: G1
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.82 < 1.0. SOL 0.82/+20.3% 양호하나 Sharpe 미달. BTC Sharpe
+    -0.51로 기준코인 부진

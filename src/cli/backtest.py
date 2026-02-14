@@ -1427,6 +1427,160 @@ def diagnose(
     )
 
 
+@app.command(name="ic-check")
+def ic_check(
+    indicator_name: Annotated[
+        str,
+        typer.Argument(help="Indicator name (e.g., rsi, momentum, efficiency_ratio)"),
+    ],
+    symbol: Annotated[
+        str,
+        typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
+    ] = "BTC/USDT",
+    timeframe: Annotated[
+        str,
+        typer.Option("--tf", help="Timeframe"),
+    ] = "1D",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s)"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", "-p", help="Indicator param key=value (e.g., period=14)"),
+    ] = None,
+) -> None:
+    """Run IC (Information Coefficient) quick check on an indicator.
+
+    지표의 forward return 예측력을 사전 검증합니다.
+
+    Example:
+        uv run mcbot backtest ic-check rsi BTC/USDT --tf 1D -p period=14
+        uv run mcbot backtest ic-check momentum BTC/USDT -p period=10
+    """
+    from src.backtest.ic_analyzer import ICAnalyzer, ICVerdict
+    from src.market.feature_store import IndicatorSpec, compute_indicator
+
+    setup_logger(console_level="WARNING")
+
+    # 파라미터 파싱
+    params: dict[str, object] = {}
+    for p in param or []:
+        key, _, val = p.partition("=")
+        try:
+            params[key] = int(val)
+        except ValueError:
+            try:
+                params[key] = float(val)
+            except ValueError:
+                params[key] = val
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]IC Quick Check[/bold]\n"
+                f"Indicator: {indicator_name}\n"
+                f"Symbol: {symbol} | TF: {timeframe}\n"
+                f"Params: {params or 'default'}"
+            ),
+            border_style="cyan",
+        )
+    )
+
+    # 데이터 로드
+    logger.info("Loading data...")
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        data = data_service.get(
+            MarketDataRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start_date,
+                end=end_date,
+            )
+        )
+    except DataNotFoundError as e:
+        console.print(f"[red]Data load failed: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    # 지표 계산
+    spec = IndicatorSpec(name=indicator_name, params=dict(params))
+    try:
+        indicator_series = compute_indicator(spec, data.ohlcv)
+    except AttributeError:
+        console.print(f"[red]Indicator not found: {indicator_name}[/red]")
+        raise typer.Exit(code=1) from None
+
+    # Forward returns
+    close_series = data.ohlcv["close"]
+    forward_returns = close_series.pct_change().shift(-1)
+
+    # IC 분석
+    result = ICAnalyzer.analyze(indicator_series, forward_returns)  # type: ignore[arg-type]
+
+    # 결과 출력
+    def _verdict_str(passed: bool) -> str:
+        return "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
+
+    result_table = Table(title="IC Analysis Result")
+    result_table.add_column("Metric", style="cyan")
+    result_table.add_column("Value", justify="right")
+    result_table.add_column("Threshold", justify="right")
+    result_table.add_column("Status", justify="center")
+
+    from src.backtest.ic_analyzer import (
+        HIT_RATE_THRESHOLD,
+        IC_ABS_THRESHOLD,
+        IC_IR_ABS_THRESHOLD,
+    )
+
+    pvalue_threshold = 0.05
+
+    result_table.add_row(
+        "Rank IC",
+        f"{result.rank_ic:.4f}",
+        f"|IC| > {IC_ABS_THRESHOLD}",
+        _verdict_str(abs(result.rank_ic) > IC_ABS_THRESHOLD),
+    )
+    result_table.add_row(
+        "IC p-value",
+        f"{result.rank_ic_pvalue:.4f}",
+        f"< {pvalue_threshold}",
+        _verdict_str(result.rank_ic_pvalue < pvalue_threshold),
+    )
+    result_table.add_row(
+        "IC IR",
+        f"{result.ic_ir:.4f}",
+        f"|IR| > {IC_IR_ABS_THRESHOLD}",
+        _verdict_str(abs(result.ic_ir) > IC_IR_ABS_THRESHOLD),
+    )
+    result_table.add_row(
+        "Decay Stable",
+        str(result.ic_decay_stable),
+        "True",
+        _verdict_str(result.ic_decay_stable),
+    )
+    result_table.add_row(
+        "Hit Rate",
+        f"{result.hit_rate:.1f}%",
+        f"> {HIT_RATE_THRESHOLD}%",
+        _verdict_str(result.hit_rate > HIT_RATE_THRESHOLD),
+    )
+
+    console.print(result_table)
+
+    # 전체 Verdict
+    if result.verdict == ICVerdict.PASS:
+        console.print(Panel("[bold green]VERDICT: PASS[/bold green]", border_style="green"))
+    else:
+        console.print(Panel("[bold red]VERDICT: FAIL[/bold red]", border_style="red"))
+
+
 @app.command()
 def info() -> None:
     """Display VW-TSMOM strategy information."""

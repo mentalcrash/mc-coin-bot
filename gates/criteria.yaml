@@ -6,25 +6,25 @@ gates:
   # ─── Gate 0A: 아이디어 검증 ────────────────────────────────────
   - gate_id: G0A
     name: 아이디어 검증
-    description: "코드 작성 전 경제적 타당성 평가 (6항목, 각 1~5점)"
+    description: "코드 작성 전 데이터 기반 타당성 평가 (6항목, 각 1~5점)"
     gate_type: scoring
     cli_command: ""
     scoring:
-      pass_threshold: 18
+      pass_threshold: 21
       max_total: 30
       items:
-        - name: 경제적 논거
-          description: "5=행동편향/구조적 제약으로 설명 가능, 1=설명 불가"
-        - name: 참신성
-          description: "5=미공개, 1=SSRN 공개 3년+"
-        - name: 데이터 확보성
-          description: "5=Binance API 즉시 사용, 1=별도 수집 필요"
-        - name: 구현 난이도
-          description: "5=VectorBT 단순 구현, 1=HFT 인프라 필요"
+        - name: 경제적 논거 고유성
+          description: "5=기존 RETIRED과 완전히 다른 메커니즘, 3=유사하지만 개선 포인트 명확, 1=기존 RETIRED과 동일 논거"
+        - name: IC 사전 검증
+          description: "5=|Rank IC|>0.05, 3=|Rank IC|>0.02, 1=IC 미검증 or |IC|<0.02"
+        - name: 카테고리 성공률
+          description: "5=해당 카테고리 성공률>20%, 3=0~20%이지만 차별화, 1=성공률 0% + 유사 접근"
+        - name: 레짐 독립성
+          description: "5=3개+ 레짐에서 IC 양수, 3=2개 레짐에서 양수, 1=단일 레짐 or 미검증"
+        - name: 앙상블 기여도
+          description: "5=기존 ACTIVE와 상관<0.3, 3=상관 0.3~0.5, 1=상관>0.5 (중복 Alpha)"
         - name: 수용 용량
           description: "5=$1M+ 운용, 1=$100K 미만"
-        - name: 레짐 의존성
-          description: "5=모든 시장 환경, 1=특정 레짐만"
 
   # ─── Gate 0B: 코드 품질 검증 ───────────────────────────────────
   - gate_id: G0B

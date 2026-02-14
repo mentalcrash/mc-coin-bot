@@ -21,24 +21,30 @@ class TestComputeNetWeights:
         assert result == {"BTC/USDT": 0.5, "ETH/USDT": 0.3}
 
     def test_two_pods_same_direction(self) -> None:
-        result = compute_net_weights({
-            "pod-a": {"BTC/USDT": 0.3},
-            "pod-b": {"BTC/USDT": 0.2},
-        })
+        result = compute_net_weights(
+            {
+                "pod-a": {"BTC/USDT": 0.3},
+                "pod-b": {"BTC/USDT": 0.2},
+            }
+        )
         assert result["BTC/USDT"] == pytest.approx(0.5)
 
     def test_two_pods_opposite_direction(self) -> None:
-        result = compute_net_weights({
-            "pod-a": {"BTC/USDT": 0.3},
-            "pod-b": {"BTC/USDT": -0.3},
-        })
+        result = compute_net_weights(
+            {
+                "pod-a": {"BTC/USDT": 0.3},
+                "pod-b": {"BTC/USDT": -0.3},
+            }
+        )
         assert result["BTC/USDT"] == pytest.approx(0.0)
 
     def test_multiple_symbols(self) -> None:
-        result = compute_net_weights({
-            "pod-a": {"BTC/USDT": 0.3, "ETH/USDT": -0.2},
-            "pod-b": {"BTC/USDT": -0.1, "SOL/USDT": 0.4},
-        })
+        result = compute_net_weights(
+            {
+                "pod-a": {"BTC/USDT": 0.3, "ETH/USDT": -0.2},
+                "pod-b": {"BTC/USDT": -0.1, "SOL/USDT": 0.4},
+            }
+        )
         assert result["BTC/USDT"] == pytest.approx(0.2)
         assert result["ETH/USDT"] == pytest.approx(-0.2)
         assert result["SOL/USDT"] == pytest.approx(0.4)
@@ -81,34 +87,66 @@ class TestComputeDeltas:
 
 class TestAttributeFill:
     def test_single_pod_100pct(self) -> None:
-        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.5})
+        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.5}, is_buy=True)
         assert result["pod-a"] == pytest.approx((1.0, 50000.0, 10.0))
 
     def test_two_pods_proportional(self) -> None:
-        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.6, "pod-b": 0.4})
+        result = attribute_fill(
+            "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.6, "pod-b": 0.4}, is_buy=True
+        )
         assert result["pod-a"][0] == pytest.approx(0.6)
         assert result["pod-b"][0] == pytest.approx(0.4)
         assert result["pod-a"][2] == pytest.approx(6.0)
         assert result["pod-b"][2] == pytest.approx(4.0)
 
-    def test_opposite_direction_by_abs(self) -> None:
-        """반대 방향 Pod: |target| 비율로 배분."""
-        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.3, "pod-b": -0.1})
-        # abs(0.3)/(0.3+0.1)=0.75, abs(-0.1)/(0.3+0.1)=0.25
-        assert result["pod-a"][0] == pytest.approx(0.75)
-        assert result["pod-b"][0] == pytest.approx(0.25)
-
     def test_empty_targets(self) -> None:
-        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {})
+        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {}, is_buy=True)
         assert result == {}
 
     def test_zero_targets(self) -> None:
-        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.0})
+        result = attribute_fill("BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.0}, is_buy=True)
         assert result == {}
 
     def test_price_passthrough(self) -> None:
-        result = attribute_fill("BTC/USDT", 2.0, 42000.0, 8.0, {"pod-a": 0.5})
+        result = attribute_fill("BTC/USDT", 2.0, 42000.0, 8.0, {"pod-a": 0.5}, is_buy=True)
         assert result["pod-a"][1] == 42000.0
+
+    def test_buy_fill_only_long_pods(self) -> None:
+        """H-1: BUY fill → long pods(target > 0)만 귀속."""
+        result = attribute_fill(
+            "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.3, "pod-b": -0.1}, is_buy=True
+        )
+        # BUY → pod-a(0.3) only
+        assert "pod-a" in result
+        assert "pod-b" not in result
+        assert result["pod-a"][0] == pytest.approx(1.0)
+
+    def test_sell_fill_only_short_pods(self) -> None:
+        """H-1: SELL fill → short pods(target < 0)만 귀속."""
+        result = attribute_fill(
+            "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.3, "pod-b": -0.1}, is_buy=False
+        )
+        # SELL → pod-b(-0.1) only
+        assert "pod-b" in result
+        assert "pod-a" not in result
+        assert result["pod-b"][0] == pytest.approx(1.0)
+
+    def test_direction_mismatch_empty(self) -> None:
+        """H-1: 방향 불일치 시 빈 dict."""
+        # BUY fill but only short pods
+        result = attribute_fill(
+            "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": -0.3, "pod-b": -0.1}, is_buy=True
+        )
+        assert result == {}
+
+    def test_sell_fill_two_short_pods_proportional(self) -> None:
+        """H-1: SELL fill + 2 short pods → |target| 비례 배분."""
+        result = attribute_fill(
+            "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": -0.3, "pod-b": -0.1}, is_buy=False
+        )
+        # abs(-0.3)/(0.3+0.1) = 0.75, abs(-0.1)/(0.3+0.1) = 0.25
+        assert result["pod-a"][0] == pytest.approx(0.75)
+        assert result["pod-b"][0] == pytest.approx(0.25)
 
 
 # ── TestComputeGrossLeverage ───────────────────────────────────

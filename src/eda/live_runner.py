@@ -495,6 +495,9 @@ class LiveRunner:
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm, oms)
 
+            # 3.5. Orchestrator 상태 복구
+            orch_persistence = await self._restore_orchestrator_state(state_mgr)
+
             # 4. 모든 컴포넌트 등록 + warmup
             await self._register_and_warmup(
                 bus,
@@ -531,7 +534,13 @@ class LiveRunner:
             # 주기적 상태 저장 task
             save_task: asyncio.Task[None] | None = None
             if state_mgr:
-                save_task = asyncio.create_task(self._periodic_state_save(state_mgr, pm, rm, oms))
+                save_task = asyncio.create_task(
+                    self._periodic_state_save(
+                        state_mgr, pm, rm, oms,
+                        orch_persistence=orch_persistence,
+                        orchestrator=self._orchestrator,
+                    )
+                )
 
             # 주기적 메트릭 갱신 task (uptime + EventBus + exchange health)
             uptime_task: asyncio.Task[None] | None = None
@@ -583,6 +592,8 @@ class LiveRunner:
             # 최종 상태 저장
             if state_mgr:
                 await state_mgr.save_all(pm, rm, oms=oms)
+                if orch_persistence is not None and self._orchestrator is not None:
+                    await orch_persistence.save(self._orchestrator)
                 logger.info("Final state saved")
 
             logger.info("LiveRunner stopped gracefully")
@@ -602,6 +613,23 @@ class LiveRunner:
     def request_shutdown(self) -> None:
         """외부에서 shutdown 요청 (테스트용)."""
         self._shutdown_event.set()
+
+    async def _restore_orchestrator_state(self, state_mgr: Any) -> Any:
+        """Orchestrator 상태를 복구합니다.
+
+        Returns:
+            OrchestratorStatePersistence 또는 None
+        """
+        if state_mgr is None or self._orchestrator is None:
+            return None
+
+        from src.orchestrator.state_persistence import OrchestratorStatePersistence
+
+        orch_persistence = OrchestratorStatePersistence(state_mgr)
+        restored = await orch_persistence.restore(self._orchestrator)
+        if restored:
+            logger.info("Orchestrator state restored")
+        return orch_persistence
 
     @staticmethod
     async def _restore_state(
@@ -1080,13 +1108,17 @@ class LiveRunner:
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         oms: OMS | None = None,
+        orch_persistence: Any = None,
+        orchestrator: Any = None,
         interval: float = _DEFAULT_SAVE_INTERVAL,
     ) -> None:
-        """주기적으로 PM/RM/OMS 상태를 저장."""
+        """주기적으로 PM/RM/OMS/Orchestrator 상태를 저장."""
         while True:
             await asyncio.sleep(interval)
             try:
                 await state_mgr.save_all(pm, rm, oms=oms)
+                if orch_persistence is not None and orchestrator is not None:
+                    await orch_persistence.save(orchestrator)
             except Exception:
                 logger.exception("Periodic state save failed")
 

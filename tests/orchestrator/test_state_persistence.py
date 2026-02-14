@@ -593,6 +593,28 @@ class TestE2EPersistence:
         assert pos.notional_usd == pytest.approx(0.1 * 50000.0)
 
     @pytest.mark.asyncio
+    async def test_atomic_save_both_keys(self, persistence: OrchestratorStatePersistence) -> None:
+        """H-6: save()가 두 key를 단일 트랜잭션으로 저장."""
+        orch = _make_orchestrator()
+        orch.pods[0].state = LifecycleState.PRODUCTION
+        orch.pods[0].record_daily_return(0.01)
+
+        await persistence.save(orch)
+
+        # 두 key 모두 존재하는지 확인
+        state_raw = await persistence._load_key(_KEY_STATE)
+        returns_raw = await persistence._load_key(_KEY_DAILY_RETURNS)
+        assert state_raw is not None
+        assert returns_raw is not None
+
+        # 복원 가능 확인
+        orch2 = _make_orchestrator()
+        result = await persistence.restore(orch2)
+        assert result is True
+        assert orch2.pods[0].state == LifecycleState.PRODUCTION
+        assert len(orch2.pods[0].daily_returns) == 1
+
+    @pytest.mark.asyncio
     async def test_corrupted_daily_returns_skipped(
         self, persistence: OrchestratorStatePersistence
     ) -> None:

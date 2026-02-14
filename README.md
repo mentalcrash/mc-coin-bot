@@ -2,16 +2,31 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-74개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
-현재 **2개 전략 ACTIVE** (CTREND, Anchor-Mom), **8개 CANDIDATE** — Paper Trading(G6) 대기 중.
+87개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
+현재 **2개 전략 ACTIVE** (CTREND, Anchor-Mom), **3개 CANDIDATE** 검증 중.
 
 ---
 
 ## 아키텍처
 
+### 단일 전략 (EDA)
+
 ```
 WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
 ```
+
+### 멀티 전략 (Orchestrator)
+
+```
+                    ┌─ Pod A (TSMOM)   ─┐
+WebSocket → Data ──→├─ Pod B (Donchian) ─┼→ Netting → PM → RM → OMS → Fill
+                    └─ Pod C (VolAdapt) ─┘
+                         ▲                    ▲
+                    Capital Allocator    Risk Aggregator
+                    Lifecycle Manager    (5-check defense)
+```
+
+> 상세: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
 
 ### 핵심 설계 원칙
 
@@ -19,6 +34,9 @@ WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
 - **Target Weights 기반** -- "사라/팔아라" 대신 "적정 비중은 X%"
 - **Look-Ahead Bias 원천 차단** -- Signal at Close → Execute at Next Open
 - **PM/RM 분리 모델** -- Portfolio Manager → Risk Manager → OMS 3단계 방어
+- **Pod 독립성** -- 각 전략은 독립 Pod으로 운영 (독립 P&L, 독립 리스크)
+- **Net Execution** -- 심볼별 포지션 넷팅으로 마진 효율 극대화
+- **자동 방어** -- Degradation 감지 → 자동 축소 → Probation → Retirement
 
 ### 기술 스택
 
@@ -119,12 +137,40 @@ strategy:
 | `majority_vote` | 다수결 합의 (min_agreement 이상) |
 | `strategy_momentum` | 최근 Sharpe 상위 top_n 선택 |
 
+### Orchestrator 설정 (멀티 전략)
+
+독립 전략들을 **사업부처럼** 병렬 운영합니다. 각 Pod은 독립 자본 슬롯과 P&L을 가지며, 성과에 따라 자본이 동적 배분됩니다.
+
+```yaml
+# config/orchestrator-example.yaml
+orchestrator:
+  allocation_method: risk_parity
+  rebalance:
+    trigger: hybrid
+    calendar_days: 7
+
+pods:
+  - pod_id: pod-tsmom-major
+    strategy: tsmom
+    params: { lookback: 30, vol_target: 0.35 }
+    symbols: [BTC/USDT, ETH/USDT]
+    initial_fraction: 0.15
+    max_fraction: 0.40
+
+  - pod_id: pod-donchian-alt
+    strategy: donchian-ensemble
+    symbols: [SOL/USDT, BNB/USDT]
+    initial_fraction: 0.10
+```
+
+> 상세 설정 및 아키텍처: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
+
 ---
 
 ## 전략 파이프라인
 
 전략은 **아이디어 발굴(G0A)** → **실전 배포(G7)** 까지 8단계 Gate를 순차 통과해야 합니다.
-각 Gate에서 FAIL 시 즉시 폐기. 74개 전략 중 **2개 ACTIVE + 8개 CANDIDATE + 64개 RETIRED**.
+각 Gate에서 FAIL 시 즉시 폐기. 87개 전략 중 **2개 ACTIVE + 3개 CANDIDATE + 83개 RETIRED**.
 
 | Phase | Gates | 검증 내용 |
 |-------|-------|----------|
@@ -249,7 +295,7 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 | **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | ACTIVE |
 | **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | ACTIVE |
 
-> 74개 전략: 2 ACTIVE + 8 CANDIDATE + 64 RETIRED.
+> 87개 전략: 2 ACTIVE + 3 CANDIDATE + 83 RETIRED.
 > 상세 현황은 `uv run mcbot pipeline report`로 확인.
 
 ```bash
@@ -296,3 +342,13 @@ uv run mcbot audit findings --status open               # 미해결 발견사항
 uv run mcbot audit actions --priority P0                # 긴급 액션
 uv run mcbot audit trend                                # 지표 추이
 ```
+
+---
+
+## 아키텍처 문서
+
+| 문서 | 설명 |
+|------|------|
+| [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
+| [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
+| [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md) | **멀티 전략 오케스트레이터** (Pod, 배분, 생애주기, 넷팅) |
