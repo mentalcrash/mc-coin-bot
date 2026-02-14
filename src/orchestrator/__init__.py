@@ -3,6 +3,7 @@
 여러 독립 전략(Pod)을 동시 운용하며 자본을 동적으로 배분합니다.
 """
 
+from src.orchestrator.allocator import CapitalAllocator
 from src.orchestrator.config import (
     GraduationCriteria,
     OrchestratorConfig,
@@ -19,6 +20,7 @@ from src.orchestrator.models import (
 
 __all__ = [
     "AllocationMethod",
+    "CapitalAllocator",
     "GraduationCriteria",
     "LifecycleState",
     "OrchestratorConfig",
