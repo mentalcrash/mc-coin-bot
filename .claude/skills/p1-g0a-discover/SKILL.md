@@ -326,7 +326,38 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 1m    | Intrabar SL/TS 전용    | N/A      | 전략 자체가 아닌 PM 보조
 ```
 
-#### 4-C. 설계 문서 작성
+#### 4-C. 사용 가능한 지표 라이브러리
+
+`src/market/indicators/` 패키지에 **53개 공유 지표 함수**가 준비되어 있다.
+전략 설계 시 이 목록에서 빌딩블록을 선택하면 구현 복잡도가 크게 줄어든다.
+
+```
+카테고리별 사용 가능 함수:
+
+Returns (3): log_returns, simple_returns, rolling_return
+Volatility (8): realized_volatility, volatility_scalar, parkinson_volatility,
+    garman_klass_volatility, vol_regime, volatility_of_volatility,
+    yang_zhang_volatility, vol_percentile_rank
+Trend (6): atr, adx, sma, ema, efficiency_ratio, kama
+Oscillators (7): rsi, stochastic, williams_r, cci, roc, macd, momentum
+Channels (3): bollinger_bands, donchian_channel, keltner_channels
+Volume (4): obv, volume_weighted_returns, chaikin_money_flow, volume_macd
+Composite (12): drawdown, rolling_zscore, bb_position, sma_cross, ema_cross,
+    squeeze_detect, hurst_exponent, fractal_dimension, price_acceleration,
+    rsi_divergence, trend_strength, mean_reversion_score
+Derivatives (7): funding_rate_ma, funding_zscore, oi_momentum,
+    oi_price_divergence, basis_spread, ls_ratio_zscore, liquidation_intensity
+
+→ 전체 시그니처: src/market/indicators/__init__.py 참조
+→ FeatureStore 통합: 8개 기본 지표는 precompute 자동 캐시
+  (atr_14, rsi_14, adx_14, realized_volatility_30, drawdown,
+   parkinson_volatility, efficiency_ratio_10, momentum_10)
+```
+
+> **핵심**: 전략 preprocessor에서 중복 구현 금지.
+> `from src.market.indicators import atr, rsi, ...` 로 재사용.
+
+#### 4-D. 설계 문서 작성
 
 다음 항목을 정리한다:
 
@@ -334,7 +365,7 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 1. 전략 이름 (kebab-case): ___
 2. 핵심 가설: ___
 3. 경제적 논거: ___
-4. 사용 지표: [목록]
+4. 사용 지표: [목록 — 위 라이브러리에서 선택 권장]
 5. 시그널 생성 로직 (수식): ___
 6. ShortMode: DISABLED / HEDGE_ONLY / FULL
 7. 타임프레임: 1D / 4H / 1H
@@ -605,6 +636,7 @@ Step 4.5의 절차를 따른다.
 - [ ] ShortMode 3가지 중 근거 있는 선택
 - [ ] TF 적합성 확인 (비용 영향 포함)
 - [ ] CTREND와의 예상 상관관계 평가됨
+- [ ] 사용 지표가 `src/market/indicators/` 라이브러리에서 선택됨 (중복 구현 방지)
 - [ ] 설계 문서 10개 항목 모두 작성됨
 - [ ] Derivatives 데이터 필요 시 Silver _deriv 파일 존재 확인
 - [ ] 백테스팅 가능 데이터인지 확인 (funding_rate: O, OI/LS/Taker: X)

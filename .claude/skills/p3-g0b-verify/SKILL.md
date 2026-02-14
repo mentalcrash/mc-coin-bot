@@ -218,9 +218,17 @@ FAIL 사유는 아니나 반드시 기록:
 | W4 | Turnover | 연간 회전율이 비용 대비 합리적인가 |
 | W5 | Correlation | 기존 활성 전략과 수익률 상관 < 0.7 |
 | W6 | Derivatives NaN | funding_rate 등 derivatives 컬럼 ffill() 처리 여부 |
+| W7 | Shared Indicators | `src/market/indicators/`에 존재하는 지표를 inline 재구현하지 않는지 |
 
 **W6 상세**: Derivatives 컬럼 사용 시 `merge_asof` 후 첫 구간 NaN 미처리 시 시그널 왜곡 가능.
 `required_columns`에 derivatives 컬럼 포함 여부 확인. `ffill()` 적용 여부 검증.
+
+**W7 상세**: `src/market/indicators/` 패키지에 53개 공유 지표가 있다.
+preprocessor.py에서 `calculate_*`/`compute_*` 형태의 로컬 함수로 중복 구현하면
+유지보수 부담 + 불일치 리스크 발생. `from src.market.indicators import ...`를 사용해야 한다.
+사용 가능: atr, rsi, adx, sma, ema, kama, macd, bollinger_bands, donchian_channel,
+keltner_channels, stochastic, cci, roc, momentum, obv, parkinson_volatility,
+garman_klass_volatility, vol_regime, efficiency_ratio, rolling_zscore, drawdown 등.
 
 > 상세: [references/warning-checklist.md](references/warning-checklist.md)
 
@@ -297,13 +305,16 @@ FAIL 사유는 아니나 반드시 기록:
   [W6] Derivatives NaN         : [OK / WARNING / N/A]
        (세부 사항)
 
+  [W7] Shared Indicators        : [OK / WARNING]
+       (세부 사항)
+
 ------------------------------------------------------------
   검증 요약
 ------------------------------------------------------------
 
   Critical PASS: N/7
   Critical FAIL: N/7
-  Warnings:      N/5
+  Warnings:      N/7
   총 결함:       N건 (CRITICAL: N, HIGH: N, MEDIUM: N)
 
 ------------------------------------------------------------
