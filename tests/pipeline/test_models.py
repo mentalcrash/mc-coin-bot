@@ -28,16 +28,23 @@ class TestEnums:
     def test_gate_id_values(self) -> None:
         assert GateId.G0A == "G0A"
         assert GateId.G5 == "G5"
-        assert GateId.G7 == "G7"
+        assert GateId.G5 == "G5"
 
     def test_gate_verdict_values(self) -> None:
         assert GateVerdict.PASS == "PASS"
         assert GateVerdict.FAIL == "FAIL"
 
     def test_gate_order_length(self) -> None:
-        assert len(GATE_ORDER) == 9
+        assert len(GATE_ORDER) == 8
         assert GATE_ORDER[0] == GateId.G0A
-        assert GATE_ORDER[-1] == GateId.G7
+        assert GATE_ORDER[-1] == GateId.G5
+
+    def test_gate_order_includes_g2h(self) -> None:
+        assert GateId.G2H in GATE_ORDER
+        idx_g2 = GATE_ORDER.index(GateId.G2)
+        idx_g2h = GATE_ORDER.index(GateId.G2H)
+        idx_g3 = GATE_ORDER.index(GateId.G3)
+        assert idx_g2 < idx_g2h < idx_g3
 
 
 class TestStrategyMeta:
@@ -187,6 +194,31 @@ class TestNextGate:
             }
         )
         assert record.next_gate == "G2"
+
+    def test_next_gate_after_g2_is_g2h(self) -> None:
+        """G2 PASS 후 next_gate = G2H."""
+        record = _make_record(
+            {
+                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G2: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.next_gate == "G2H"
+
+    def test_next_gate_after_g2h_is_g3(self) -> None:
+        """G2H PASS 후 next_gate = G3."""
+        record = _make_record(
+            {
+                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G2: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                GateId.G2H: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.next_gate == "G3"
 
     def test_fail_returns_none(self) -> None:
         record = _make_record(

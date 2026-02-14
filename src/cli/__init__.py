@@ -4,6 +4,7 @@ Available subcommands:
     - ingest: Data ingestion pipeline (Bronze -> Silver)
     - backtest: Strategy backtesting and optimization
     - eda: EDA (Event-Driven Architecture) backtesting
+    - orchestrate: Strategy Orchestrator (multi-strategy)
     - pipeline: Strategy pipeline management (YAML)
     - audit: Architecture audit report system
 
@@ -11,6 +12,7 @@ Usage:
     uv run mcbot pipeline table
     uv run mcbot backtest run tsmom BTC/USDT
     uv run mcbot eda run tsmom BTC/USDT
+    uv run mcbot orchestrate backtest config/orchestrator-example.yaml
     uv run mcbot ingest bronze BTC/USDT --year 2025
     uv run mcbot audit list
 """
@@ -27,6 +29,7 @@ def create_app() -> typer.Typer:
     from src.cli.backtest import app as backtest_app
     from src.cli.eda import app as eda_app
     from src.cli.ingest import app as ingest_app
+    from src.cli.orchestrate import app as orchestrate_app
     from src.cli.pipeline import app as pipeline_app
 
     main_app = typer.Typer(
@@ -38,6 +41,9 @@ def create_app() -> typer.Typer:
     main_app.add_typer(ingest_app, name="ingest", help="Data ingestion pipeline (Bronze/Silver)")
     main_app.add_typer(backtest_app, name="backtest", help="Strategy backtesting (VectorBT)")
     main_app.add_typer(eda_app, name="eda", help="EDA (Event-Driven Architecture) backtesting")
+    main_app.add_typer(
+        orchestrate_app, name="orchestrate", help="Strategy Orchestrator (multi-strategy)"
+    )
     main_app.add_typer(pipeline_app, name="pipeline", help="Strategy pipeline management (YAML)")
     main_app.add_typer(audit_app, name="audit", help="Architecture audit report system")
 

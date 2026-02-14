@@ -653,6 +653,47 @@ def _update_yaml_g3(result: dict[str, Any]) -> None:
         store.update_status(name, StrategyStatus.RETIRED)
 
 
+def _load_g2h_config(strategy_name: str) -> dict[str, Any] | None:
+    """G2H JSON 결과에서 Gate 3 sweep 설정을 로드.
+
+    Returns:
+        G3 config dict (best_asset, baseline, sweeps) or None if not found.
+    """
+    from src.pipeline.store import StrategyStore
+
+    json_path = _RESULTS_DIR / f"gate2h_{strategy_name}.json"
+    if not json_path.exists():
+        return None
+
+    try:
+        raw = json.loads(json_path.read_text(encoding="utf-8"))
+        g3_sweeps = raw.get("g3_sweeps")
+        best_params = raw.get("optimization", {}).get("best_params")
+    except Exception:
+        logger.warning(f"Failed to load G2H config for {strategy_name}")
+        return None
+
+    if not g3_sweeps or not best_params:
+        return None
+
+    # Get best_asset from pipeline YAML
+    store = StrategyStore()
+    if not store.exists(strategy_name):
+        return None
+    record = store.load(strategy_name)
+    best_asset = record.best_asset
+    if not best_asset:
+        return None
+
+    timeframe = resolve_timeframe(strategy_name)
+    return {
+        "best_asset": best_asset,
+        "timeframe": timeframe,
+        "baseline": best_params,
+        "sweeps": g3_sweeps,
+    }
+
+
 def run_gate3(
     strategies: list[str] | None,
     save_json: bool,
@@ -665,11 +706,25 @@ def run_gate3(
 
     _RESULTS_DIR.mkdir(exist_ok=True)
 
-    strategies_to_run = {
-        k: v for k, v in GATE3_STRATEGIES.items() if strategies is None or k in strategies
-    }
+    # Build strategies_to_run: G2H JSON fallback → GATE3_STRATEGIES dict
+    strategies_to_run: dict[str, dict[str, Any]] = {}
+    target_names = strategies if strategies else list(GATE3_STRATEGIES.keys())
+
+    for name in target_names:
+        g2h_config = _load_g2h_config(name)
+        if g2h_config is not None:
+            strategies_to_run[name] = g2h_config
+            logger.info(f"  {name}: using G2H optimized params")
+        elif name in GATE3_STRATEGIES:
+            strategies_to_run[name] = GATE3_STRATEGIES[name]
+        elif strategies is not None:
+            # Explicit request for a strategy not in either source — try G2H
+            logger.warning(f"  {name}: not in GATE3_STRATEGIES and no G2H JSON found")
+
     if not strategies_to_run:
-        console.print(f"[red]No matching strategies. Available: {list(GATE3_STRATEGIES.keys())}[/]")
+        console.print(
+            "[red]No matching strategies. Run gate2h-run first or check GATE3_STRATEGIES.[/]"
+        )
         return
 
     engine = BacktestEngine()

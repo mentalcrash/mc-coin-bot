@@ -43,7 +43,7 @@ _STATUS_COLORS: dict[StrategyStatus, str] = {
     StrategyStatus.RETIRED: "red",
 }
 
-_GATE_DISPLAY = ["G0A", "G0B", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
+_GATE_DISPLAY = ["G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5"]
 
 
 def _gate_badge_colored(record: StrategyRecord, gid: GateId) -> str:
@@ -600,6 +600,25 @@ def gate1_run(
         start=start_dt,
         end=end_dt,
         capital=capital,
+        save_json=save_json,
+        console=console,
+    )
+
+
+@app.command(name="gate2h-run")
+def gate2h_run(
+    strategies: Annotated[list[str], typer.Argument(help="전략 이름 (복수)")],
+    n_trials: Annotated[int, typer.Option("--n-trials", "-n", help="Optuna trial 수")] = 100,
+    seed: Annotated[int, typer.Option("--seed", help="재현성 seed")] = 42,
+    save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
+) -> None:
+    """Gate 2H: Optuna TPE 파라미터 최적화 (IS only, Always PASS)."""
+    from src.cli._gate_runners_g2h import run_gate2h
+
+    run_gate2h(
+        strategies=strategies,
+        n_trials=n_trials,
+        seed=seed,
         save_json=save_json,
         console=console,
     )

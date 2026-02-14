@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
-
 if TYPE_CHECKING:
+    import pandas as pd
+
     from src.strategy.cgo_mom.config import CgoMomConfig
 
 from src.market.indicators import (
@@ -20,7 +19,6 @@ from src.market.indicators import (
     realized_volatility,
     volatility_scalar,
 )
-
 
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
 

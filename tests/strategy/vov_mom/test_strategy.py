@@ -87,7 +87,7 @@ class TestVovMomStrategy:
     def test_custom_config(self) -> None:
         config = VovMomConfig(gk_window=30)
         strategy = VovMomStrategy(config=config)
-        assert strategy._config.gk_window == 30  # noqa: SLF001
+        assert strategy._config.gk_window == 30
 
     def test_params_property(self) -> None:
         strategy = VovMomStrategy()

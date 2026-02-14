@@ -87,7 +87,7 @@ class TestCgoMomStrategy:
     def test_custom_config(self) -> None:
         config = CgoMomConfig(turnover_window=30)
         strategy = CgoMomStrategy(config=config)
-        assert strategy._config.turnover_window == 30  # noqa: SLF001
+        assert strategy._config.turnover_window == 30
 
     def test_params_property(self) -> None:
         strategy = CgoMomStrategy()

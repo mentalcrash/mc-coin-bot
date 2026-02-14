@@ -101,6 +101,31 @@ uv run mcbot backtest validate \
 
 ---
 
+## Gate 2H: 파라미터 최적화 (정보 전용)
+
+> Always PASS — 최적화 완료 여부만 확인. 과적합 방어는 G4에서 담당.
+
+### PASS 조건
+
+| 지표 | 기준 | 비고 |
+|------|------|------|
+| Optimization Completed | == 1.0 | 최적화 정상 완료 |
+
+### 정보 지표 (판정 무관)
+
+| 지표 | 설명 | 주의 기준 |
+|------|------|----------|
+| Improvement (%) | IS Sharpe 개선율 | > 30%이면 과적합 주의 |
+| OOS Sharpe | 최적 파라미터 OOS 검증 | <= 0이면 과적합 의심 |
+
+### CLI 명령
+
+```bash
+uv run mcbot pipeline gate2h-run {strategy} --n-trials 100 --seed 42 --json
+```
+
+---
+
 ## Gate 3: 파라미터 안정성
 
 ### PASS 조건 (파라미터별)
@@ -198,6 +223,7 @@ uv run mcbot backtest validate \
 | G1 | Best Trades | 288 | PASS |
 | G2 | OOS Sharpe | 1.78 | PASS |
 | G2 | Decay | 33.7% | PASS |
+| G2H | Optimization | Completed | PASS |
 | G3 | 파라미터 | 4/4 PASS | PASS |
 | G4 | WFA OOS | 1.49 | PASS |
 | G4 | WFA Decay | 39% | PASS |
@@ -218,5 +244,6 @@ uv run mcbot backtest validate \
 |------|------|----------|
 | G1 Sharpe → G2 OOS Sharpe | OOS >= G1 × 0.3 | OOS < G1 × 0.3이면 과적합 의심 |
 | G2 Decay → G4 WFA Decay | 유사 (±15%p) | 차이 > 20%p이면 CV 방법론 민감도 |
+| G2H OOS → G4 WFA OOS | 유사 방향 | G2H OOS 양수인데 G4 OOS 음수이면 IS 구간 의존 |
 | G2 OOS → G4 WFA OOS | WFA >= G2 × 0.5 | WFA < G2 × 0.5이면 window 의존 |
 | G3 Sharpe → G4 MC CI | G3 baseline ∈ CI | G3 baseline < CI 하한이면 불안정 |

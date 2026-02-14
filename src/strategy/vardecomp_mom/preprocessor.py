@@ -22,7 +22,6 @@ from src.market.indicators import (
     volatility_scalar,
 )
 
-
 _REQUIRED_COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
 
 
@@ -80,27 +79,31 @@ def preprocess(df: pd.DataFrame, config: VardecompMomConfig) -> pd.DataFrame:
     # --- Good/Bad Semivariance ---
     # Good semivariance: 상방 수익률만의 variance (positive returns)
     positive_returns_sq = np.where(returns > 0, returns**2, 0.0)
-    good_sv = pd.Series(positive_returns_sq, index=df.index).rolling(
-        window=config.semivar_window, min_periods=config.semivar_window
-    ).mean()
+    good_sv = (
+        pd.Series(positive_returns_sq, index=df.index)
+        .rolling(window=config.semivar_window, min_periods=config.semivar_window)
+        .mean()
+    )
     df["good_semivar"] = good_sv
 
     # Bad semivariance: 하방 수익률만의 variance (negative returns)
     negative_returns_sq = np.where(returns < 0, returns**2, 0.0)
-    bad_sv = pd.Series(negative_returns_sq, index=df.index).rolling(
-        window=config.semivar_window, min_periods=config.semivar_window
-    ).mean()
+    bad_sv = (
+        pd.Series(negative_returns_sq, index=df.index)
+        .rolling(window=config.semivar_window, min_periods=config.semivar_window)
+        .mean()
+    )
     df["bad_semivar"] = bad_sv
 
     # --- Variance Ratio ---
     # var_ratio = good_semivar / (good_semivar + bad_semivar)
     # > 0.5 이면 상방 변동성 지배적 (건강한 추세)
     # < 0.5 이면 하방 변동성 지배적 (취약한 추세)
-    total_sv = good_sv + bad_sv
-    df["var_ratio"] = good_sv / total_sv.clip(lower=1e-20)
+    total_sv: pd.Series = good_sv + bad_sv  # type: ignore[assignment]
+    df["var_ratio"] = good_sv / np.maximum(total_sv, 1e-20)
 
     # --- Price Momentum ---
-    df["price_mom"] = rolling_return(close, window=config.mom_lookback)
+    df["price_mom"] = rolling_return(close, period=config.mom_lookback)
 
     # --- Drawdown (HEDGE_ONLY용) ---
     df["drawdown"] = drawdown(close)

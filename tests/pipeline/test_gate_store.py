@@ -127,7 +127,7 @@ class TestRealCriteriaYaml:
             pytest.skip("gates/criteria.yaml not found")
         store = GateCriteriaStore(path=real_path)
         gates = store.load_all()
-        assert len(gates) == 9
+        assert len(gates) == 8
 
     def test_real_yaml_gate_ids(self) -> None:
         real_path = Path("gates/criteria.yaml")
@@ -136,4 +136,4 @@ class TestRealCriteriaYaml:
         store = GateCriteriaStore(path=real_path)
         gates = store.load_all()
         ids = [g.gate_id for g in gates]
-        assert ids == ["G0A", "G0B", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
+        assert ids == ["G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5"]

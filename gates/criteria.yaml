@@ -1,5 +1,5 @@
 # Gate Criteria — Single Source of Truth
-# 9개 Gate의 평가 기준을 YAML로 구조화.
+# 8개 Gate의 평가 기준을 YAML로 구조화.
 # 수정 후 `pipeline report`로 확인, `--output FILE`로 파일 저장.
 
 gates:
@@ -159,6 +159,19 @@ gates:
           operator: ">="
           value: 15
 
+  # ─── Gate 2H: 파라미터 최적화 ──────────────────────────────────
+  - gate_id: G2H
+    name: 파라미터 최적화
+    description: "IS 데이터에서 Optuna TPE로 최적 파라미터 탐색. Always PASS (정보 제공)"
+    gate_type: threshold
+    cli_command: "pipeline gate2h-run"
+    threshold:
+      pass_metrics:
+        - name: Optimization Completed
+          operator: "=="
+          value: 1.0
+          description: "최적화 정상 완료 여부"
+
   # ─── Gate 3: 파라미터 안정성 ───────────────────────────────────
   - gate_id: G3
     name: 파라미터 안정성
@@ -226,37 +239,3 @@ gates:
           value: 0.5
           description: "VBT 대비 EDA 거래 수 (0.5x~2.0x)"
 
-  # ─── Gate 6: 모의 거래 ────────────────────────────────────────
-  - gate_id: G6
-    name: 모의 거래
-    description: "실제 시장 데이터로 실시간 시그널 생성, 체결은 시뮬레이션. 최소 2주"
-    gate_type: threshold
-    cli_command: "eda run-live"
-    threshold:
-      pass_metrics:
-        - name: 시그널 일치도
-          operator: ">"
-          value: 90.0
-          unit: "%"
-          description: "백테스트 대비 시그널 방향 일치율"
-        - name: 체결 편차
-          operator: "<"
-          value: 10.0
-          unit: "%"
-          description: "예상 체결가 vs 실제 체결가"
-        - name: 무중단 운영
-          operator: "=="
-          value: 1.0
-          description: "2주간 에러 없이 작동 (1=성공, 0=실패)"
-
-  # ─── Gate 7: 실전 배포 ────────────────────────────────────────
-  - gate_id: G7
-    name: 실전 배포
-    description: "실제 자금 운용 + 지속적 모니터링으로 전략 은퇴 시점 판단"
-    gate_type: threshold
-    cli_command: ""
-    threshold:
-      pass_metrics:
-        - name: 3개월 이동 Sharpe
-          operator: ">"
-          value: 0.3

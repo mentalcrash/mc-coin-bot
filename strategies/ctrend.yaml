@@ -8,7 +8,12 @@ meta:
   created_at: '2026-02-10'
   retired_at: null
   economic_rationale: 다수 기술적 지표의 앙상블 합산으로 개별 지표 노이즈를 상쇄하고 공통 방향성 추출
-parameters: {}
+parameters:
+  training_window: 68
+  prediction_horizon: 12
+  alpha: 0.6812015499640257
+  vol_window: 24
+  vol_target: 0.4772428861436267
 gates:
   G0A:
     status: PASS
@@ -58,6 +63,16 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 1(W3)
+  G2H:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      best_sharpe_is: 3.685
+      default_sharpe_is: 2.693
+      improvement_pct: 36.8
+      oos_sharpe: 2.543
+      n_trials: 100
+      n_completed: 100
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 2.05
@@ -120,3 +135,7 @@ decisions:
   verdict: PASS
   rationale: C1-C7 전항목 PASS. shift(1) 적용 확인, rolling window ML training 정상, vol_scalar
     0-div 방어, annualization 365, ShortMode 3분기 확인. Warning 1건(W3 regime concentration).
+- date: '2026-02-14'
+  gate: G2H
+  verdict: PASS
+  rationale: IS Sharpe 2.69→3.68 (+36.8%), OOS=2.54

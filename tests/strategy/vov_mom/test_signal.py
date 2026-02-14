@@ -34,38 +34,28 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 @pytest.fixture
-def preprocessed_df(
-    sample_ohlcv_df: pd.DataFrame, config: VovMomConfig
-) -> pd.DataFrame:
+def preprocessed_df(sample_ohlcv_df: pd.DataFrame, config: VovMomConfig) -> pd.DataFrame:
     return preprocess(sample_ohlcv_df, config)
 
 
 class TestSignalStructure:
-    def test_output_fields(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_output_fields(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert hasattr(signals, "entries")
         assert hasattr(signals, "exits")
         assert hasattr(signals, "direction")
         assert hasattr(signals, "strength")
 
-    def test_entries_exits_bool(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_entries_exits_bool(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert signals.entries.dtype == bool
         assert signals.exits.dtype == bool
 
-    def test_direction_values(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_direction_values(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert set(signals.direction.unique()).issubset({-1, 0, 1})
 
-    def test_same_length(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_same_length(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         n = len(preprocessed_df)
         assert len(signals.entries) == n
@@ -73,17 +63,13 @@ class TestSignalStructure:
         assert len(signals.direction) == n
         assert len(signals.strength) == n
 
-    def test_strength_no_nan(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_strength_no_nan(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert not signals.strength.isna().any()
 
 
 class TestShift1Rule:
-    def test_first_bar_neutral(
-        self, preprocessed_df: pd.DataFrame, config: VovMomConfig
-    ) -> None:
+    def test_first_bar_neutral(self, preprocessed_df: pd.DataFrame, config: VovMomConfig) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert signals.direction.iloc[0] == 0
         assert signals.strength.iloc[0] == 0.0

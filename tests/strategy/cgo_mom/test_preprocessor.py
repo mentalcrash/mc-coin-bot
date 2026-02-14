@@ -33,9 +33,7 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 class TestPreprocess:
-    def test_output_columns(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_output_columns(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         required = {
             "returns",
@@ -48,15 +46,11 @@ class TestPreprocess:
         }
         assert required.issubset(set(result.columns))
 
-    def test_same_length(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_same_length(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         assert len(result) == len(sample_ohlcv_df)
 
-    def test_immutability(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_immutability(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         original = sample_ohlcv_df.copy()
         preprocess(sample_ohlcv_df, config)
         pd.testing.assert_frame_equal(sample_ohlcv_df, original)
@@ -66,9 +60,7 @@ class TestPreprocess:
         with pytest.raises(ValueError, match="Missing required columns"):
             preprocess(df, config)
 
-    def test_vol_scalar_positive(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_vol_scalar_positive(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["vol_scalar"].dropna()
         assert (valid > 0).all()
@@ -89,16 +81,12 @@ class TestCgoFeatures:
         valid = result["reference_price"].dropna()
         assert (valid > 0).all()
 
-    def test_cgo_finite(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_cgo_finite(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["cgo"].dropna()
         assert np.isfinite(valid).all()
 
-    def test_cgo_zscore_finite(
-        self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig
-    ) -> None:
+    def test_cgo_zscore_finite(self, sample_ohlcv_df: pd.DataFrame, config: CgoMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         valid = result["cgo_zscore"].dropna()
         assert np.isfinite(valid).all()

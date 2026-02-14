@@ -11,7 +11,7 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
-argument-hint: <strategy-name> [--from g1|g2|g3|g4]
+argument-hint: <strategy-name> [--from g1|g2|g2h|g3|g4]
 ---
 
 # Gate Pipeline: G1~G4 순차 검증
@@ -67,11 +67,23 @@ ls data/silver/BTC_USDT_1D.parquet data/silver/ETH_USDT_1D.parquet \
 
 ### 0-4. --from 복원 (해당 시)
 
-`--from gN` 지정 시 YAML에서 이전 Gate 결과 복원 (Best Asset, OOS Sharpe 등).
+`--from gN` 지정 시 YAML에서 이전 Gate 결과 복원:
 
-### 0-5. Gate 3 스윕 등록 확인
+| --from | 복원 대상 |
+|--------|----------|
+| `g2` | G1 결과 (Best Asset, Sharpe, CAGR) |
+| `g2h` | G1 + G2 결과 (Best Asset, OOS Sharpe, Decay) |
+| `g3` | G1 + G2 + G2H 결과. `results/gate2h_{strategy}.json` 존재 확인 |
+| `g4` | G1 + G2 + G2H + G3 결과 |
 
-`scripts/gate3_param_sweep.py` STRATEGIES dict 등록 확인. 미등록이면 G3에서 등록 (사용자 승인).
+### 0-5. Gate 3 스윕 소스 확인
+
+Gate 3 스윕 범위는 두 소스 중 하나에서 제공:
+
+1. **G2H 자동 생성 (권장)**: `results/gate2h_{strategy}.json`의 `g3_sweeps`
+2. **수동 등록 (fallback)**: `src/cli/_gate_runners.py`의 `GATE3_STRATEGIES` dict
+
+G2H를 실행하면 수동 등록 불필요. G2H 건너뛴 경우에만 수동 등록 (사용자 승인).
 
 ---
 
@@ -175,25 +187,87 @@ uv run mcbot backtest validate \
 [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) 참조.
 핵심: Decay < 20% 우수, 20-35% 양호, 35-50% 경계, > 50% FAIL. OOS Sharpe > G1 Sharpe x 0.5이면 양호.
 
-**FAIL -> Step F** | **PASS -> Step 3**
+**FAIL -> Step F** | **PASS -> Step 2H**
+
+---
+
+## Step 2H: Gate 2H — 파라미터 최적화 (정보 전용)
+
+> **Always PASS** — 정보 제공 목적. 과적합 방어는 G4에서 담당.
+
+### 목적
+
+1. 기본 파라미터 대비 Optuna TPE 최적화로 개선 가능성 확인
+2. 최적 파라미터 중심으로 G3 sweep 범위 자동 생성 (수동 등록 불필요)
+3. IS/OOS 분할 검증으로 과적합 경향 사전 파악
+
+### 실행
+
+Best Asset (G1 결과)에 대해 IS(70%)/OOS(30%) 분할 후 최적화:
+
+```bash
+uv run mcbot pipeline gate2h-run {strategy_name} --n-trials 100 --seed 42 --json
+```
+
+### 수집 지표
+
+| 지표 | 설명 |
+|------|------|
+| Default Sharpe (IS) | 기본 파라미터의 IS Sharpe |
+| Best Sharpe (IS) | 최적 파라미터의 IS Sharpe |
+| Improvement (%) | `(Best - Default) / |Default| × 100` |
+| OOS Sharpe | 최적 파라미터의 OOS 검증 Sharpe (정보 전용) |
+| Search Space | 최적화 대상 파라미터 수 |
+| Trials | 완료/전체 trial 수 |
+
+### 결과 해석
+
+| Improvement | 해석 |
+|-------------|------|
+| < 5% | 기본 파라미터가 근최적 — 민감도 낮음 (좋은 신호) |
+| 5~30% | 합리적 개선 — 정상 범위 |
+| > 30% | IS 과적합 가능성. OOS Sharpe 확인 필수 |
+
+OOS Sharpe 확인:
+- OOS > 0, IS 대비 Decay < 50%: 양호
+- OOS <= 0: IS 과적합 의심 — G3/G4에서 추가 검증 (G2H 자체는 PASS)
+
+### 출력
+
+| 파일 | 내용 |
+|------|------|
+| `results/gate2h_{strategy}.json` | 최적화 결과 + G3 sweep 범위 + top 10 trials |
+| YAML `gates.G2H` | PASS + IS/OOS Sharpe + improvement (CLI 자동 갱신) |
+
+### G3 연계
+
+G2H CLI가 `results/gate2h_{strategy}.json`에 `g3_sweeps`를 자동 생성.
+G3 CLI(`pipeline gate3-run`)가 이 파일을 자동 감지하여 sweep 범위로 사용.
+**G2H 실행 후에는 G3 수동 스윕 등록 불필요.**
+
+> YAML 갱신은 G2H CLI가 자동 처리 — 별도 `pipeline record` 불필요.
+
+**Always PASS -> Step 3**
 
 ---
 
 ## Step 3: Gate 3 — 파라미터 안정성
 
-### 사전 작업: 스윕 등록
+### 사전 작업: 스윕 소스 확인
 
-`scripts/gate3_param_sweep.py`의 STRATEGIES dict 확인.
-미등록 시 전략 config에서 핵심 파라미터 3~5개 식별, +/-20% + 넓은 범위 그리드 정의.
-STRATEGIES dict에 entry 추가 (사용자 승인 필요). vol_target은 항상 포함, short_mode는 스윕 대상 아님.
+**G2H 결과 우선**: `results/gate2h_{strategy_name}.json` 존재 확인.
+
+- **존재** (G2H 실행됨): G3 CLI가 자동으로 G2H sweep 범위 사용. 수동 등록 불필요.
+- **미존재** (G2H 건너뜀): `src/cli/_gate_runners.py`의 `GATE3_STRATEGIES` dict에 수동 등록 (사용자 승인).
+  핵심 파라미터 3~5개, ±20% + 넓은 범위 그리드. vol_target 필수, short_mode 제외.
 
 ### 실행
 
 ```bash
-uv run python scripts/gate3_param_sweep.py {strategy_name}
+uv run mcbot pipeline gate3-run {strategy_name} --json
 ```
 
-결과: `results/gate3_param_sweep.json` + 콘솔 Rich 테이블.
+> G2H JSON 존재 시 최적화 sweep 범위 자동 사용. 미존재 시 GATE3_STRATEGIES fallback.
 
 ### 수집 지표 (파라미터별)
 

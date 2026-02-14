@@ -46,7 +46,7 @@ class TestDashboardGenerator:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "Gate 0A" in content
-        assert "Gate 7" in content
+        assert "Gate 5" in content
 
     def test_generate_contains_active_table(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)

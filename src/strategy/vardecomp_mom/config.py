@@ -56,7 +56,9 @@ class VardecompMomConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_cross_fields(self) -> VardecompMomConfig:
         if self.vol_target < self.min_volatility:
-            msg = f"vol_target ({self.vol_target}) must be >= min_volatility ({self.min_volatility})"
+            msg = (
+                f"vol_target ({self.vol_target}) must be >= min_volatility ({self.min_volatility})"
+            )
             raise ValueError(msg)
         return self
 

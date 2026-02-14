@@ -68,6 +68,21 @@ allowed-tools:
    동일 접근법 재시도 금지
 ```
 
+#### 0-Z. 탐색 모드 선택
+
+| 모드 | 언제 선택 | 다음 Step |
+|------|----------|----------|
+| **S (Single)** | 새로운 단일 전략 발굴 | Step 1 (기존 워크플로우) |
+| **E (Ensemble)** | 기존 전략 N개 조합 탐색 | Step 1E |
+| **S→E (Hybrid)** | 새 전략 발굴 후 앙상블 편입 | Step 1 → Step 5.5E |
+
+판단 기준:
+- 활성/후보 전략 2개+ → E 모드 검토 권장
+- "앙상블"/"조합"/"포트폴리오" 키워드 → E 모드
+- 신규 아이디어 탐색 → S 모드 (기본값)
+
+---
+
 ### Step 1: 아이디어 생성 — IC 기반 시그널 탐색
 
 학술 논문, 시장 미시구조, 행동 재무학에서 아이디어를 도출한다.
@@ -270,6 +285,205 @@ uv run mcbot pipeline create {strategy-name} \
 
 **상태 전이**: 후보 → 사용자 승인 → 구현중 → Gate 1+ → 구현완료 / 폐기
 
+---
+
+## E Mode: 앙상블 탐색 워크플로우
+
+> S Mode에서 돌아온 경우 (S→E Hybrid) Step 5.5E로 바로 이동.
+
+### Step 1E: 서브전략 후보 풀 구성
+
+```
+1. 파이프라인에서 후보 수집
+   uv run mcbot pipeline list --status ACTIVE
+   uv run mcbot pipeline list --status CANDIDATE
+
+2. 쌍별 상관 행렬 분석 (수익률 시계열)
+   - 백테스트 결과의 daily_returns 사용
+   - |상관| < 0.5 쌍이 분산 효과 핵심
+
+3. 후보 적격 조건
+   - Registry 등록 완료 (@register)
+   - 단독 Sharpe >= 0.5 (G1 기준 하한)
+   - 기존 후보와 평균 상관 < 0.5
+   - from_params() 구현 (EnsembleStrategy가 호출)
+
+4. 유형 구분
+   - 메타 앙상블: EnsembleStrategy + 여러 BaseStrategy (이 모드의 대상)
+   - 내부 앙상블: 단일 전략 내부 다중 TF/파라미터 (CTREND/Donchian 패턴)
+```
+
+### Step 2E: 앙상블 Gate 0E 스코어카드
+
+```
+══════════════════════════════════════════════════════
+  GATE 0E: ENSEMBLE VIABILITY SCORECARD
+  앙상블: [이름]  |  서브전략 수: [N]
+══════════════════════════════════════════════════════
+
+  [1] 분산 효과 (Diversification)              : _/5
+      서브전략 간 평균 상관
+      >0.7=1, 0.5~0.7=2, 0.3~0.5=3, 0.1~0.3=4, <0.1=5
+
+  [2] 서브전략 품질 (Sub-Strategy Quality)      : _/5
+      평균 단독 Sharpe
+      <0.3=1, 0.3~0.5=2, 0.5~0.8=3, 0.8~1.0=4, >1.0=5
+
+  [3] 결합 기대 효과 (Expected Improvement)     : _/5
+      Sharpe 향상 예측
+      악화=1, 0~10%=2, 10~20%=3, 20~30%=4, 30%+=5
+
+  [4] Aggregation 적합성 (Method Fit)           : _/5
+      서브전략 특성 부합도
+      (ensemble-guide.md 선택 가이드 참조)
+
+  [5] 구현 복잡도 (Implementation Readiness)    : _/5
+      전원 등록+테스트=5, 일부 미구현=3, 대부분 미구현=1
+
+  [6] 운영 안정성 (Operational Stability)       : _/5
+      TF/ShortMode/warmup 호환성
+      전원 동일 TF+호환=5, 조정 필요=3, 비호환=1
+
+──────────────────────────────────────────────────────
+  TOTAL: __/30
+  판정: PASS (>=18) / WATCH (12-17) / FAIL (<12)
+
+  ★ 킬러 지표: 평균 쌍별 상관 >= 0.6 → 즉시 FAIL
+══════════════════════════════════════════════════════
+```
+
+**PASS (18점 이상)인 경우에만 Step 3E으로 진행한다.**
+
+### Step 3E: 앙상블 안티패턴 검사
+
+[references/ensemble-guide.md](references/ensemble-guide.md)의 AP1~AP8 체크:
+
+| # | 안티패턴 | 탐지 방법 |
+|---|---------|----------|
+| AP1 | 동질성 함정 | 전원 동일 카테고리 → 상관 > 0.6 |
+| AP2 | 이중 Vol Scaling | 서브전략 vol_target + 앙상블 vol_target 중복 |
+| AP3 | 과적합 전략 세탁 | G2 FAIL 전략을 앙상블로 구제 시도 |
+| AP4 | warmup 불일치 | max(sub_warmup) > 앙상블 데이터 시작 |
+| AP5 | ShortMode 충돌 | 서브전략간 DISABLED/FULL 혼재 시 방향 상쇄 |
+| AP6 | 과다 서브전략 | N > 5 → 관리 복잡도 + 개별 기여도 희석 |
+| AP7 | TF 불일치 | 서브전략간 TF 상이 → CandleAggregator 미지원 |
+| AP8 | 백테스트 기간 불일치 | 최신 전략 데이터 < 3년 → 검증 불충분 |
+
+기존 앙상블 시도 확인:
+```
+uv run mcbot pipeline lessons-list -t ensemble
+# Donchian Ensemble G1 FAIL 등 기존 실패 사례 반드시 참조
+```
+
+위반 항목 없을 시 Step 4E 진행.
+
+### Step 4E: EnsembleConfig 결정
+
+```
+1. 서브전략 리스트 결정
+   - SubStrategySpec: name (registry명), params (dict), weight (기본 1.0)
+   - 최소 2개, 권장 3~4개, 최대 5개
+
+2. Aggregation 방법 선택 (ensemble-guide.md 플로우차트)
+   - 2개 → EW or InvVol
+   - 3개 → 성과편차 작으면 EW, 크면 InvVol, 합의 중요하면 MajVote
+   - 4개+ → 레짐 적응 원하면 StratMom, 아니면 InvVol
+
+3. 공통 파라미터
+   - vol_target: 0.05~1.0 (기본 0.35). 서브전략에 vol_target 있으면 이중 적용 주의!
+   - short_mode: DISABLED(0) / FULL(2). HEDGE_ONLY 미지원
+   - vol_window: 5~252 (기본 30)
+   - annualization_factor: 365 (일봉 크립토)
+
+4. Aggregation별 추가 파라미터
+   - inverse_volatility: vol_lookback (5~504, 기본 63)
+   - strategy_momentum: momentum_lookback (10~504, 기본 126), top_n (1~N)
+   - majority_vote: min_agreement (0.0~1.0, 기본 0.5)
+
+5. 이론적 Sharpe 예측
+   Sharpe_ens ≈ sqrt(N) * avg(Sharpe_i) * sqrt(1 - avg(rho))
+   N=서브전략 수, avg(rho)=평균 상관
+```
+
+### Step 4.5E: 앙상블 YAML 등록
+
+`pipeline create`는 메타 앙상블 미지원 → 수동으로 `strategies/ens-{name}.yaml` 작성.
+
+```yaml
+# strategies/ens-{name}.yaml
+name: ens-{name}
+display_name: "{DisplayName} Ensemble"
+status: CANDIDATE
+category: "메타 앙상블"
+timeframe: "1D"
+short_mode: 0  # DISABLED=0, FULL=2
+
+rationale: |
+  {서브전략 조합 근거 + 분산 효과 설명}
+
+parameters:
+  strategy_name: ensemble
+  sub_strategies:
+    - name: "{sub1}"
+      params: {}
+      weight: 1.0
+    - name: "{sub2}"
+      params: {}
+      weight: 1.0
+  aggregation: "equal_weight"
+  vol_target: 0.35
+
+gates:
+  G0A: {score: _, status: PASS, date: "YYYY-MM-DD"}
+  G0E: {score: _, status: PASS, date: "YYYY-MM-DD"}
+
+meta:
+  category: "메타 앙상블"
+  created: "YYYY-MM-DD"
+  author: "claude"
+```
+
+### Step 5.5E: 앙상블 편입 평가 (S→E Hybrid 전용)
+
+S Mode에서 발굴한 새 전략의 앙상블 편입을 평가한다:
+
+```
+편입 조건:
+  - 단독 Sharpe >= 0.5
+  - 기존 서브전략과 상관 < 0.3
+  - 앙상블 Sharpe 개선 확인 (백테스트)
+  - from_params() + Registry 등록 완료
+
+→ 조건 충족 시 기존 EnsembleConfig에 SubStrategySpec 추가
+→ 미충족 시 단독 전략으로 운영
+```
+
+### Step 6E: 앙상블 Gate 1E 판정
+
+```
+══════════════════════════════════════════════════════
+  GATE 1E: ENSEMBLE BACKTEST SCORECARD
+══════════════════════════════════════════════════════
+
+  PASS 조건 (3개 모두 충족):
+    ✓ Sharpe > max(서브전략 Best Sharpe)
+    ✓ CAGR > 20%
+    ✓ MDD < 35%
+
+  핵심 원칙:
+    최고 서브전략보다 나아야 앙상블 존재 의미 있음.
+    "평균" 수준이면 → 최고 전략 단독 운영이 낫다.
+
+  WATCH: Sharpe >= Best*0.9 AND MDD 개선 10%+
+  FAIL: Sharpe < Best*0.9 OR MDD > 40%
+══════════════════════════════════════════════════════
+```
+
+Gate 1E PASS → Gate 2+ 진행 (별도 세션).
+Gate 1E FAIL → Aggregation 방법 변경 또는 서브전략 교체 후 재시도 (최대 2회).
+
+---
+
 ### Step 5: 구현 위임
 
 설계가 완료되고 **사용자 승인**을 받으면 구현을 진행한다.
@@ -284,16 +498,8 @@ uv run mcbot pipeline create {strategy-name} \
 
 ### Step 5.5: 앙상블 전략 구성 (선택)
 
-단독 Sharpe < 1.0이지만 기존 전략과 낮은 상관을 보이면 앙상블로 결합 가능.
-
-**후보 기준:** Sharpe >= 0.5, 기존 전략과 상관 < 0.3, 독립적 alpha, 결합 후 Sharpe 개선 확인.
-
-| Aggregation 방법 | 적합 상황 |
-|------------------|----------|
-| `equal_weight` | 전략 간 성과 편차 작을 때 (기본값) |
-| `inverse_volatility` | 안정적인 전략에 가중치 부여 (권장) |
-| `majority_vote` | 3+ 전략의 방향 합의가 중요할 때 |
-| `strategy_momentum` | 시장 환경별 최적 전략이 바뀔 때 |
+단독 Sharpe < 1.0 + 기존 전략과 상관 < 0.3 → **E Mode (Step 1E~6E)**로 전환.
+설계 가이드: [references/ensemble-guide.md](references/ensemble-guide.md)
 
 ### Step 6: 백테스트 실행 + 해석
 
@@ -365,6 +571,8 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 | 7 | 전통금융 무비판 포팅 | FX session/Amihud/Seasonality 전멸 (교훈 #13~#16) |
 | 8 | OHLCV microstructure | BVC 근사 불충분, L2 order book 필요 |
 | 9 | 레짐 감지 = 전략 | ADX/HMM/Hurst/AC/VR 7개 전멸. 오버레이로만 사용 |
+| 10 | 앙상블 동질성 함정 | 전원 동일 카테고리 → 상관 > 0.6 → 분산 효과 없음 |
+| 11 | 과적합 전략 세탁 | G2 FAIL 전략을 앙상블로 구제 → 앙상블도 과적합 |
 
 전체 목록: [references/discarded-strategies.md](references/discarded-strategies.md) + `uv run mcbot pipeline lessons-list`
 
@@ -382,3 +590,16 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 - [ ] 앙상블 기여도 평가됨
 - [ ] `pipeline create` → YAML 생성됨
 - [ ] `pipeline report` → dashboard 갱신됨
+
+### 앙상블 체크리스트 (E Mode)
+
+- [ ] 서브전략 후보 풀 구성 (pipeline list로 수집)
+- [ ] 쌍별 상관 행렬 분석 완료
+- [ ] Gate 0E 스코어카드 18점+ (킬러: 평균 상관 < 0.6)
+- [ ] AP1~AP8 안티패턴 위반 없음
+- [ ] Aggregation 방법 선택 + 근거 명시
+- [ ] EnsembleConfig 파라미터 결정
+- [ ] 이론적 Sharpe 예측 산출
+- [ ] `strategies/ens-{name}.yaml` 등록됨
+- [ ] 백테스트 config YAML 작성됨
+- [ ] Gate 1E 판정 완료 (Sharpe > Best 서브전략)

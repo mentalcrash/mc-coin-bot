@@ -49,15 +49,11 @@ class TestPreprocess:
         }
         assert required.issubset(set(result.columns))
 
-    def test_same_length(
-        self, sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig
-    ) -> None:
+    def test_same_length(self, sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig) -> None:
         result = preprocess(sample_ohlcv_df, config)
         assert len(result) == len(sample_ohlcv_df)
 
-    def test_immutability(
-        self, sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig
-    ) -> None:
+    def test_immutability(self, sample_ohlcv_df: pd.DataFrame, config: VardecompMomConfig) -> None:
         original = sample_ohlcv_df.copy()
         preprocess(sample_ohlcv_df, config)
         pd.testing.assert_frame_equal(sample_ohlcv_df, original)

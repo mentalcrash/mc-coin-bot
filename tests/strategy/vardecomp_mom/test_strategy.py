@@ -87,7 +87,7 @@ class TestVardecompMomStrategy:
     def test_custom_config(self) -> None:
         config = VardecompMomConfig(semivar_window=50)
         strategy = VardecompMomStrategy(config=config)
-        assert strategy._config.semivar_window == 50  # noqa: SLF001
+        assert strategy._config.semivar_window == 50
 
     def test_params_property(self) -> None:
         strategy = VardecompMomStrategy()

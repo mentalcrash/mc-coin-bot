@@ -36,11 +36,10 @@ class GateId(StrEnum):
     G0B = "G0B"
     G1 = "G1"
     G2 = "G2"
+    G2H = "G2H"
     G3 = "G3"
     G4 = "G4"
     G5 = "G5"
-    G6 = "G6"
-    G7 = "G7"
 
 
 # Gate 순서 (진행도 계산용)
@@ -49,11 +48,10 @@ GATE_ORDER: list[GateId] = [
     GateId.G0B,
     GateId.G1,
     GateId.G2,
+    GateId.G2H,
     GateId.G3,
     GateId.G4,
     GateId.G5,
-    GateId.G6,
-    GateId.G7,
 ]
 
 
