@@ -99,14 +99,14 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 
 | File | Scope | Description |
 |------|-------|-------------|
-| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 모음 |
-| [lint.md](.claude/rules/lint.md) | `src/**`, `tests/**` | Ruff/Pyright 규칙 |
-| [strategy.md](.claude/rules/strategy.md) | `src/strategy/**` | 전략 개발 규칙 |
-| [exchange.md](.claude/rules/exchange.md) | `src/exchange/**` | CCXT 연동 규칙 |
-| [data.md](.claude/rules/data.md) | `src/data/**` | 메달리온 아키텍처 |
+| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit) |
+| [lint.md](.claude/rules/lint.md) | `src/**`, `tests/**` | Ruff/Pyright 규칙 + 빈출 위반 해결법 |
+| [strategy.md](.claude/rules/strategy.md) | `src/strategy/**` | BaseStrategy API, Registry, Gotchas |
+| [exchange.md](.claude/rules/exchange.md) | `src/exchange/**` | CCXT + BinanceFuturesClient + 예외 계층 |
+| [data.md](.claude/rules/data.md) | `src/data/**` | 메달리온 (OHLCV + Derivatives) |
 | [models.md](.claude/rules/models.md) | `src/models/**` | Pydantic V2 규칙 |
-| [backtest.md](.claude/rules/backtest.md) | `src/backtest/**` | 백테스트 규칙 |
-| [testing.md](.claude/rules/testing.md) | `tests/**` | 테스트 규칙 |
+| [backtest.md](.claude/rules/backtest.md) | `src/backtest/**` | VBT + TieredValidator + Advisor |
+| [testing.md](.claude/rules/testing.md) | `tests/**` | pytest + EDA 이벤트 테스트 패턴 |
 
 ---
 
@@ -114,12 +114,14 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 
 ### 이벤트 흐름
 ```
-WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
+[Backtest] 1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
+[Live]     WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
 ```
 
 ### 의존성 흐름 (단방향)
 ```
-CLI/Main → Strategy, Backtest → Data, Exchange, Portfolio → Models, Core → Config
+CLI → EDA, Backtest, Pipeline → Strategy, Market, Regime → Data, Exchange, Portfolio
+  → Notification, Monitoring → Models, Core → Config
 ```
 
 ### 핵심 금지 사항
@@ -131,4 +133,8 @@ CLI/Main → Strategy, Backtest → Data, Exchange, Portfolio → Models, Core �
 ## Gotchas
 - Binance API rate limit: 1200 req/min (초과 시 IP 밴)
 - 소수점 정밀도: Decimal 모듈 사용 필수, float 금지
+- `ccxt.RateLimitExceeded`는 `NetworkError` 서브클래스 → except 순서 주의
+- EventBus `flush()` 호출 필수 (bar-by-bar 동기 처리 보장)
+- `TYPE_CHECKING` import는 런타임 사용 불가
+- Equity 계산: `cash + long_notional - short_notional` (notional에 unrealized 포함)
 - 복잡한 아키텍처 변경 전 반드시 clarifying questions 요청할 것

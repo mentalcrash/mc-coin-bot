@@ -65,6 +65,15 @@ def process(id):  # missing types
     print("done")  # use logger
 ```
 
+## Common Lint Violations & Fixes
+
+| Rule | Description | Fix |
+|------|-------------|-----|
+| PLR0912 | Too many branches (> 12) | 서브메서드로 추출 |
+| PLR0913 | Too many arguments (> 5) | Config/dataclass 객체로 묶기 |
+| C901 | Too complex (> 10) | 함수 분할, early return 활용 |
+| PLR0911 | Too many return statements | Guard clause → early return |
+
 ## Workflow
 
 ```bash
