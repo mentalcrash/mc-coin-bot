@@ -33,7 +33,7 @@ from uuid import uuid4
 
 from loguru import logger
 
-from src.core.events import BarEvent
+from src.core.events import BarEvent, RiskAlertEvent
 from src.eda.candle_aggregator import CandleAggregator
 from src.eda.data_feed import validate_bar
 
@@ -82,10 +82,14 @@ class LiveDataFeed:
         self._stale_symbols: set[str] = set()
         # WS 상태 콜백 (선택적)
         self._ws_callback = ws_status_callback
+        # EventBus 참조 (stale alert 발행용, start() 시 설정)
+        self._bus: EventBus | None = None
 
     async def start(self, bus: EventBus) -> None:
         """심볼별 WebSocket 스트림 시작. stop() 호출까지 실행."""
         import time
+
+        self._bus = bus
 
         # 초기 heartbeat 설정 + WS 연결 상태 초기화
         now = time.monotonic()
@@ -179,6 +183,14 @@ class LiveDataFeed:
                         elapsed,
                         self._staleness_timeout,
                     )
+                    # RiskAlertEvent → NotificationEngine → Discord ALERTS
+                    if self._bus is not None:
+                        alert = RiskAlertEvent(
+                            alert_level="WARNING",
+                            message=f"STALE DATA: {sym} no data for {elapsed:.0f}s",
+                            source="LiveDataFeed",
+                        )
+                        await self._bus.publish(alert)
 
     async def _stream_symbol(
         self, symbol: str, bus: EventBus, *, stagger_delay: float = 0.0

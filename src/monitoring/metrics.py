@@ -127,6 +127,7 @@ exchange_consecutive_failures_gauge = Gauge(
 # Layer 4: Bot Health
 # ==========================================================================
 heartbeat_timestamp_gauge = Gauge("mcbot_heartbeat_timestamp", "Last heartbeat Unix timestamp")
+last_bar_age_gauge = Gauge("mcbot_last_bar_age_seconds", "Seconds since last bar", ["symbol"])
 errors_counter = Counter(
     "mcbot_errors_total", "Error counts by component", ["component", "error_type"]
 )
@@ -161,6 +162,7 @@ class _PendingOrder:
     order_type: str
     request_time: float  # time.monotonic()
     expected_price: float | None = None  # 슬리피지 기준가
+    strategy_name: str = "unknown"
 
 
 # ==========================================================================
@@ -272,6 +274,46 @@ class _EventBusSnapshot:
     handler_errors: int = 0
 
 
+# ==========================================================================
+# Per-strategy metrics
+# ==========================================================================
+strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy PnL", ["strategy"])
+strategy_signals_counter = Counter(
+    "mcbot_strategy_signals_total", "Signals by strategy", ["strategy", "side"]
+)
+strategy_fills_counter = Counter(
+    "mcbot_strategy_fills_total", "Fills by strategy", ["strategy", "side"]
+)
+strategy_fees_counter = Counter("mcbot_strategy_fees_usdt_total", "Fees by strategy", ["strategy"])
+
+
+def _extract_strategy(client_order_id: str) -> str:
+    """client_order_id에서 전략명 추출.
+
+    Format: ``{strategy}-{symbol_slug}-{counter}`` (예: ``ctrend-BTCUSDT-42``).
+    ``rsplit("-", 2)`` 로 마지막 2개 세그먼트를 분리하고 나머지를 전략명으로 사용합니다.
+
+    Args:
+        client_order_id: 주문 멱등성 키
+
+    Returns:
+        전략명 (파싱 실패 시 "unknown")
+    """
+    parts = client_order_id.rsplit("-", 2)
+    if len(parts) >= 3:  # noqa: PLR2004
+        return parts[0]
+    return "unknown"
+
+
+# ==========================================================================
+# Execution quality alert 임계값
+# ==========================================================================
+_SLIPPAGE_WARN_BPS = 15.0
+_SLIPPAGE_CRITICAL_BPS = 30.0
+_LATENCY_WARN_SECONDS = 5.0
+_LATENCY_CRITICAL_SECONDS = 10.0
+
+
 class MetricsExporter:
     """Prometheus 메트릭 수출기 — EventBus subscriber.
 
@@ -284,7 +326,9 @@ class MetricsExporter:
         self._start_time = time.monotonic()
         self._pending_orders: dict[str, _PendingOrder] = {}
         self._last_bar_close: dict[str, float] = {}
+        self._last_bar_time: dict[str, float] = {}  # symbol → monotonic timestamp
         self._eventbus_snapshot = _EventBusSnapshot()
+        self._bus: EventBus | None = None
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록.
@@ -292,6 +336,7 @@ class MetricsExporter:
         Args:
             bus: EventBus 인스턴스
         """
+        self._bus = bus
         bus.subscribe(EventType.BALANCE_UPDATE, self._on_balance)
         bus.subscribe(EventType.FILL, self._on_fill)
         bus.subscribe(EventType.SIGNAL, self._on_signal)
@@ -348,6 +393,13 @@ class MetricsExporter:
         """
         exchange_consecutive_failures_gauge.set(consecutive_failures)
 
+    def update_bar_ages(self) -> None:
+        """각 심볼의 마지막 bar 이후 경과 시간(초)을 gauge로 갱신."""
+        now = time.monotonic()
+        for symbol, last_time in self._last_bar_time.items():
+            age = now - last_time
+            last_bar_age_gauge.labels(symbol=symbol).set(age)
+
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -359,7 +411,7 @@ class MetricsExporter:
         margin_used_gauge.set(event.total_margin_used)
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent → fills counter + latency + slippage + fees."""
+        """FillEvent → fills counter + latency + slippage + fees + execution quality alerts."""
         assert isinstance(event, FillEvent)
         fills_counter.labels(symbol=event.symbol, side=event.side).inc()
 
@@ -373,6 +425,9 @@ class MetricsExporter:
             # 주문 지연시간
             latency = time.monotonic() - pending.request_time
             order_latency_histogram.labels(symbol=event.symbol).observe(latency)
+
+            # Latency alert
+            await self._check_latency_alert(latency, event.symbol)
 
             # orders_total (filled)
             orders_counter.labels(
@@ -388,16 +443,29 @@ class MetricsExporter:
                 bps = _calculate_slippage_bps(expected, event.fill_price)
                 slippage_histogram.labels(symbol=event.symbol, side=event.side).observe(bps)
 
+                # Slippage alert
+                await self._check_slippage_alert(bps, event.symbol)
+
+            # Per-strategy metrics
+            strategy_fills_counter.labels(strategy=pending.strategy_name, side=event.side).inc()
+            if event.fee > 0:
+                strategy_fees_counter.labels(strategy=pending.strategy_name).inc(event.fee)
+
     async def _on_signal(self, event: AnyEvent) -> None:
-        """SignalEvent → signals counter."""
+        """SignalEvent → signals counter + strategy signals counter."""
         assert isinstance(event, SignalEvent)
         signals_counter.labels(symbol=event.symbol).inc()
+        strategy_signals_counter.labels(
+            strategy=event.strategy_name, side=event.direction.name
+        ).inc()
 
     async def _on_bar(self, event: AnyEvent) -> None:
-        """BarEvent → bars counter + last_bar_close 갱신."""
+        """BarEvent → bars counter + last_bar_close + bar age 갱신."""
         assert isinstance(event, BarEvent)
         bars_counter.labels(timeframe=event.timeframe).inc()
         self._last_bar_close[event.symbol] = event.close
+        self._last_bar_time[event.symbol] = time.monotonic()
+        last_bar_age_gauge.labels(symbol=event.symbol).set(0)
 
     async def _on_cb(self, event: AnyEvent) -> None:
         """CircuitBreakerEvent → CB counter."""
@@ -437,6 +505,7 @@ class MetricsExporter:
             order_type=event.order_type,
             request_time=time.monotonic(),
             expected_price=expected_price,
+            strategy_name=_extract_strategy(event.client_order_id),
         )
 
     async def _on_order_ack(self, event: AnyEvent) -> None:
@@ -472,3 +541,44 @@ class MetricsExporter:
         """HeartbeatEvent → heartbeat timestamp gauge."""
         assert isinstance(event, HeartbeatEvent)
         heartbeat_timestamp_gauge.set(event.timestamp.timestamp())
+
+    # ------------------------------------------------------------------
+    # Execution quality alerts
+    # ------------------------------------------------------------------
+    async def _check_slippage_alert(self, bps: float, symbol: str) -> None:
+        """슬리피지 임계값 초과 시 RiskAlertEvent 발행."""
+        if bps > _SLIPPAGE_CRITICAL_BPS:
+            await self._publish_execution_alert(
+                "CRITICAL", f"High slippage {bps:.1f}bps on {symbol}"
+            )
+        elif bps > _SLIPPAGE_WARN_BPS:
+            await self._publish_execution_alert(
+                "WARNING", f"Elevated slippage {bps:.1f}bps on {symbol}"
+            )
+
+    async def _check_latency_alert(self, latency: float, symbol: str) -> None:
+        """체결 지연시간 임계값 초과 시 RiskAlertEvent 발행."""
+        if latency > _LATENCY_CRITICAL_SECONDS:
+            await self._publish_execution_alert(
+                "CRITICAL", f"High fill latency {latency:.1f}s on {symbol}"
+            )
+        elif latency > _LATENCY_WARN_SECONDS:
+            await self._publish_execution_alert(
+                "WARNING", f"Elevated fill latency {latency:.1f}s on {symbol}"
+            )
+
+    async def _publish_execution_alert(self, level: str, message: str) -> None:
+        """RiskAlertEvent를 EventBus에 발행.
+
+        Args:
+            level: "WARNING" or "CRITICAL"
+            message: 알림 메시지
+        """
+        if self._bus is None:
+            return
+        alert = RiskAlertEvent(
+            alert_level=level,  # type: ignore[arg-type]
+            message=message,
+            source="MetricsExporter:execution_quality",
+        )
+        await self._bus.publish(alert)
