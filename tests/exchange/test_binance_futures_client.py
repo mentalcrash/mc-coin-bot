@@ -423,7 +423,10 @@ class TestFetchTicker:
 
         mock_exchange.fetch_ticker = AsyncMock(side_effect=flaky_ticker)
 
-        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+        with (
+            patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange),
+            patch("src.exchange.binance_futures_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             async with BinanceFuturesClient(settings) as client:
                 ticker = await client.fetch_ticker("BTC/USDT:USDT")
 
@@ -689,7 +692,10 @@ class TestApiCircuitBreaker:
         mock_exchange = _make_mock_exchange()
         mock_exchange.create_order = AsyncMock(side_effect=ccxt_sync.NetworkError("timeout"))
 
-        with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
+        with (
+            patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange),
+            patch("src.exchange.binance_futures_client.asyncio.sleep", new_callable=AsyncMock),
+        ):
             async with BinanceFuturesClient(settings) as client:
                 with pytest.raises(NetworkError):
                     await client.create_order(

@@ -435,6 +435,7 @@ class TestReconnection:
     async def test_reconnection_on_network_error(self) -> None:
         """NetworkError 후 재연결하여 데이터 계속 수신."""
         import ccxt as ccxt_sync
+        from unittest.mock import patch as mock_patch
 
         ts1 = _TS_BASE
         ts2 = _TS_BASE + _ONE_MIN_MS
@@ -468,12 +469,23 @@ class TestReconnection:
         bus.subscribe(EventType.BAR, handler)
         bus_task = asyncio.create_task(bus.start())
 
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:
+            if delay <= 0.5:
+                await original_sleep(delay)
+            else:
+                await original_sleep(0.01)
+
         async def stop_after_delay() -> None:
-            await asyncio.sleep(2.0)  # reconnect delay + 처리 시간
+            await original_sleep(0.3)
             await feed.stop()
 
         stop_task = asyncio.create_task(stop_after_delay())
-        await feed.start(bus)
+
+        with mock_patch("asyncio.sleep", side_effect=fast_sleep):
+            await feed.start(bus)
+
         await bus.flush()
         await bus.stop()
         await bus_task
@@ -706,7 +718,7 @@ class TestStalenessDetection:
 
         mock_client = MagicMock()
         mock_client.exchange = MockExchange([])
-        timeout = 2.0
+        timeout = 0.2
         feed = LiveDataFeed(
             symbols=["BTC/USDT"],
             target_timeframe="1D",
@@ -726,12 +738,12 @@ class TestStalenessDetection:
         bus.subscribe(EventType.RISK_ALERT, capture)
         bus_task = asyncio.create_task(bus.start())
 
-        # check_interval = timeout/2 = 1.0s
-        # initial_elapsed = 1.5s → at check: ~2.5s > 2.0 (trigger), < 3.0 (WARNING)
-        feed._last_received["BTC/USDT"] = time.monotonic() - 1.5
+        # check_interval = timeout/2 = 0.1s
+        # initial_elapsed = 0.15s → at check: ~0.25s > 0.2 (trigger), < 0.3 (WARNING)
+        feed._last_received["BTC/USDT"] = time.monotonic() - 0.15
 
         monitor_task = asyncio.create_task(feed._staleness_monitor())
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(0.15)
         feed._shutdown_event.set()
         await monitor_task
         await bus.flush()
@@ -873,7 +885,7 @@ class TestConsecutiveFailureAlert:
                 await original_sleep(0.01)  # reconnect → 즉시
 
         async def stop_after_delay() -> None:
-            await original_sleep(1.0)
+            await original_sleep(0.3)
             await feed.stop()
 
         stop_task = asyncio.create_task(stop_after_delay())
