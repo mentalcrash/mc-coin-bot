@@ -653,6 +653,92 @@ class TestStalenessDetection:
 
         assert len(alerts) >= 1
         assert "STALE DATA" in alerts[0].message
+        # elapsed=1.0s >> 1.5*timeout=0.15s → CRITICAL escalation
+        assert alerts[0].alert_level == "CRITICAL"
+
+    async def test_staleness_critical_escalation(self) -> None:
+        """elapsed > 1.5x timeout -> CRITICAL alert escalation."""
+        import time
+
+        from src.core.events import RiskAlertEvent
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        timeout = 0.1
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=timeout,
+        )
+
+        bus = EventBus(queue_size=100)
+        feed._bus = bus
+
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture(event: AnyEvent) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe(EventType.RISK_ALERT, capture)
+        bus_task = asyncio.create_task(bus.start())
+
+        # elapsed = 1.0s >> 1.5 * 0.1 = 0.15s → CRITICAL
+        feed._last_received["BTC/USDT"] = time.monotonic() - 1.0
+
+        monitor_task = asyncio.create_task(feed._staleness_monitor())
+        await asyncio.sleep(0.15)
+        feed._shutdown_event.set()
+        await monitor_task
+        await bus.flush()
+        await bus.stop()
+        await bus_task
+
+        assert len(alerts) >= 1
+        assert alerts[0].alert_level == "CRITICAL"
+
+    async def test_staleness_warning_level(self) -> None:
+        """elapsed > timeout but <= 1.5x timeout -> WARNING alert."""
+        import time
+
+        from src.core.events import RiskAlertEvent
+
+        mock_client = MagicMock()
+        mock_client.exchange = MockExchange([])
+        timeout = 2.0
+        feed = LiveDataFeed(
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            client=mock_client,
+            staleness_timeout=timeout,
+        )
+
+        bus = EventBus(queue_size=100)
+        feed._bus = bus
+
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture(event: AnyEvent) -> None:
+            assert isinstance(event, RiskAlertEvent)
+            alerts.append(event)
+
+        bus.subscribe(EventType.RISK_ALERT, capture)
+        bus_task = asyncio.create_task(bus.start())
+
+        # check_interval = timeout/2 = 1.0s
+        # initial_elapsed = 1.5s → at check: ~2.5s > 2.0 (trigger), < 3.0 (WARNING)
+        feed._last_received["BTC/USDT"] = time.monotonic() - 1.5
+
+        monitor_task = asyncio.create_task(feed._staleness_monitor())
+        await asyncio.sleep(1.2)
+        feed._shutdown_event.set()
+        await monitor_task
+        await bus.flush()
+        await bus.stop()
+        await bus_task
+
+        assert len(alerts) >= 1
         assert alerts[0].alert_level == "WARNING"
 
     async def test_staleness_no_alert_without_bus(self) -> None:
@@ -678,3 +764,129 @@ class TestStalenessDetection:
 
         # No error raised, stale is still detected
         assert "BTC/USDT" in feed.stale_symbols
+
+
+class TestWsStatusCallback:
+    """M3: 초기 connected=True 제거 + 첫 데이터 후 호출 확인."""
+
+    @pytest.mark.asyncio
+    async def test_no_connected_callback_on_start(self) -> None:
+        """start() 직후에는 on_ws_status(connected=True) 미호출."""
+        # 무한 대기 시퀀스 — 데이터 반환 전에 stop()
+        exchange = MockExchange([])
+        client = _make_mock_client(exchange)
+
+        callback = MagicMock()
+        feed = LiveDataFeed(["BTC/USDT"], "1h", client, ws_status_callback=callback)
+        bus = EventBus(queue_size=100)
+        bus_task = asyncio.create_task(bus.start())
+
+        async def stop_quickly() -> None:
+            await asyncio.sleep(0.1)
+            await feed.stop()
+
+        stop_task = asyncio.create_task(stop_quickly())
+        await feed.start(bus)
+        await bus.stop()
+        await bus_task
+        await stop_task
+
+        # start()에서 on_ws_status 호출 없어야 함
+        callback.on_ws_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_connected_callback_on_first_data(self) -> None:
+        """첫 데이터 수신 시 on_ws_status(connected=True) 호출."""
+        ts1 = _TS_BASE
+
+        exchange = MockExchange(
+            [[_candle(ts1, 100, 105, 95, 102, 1000)]]
+        )
+        client = _make_mock_client(exchange)
+
+        callback = MagicMock()
+        feed = LiveDataFeed(["BTC/USDT"], "1h", client, ws_status_callback=callback)
+        bus = EventBus(queue_size=100)
+        bus_task = asyncio.create_task(bus.start())
+
+        async def stop_after_delay() -> None:
+            await asyncio.sleep(0.3)
+            await feed.stop()
+
+        stop_task = asyncio.create_task(stop_after_delay())
+        await feed.start(bus)
+        await bus.flush()
+        await bus.stop()
+        await bus_task
+        await stop_task
+
+        # 첫 데이터 수신 후 connected=True 호출
+        callback.on_ws_status.assert_called_with("BTC/USDT", connected=True)
+
+
+class TestConsecutiveFailureAlert:
+    """M4: WS 연속 실패 시 CRITICAL alert 발행."""
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failures_trigger_critical_alert(self) -> None:
+        """_MAX_CONSECUTIVE_FAILURES 이상 연속 실패 시 CRITICAL alert."""
+        import ccxt as ccxt_sync
+        from unittest.mock import patch as mock_patch
+
+        from src.core.events import RiskAlertEvent
+        from src.eda.live_data_feed import _MAX_CONSECUTIVE_FAILURES
+
+        fail_count = 0
+        max_fails = _MAX_CONSECUTIVE_FAILURES + 2  # 충분히 많이 실패
+
+        class AlwaysFailExchange:
+            async def watch_ohlcv(self, symbol: str, timeframe: str) -> list[list[float]]:
+                nonlocal fail_count
+                fail_count += 1
+                if fail_count > max_fails:
+                    await asyncio.sleep(999)
+                    return []
+                raise ccxt_sync.NetworkError("persistent failure")
+
+        client = _make_mock_client(AlwaysFailExchange())
+        feed = LiveDataFeed(["BTC/USDT"], "1h", client)
+        bus = EventBus(queue_size=100)
+
+        alerts: list[RiskAlertEvent] = []
+
+        async def capture(event: object) -> None:
+            if isinstance(event, RiskAlertEvent):
+                alerts.append(event)
+
+        bus.subscribe(EventType.RISK_ALERT, capture)
+        bus_task = asyncio.create_task(bus.start())
+
+        # asyncio.sleep를 mock하여 reconnect delay를 0으로 만듦
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:
+            # stagger delay와 staleness monitor용 sleep은 정상 동작
+            # reconnect delay만 빠르게 처리
+            if delay <= 0.5:  # stagger_delay
+                await original_sleep(delay)
+            else:
+                await original_sleep(0.01)  # reconnect → 즉시
+
+        async def stop_after_delay() -> None:
+            await original_sleep(1.0)
+            await feed.stop()
+
+        stop_task = asyncio.create_task(stop_after_delay())
+
+        with mock_patch("asyncio.sleep", side_effect=fast_sleep):
+            await feed.start(bus)
+
+        await bus.flush()
+        await bus.stop()
+        await bus_task
+        await stop_task
+
+        # CRITICAL alert 발행 확인
+        critical_alerts = [a for a in alerts if "persistent failure" in a.message]
+        assert len(critical_alerts) >= 1
+        assert critical_alerts[0].alert_level == "CRITICAL"

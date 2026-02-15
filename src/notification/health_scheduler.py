@@ -58,7 +58,9 @@ _STRATEGY_HEALTH_INTERVAL = 28800.0  # 8시간
 _ROLLING_SHARPE_DAYS = 30
 _RECENT_TRADES_COUNT = 20
 _ALPHA_DECAY_WINDOW = 3
+_ALPHA_DECAY_CONFIRMATIONS = 2
 _MAX_SHARPE_HISTORY = 10
+_SHARPE_HEALTHY_THRESHOLD = 0.5
 
 # 연환산 계수 (일봉 기준)
 _ANNUALIZE_SQRT = 365.0**0.5
@@ -104,6 +106,7 @@ class HealthCheckScheduler:
 
         self._start_time = time.monotonic()
         self._sharpe_history: list[float] = []
+        self._alpha_decay_streak: int = 0
 
     async def start(self) -> None:
         """스케줄 task 시작."""
@@ -346,8 +349,7 @@ class HealthCheckScheduler:
             )
 
             # 상태 아이콘 결정
-            _sharpe_healthy = 0.5
-            if sharpe > _sharpe_healthy:
+            if sharpe > _SHARPE_HEALTHY_THRESHOLD:
                 status = "HEALTHY"
             elif sharpe >= 0:
                 status = "WATCH"
@@ -396,12 +398,23 @@ class HealthCheckScheduler:
         return (mean / std) * _ANNUALIZE_SQRT
 
     def _detect_alpha_decay(self) -> bool:
-        """직전 3개 Sharpe가 모두 하강 추세인지 감지."""
+        """직전 3개 Sharpe가 연속 _ALPHA_DECAY_CONFIRMATIONS 회 하강 추세인지 감지.
+
+        8h 주기 x 2회 확인 = 16h 지속해야 발동 (false positive 억제).
+        """
         if len(self._sharpe_history) < _ALPHA_DECAY_WINDOW:
+            self._alpha_decay_streak = 0
             return False
 
         recent = self._sharpe_history[-_ALPHA_DECAY_WINDOW:]
-        return all(recent[i] > recent[i + 1] for i in range(_ALPHA_DECAY_WINDOW - 1))
+        is_declining = all(recent[i] > recent[i + 1] for i in range(_ALPHA_DECAY_WINDOW - 1))
+
+        if is_declining:
+            self._alpha_decay_streak += 1
+        else:
+            self._alpha_decay_streak = 0
+
+        return self._alpha_decay_streak >= _ALPHA_DECAY_CONFIRMATIONS
 
     @staticmethod
     def _compute_trade_stats(

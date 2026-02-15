@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from loguru import logger
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 # Reconnection 상수
 _INITIAL_RECONNECT_DELAY = 1.0
 _MAX_RECONNECT_DELAY = 60.0
+_MAX_CONSECUTIVE_FAILURES = 10
 
 # Staleness detection: 마지막 수신 후 이 시간(초) 초과 시 stale 경고
 _DEFAULT_STALENESS_TIMEOUT = 120.0  # 2분 (1m 캔들 2개 미수신)
@@ -91,12 +92,10 @@ class LiveDataFeed:
 
         self._bus = bus
 
-        # 초기 heartbeat 설정 + WS 연결 상태 초기화
+        # 초기 heartbeat 설정 (WS 연결 상태는 첫 데이터 수신 시 설정)
         now = time.monotonic()
         for sym in self._symbols:
             self._last_received[sym] = now
-            if self._ws_callback is not None:
-                self._ws_callback.on_ws_status(sym, connected=True)
 
         stream_tasks = [
             asyncio.create_task(self._stream_symbol(sym, bus, stagger_delay=i * 0.5))
@@ -184,9 +183,13 @@ class LiveDataFeed:
                         self._staleness_timeout,
                     )
                     # RiskAlertEvent → NotificationEngine → Discord ALERTS
+                    # > 1.5x staleness_timeout (= 3xTF) -> CRITICAL escalation
                     if self._bus is not None:
+                        alert_level: Literal["WARNING", "CRITICAL"] = (
+                            "CRITICAL" if elapsed > self._staleness_timeout * 1.5 else "WARNING"
+                        )
                         alert = RiskAlertEvent(
-                            alert_level="WARNING",
+                            alert_level=alert_level,
                             message=f"STALE DATA: {sym} no data for {elapsed:.0f}s",
                             source="LiveDataFeed",
                         )
@@ -215,27 +218,33 @@ class LiveDataFeed:
         prev_candle: list[float] | None = None
         reconnect_delay = _INITIAL_RECONNECT_DELAY
         was_disconnected = False
+        first_connected = False
+        consecutive_failures = 0
 
         while not self._shutdown_event.is_set():
             try:
                 ohlcvs: list[list[float]] = await exchange.watch_ohlcv(symbol, "1m")
                 reconnect_delay = _INITIAL_RECONNECT_DELAY  # 성공 시 리셋
-                if was_disconnected:
-                    logger.info("{} WebSocket reconnected", symbol)
-                    was_disconnected = False
+                consecutive_failures = 0
+
+                if not first_connected:
+                    first_connected = True
+                    logger.info("{} WebSocket connected", symbol)
                     if self._ws_callback is not None:
                         self._ws_callback.on_ws_status(symbol, connected=True)
-                        reconnect_fn = getattr(self._ws_callback, "on_ws_reconnect", None)
-                        if reconnect_fn is not None:
-                            reconnect_fn(symbol)
+                elif was_disconnected:
+                    logger.info("{} WebSocket reconnected", symbol)
+                    if self._ws_callback is not None:
+                        self._ws_callback.on_ws_status(symbol, connected=True)
+                        self._ws_callback.on_ws_reconnect(symbol)
+                was_disconnected = False
 
                 if not ohlcvs:
                     continue
 
                 self._record_heartbeat(symbol)
-                msg_fn = getattr(self._ws_callback, "on_ws_message", None)
-                if msg_fn is not None:
-                    msg_fn(symbol)
+                if self._ws_callback is not None:
+                    self._ws_callback.on_ws_message(symbol)
                 latest = ohlcvs[-1]
                 current_ts = int(latest[0])
 
@@ -251,6 +260,7 @@ class LiveDataFeed:
                 last_candle_ts = current_ts
 
             except (ccxt_sync.NetworkError, OSError) as exc:
+                consecutive_failures += 1
                 if not was_disconnected and self._ws_callback is not None:
                     self._ws_callback.on_ws_status(symbol, connected=False)
                 was_disconnected = True
@@ -260,6 +270,17 @@ class LiveDataFeed:
                     exc,
                     reconnect_delay,
                 )
+                # 연속 실패 임계값 초과 시 CRITICAL alert 발행
+                if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES and self._bus is not None:
+                    alert = RiskAlertEvent(
+                        alert_level="CRITICAL",
+                        message=(
+                            f"WS persistent failure: {symbol} "
+                            f"{consecutive_failures} consecutive errors"
+                        ),
+                        source="LiveDataFeed",
+                    )
+                    await self._bus.publish(alert)
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, _MAX_RECONNECT_DELAY)
 

@@ -17,7 +17,7 @@ import os
 import resource
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
 from prometheus_client import Gauge
@@ -61,7 +61,8 @@ class ProcessMetricsCollector:
     """stdlib 기반 프로세스 메트릭 수집기 (psutil 불필요)."""
 
     def __init__(self) -> None:
-        self._prev_times: tuple[float, float] = (0.0, 0.0)
+        times = os.times()
+        self._prev_times: tuple[float, float] = (times.user, times.system)
         self._prev_wall: float = time.monotonic()
         self.last_rss_bytes: int = 0
         self.last_open_fds: int = 0
@@ -97,12 +98,10 @@ def _count_open_fds() -> int:
     """열려 있는 파일 디스크립터 수를 반환."""
     from pathlib import Path
 
-    proc_fd_path = Path("/proc/self/fd")
+    fd_dir = Path("/dev/fd") if sys.platform == "darwin" else Path("/proc/self/fd")
     try:
-        return len(list(proc_fd_path.iterdir()))
+        return len(list(fd_dir.iterdir()))
     except OSError:
-        # macOS 등 /proc 미지원 시 — soft limit 기반 추정
-        # 직접 세는 건 비용이 높으므로 0 반환
         return 0
 
 
@@ -114,21 +113,25 @@ async def _check_process_alerts(
     """임계값 초과 시 RiskAlertEvent 발행."""
     from src.core.events import RiskAlertEvent
 
-    alerts: list[tuple[str, str]] = []
+    alerts: list[tuple[Literal["WARNING", "CRITICAL"], str]] = []
 
     if lag > _LOOP_LAG_WARN_SECONDS:
-        alerts.append(("WARNING", f"Event loop lag {lag:.2f}s (threshold {_LOOP_LAG_WARN_SECONDS}s)"))
+        alerts.append(
+            ("WARNING", f"Event loop lag {lag:.2f}s (threshold {_LOOP_LAG_WARN_SECONDS}s)")
+        )
 
     if collector.last_rss_bytes > _RSS_WARN_BYTES:
         rss_gb = collector.last_rss_bytes / (1024**3)
         alerts.append(("WARNING", f"High RSS memory {rss_gb:.1f}GB (threshold 2GB)"))
 
     if collector.last_open_fds > _FD_WARN_COUNT:
-        alerts.append(("WARNING", f"High FD count {collector.last_open_fds} (threshold {_FD_WARN_COUNT})"))
+        alerts.append(
+            ("WARNING", f"High FD count {collector.last_open_fds} (threshold {_FD_WARN_COUNT})")
+        )
 
     for level, message in alerts:
         alert = RiskAlertEvent(
-            alert_level=level,  # type: ignore[arg-type]
+            alert_level=level,
             message=message,
             source="ProcessMonitor",
         )

@@ -199,6 +199,26 @@ class TestSerialization:
         assert detector.to_dict()["avg_latency"] == 0.0
         assert detector.to_dict()["latency_count"] == 0
 
+    def test_restore_clears_timestamps(self) -> None:
+        """restore 후 monotonic timestamps 비어있음 + fill_rate None."""
+        detector = ExecutionAnomalyDetector()
+        # 상태 누적
+        for _ in range(10):
+            detector.on_order_request()
+            detector.on_fill(0.1, 0.0)
+
+        assert len(detector._order_timestamps) > 0
+        assert len(detector._fill_timestamps) > 0
+
+        # restore → timestamps 초기화
+        data = detector.to_dict()
+        detector.restore_from_dict(data)
+
+        assert detector._order_timestamps == []
+        assert detector._fill_timestamps == []
+        # fill_rate: 주문 0개 → None
+        assert detector.check_fill_rate() is None
+
 
 class TestEdgeCases:
     """엣지 케이스 테스트."""

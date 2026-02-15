@@ -21,7 +21,10 @@ _COLOR_YELLOW = 0xFFFF00
 _FOOTER_TEXT = "MC-Coin-Bot"
 
 # Drift severity 임계값
+# Position drift 10%: mark-to-market 변동으로 노이즈가 높아 넓은 임계값 사용
 _CRITICAL_DRIFT_PCT = 10.0
+# Balance drift 5%: 잔고는 안정적이므로 타이트한 임계값
+_BALANCE_CRITICAL_PCT = 5.0
 
 
 @dataclass(frozen=True)
@@ -99,10 +102,9 @@ def format_balance_drift_embed(
     Returns:
         Discord Embed dict (YELLOW 2~5% / RED 5%+)
     """
-    _balance_critical_pct = 5.0
-    color = _COLOR_RED if drift_pct >= _balance_critical_pct else _COLOR_YELLOW
+    color = _COLOR_RED if drift_pct >= _BALANCE_CRITICAL_PCT else _COLOR_YELLOW
 
-    level = "CRITICAL" if drift_pct >= _balance_critical_pct else "WARNING"
+    level = "CRITICAL" if drift_pct >= _BALANCE_CRITICAL_PCT else "WARNING"
 
     return {
         "title": f"Balance Drift {level}",
