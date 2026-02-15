@@ -23,7 +23,7 @@ orchestrator:
         short_mode: 1
       symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
       initial_fraction: 0.40
-      max_fraction: 0.60
+      max_fraction: 0.50
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
 
