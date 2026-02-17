@@ -327,3 +327,55 @@ class TestReconcilerBalanceSync:
         await rm.sync_exchange_equity(exchange_equity)
         assert rm.is_circuit_breaker_active is False
         assert rm.peak_equity == 10000.0  # peak 유지 (9500 < 10000)
+
+    @pytest.mark.asyncio
+    async def test_deposit_does_not_inflate_peak(self) -> None:
+        """입금 시 balance drift >= 2% → RM peak sync 스킵 (peak 오염 방지)."""
+        client = _make_mock_futures_client()
+        # PM equity=10000, 거래소=12000 (입금 $2000) → drift 20%
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 12000.0, "free": 11500.0}}
+        )
+
+        config = _make_config()
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        rm = EDARiskManager(config=config, portfolio_manager=pm)
+
+        reconciler = PositionReconciler()
+        exchange_equity = await reconciler.check_balance(pm, client)
+        assert exchange_equity == 12000.0
+
+        # drift >= 2% → _periodic_reconciliation 로직에 따라 sync 스킵
+        balance_drift = reconciler.last_balance_drift_pct
+        assert balance_drift >= 2.0  # 20% drift
+
+        # sync 스킵 → peak는 초기값(10000) 유지
+        # (실제 _periodic_reconciliation에서 이 조건에 걸려 sync_exchange_equity 미호출)
+        assert rm.peak_equity == 10000.0
+
+        # 만약 스킵 없이 sync했다면 peak가 12000으로 오염됨을 검증
+        await rm.sync_exchange_equity(exchange_equity)
+        assert rm.peak_equity == 12000.0  # 오염 상태 (이것이 방지해야 할 동작)
+
+    @pytest.mark.asyncio
+    async def test_small_drift_allows_peak_sync(self) -> None:
+        """drift < 2% → RM peak sync 정상 수행."""
+        client = _make_mock_futures_client()
+        # PM equity=10000, 거래소=10100 → drift 1%
+        client.fetch_balance = AsyncMock(
+            return_value={"USDT": {"total": 10100.0, "free": 9600.0}}
+        )
+
+        config = _make_config()
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        rm = EDARiskManager(config=config, portfolio_manager=pm)
+
+        reconciler = PositionReconciler()
+        exchange_equity = await reconciler.check_balance(pm, client)
+
+        balance_drift = reconciler.last_balance_drift_pct
+        assert balance_drift < 2.0  # 1% drift → 스킵 안 함
+
+        # drift 작으면 sync 수행 → peak 갱신
+        await rm.sync_exchange_equity(exchange_equity)
+        assert rm.peak_equity == 10100.0

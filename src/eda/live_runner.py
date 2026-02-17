@@ -1561,10 +1561,19 @@ class LiveRunner:
             # 잔고 검증 + RM equity sync
             exchange_equity = await reconciler.check_balance(pm, futures_client)
             if exchange_equity is not None:
-                await rm.sync_exchange_equity(exchange_equity)
+                balance_drift = reconciler.last_balance_drift_pct
+
+                # Balance drift가 작을 때만 RM peak sync
+                # 입금/출금 시 peak 오염 → 거짓 CircuitBreaker 방지
+                if balance_drift < _balance_notify_threshold:
+                    await rm.sync_exchange_equity(exchange_equity)
+                else:
+                    logger.info(
+                        "RM peak sync skipped: balance drift {:.1f}% (deposit/withdrawal suspected)",
+                        balance_drift,
+                    )
 
                 # Balance drift 알림
-                balance_drift = reconciler.last_balance_drift_pct
                 if balance_drift >= _balance_notify_threshold and notification_queue is not None:
                     embed = format_balance_drift_embed(
                         pm_equity=pm.total_equity,
