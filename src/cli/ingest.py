@@ -35,6 +35,7 @@ from rich.progress import (
 from rich.table import Table
 
 from src.cli.ingest_derivatives import app as derivatives_app
+from src.cli.ingest_onchain import app as onchain_app
 from src.config.settings import get_settings
 from src.core.logger import setup_logger
 from src.data.bronze import BronzeStorage
@@ -52,8 +53,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-# Derivatives sub-command 등록
+# Sub-command 등록
 app.add_typer(derivatives_app, name="derivatives")
+app.add_typer(onchain_app, name="onchain")
 
 
 def _display_settings() -> None:

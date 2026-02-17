@@ -204,6 +204,9 @@ class EDARunner:
         # Derivatives provider (선택적)
         derivatives_provider = self._create_derivatives_provider()
 
+        # On-chain provider (선택적 — Silver 데이터 auto-detect)
+        onchain_provider = self._create_onchain_provider()
+
         # FeatureStore (선택적)
         feature_store = self._create_feature_store()
 
@@ -219,6 +222,8 @@ class EDARunner:
             strategy_engine_kwargs["regime_service"] = regime_service
         if derivatives_provider is not None:
             strategy_engine_kwargs["derivatives_provider"] = derivatives_provider
+        if onchain_provider is not None:
+            strategy_engine_kwargs["onchain_provider"] = onchain_provider
         if feature_store is not None:
             strategy_engine_kwargs["feature_store"] = feature_store
 
@@ -391,6 +396,50 @@ class EDARunner:
             len(precomputed),
         )
         return BacktestDerivativesProvider(precomputed)
+
+    def _create_onchain_provider(self) -> object | None:
+        """BacktestOnchainProvider 생성 (Silver on-chain 있을 때만).
+
+        Silver 데이터가 없으면 자동 skip합니다 (config 불필요).
+
+        Returns:
+            BacktestOnchainProvider 또는 None
+        """
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.data.onchain.service import OnchainDataService
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.eda.onchain_feed import BacktestOnchainProvider
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+        service = OnchainDataService()
+        precomputed: dict[str, pd.DataFrame] = {}
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            onchain = service.precompute(symbol=data.symbol, ohlcv_index=df_tf.index)
+            if not onchain.empty and not onchain.dropna(how="all").empty:
+                precomputed[data.symbol] = onchain
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                onchain = service.precompute(symbol=sym, ohlcv_index=df_tf.index)
+                if not onchain.empty and not onchain.dropna(how="all").empty:
+                    precomputed[sym] = onchain
+
+        if not precomputed:
+            return None
+
+        logger.info(
+            "On-chain provider created for {} symbols",
+            len(precomputed),
+        )
+        return BacktestOnchainProvider(precomputed)
 
     def _create_feature_store(self) -> FeatureStore | None:
         """FeatureStore 생성 + 전체 데이터 사전 계산.

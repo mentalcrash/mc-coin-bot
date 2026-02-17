@@ -464,6 +464,110 @@ class BinanceFuturesClient:
         self._report_metric("fetch_order", time.monotonic() - t0, "success")
         return result
 
+    async def create_stop_market_order(
+        self,
+        symbol: str,
+        side: str,
+        position_side: str,
+        stop_price: float,
+        *,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """STOP_MARKET 주문 생성 (closePosition=true).
+
+        봇 장애 시 안전망으로 사용. closePosition=true이므로 전량 청산.
+
+        Args:
+            symbol: 거래 심볼 (예: "BTC/USDT:USDT")
+            side: "sell" (LONG 청산) 또는 "buy" (SHORT 청산)
+            position_side: "LONG" 또는 "SHORT"
+            stop_price: 트리거 가격
+            client_order_id: 멱등성 키
+
+        Returns:
+            CCXT 주문 응답 dict
+
+        Raises:
+            OrderExecutionError: 주문 실행 실패
+        """
+        safe_stop_price = self.exchange.price_to_precision(symbol, stop_price)  # type: ignore[no-untyped-call]
+
+        params: dict[str, Any] = {
+            "positionSide": position_side,
+            "stopPrice": safe_stop_price,
+            "closePosition": "true",
+            "recvWindow": 5000,
+        }
+        if client_order_id:
+            params["newClientOrderId"] = client_order_id
+
+        # closePosition=true 시 amount는 Binance가 무시하지만, CCXT가 요구할 수 있음
+        min_amount = self.exchange.amount_to_precision(symbol, 0.001)  # type: ignore[no-untyped-call]
+
+        async def _do_create() -> dict[str, Any]:
+            result: dict[str, Any] = await self.exchange.create_order(  # type: ignore[assignment,arg-type]
+                symbol,
+                "STOP_MARKET",  # pyright: ignore[reportArgumentType]
+                side,  # pyright: ignore[reportArgumentType]
+                min_amount,  # pyright: ignore[reportArgumentType]
+                None,
+                params,
+            )
+            return result
+
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_create)
+        except ccxt.InvalidOrder as e:
+            self._report_metric("create_stop_market", time.monotonic() - t0, "failure")
+            raise OrderExecutionError(
+                "Invalid STOP_MARKET order parameters",
+                context={
+                    "symbol": symbol,
+                    "side": side,
+                    "stop_price": stop_price,
+                    "error": str(e),
+                },
+            ) from e
+        except ccxt.ExchangeError as e:
+            self._record_failure()
+            self._report_metric("create_stop_market", time.monotonic() - t0, "failure")
+            raise OrderExecutionError(
+                "STOP_MARKET order execution failed",
+                context={"symbol": symbol, "side": side, "error": str(e)},
+            ) from e
+        except (NetworkError, RateLimitError):
+            self._record_failure()
+            self._report_metric("create_stop_market", time.monotonic() - t0, "failure")
+            raise
+        else:
+            self._record_success()
+            self._report_metric("create_stop_market", time.monotonic() - t0, "success")
+            return result
+
+    async def cancel_all_symbol_orders(self, symbol: str) -> dict[str, Any]:
+        """심볼의 모든 미체결 주문 일괄 취소.
+
+        Args:
+            symbol: 거래 심볼 (예: "BTC/USDT:USDT")
+
+        Returns:
+            취소 결과 dict
+        """
+
+        async def _do_cancel() -> dict[str, Any]:
+            result: dict[str, Any] = await self.exchange.cancel_all_orders(symbol)  # type: ignore[assignment]
+            return result
+
+        t0 = time.monotonic()
+        try:
+            result = await self._retry_with_backoff(_do_cancel)
+        except Exception:
+            self._report_metric("cancel_all_orders", time.monotonic() - t0, "failure")
+            raise
+        self._report_metric("cancel_all_orders", time.monotonic() - t0, "success")
+        return result
+
     def get_min_notional(self, symbol: str) -> float:
         """심볼의 MIN_NOTIONAL 값 조회.
 

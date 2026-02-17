@@ -10,6 +10,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -60,10 +61,15 @@ def _heartbeat_color(snapshot: SystemHealthSnapshot) -> int:
         return _COLOR_RED
 
     # YELLOW 조건
+    onchain_stale = (
+        snapshot.onchain_sources_total > 0
+        and snapshot.onchain_sources_ok < snapshot.onchain_sources_total
+    )
     has_yellow = (
         snapshot.current_drawdown > _DD_YELLOW_THRESHOLD
         or snapshot.stale_symbol_count > 0
         or snapshot.max_queue_depth > _QUEUE_DEPTH_YELLOW
+        or onchain_stale
     )
     if has_yellow:
         return _COLOR_YELLOW
@@ -103,34 +109,43 @@ def format_heartbeat_embed(snapshot: SystemHealthSnapshot) -> dict[str, Any]:
     cb_label = "ACTIVE" if snapshot.is_circuit_breaker_active else "OK"
     dd_pct = snapshot.current_drawdown * 100
 
+    fields: list[dict[str, Any]] = [
+        {"name": "Uptime", "value": _format_uptime(snapshot.uptime_seconds), "inline": True},
+        {"name": "Equity", "value": f"${snapshot.total_equity:,.0f}", "inline": True},
+        {"name": "Drawdown", "value": f"-{dd_pct:.1f}%", "inline": True},
+        {"name": "WS Status", "value": ws_label, "inline": True},
+        {"name": "Positions", "value": f"{snapshot.open_position_count}", "inline": True},
+        {"name": "Leverage", "value": f"{snapshot.aggregate_leverage:.2f}x", "inline": True},
+        {
+            "name": "Today PnL",
+            "value": f"${snapshot.today_pnl:+,.0f} ({snapshot.today_trades})",
+            "inline": True,
+        },
+        {"name": "Queue Depth", "value": str(snapshot.max_queue_depth), "inline": True},
+        {"name": "CB Status", "value": cb_label, "inline": True},
+        {
+            "name": "Safety Stops",
+            "value": f"{snapshot.safety_stop_count} active"
+            + (
+                f" ({snapshot.safety_stop_failures} failures)"
+                if snapshot.safety_stop_failures
+                else ""
+            ),
+            "inline": True,
+        },
+    ]
+
+    # On-chain 필드 (설정되어 있을 때만)
+    if snapshot.onchain_sources_total > 0:
+        ok = snapshot.onchain_sources_ok
+        total = snapshot.onchain_sources_total
+        label = f"{ok}/{total} OK ({snapshot.onchain_cache_columns} cols)"
+        fields.append({"name": "On-chain", "value": label, "inline": True})
+
     return {
         "title": f"System Heartbeat — {status}",
         "color": color,
-        "fields": [
-            {"name": "Uptime", "value": _format_uptime(snapshot.uptime_seconds), "inline": True},
-            {"name": "Equity", "value": f"${snapshot.total_equity:,.0f}", "inline": True},
-            {"name": "Drawdown", "value": f"-{dd_pct:.1f}%", "inline": True},
-            {"name": "WS Status", "value": ws_label, "inline": True},
-            {"name": "Positions", "value": f"{snapshot.open_position_count}", "inline": True},
-            {"name": "Leverage", "value": f"{snapshot.aggregate_leverage:.2f}x", "inline": True},
-            {
-                "name": "Today PnL",
-                "value": f"${snapshot.today_pnl:+,.0f} ({snapshot.today_trades})",
-                "inline": True,
-            },
-            {"name": "Queue Depth", "value": str(snapshot.max_queue_depth), "inline": True},
-            {"name": "CB Status", "value": cb_label, "inline": True},
-            {
-                "name": "Safety Stops",
-                "value": f"{snapshot.safety_stop_count} active"
-                + (
-                    f" ({snapshot.safety_stop_failures} failures)"
-                    if snapshot.safety_stop_failures
-                    else ""
-                ),
-                "inline": True,
-            },
-        ],
+        "fields": fields,
         "timestamp": snapshot.timestamp.isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
@@ -266,5 +281,24 @@ def format_strategy_health_embed(snapshot: StrategyHealthSnapshot) -> dict[str, 
         "color": color,
         "fields": fields,
         "timestamp": snapshot.timestamp.isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_onchain_alert_embed(message: str, source: str) -> dict[str, Any]:
+    """On-chain 데이터 수집 실패 알림 Embed.
+
+    Args:
+        message: 알림 메시지
+        source: 소스 식별자
+
+    Returns:
+        Discord Embed dict
+    """
+    return {
+        "title": f"On-chain Alert — {source}",
+        "description": message,
+        "color": _COLOR_YELLOW,
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

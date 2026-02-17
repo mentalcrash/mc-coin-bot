@@ -91,6 +91,7 @@ class HealthCheckScheduler:
         futures_client: BinanceFuturesClient | None,
         symbols: list[str],
         exchange_stop_mgr: Any = None,
+        onchain_feed: Any = None,
     ) -> None:
         self._queue = queue
         self._pm = pm
@@ -100,6 +101,7 @@ class HealthCheckScheduler:
         self._bus = bus
         self._symbols = symbols
         self._exchange_stop_mgr = exchange_stop_mgr
+        self._onchain_feed = onchain_feed
         self._snapshot_fetcher = DerivativesSnapshotFetcher(futures_client)
 
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -256,6 +258,15 @@ class HealthCheckScheduler:
                 (s.placement_failures for s in active_stops.values()), default=0
             )
 
+        # On-chain 상태 수집
+        onchain_sources_ok = 0
+        onchain_sources_total = 0
+        onchain_cache_columns = 0
+        if self._onchain_feed is not None:
+            health = self._onchain_feed.get_health_status()
+            onchain_cache_columns = health["total_columns"]
+            onchain_sources_total, onchain_sources_ok = self._count_onchain_sources()
+
         return SystemHealthSnapshot(
             timestamp=datetime.now(UTC),
             uptime_seconds=uptime,
@@ -276,6 +287,9 @@ class HealthCheckScheduler:
             is_notification_degraded=self._queue.is_degraded,
             safety_stop_count=safety_stop_count,
             safety_stop_failures=safety_stop_failures,
+            onchain_sources_ok=onchain_sources_ok,
+            onchain_sources_total=onchain_sources_total,
+            onchain_cache_columns=onchain_cache_columns,
         )
 
     def _collect_strategy_health(self) -> StrategyHealthSnapshot:
@@ -327,6 +341,28 @@ class HealthCheckScheduler:
             alpha_decay_detected=alpha_decay,
             strategy_breakdown=tuple(strategy_breakdown),
         )
+
+    def _count_onchain_sources(self) -> tuple[int, int]:
+        """Prometheus gauge에서 on-chain source staleness 판정.
+
+        Returns:
+            (total, ok) 튜플. 48시간 이내 fetch = OK.
+        """
+        stale_threshold = 48 * 3600  # 48시간
+        try:
+            from src.monitoring.metrics import onchain_last_success_gauge
+
+            metrics = list(onchain_last_success_gauge.collect())
+            if not metrics or not metrics[0].samples:
+                return 0, 0
+
+            now = time.time()
+            total = len(metrics[0].samples)
+            ok = sum(1 for s in metrics[0].samples if (now - s.value) < stale_threshold)
+        except ImportError:
+            return 0, 0
+        else:
+            return total, ok
 
     # ─── Helper Functions ─────────────────────────────────────
 

@@ -23,7 +23,7 @@ from src.models.types import Direction
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
-    from src.eda.ports import DerivativesProviderPort, FeatureStorePort
+    from src.eda.ports import DerivativesProviderPort, FeatureStorePort, OnchainProviderPort
     from src.regime.service import RegimeService
     from src.strategy.base import BaseStrategy
 
@@ -61,6 +61,7 @@ class StrategyEngine:
         regime_service: RegimeService | None = None,
         derivatives_provider: DerivativesProviderPort | None = None,
         feature_store: FeatureStorePort | None = None,
+        onchain_provider: OnchainProviderPort | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -75,6 +76,7 @@ class StrategyEngine:
         self._regime_service = regime_service
         self._derivatives_provider = derivatives_provider
         self._feature_store = feature_store
+        self._onchain_provider = onchain_provider
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -142,17 +144,8 @@ class StrategyEngine:
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
         )
 
-        # 3.5 Regime 보강 (RegimeService가 있으면 regime 컬럼 추가)
-        if self._regime_service is not None:
-            df = self._enrich_with_regime(df, symbol)
-
-        # 3.6 Derivatives 보강 (DerivativesProvider가 있으면 derivatives 컬럼 추가)
-        if self._derivatives_provider is not None:
-            df = self._enrich_with_derivatives(df, symbol)
-
-        # 3.7 Feature Store 보강 (FeatureStore가 있으면 공통 지표 컬럼 추가)
-        if self._feature_store is not None:
-            df = self._enrich_with_features(df, symbol)
+        # 3.5~3.8 Enrichment (regime, derivatives, features, on-chain)
+        df = self._apply_enrichments(df, symbol)
 
         try:
             if self._incremental:
@@ -267,6 +260,18 @@ class StrategyEngine:
             self._warmup,
         )
 
+    def _apply_enrichments(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """모든 enrichment를 순차 적용 (regime→derivatives→features→on-chain)."""
+        if self._regime_service is not None:
+            df = self._enrich_with_regime(df, symbol)
+        if self._derivatives_provider is not None:
+            df = self._enrich_with_derivatives(df, symbol)
+        if self._feature_store is not None:
+            df = self._enrich_with_features(df, symbol)
+        if self._onchain_provider is not None:
+            df = self._enrich_with_onchain(df, symbol)
+        return df
+
     def _enrich_with_regime(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """RegimeService로 DataFrame에 regime 컬럼을 추가.
 
@@ -314,6 +319,24 @@ class StrategyEngine:
 
         # Live fallback: precomputed가 없으면 cached values broadcast
         cols = self._feature_store.get_feature_columns(symbol)
+        if cols is not None:
+            for col_name, col_val in cols.items():
+                if col_name not in df.columns:
+                    df[col_name] = col_val
+
+        return df
+
+    def _enrich_with_onchain(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """OnchainProvider로 DataFrame에 on-chain 컬럼 추가.
+
+        1. precomputed 있으면 merge_asof
+        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
+        """
+        assert self._onchain_provider is not None
+        df = self._onchain_provider.enrich_dataframe(df, symbol)
+
+        # Live fallback: precomputed가 없으면 cached values broadcast
+        cols = self._onchain_provider.get_onchain_columns(symbol)
         if cols is not None:
             for col_name, col_val in cols.items():
                 if col_name not in df.columns:

@@ -15,6 +15,7 @@ from src.notification.health_formatters import (
     _format_uptime,
     _heartbeat_color,
     format_heartbeat_embed,
+    format_onchain_alert_embed,
     format_regime_embed,
     format_strategy_health_embed,
 )
@@ -284,3 +285,50 @@ class TestFormatStrategyHealthEmbed:
         embed = format_strategy_health_embed(snap)
         pos_field = next(f for f in embed["fields"] if "Open Positions" in f["name"])
         assert pos_field["value"] == "None"
+
+
+# ─── On-chain heartbeat field 테스트 ─────────────────────
+
+
+class TestHeartbeatOnchainField:
+    def test_onchain_field_present_when_sources_configured(self) -> None:
+        """onchain_sources_total > 0이면 On-chain 필드가 embed에 포함."""
+        snap = _make_health_snapshot(
+            onchain_sources_ok=4,
+            onchain_sources_total=5,
+            onchain_cache_columns=12,
+        )
+        embed = format_heartbeat_embed(snap)
+        onchain_field = next((f for f in embed["fields"] if f["name"] == "On-chain"), None)
+        assert onchain_field is not None
+        assert "4/5 OK" in onchain_field["value"]
+        assert "12 cols" in onchain_field["value"]
+
+    def test_onchain_field_absent_when_no_sources(self) -> None:
+        """onchain_sources_total == 0이면 On-chain 필드 없음."""
+        snap = _make_health_snapshot()  # defaults: onchain_sources_total=0
+        embed = format_heartbeat_embed(snap)
+        onchain_field = next((f for f in embed["fields"] if f["name"] == "On-chain"), None)
+        assert onchain_field is None
+
+    def test_yellow_when_onchain_stale(self) -> None:
+        """On-chain sources 일부 stale → YELLOW."""
+        snap = _make_health_snapshot(
+            onchain_sources_ok=3,
+            onchain_sources_total=5,
+            onchain_cache_columns=8,
+        )
+        assert _heartbeat_color(snap) == _COLOR_YELLOW
+
+
+# ─── On-chain alert embed 테스트 ─────────────────────────
+
+
+class TestFormatOnchainAlertEmbed:
+    def test_basic_structure(self) -> None:
+        embed = format_onchain_alert_embed("Cache refresh failed", "LiveOnchainFeed")
+        assert embed["title"] == "On-chain Alert — LiveOnchainFeed"
+        assert embed["description"] == "Cache refresh failed"
+        assert embed["color"] == _COLOR_YELLOW
+        assert "timestamp" in embed
+        assert embed["footer"]["text"] == "MC-Coin-Bot"

@@ -23,6 +23,10 @@ SOURCE_RATE_LIMITS: dict[str, int] = {
     "defillama": 25,
     "coinmetrics": 90,
     "glassnode": 10,
+    "alternative_me": 10,
+    "blockchain_com": 5,  # ~6 req/min → conservative 5
+    "etherscan": 4,  # 5 calls/sec free tier, daily 1회 스냅샷 → 보수적 4/min
+    "mempool_space": 8,  # ~10 req/min → 보수적 8
 }
 
 # Default retry configuration

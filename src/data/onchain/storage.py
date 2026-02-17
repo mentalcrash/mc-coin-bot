@@ -222,6 +222,15 @@ class OnchainSilverProcessor:
         if date_col in df.columns:
             df[date_col] = pd.to_datetime(df[date_col], utc=True)
 
+        # Numeric coercion: Decimal/object → float64 (vectorized ops 호환)
+        _text_cols = {"source", "name", "chain", "stablecoin_id", "asset",
+                      "chart_name", "classification", "metric_name", date_col}
+        for col in df.columns:
+            if col in _text_cols:
+                continue
+            if df[col].dtype == object:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
         # Validate
         self._validate_data(df, source, name)
 

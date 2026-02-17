@@ -194,3 +194,27 @@ class TestOnchainSilverProcessor:
         bronze.save(_make_stablecoin_df(), "defillama", "stablecoin_total")
         processor.process("defillama", "stablecoin_total")
         assert processor.exists("defillama", "stablecoin_total")
+
+    def test_silver_converts_decimal_to_float64(self, tmp_path: Path) -> None:
+        """Decimal/object 컬럼이 float64로 변환되는지 검증."""
+        from decimal import Decimal
+
+        settings = _make_settings(tmp_path)
+        bronze = OnchainBronzeStorage(settings)
+        processor = OnchainSilverProcessor(settings, bronze)
+
+        dates = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC")
+        df = pd.DataFrame({
+            "date": dates,
+            "value": [Decimal(72), Decimal(68), Decimal(75)],
+            "source": ["test"] * 3,
+        })
+        bronze.save(df, "test_src", "decimal_test")
+        processor.process("test_src", "decimal_test")
+
+        loaded = processor.load("test_src", "decimal_test")
+        # Decimal → float64 변환 확인
+        assert loaded["value"].dtype in ("float64", "int64")
+        assert loaded["value"].iloc[0] == 72.0
+        # source 컬럼은 text 유지
+        assert loaded["source"].dtype == object

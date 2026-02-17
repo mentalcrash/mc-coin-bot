@@ -24,6 +24,7 @@ dependencies = [
     # Async Support
     "aiosqlite>=0.20.0",
     "aiohttp>=3.9.0",
+    "httpx[http2]>=0.27.0",  # On-chain REST API client
     # Configuration
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
@@ -174,6 +175,8 @@ unfixable = []
 "src/cli/audit.py" = ["TC003"]
 # Derivatives models: Decimal은 Pydantic field annotation 런타임 필요
 "src/models/derivatives.py" = ["TC003"]
+# Onchain models: Decimal/datetime은 Pydantic field annotation 런타임 필요
+"src/data/onchain/models.py" = ["TC003"]
 # Pipeline report: StrategyStore 런타임 필요
 "src/pipeline/report.py" = ["TC001"]
 # Orchestrator loader: OrchestratorConfig는 Pydantic field annotation 런타임 필요

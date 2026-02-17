@@ -59,6 +59,9 @@ class SystemHealthSnapshot(BaseModel):
     is_notification_degraded: bool
     safety_stop_count: int = 0
     safety_stop_failures: int = 0
+    onchain_sources_ok: int = 0
+    onchain_sources_total: int = 0
+    onchain_cache_columns: int = 0
 
 
 class SymbolDerivativesSnapshot(BaseModel):

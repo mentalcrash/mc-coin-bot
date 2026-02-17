@@ -63,6 +63,7 @@ class TradingContext:
     report_trigger: Callable[[], Coroutine[object, object, None]] | None = None
     health_trigger: Callable[[], Coroutine[object, object, None]] | None = None
     exchange_stop_mgr: object | None = None
+    onchain_feed: object | None = None
     _active: bool = field(default=True, init=False)
 
     @property
@@ -210,6 +211,9 @@ class DiscordBotService:
         async def metrics_cmd(interaction: discord.Interaction) -> None:
             await self._handle_metrics(interaction)
 
+        async def onchain_cmd(interaction: discord.Interaction) -> None:
+            await self._handle_onchain(interaction)
+
         self._tree.command(
             name="status", description="Open positions and equity status", guild=guild_obj
         )(status_cmd)
@@ -228,6 +232,9 @@ class DiscordBotService:
         self._tree.command(name="metrics", description="Key metrics summary", guild=guild_obj)(
             metrics_cmd
         )
+        self._tree.command(
+            name="onchain", description="On-chain data source status", guild=guild_obj
+        )(onchain_cmd)
 
     def _setup_action_commands(self) -> None:
         """액션형 Slash Commands 등록."""
@@ -551,6 +558,55 @@ class DiscordBotService:
         # Read gauge values via public collect() API
         equity_val = _read_gauge_value(equity_gauge)
         embed.add_field(name="Equity", value=f"${equity_val:,.2f}", inline=True)
+
+        embed.set_footer(text="MC-Coin-Bot")
+        await interaction.response.send_message(embed=embed)
+
+    async def _handle_onchain(self, interaction: discord.Interaction) -> None:
+        """``/onchain`` -- On-chain 데이터 소스 상태."""
+        ctx = self._trading_ctx
+        if ctx is None:
+            await interaction.response.send_message(
+                "Trading context not available.", ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(title="On-chain Data Status", color=0x9B59B6)
+
+        # Cache 상태
+        if ctx.onchain_feed is not None:
+            health = ctx.onchain_feed.get_health_status()  # type: ignore[union-attr]
+            embed.add_field(
+                name="Cache",
+                value=f"{health['symbols_cached']} symbols, {health['total_columns']} columns",
+                inline=True,
+            )
+        else:
+            embed.add_field(name="Cache", value="Not active", inline=True)
+
+        # Source별 마지막 fetch 상태 (Prometheus gauge)
+        try:
+            import time as _time
+
+            from src.monitoring.metrics import onchain_last_success_gauge
+
+            metrics = list(onchain_last_success_gauge.collect())
+            if metrics and metrics[0].samples:
+                now = _time.time()
+                lines: list[str] = []
+                for sample in metrics[0].samples:
+                    source = sample.labels.get("source", "?")
+                    age_h = (now - sample.value) / 3600
+                    icon = "[+]" if age_h < 48 else "[-]"  # noqa: PLR2004
+                    lines.append(f"{icon} **{source}** — {age_h:.1f}h ago")
+                if lines:
+                    embed.add_field(
+                        name="Sources",
+                        value="\n".join(lines),
+                        inline=False,
+                    )
+        except ImportError:
+            pass
 
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)

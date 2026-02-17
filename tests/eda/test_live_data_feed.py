@@ -434,8 +434,9 @@ class TestReconnection:
     @pytest.mark.asyncio
     async def test_reconnection_on_network_error(self) -> None:
         """NetworkError 후 재연결하여 데이터 계속 수신."""
-        import ccxt as ccxt_sync
         from unittest.mock import patch as mock_patch
+
+        import ccxt as ccxt_sync
 
         ts1 = _TS_BASE
         ts2 = _TS_BASE + _ONE_MIN_MS
@@ -842,8 +843,9 @@ class TestConsecutiveFailureAlert:
     @pytest.mark.asyncio
     async def test_consecutive_failures_trigger_critical_alert(self) -> None:
         """_MAX_CONSECUTIVE_FAILURES 이상 연속 실패 시 CRITICAL alert."""
-        import ccxt as ccxt_sync
         from unittest.mock import patch as mock_patch
+
+        import ccxt as ccxt_sync
 
         from src.core.events import RiskAlertEvent
         from src.eda.live_data_feed import _MAX_CONSECUTIVE_FAILURES

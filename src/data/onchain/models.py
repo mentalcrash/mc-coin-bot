@@ -178,6 +178,9 @@ class DexVolumeRecord(BaseModel):
 class CoinMetricsRecord(BaseModel):
     """Coin Metrics daily asset metric record.
 
+    Note: fetcher는 wide format DataFrame을 직접 반환하며,
+    이 모델은 long format 참조용입니다 (OnchainBatch.records Union 호환).
+
     Attributes:
         time: 날짜 (UTC)
         asset: 자산 심볼 (예: "btc", "eth")
@@ -210,6 +213,146 @@ class CoinMetricsRecord(BaseModel):
         return v
 
 
+class FearGreedRecord(BaseModel):
+    """Fear & Greed Index 레코드 (Alternative.me).
+
+    Attributes:
+        timestamp: 날짜 (UTC)
+        value: 지수 값 (0=Extreme Fear ~ 100=Extreme Greed)
+        classification: 분류 텍스트 (예: "Extreme Fear", "Greed")
+        source: 데이터 소스
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: datetime
+    value: int = Field(..., ge=0, le=100)
+    classification: str
+    source: str = "alternative_me"
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v: str | int | float | datetime) -> datetime:
+        """Unix seconds / ISO string → UTC datetime."""
+        if isinstance(v, int | float):
+            return datetime.fromtimestamp(v, tz=UTC)
+        if isinstance(v, str):
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
+class BlockchainChartRecord(BaseModel):
+    """Blockchain.com Chart 레코드 (BTC network health).
+
+    Attributes:
+        timestamp: 날짜 (UTC)
+        chart_name: 차트 이름 (예: "hash-rate")
+        value: 차트 값 (Decimal)
+        source: 데이터 소스
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: datetime
+    chart_name: str
+    value: Decimal
+    source: str = "blockchain_com"
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v: str | int | float | datetime) -> datetime:
+        """Unix seconds / ISO string → UTC datetime."""
+        if isinstance(v, int | float):
+            return datetime.fromtimestamp(v, tz=UTC)
+        if isinstance(v, str):
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
+class EthSupplyRecord(BaseModel):
+    """Etherscan ETH Supply 스냅샷 레코드 (ethsupply2 API).
+
+    Attributes:
+        timestamp: 수집 시각 (UTC)
+        eth_supply: ETH 전체 공급량 (ETH 단위)
+        eth2_staking: ETH2 스테이킹 잔액 (ETH 단위)
+        burnt_fees: EIP-1559 소각량 (ETH 단위)
+        withdrawn_total: 출금 총량 (ETH 단위)
+        source: 데이터 소스
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: datetime
+    eth_supply: Decimal = Field(..., ge=0)
+    eth2_staking: Decimal = Field(..., ge=0)
+    burnt_fees: Decimal = Field(..., ge=0)
+    withdrawn_total: Decimal = Field(..., ge=0)
+    source: str = "etherscan"
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v: str | int | float | datetime) -> datetime:
+        """Unix seconds / ISO string → UTC datetime."""
+        if isinstance(v, int | float):
+            return datetime.fromtimestamp(v, tz=UTC)
+        if isinstance(v, str):
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
+class MempoolMiningRecord(BaseModel):
+    """mempool.space BTC 마이닝 레코드 (hashrate + difficulty).
+
+    Attributes:
+        timestamp: 날짜 (UTC)
+        avg_hashrate: 평균 해시레이트 (H/s)
+        difficulty: 채굴 난이도
+        block_height: 블록 높이 (difficulty 데이터에서만, 선택)
+        adjustment: 난이도 조정 비율 (선택)
+        source: 데이터 소스
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: datetime
+    avg_hashrate: Decimal = Field(..., ge=0)
+    difficulty: Decimal = Field(..., ge=0)
+    block_height: int | None = None
+    adjustment: Decimal | None = None
+    source: str = "mempool_space"
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v: str | int | float | datetime) -> datetime:
+        """Unix seconds / ISO string → UTC datetime."""
+        if isinstance(v, int | float):
+            return datetime.fromtimestamp(v, tz=UTC)
+        if isinstance(v, str):
+            dt = datetime.fromisoformat(v)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
 class OnchainBatch(BaseModel):
     """On-chain 데이터 배치 (수집 결과 컨테이너).
 
@@ -230,7 +373,11 @@ class OnchainBatch(BaseModel):
         | StablecoinIndividualRecord
         | CoinMetricsRecord
         | TvlRecord
-        | DexVolumeRecord,
+        | DexVolumeRecord
+        | FearGreedRecord
+        | BlockchainChartRecord
+        | EthSupplyRecord
+        | MempoolMiningRecord,
         ...,
     ]
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

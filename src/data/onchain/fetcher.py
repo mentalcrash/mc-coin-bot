@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 DEFILLAMA_BASE_URL = "https://stablecoins.llama.fi"
 DEFILLAMA_API_URL = "https://api.llama.fi"
 
+# Alternative.me Fear & Greed Index
+FEAR_GREED_URL = "https://api.alternative.me/fng/"
+
 # Coin Metrics Community API
 COINMETRICS_BASE_URL = "https://community-api.coinmetrics.io/v4"
 CM_METRICS = [
@@ -41,6 +44,17 @@ CM_METRICS = [
 ]
 CM_ASSETS = ["btc", "eth"]
 CM_PAGE_SIZE = 10000
+
+# Blockchain.com Charts API
+BLOCKCHAIN_API_URL = "https://api.blockchain.info/charts"
+BC_CHARTS = ["hash-rate", "miners-revenue", "transaction-fees-usd"]
+
+# Etherscan API
+ETHERSCAN_API_URL = "https://api.etherscan.io/api"
+WEI_PER_ETH = Decimal(1000000000000000000)
+
+# mempool.space API
+MEMPOOL_API_URL = "https://mempool.space/api/v1"
 
 # Top 5 chains for stablecoin analysis
 DEFI_CHAINS = ["Ethereum", "Tron", "BSC", "Arbitrum", "Solana"]
@@ -364,4 +378,235 @@ class OnchainFetcher:
 
         df = pd.DataFrame(rows)
         logger.info(f"Fetched {len(df)} DEX volume records")
+        return df
+
+    async def fetch_fear_greed(self) -> pd.DataFrame:
+        """Fetch Fear & Greed Index history (Alternative.me).
+
+        API: GET https://api.alternative.me/fng/?limit=0&format=json
+
+        Returns:
+            DataFrame with columns [timestamp, value, classification, source]
+        """
+        url = FEAR_GREED_URL
+        logger.info(f"Fetching Fear & Greed Index from {url}")
+
+        response = await self._client.get(url, params={"limit": "0", "format": "json"})
+        data = response.json()
+
+        entries = data.get("data", []) if isinstance(data, dict) else []
+        if not entries:
+            logger.warning("Empty data in Fear & Greed response")
+            return pd.DataFrame(
+                columns=pd.Index(["timestamp", "value", "classification", "source"])
+            )
+
+        rows: list[dict[str, object]] = []
+        for entry in entries:
+            ts = entry.get("timestamp")
+            value = entry.get("value")
+            classification = entry.get("value_classification", "")
+
+            rows.append(
+                {
+                    "timestamp": pd.Timestamp.fromtimestamp(int(ts), tz="UTC"),
+                    "value": int(value),
+                    "classification": classification,
+                    "source": "alternative_me",
+                }
+            )
+
+        df = pd.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} Fear & Greed records")
+        return df
+
+    async def fetch_blockchain_chart(
+        self, chart_name: str, timespan: str = "5years"
+    ) -> pd.DataFrame:
+        """Fetch Blockchain.com Chart data (BTC network health).
+
+        API: GET https://api.blockchain.info/charts/{chartName}
+
+        Args:
+            chart_name: 차트 이름 (예: "hash-rate", "miners-revenue")
+            timespan: 기간 (기본 "5years")
+
+        Returns:
+            DataFrame with columns [timestamp, chart_name, value, source]
+        """
+        url = f"{BLOCKCHAIN_API_URL}/{chart_name}"
+        params = {"timespan": timespan, "format": "json", "sampled": "false"}
+        logger.info(f"Fetching Blockchain.com chart={chart_name} from {url}")
+
+        response = await self._client.get(url, params=params)
+        data = response.json()
+
+        columns = pd.Index(["timestamp", "chart_name", "value", "source"])
+
+        if not isinstance(data, dict):
+            logger.warning(f"Non-dict response for Blockchain.com chart={chart_name}")
+            return pd.DataFrame(columns=columns)
+
+        values = data.get("values", [])
+        if not values:
+            logger.warning(f"Empty values for Blockchain.com chart={chart_name}")
+            return pd.DataFrame(columns=columns)
+
+        rows: list[dict[str, object]] = []
+        for entry in values:
+            x = entry.get("x")
+            y = entry.get("y")
+            if x is None or y is None:
+                continue
+            rows.append(
+                {
+                    "timestamp": pd.Timestamp.fromtimestamp(int(x), tz="UTC"),
+                    "chart_name": chart_name,
+                    "value": Decimal(str(y)),
+                    "source": "blockchain_com",
+                }
+            )
+
+        if not rows:
+            return pd.DataFrame(columns=columns)
+
+        df = pd.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} Blockchain.com records for chart={chart_name}")
+        return df
+
+    async def fetch_eth_supply(self, api_key: str) -> pd.DataFrame:
+        """Fetch ETH supply snapshot from Etherscan ethsupply2 API.
+
+        스냅샷 API — 현재 시점의 ETH supply/staking/burn 1행 반환.
+        매일 호출하여 Bronze에 append하는 패턴.
+
+        Args:
+            api_key: Etherscan API key (빈 문자열이면 빈 DataFrame 반환)
+
+        Returns:
+            DataFrame with columns [timestamp, eth_supply, eth2_staking,
+            burnt_fees, withdrawn_total, source]
+        """
+        columns = pd.Index(
+            ["timestamp", "eth_supply", "eth2_staking", "burnt_fees", "withdrawn_total", "source"]
+        )
+
+        if not api_key:
+            logger.warning("Etherscan API key is empty, skipping fetch")
+            return pd.DataFrame(columns=columns)
+
+        url = ETHERSCAN_API_URL
+        params = {"module": "stats", "action": "ethsupply2", "apikey": api_key}
+        logger.info(f"Fetching ETH supply from {url}")
+
+        response = await self._client.get(url, params=params)
+        data = response.json()
+
+        if not isinstance(data, dict):
+            logger.warning("Non-dict response from Etherscan ethsupply2")
+            return pd.DataFrame(columns=columns)
+
+        if data.get("status") != "1":
+            logger.warning(f"Etherscan API error: {data.get('message', 'unknown')}")
+            return pd.DataFrame(columns=columns)
+
+        result = data.get("result")
+        if not isinstance(result, dict):
+            logger.warning("Non-dict result from Etherscan ethsupply2")
+            return pd.DataFrame(columns=columns)
+
+        eth_supply_wei = result.get("EthSupply")
+        if eth_supply_wei is None:
+            logger.warning("EthSupply key missing from Etherscan response")
+            return pd.DataFrame(columns=columns)
+
+        def _wei_to_eth(wei_value: str | int | None) -> Decimal:
+            if wei_value is None:
+                return Decimal(0)
+            return Decimal(str(wei_value)) / WEI_PER_ETH
+
+        row: dict[str, object] = {
+            "timestamp": pd.Timestamp.now(tz="UTC").floor("s"),
+            "eth_supply": _wei_to_eth(eth_supply_wei),
+            "eth2_staking": _wei_to_eth(result.get("Eth2Staking")),
+            "burnt_fees": _wei_to_eth(result.get("BurntFees")),
+            "withdrawn_total": _wei_to_eth(result.get("WithdrawnTotal")),
+            "source": "etherscan",
+        }
+
+        df = pd.DataFrame([row])
+        logger.info(f"Fetched ETH supply snapshot: supply={row['eth_supply']}")
+        return df
+
+    async def fetch_mempool_mining(self, interval: str = "all") -> pd.DataFrame:
+        """Fetch BTC mining data from mempool.space (hashrate + difficulty).
+
+        API: GET /api/v1/mining/hashrate/:interval
+        응답의 hashrates와 difficulty 배열을 timestamp 기준 merge.
+
+        Args:
+            interval: 기간 ("1m", "3m", "6m", "1y", "2y", "3y", "all")
+
+        Returns:
+            DataFrame with columns [timestamp, avg_hashrate, difficulty,
+            block_height, adjustment, source]
+        """
+        url = f"{MEMPOOL_API_URL}/mining/hashrate/{interval}"
+        columns = pd.Index(
+            ["timestamp", "avg_hashrate", "difficulty", "block_height", "adjustment", "source"]
+        )
+        logger.info(f"Fetching mempool.space mining data (interval={interval})")
+
+        response = await self._client.get(url)
+        data = response.json()
+
+        if not isinstance(data, dict):
+            logger.warning("Non-dict response from mempool.space mining")
+            return pd.DataFrame(columns=columns)
+
+        hashrates = data.get("hashrates", [])
+        difficulties = data.get("difficulty", [])
+
+        if not hashrates and not difficulties:
+            logger.warning("Empty hashrates and difficulty from mempool.space")
+            return pd.DataFrame(columns=columns)
+
+        # difficulty를 timestamp→record dict로 인덱싱
+        diff_map: dict[int, dict[str, object]] = {}
+        for entry in difficulties:
+            ts = entry.get("time")
+            if ts is not None:
+                diff_map[int(ts)] = {
+                    "difficulty": Decimal(str(entry.get("difficulty", 0))),
+                    "block_height": entry.get("height"),
+                    "adjustment": Decimal(str(entry.get("adjustment", 0))),
+                }
+
+        rows: list[dict[str, object]] = []
+        for entry in hashrates:
+            ts = entry.get("timestamp")
+            if ts is None:
+                continue
+            ts_int = int(ts)
+            avg_hr = entry.get("avgHashrate", 0)
+
+            # 가장 가까운 difficulty 매칭 (같은 timestamp 또는 이전)
+            matched_diff = diff_map.get(ts_int, {})
+
+            rows.append(
+                {
+                    "timestamp": pd.Timestamp.fromtimestamp(ts_int, tz="UTC"),
+                    "avg_hashrate": Decimal(str(avg_hr)),
+                    "difficulty": matched_diff.get("difficulty", Decimal(0)),
+                    "block_height": matched_diff.get("block_height"),
+                    "adjustment": matched_diff.get("adjustment"),
+                    "source": "mempool_space",
+                }
+            )
+
+        if not rows:
+            return pd.DataFrame(columns=columns)
+
+        df = pd.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} mempool.space mining records")
         return df
