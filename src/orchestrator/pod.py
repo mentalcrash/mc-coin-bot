@@ -76,6 +76,10 @@ class StrategyPod:
         # pause 상태
         self._paused: bool = False
 
+        # MTM equity 추적 (daily return 계산용)
+        self._base_equity: float = 0.0
+        self._prev_equity: float = 0.0
+
         # warmup 감지
         self._warmup = self._detect_warmup()
 
@@ -358,6 +362,85 @@ class StrategyPod:
         self._performance.last_updated = datetime.now(UTC)
         self._compute_metrics()
 
+    # ── MTM Equity Methods ─────────────────────────────────────────
+
+    def set_base_equity(self, base: float) -> None:
+        """초기 equity를 설정합니다 (initial_capital * capital_fraction).
+
+        이미 복원된 base_equity가 있으면 스킵합니다.
+
+        Args:
+            base: 초기 equity
+        """
+        if self._base_equity > _EPSILON:
+            return  # 이미 복원됨
+        self._base_equity = base
+        self._prev_equity = base
+
+    def _compute_total_pnl(self, close_prices: dict[str, float]) -> float:
+        """전 포지션의 MTM PnL을 합산합니다.
+
+        Args:
+            close_prices: 심볼별 최신 close price
+
+        Returns:
+            realized + unrealized PnL 합계
+        """
+        total = 0.0
+        for symbol, pos in self._positions.items():
+            price = close_prices.get(symbol)
+            if price is None or abs(pos.quantity) < _EPSILON:
+                total += pos.realized_pnl
+                continue
+            unrealized = (price - pos.avg_entry_price) * pos.quantity
+            total += pos.realized_pnl + unrealized
+        return total
+
+    def compute_mtm_equity(self, close_prices: dict[str, float]) -> float:
+        """Mark-to-Market equity를 계산합니다.
+
+        Args:
+            close_prices: 심볼별 최신 close price
+
+        Returns:
+            base_equity + total_pnl
+        """
+        return self._base_equity + self._compute_total_pnl(close_prices)
+
+    def record_daily_return_mtm(self, close_prices: dict[str, float]) -> None:
+        """MTM equity 변화로 일별 수익률을 계산·기록합니다.
+
+        prev_equity가 0에 가까우면 스킵 (미초기화 상태).
+
+        Args:
+            close_prices: 심볼별 전일 close price
+        """
+        if self._prev_equity < _EPSILON:
+            return  # 미초기화 상태
+
+        current_equity = self.compute_mtm_equity(close_prices)
+        daily_return = (current_equity - self._prev_equity) / self._prev_equity
+        self.record_daily_return(daily_return)
+        self._prev_equity = current_equity
+
+    def adjust_base_equity_on_rebalance(
+        self,
+        new_base: float,
+        close_prices: dict[str, float],
+    ) -> None:
+        """리밸런스 시 equity 연속성을 보장합니다.
+
+        base_equity를 변경하되, PnL을 반영하여 prev_equity를 조정합니다.
+        이를 통해 리밸런스가 daily return에 spike를 만들지 않습니다.
+
+        Args:
+            new_base: 새 base equity (initial_capital * new_weight)
+            close_prices: 심볼별 최신 close price
+        """
+        pnl = self._compute_total_pnl(close_prices)
+        self._base_equity = new_base
+        self._prev_equity = new_base + pnl
+
     def inject_warmup(
         self,
         symbol: str,
@@ -432,6 +515,8 @@ class StrategyPod:
             "positions": positions_data,
             "performance": performance_data,
             "paused": self._paused,
+            "base_equity": self._base_equity,
+            "prev_equity": self._prev_equity,
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -453,6 +538,14 @@ class StrategyPod:
         paused_val = data.get("paused")
         if isinstance(paused_val, bool):
             self._paused = paused_val
+
+        # MTM equity
+        base_eq = data.get("base_equity")
+        if isinstance(base_eq, int | float):
+            self._base_equity = float(base_eq)
+        prev_eq = data.get("prev_equity")
+        if isinstance(prev_eq, int | float):
+            self._prev_equity = float(prev_eq)
 
         # Target weights
         weights_val = data.get("target_weights")

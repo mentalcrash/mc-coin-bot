@@ -16,6 +16,7 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -111,6 +112,11 @@ class StrategyOrchestrator:
         # Risk defense
         self._risk_breached: bool = False
 
+        # Daily return MTM 추적
+        self._initial_capital: float = 0.0
+        self._last_day_date: date | None = None
+        self._last_close_prices: dict[str, float] = {}
+
         # History 추적
         self._allocation_history: list[dict[str, object]] = []
         self._lifecycle_events: list[dict[str, object]] = []
@@ -146,6 +152,15 @@ class StrategyOrchestrator:
             return
 
         symbol = bar.symbol
+
+        # Day boundary detection — 전일 close price로 MTM 계산
+        bar_date = bar.bar_timestamp.date()
+        if self._last_day_date is not None and bar_date != self._last_day_date:
+            self._record_pod_daily_returns()
+        self._last_day_date = bar_date
+
+        # Close price 저장 (day boundary 체크 이후)
+        self._last_close_prices[symbol] = bar.close
 
         # 1. 새 bar_timestamp → 이전 배치 flush
         if self._pending_bar_ts is not None and bar.bar_timestamp != self._pending_bar_ts:
@@ -308,9 +323,7 @@ class StrategyOrchestrator:
         for pod in self._pods:
             if not pod.is_active:
                 continue
-            target = self._last_allocated_weights.get(
-                pod.pod_id, pod.config.initial_fraction
-            )
+            target = self._last_allocated_weights.get(pod.pod_id, pod.config.initial_fraction)
             drift = abs(pod.capital_fraction - target)
             if drift > self._config.rebalance_drift_threshold:
                 return True
@@ -353,6 +366,17 @@ class StrategyOrchestrator:
         for pod in self._pods:
             if pod.pod_id in new_weights:
                 pod.capital_fraction = new_weights[pod.pod_id]
+                # Equity 연속성 보장: 리밸런스 후 spike 방지
+                if self._initial_capital > 0:
+                    pod_prices = {
+                        s: self._last_close_prices[s]
+                        for s in pod.symbols
+                        if s in self._last_close_prices
+                    }
+                    pod.adjust_base_equity_on_rebalance(
+                        self._initial_capital * new_weights[pod.pod_id],
+                        pod_prices,
+                    )
 
         self._last_allocated_weights = dict(new_weights)
 
@@ -513,6 +537,39 @@ class StrategyOrchestrator:
             _RISK_DEFENSE_SCALE,
         )
 
+    # ── Daily Return MTM ─────────────────────────────────────────
+
+    def set_initial_capital(self, capital: float) -> None:
+        """초기 자본을 설정하고 각 Pod의 base equity를 초기화합니다.
+
+        이미 복원된 base_equity가 있는 Pod은 건드리지 않습니다.
+
+        Args:
+            capital: 초기 자본 (USD)
+        """
+        self._initial_capital = capital
+        for pod in self._pods:
+            pod.set_base_equity(capital * pod.capital_fraction)
+
+    def flush_daily_returns(self) -> None:
+        """마지막 일 수익률을 강제 기록합니다 (백테스트/라이브 종료 시).
+
+        _last_day_date가 None이면 (한 번도 기록되지 않았으면) 스킵합니다.
+        """
+        if self._last_day_date is None:
+            return
+        self._record_pod_daily_returns()
+
+    def _record_pod_daily_returns(self) -> None:
+        """활성 Pod에 record_daily_return_mtm()을 호출합니다."""
+        for pod in self._pods:
+            if not pod.is_active:
+                continue
+            pod_prices = {
+                s: self._last_close_prices[s] for s in pod.symbols if s in self._last_close_prices
+            }
+            pod.record_daily_return_mtm(pod_prices)
+
     # ── Query ────────────────────────────────────────────────────
 
     def get_pod_summary(self) -> list[dict[str, object]]:
@@ -574,6 +631,11 @@ class StrategyOrchestrator:
             "last_pod_targets": {
                 pod_id: dict(targets) for pod_id, targets in self._last_pod_targets.items()
             },
+            "initial_capital": self._initial_capital,
+            "last_day_date": self._last_day_date.isoformat()
+            if self._last_day_date is not None
+            else None,
+            "last_close_prices": dict(self._last_close_prices),
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -593,6 +655,19 @@ class StrategyOrchestrator:
                 for pod_id, syms in targets_val.items()
                 if isinstance(syms, dict)
             }
+
+        # Daily return MTM state
+        cap_val = data.get("initial_capital")
+        if isinstance(cap_val, int | float):
+            self._initial_capital = float(cap_val)
+
+        day_val = data.get("last_day_date")
+        if isinstance(day_val, str):
+            self._last_day_date = date.fromisoformat(day_val)
+
+        prices_val = data.get("last_close_prices")
+        if isinstance(prices_val, dict):
+            self._last_close_prices = {str(sym): float(p) for sym, p in prices_val.items()}
 
     # ── Private ──────────────────────────────────────────────────
 

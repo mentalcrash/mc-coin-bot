@@ -210,6 +210,9 @@ class OrchestratedRunner:
             target_timeframe=self._target_timeframe,
         )
 
+        # 2.5. Initial capital → Pod base equity 초기화
+        orchestrator.set_initial_capital(self._initial_capital)
+
         # 3. EDA 컴포넌트 생성
         bus = EventBus(queue_size=self._queue_size)
         feed = HistoricalDataFeed(
@@ -274,6 +277,9 @@ class OrchestratedRunner:
         await orchestrator.flush_pending_signals()
         await pm.flush_pending_signals()
         await bus.flush()
+
+        # 마지막 일 daily return flush
+        orchestrator.flush_daily_returns()
 
         # Deferred execution: 마지막 bar 이후 미체결 pending orders 로깅
         if executor.pending_count > 0:

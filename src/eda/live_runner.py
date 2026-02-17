@@ -502,10 +502,13 @@ class LiveRunner:
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm, oms)
 
-            # 3.5. Orchestrator 상태 복구
-            orch_persistence = await self._restore_orchestrator_state(state_mgr)
+            # 3.5. Orchestrator 상태 복구 + daily return MTM 초기화
+            orch_persistence = await self._restore_orchestrator_state(state_mgr, capital)
 
-            # 3.6. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
+            # 3.6. ExchangeStopManager 생성 + 상태 복구 (Live 모드)
+            exchange_stop_mgr = await self._create_exchange_stop_manager(pm, state_mgr)
+
+            # 3.7. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
             if self._mode == LiveMode.LIVE:
                 pm.sync_capital(capital)
                 rm.sync_peak_equity(capital)
@@ -524,6 +527,7 @@ class LiveRunner:
                 rm,
                 oms,
                 analytics,
+                exchange_stop_mgr=exchange_stop_mgr,
             )
 
             # 5. TradePersistence 등록 (analytics 이후)
@@ -558,6 +562,7 @@ class LiveRunner:
                         oms,
                         orch_persistence=orch_persistence,
                         orchestrator=self._orchestrator,
+                        exchange_stop_mgr=exchange_stop_mgr,
                     )
                 )
 
@@ -614,6 +619,7 @@ class LiveRunner:
                 discord_tasks=discord_tasks,
                 state_mgr=state_mgr,
                 orch_persistence=orch_persistence,
+                exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
             await self._send_lifecycle_crash(discord_tasks, exc)
@@ -639,12 +645,15 @@ class LiveRunner:
         discord_tasks: _DiscordTasks | None,
         state_mgr: Any,
         orch_persistence: Any,
+        exchange_stop_mgr: Any = None,
     ) -> None:
         """Graceful shutdown 시퀀스 — run()에서 분리."""
         logger.warning("Initiating graceful shutdown...")
 
         # 주기적 task 취소
-        await self._cancel_periodic_tasks(save_task, uptime_task, process_monitor_task, reconciler_task)
+        await self._cancel_periodic_tasks(
+            save_task, uptime_task, process_monitor_task, reconciler_task
+        )
 
         await self._feed.stop()
         feed_task.cancel()
@@ -656,10 +665,24 @@ class LiveRunner:
 
         if self._orchestrator is not None:
             await self._orchestrator.flush_pending_signals()
+            self._orchestrator.flush_daily_returns()
         await pm.flush_pending_signals()
         await bus.flush()
         await bus.stop()
         await bus_task
+
+        # Exchange Safety Stops: shutdown 처리
+        if exchange_stop_mgr is not None:
+            if self._config.cancel_stops_on_shutdown:
+                await exchange_stop_mgr.cancel_all_stops()
+                logger.info("Exchange safety stops cancelled on shutdown")
+            else:
+                active = exchange_stop_mgr.active_stops
+                if active:
+                    logger.info(
+                        "Exchange safety stops RETAINED on shutdown ({} symbols) — continues until restart",
+                        len(active),
+                    )
 
         # Lifecycle: shutdown 알림
         await self._send_lifecycle_shutdown(discord_tasks, pm, analytics)
@@ -669,7 +692,10 @@ class LiveRunner:
 
         # 최종 상태 저장
         if state_mgr:
-            await state_mgr.save_all(pm, rm, oms=oms)
+            exchange_stops_state = (
+                exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
+            )
+            await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
             if orch_persistence is not None and self._orchestrator is not None:
                 await orch_persistence.save(self._orchestrator)
             logger.info("Final state saved")
@@ -701,13 +727,24 @@ class LiveRunner:
         if otel_endpoint:
             setup_tracing(endpoint=otel_endpoint)
 
-    async def _restore_orchestrator_state(self, state_mgr: Any) -> Any:
-        """Orchestrator 상태를 복구합니다.
+    async def _restore_orchestrator_state(self, state_mgr: Any, capital: float = 0.0) -> Any:
+        """Orchestrator 상태를 복구하고 daily return MTM을 초기화합니다.
+
+        Args:
+            state_mgr: StateManager 또는 None
+            capital: 초기 자본 (daily return MTM 초기화용)
 
         Returns:
             OrchestratorStatePersistence 또는 None
         """
-        if state_mgr is None or self._orchestrator is None:
+        if self._orchestrator is None:
+            return None
+
+        # Daily return MTM 초기화 (set_base_equity는 복원된 값을 보호)
+        if capital > 0:
+            self._orchestrator.set_initial_capital(capital)
+
+        if state_mgr is None:
             return None
 
         from src.orchestrator.state_persistence import OrchestratorStatePersistence
@@ -717,6 +754,35 @@ class LiveRunner:
         if restored:
             logger.info("Orchestrator state restored")
         return orch_persistence
+
+    async def _create_exchange_stop_manager(
+        self,
+        pm: EDAPortfolioManager,
+        state_mgr: Any,
+    ) -> Any:
+        """ExchangeStopManager 생성 + 상태 복구 (Live 모드 전용).
+
+        Returns:
+            ExchangeStopManager 또는 None
+        """
+        if (
+            self._mode != LiveMode.LIVE
+            or self._futures_client is None
+            or not self._config.use_exchange_safety_stop
+        ):
+            return None
+
+        from src.eda.exchange_stop_manager import ExchangeStopManager
+
+        mgr = ExchangeStopManager(self._config, self._futures_client, pm)
+
+        # 상태 복구
+        if state_mgr is not None:
+            stops_state = await state_mgr.load_exchange_stops_state()
+            if stops_state:
+                mgr.restore_state(stops_state)
+
+        return mgr
 
     @staticmethod
     async def _restore_state(
@@ -1046,6 +1112,7 @@ class LiveRunner:
         rm: EDARiskManager,
         oms: OMS,
         analytics: AnalyticsEngine,
+        exchange_stop_mgr: Any = None,
     ) -> None:
         """모든 컴포넌트 등록 + REST API warmup."""
         # RegimeService → FeatureStore → StrategyEngine/Orchestrator 순서
@@ -1063,6 +1130,10 @@ class LiveRunner:
         await rm.register(bus)
         await oms.register(bus)
         await analytics.register(bus)
+
+        # ExchangeStopManager: PM/OMS 이후 등록 (fill 처리 후 stop 관리)
+        if exchange_stop_mgr is not None:
+            await exchange_stop_mgr.register(bus)
 
         # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
         if self._orchestrator is not None:
@@ -1088,7 +1159,11 @@ class LiveRunner:
         await reconciler.initial_check(pm, self._futures_client, self._symbols)
         return asyncio.create_task(
             self._periodic_reconciliation(
-                reconciler, pm, rm, self._futures_client, self._symbols,
+                reconciler,
+                pm,
+                rm,
+                self._futures_client,
+                self._symbols,
                 notification_queue=notification_queue,
             )
         )
@@ -1150,14 +1225,28 @@ class LiveRunner:
                     diff_ratio,
                 )
 
-        # 3. 미체결 주문 감지
+        # 3. 미체결 주문 감지 (safety-stop 주문 제외)
+        from src.eda.exchange_stop_manager import SAFETY_STOP_PREFIX
+
         for symbol in self._symbols:
             futures_symbol = self._futures_client.to_futures_symbol(symbol)
             try:
                 open_orders = await self._futures_client.fetch_open_orders(futures_symbol)
-                if open_orders:
+                # safety-stop prefix 주문은 제외 (이전 세션의 안전망)
+                non_safety = [
+                    o
+                    for o in open_orders
+                    if not str(o.get("clientOrderId", "")).startswith(SAFETY_STOP_PREFIX)
+                ]
+                if non_safety:
                     logger.critical(
                         "Pre-flight: {} stale open orders for {} — cancel manually before trading!",
+                        len(non_safety),
+                        symbol,
+                    )
+                elif open_orders:
+                    logger.info(
+                        "Pre-flight: {} safety-stop orders found for {} (retained from previous session)",
                         len(open_orders),
                         symbol,
                     )
@@ -1206,13 +1295,17 @@ class LiveRunner:
         oms: OMS | None = None,
         orch_persistence: Any = None,
         orchestrator: Any = None,
+        exchange_stop_mgr: Any = None,
         interval: float = _DEFAULT_SAVE_INTERVAL,
     ) -> None:
-        """주기적으로 PM/RM/OMS/Orchestrator 상태를 저장."""
+        """주기적으로 PM/RM/OMS/ExchangeStops/Orchestrator 상태를 저장."""
         while True:
             await asyncio.sleep(interval)
             try:
-                await state_mgr.save_all(pm, rm, oms=oms)
+                exchange_stops_state = (
+                    exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
+                )
+                await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
                 if orch_persistence is not None and orchestrator is not None:
                     await orch_persistence.save(orchestrator)
             except Exception:
