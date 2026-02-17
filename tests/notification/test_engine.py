@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 
 class TestNotificationEngine:
-    async def test_fill_event_enqueued(self, sample_fill: FillEvent) -> None:
-        """FillEvent가 TRADE_LOG 채널에 INFO로 enqueue됨."""
+    async def test_fill_buffered_not_enqueued(self, sample_fill: FillEvent) -> None:
+        """FillEvent 단독 발행 시 버퍼링만 되고 enqueue 안 됨."""
         mock_queue = AsyncMock()
         engine = NotificationEngine(mock_queue)
 
@@ -33,12 +33,41 @@ class TestNotificationEngine:
         await bus.publish(sample_fill)
         await bus.flush()
 
+        mock_queue.enqueue.assert_not_called()
+        assert engine._pending_fills["BTC/USDT"] is sample_fill
+
+        await bus.stop()
+        await bus_task
+
+    async def test_fill_then_position_combined(
+        self,
+        sample_fill: FillEvent,
+        sample_position_update: PositionUpdateEvent,
+    ) -> None:
+        """Fill + PositionUpdate가 하나의 통합 알림으로 enqueue됨."""
+        mock_queue = AsyncMock()
+        engine = NotificationEngine(mock_queue)
+
+        bus = EventBus(queue_size=100)
+        await engine.register(bus)
+
+        bus_task = asyncio.create_task(bus.start())
+        await bus.publish(sample_fill)
+        await bus.publish(sample_position_update)
+        await bus.flush()
+
         mock_queue.enqueue.assert_called_once()
         item = mock_queue.enqueue.call_args[0][0]
         assert item.severity == Severity.INFO
         assert item.channel == ChannelRoute.TRADE_LOG
         assert "BUY" in item.embed["title"]
-        assert item.spam_key is None
+        # 통합 embed에는 Position/Avg Entry/Realized PnL 필드 포함
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Position" in field_names
+        assert "Avg Entry" in field_names
+        assert "Realized PnL" in field_names
+        # 버퍼 비워짐
+        assert "BTC/USDT" not in engine._pending_fills
 
         await bus.stop()
         await bus_task
@@ -125,10 +154,10 @@ class TestNotificationEngine:
         await bus.stop()
         await bus_task
 
-    async def test_position_update_enqueued(
+    async def test_position_update_standalone(
         self, sample_position_update: PositionUpdateEvent
     ) -> None:
-        """PositionUpdateEvent가 TRADE_LOG에 enqueue됨."""
+        """Fill 없이 PositionUpdateEvent만 오면 기존 position embed 발송."""
         mock_queue = AsyncMock()
         engine = NotificationEngine(mock_queue)
 
@@ -141,7 +170,7 @@ class TestNotificationEngine:
 
         item = mock_queue.enqueue.call_args[0][0]
         assert item.channel == ChannelRoute.TRADE_LOG
-        assert "BTC/USDT" in item.embed["title"]
+        assert "Position:" in item.embed["title"]
         assert item.spam_key is None
 
         await bus.stop()
@@ -150,6 +179,7 @@ class TestNotificationEngine:
     async def test_multiple_events(
         self,
         sample_fill: FillEvent,
+        sample_position_update: PositionUpdateEvent,
         sample_circuit_breaker: CircuitBreakerEvent,
     ) -> None:
         """여러 이벤트가 각각 적절히 enqueue됨."""
@@ -161,9 +191,11 @@ class TestNotificationEngine:
 
         bus_task = asyncio.create_task(bus.start())
         await bus.publish(sample_fill)
+        await bus.publish(sample_position_update)
         await bus.publish(sample_circuit_breaker)
         await bus.flush()
 
+        # Fill+Position 통합 1건 + CircuitBreaker 1건 = 2건
         assert mock_queue.enqueue.call_count == 2
 
         await bus.stop()

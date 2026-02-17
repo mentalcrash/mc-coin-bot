@@ -33,7 +33,7 @@ _FOOTER_TEXT = "MC-Coin-Bot"
 
 
 def format_fill_embed(fill: FillEvent) -> dict[str, Any]:
-    """FillEvent -> Discord Embed dict.
+    """FillEvent -> Discord Embed dict (position 정보 없을 때 fallback).
 
     Args:
         fill: 체결 이벤트
@@ -54,6 +54,54 @@ def format_fill_embed(fill: FillEvent) -> dict[str, Any]:
             {"name": "Qty", "value": f"{fill.fill_qty:,.6f}", "inline": True},
             {"name": "Fee", "value": f"${fill.fee:,.4f}", "inline": True},
             {"name": "Value", "value": f"${value:,.2f}", "inline": True},
+        ],
+        "timestamp": fill.fill_timestamp.isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_fill_with_position_embed(
+    fill: FillEvent, position: PositionUpdateEvent
+) -> dict[str, Any]:
+    """FillEvent + PositionUpdateEvent -> 통합 Discord Embed dict.
+
+    체결 정보와 결과 포지션 상태를 하나의 알림으로 표시합니다.
+
+    Args:
+        fill: 체결 이벤트
+        position: 포지션 업데이트 이벤트
+
+    Returns:
+        Discord Embed dict
+    """
+    is_buy = fill.side == "BUY"
+    color = _COLOR_GREEN if is_buy else _COLOR_RED
+    side_label = "BUY" if is_buy else "SELL"
+    value = fill.fill_price * fill.fill_qty
+
+    return {
+        "title": f"{side_label}: {fill.symbol}",
+        "color": color,
+        "fields": [
+            {"name": "Price", "value": f"${fill.fill_price:,.4f}", "inline": True},
+            {"name": "Qty", "value": f"{fill.fill_qty:,.6f}", "inline": True},
+            {"name": "Fee", "value": f"${fill.fee:,.4f}", "inline": True},
+            {"name": "Value", "value": f"${value:,.2f}", "inline": True},
+            {
+                "name": "Position",
+                "value": f"{position.direction.name} {position.size:,.6f}",
+                "inline": True,
+            },
+            {
+                "name": "Avg Entry",
+                "value": f"${position.avg_entry_price:,.4f}",
+                "inline": True,
+            },
+            {
+                "name": "Realized PnL",
+                "value": f"${position.realized_pnl:+,.2f}",
+                "inline": True,
+            },
         ],
         "timestamp": fill.fill_timestamp.isoformat(),
         "footer": {"text": _FOOTER_TEXT},
