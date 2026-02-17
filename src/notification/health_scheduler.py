@@ -18,7 +18,7 @@ import asyncio
 import contextlib
 import time
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -90,6 +90,7 @@ class HealthCheckScheduler:
         bus: EventBus,
         futures_client: BinanceFuturesClient | None,
         symbols: list[str],
+        exchange_stop_mgr: Any = None,
     ) -> None:
         self._queue = queue
         self._pm = pm
@@ -98,6 +99,7 @@ class HealthCheckScheduler:
         self._feed = feed
         self._bus = bus
         self._symbols = symbols
+        self._exchange_stop_mgr = exchange_stop_mgr
         self._snapshot_fetcher = DerivativesSnapshotFetcher(futures_client)
 
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -244,6 +246,16 @@ class HealthCheckScheduler:
         trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
         today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
 
+        # Safety stop 상태 수집
+        safety_stop_count = 0
+        safety_stop_failures = 0
+        if self._exchange_stop_mgr is not None:
+            active_stops = self._exchange_stop_mgr.active_stops
+            safety_stop_count = len(active_stops)
+            safety_stop_failures = max(
+                (s.placement_failures for s in active_stops.values()), default=0
+            )
+
         return SystemHealthSnapshot(
             timestamp=datetime.now(UTC),
             uptime_seconds=uptime,
@@ -262,6 +274,8 @@ class HealthCheckScheduler:
             events_dropped=self._bus.metrics.events_dropped,
             max_queue_depth=self._bus.metrics.max_queue_depth,
             is_notification_degraded=self._queue.is_degraded,
+            safety_stop_count=safety_stop_count,
+            safety_stop_failures=safety_stop_failures,
         )
 
     def _collect_strategy_health(self) -> StrategyHealthSnapshot:

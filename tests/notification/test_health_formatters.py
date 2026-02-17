@@ -114,6 +114,10 @@ class TestHeartbeatColor:
         snap = _make_health_snapshot(is_notification_degraded=True)
         assert _heartbeat_color(snap) == _COLOR_RED
 
+    def test_red_safety_stop_failures(self) -> None:
+        snap = _make_health_snapshot(safety_stop_failures=5)
+        assert _heartbeat_color(snap) == _COLOR_RED
+
     def test_yellow_moderate_drawdown(self) -> None:
         snap = _make_health_snapshot(current_drawdown=0.06)
         assert _heartbeat_color(snap) == _COLOR_YELLOW
@@ -151,7 +155,7 @@ class TestFormatHeartbeatEmbed:
         embed = format_heartbeat_embed(snap)
         assert embed["title"] == "System Heartbeat — OK"
         assert embed["color"] == _COLOR_GREEN
-        assert len(embed["fields"]) == 9
+        assert len(embed["fields"]) == 10
         assert embed["footer"]["text"] == "MC-Coin-Bot"
 
     def test_alert_status(self) -> None:
@@ -249,6 +253,22 @@ class TestFormatStrategyHealthEmbed:
         assert embed["color"] == _COLOR_RED
         sharpe_field = embed["fields"][0]
         assert "DECAY" in str(sharpe_field["value"])
+
+    def test_profit_factor_inf_shows_na(self) -> None:
+        """profit_factor=inf → 'N/A' 표시."""
+        snap = StrategyHealthSnapshot(
+            timestamp=datetime(2026, 2, 14, tzinfo=UTC),
+            rolling_sharpe_30d=1.0,
+            win_rate_recent=0.7,
+            profit_factor=float("inf"),
+            total_closed_trades=10,
+            open_positions=(),
+            is_circuit_breaker_active=False,
+            alpha_decay_detected=False,
+        )
+        embed = format_strategy_health_embed(snap)
+        pf_field = next(f for f in embed["fields"] if f["name"] == "Profit Factor")
+        assert pf_field["value"] == "N/A"
 
     def test_no_positions(self) -> None:
         snap = StrategyHealthSnapshot(

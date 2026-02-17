@@ -147,6 +147,7 @@ class LiveRunner:
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
         self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
+        self._onchain_feed: Any = None  # LiveOnchainFeed | None
         self._orchestrator: StrategyOrchestrator | None = None
         self._start_time = time.monotonic()
 
@@ -186,6 +187,7 @@ class LiveRunner:
         )
         runner._client = client
         runner._symbols = symbols
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -224,6 +226,7 @@ class LiveRunner:
         )
         runner._client = client
         runner._symbols = symbols
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -274,6 +277,7 @@ class LiveRunner:
         from src.eda.derivatives_feed import LiveDerivativesFeed
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -460,24 +464,12 @@ class LiveRunner:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
 
-            # RegimeService (선택적)
-            regime_service = self._create_regime_service()
-
-            # DerivativesFeed 라이프사이클 (Live 모드)
-            derivatives_provider = await self._start_derivatives_feed()
-
-            # FeatureStore (선택적)
-            feature_store = self._create_feature_store()
-
-            strategy_engine: StrategyEngine | None = None
-            if self._orchestrator is None:
-                strategy_engine = StrategyEngine(
-                    self._strategy,
-                    target_timeframe=self._target_timeframe,
-                    regime_service=regime_service,
-                    derivatives_provider=derivatives_provider,
-                    feature_store=feature_store,
-                )
+            # 2a. 데이터 enrichment providers + StrategyEngine 생성
+            (
+                regime_service,
+                feature_store,
+                strategy_engine,
+            ) = await self._create_providers_and_engine()
             pm = EDAPortfolioManager(
                 config=self._config,
                 initial_capital=capital,
@@ -542,7 +534,13 @@ class LiveRunner:
             metrics_exporter = await self._setup_metrics(bus)
 
             # 6. Discord Bot + NotificationEngine (선택적)
-            discord_tasks = await self._setup_discord(bus, pm, rm, analytics)
+            discord_tasks = await self._setup_discord(
+                bus, pm, rm, analytics, exchange_stop_mgr=exchange_stop_mgr
+            )
+
+            # 6.5. ExchangeStopManager에 notification_queue 사후 주입
+            if exchange_stop_mgr is not None and discord_tasks is not None:
+                exchange_stop_mgr._notification_queue = discord_tasks.notification_queue
 
             # 7. Signal handler
             self._setup_signal_handlers()
@@ -660,8 +658,9 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await feed_task
 
-        # DerivativesFeed 종료
+        # DerivativesFeed / OnchainFeed 종료
         await self._stop_derivatives_feed()
+        await self._stop_onchain_feed()
 
         if self._orchestrator is not None:
             await self._orchestrator.flush_pending_signals()
@@ -782,6 +781,9 @@ class LiveRunner:
             if stops_state:
                 mgr.restore_state(stops_state)
 
+        # 거래소 실제 주문 존재 여부 검증 (notification_queue는 사후 주입)
+        await mgr.verify_exchange_stops()
+
         return mgr
 
     @staticmethod
@@ -823,6 +825,7 @@ class LiveRunner:
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         analytics: AnalyticsEngine,
+        exchange_stop_mgr: Any = None,
     ) -> _DiscordTasks | None:
         """Discord Bot + NotificationEngine 초기화 (선택적).
 
@@ -847,6 +850,7 @@ class LiveRunner:
             analytics=analytics,
             runner_shutdown=self.request_shutdown,
             orchestrator=self._orchestrator,
+            exchange_stop_mgr=exchange_stop_mgr,
         )
         bot_service.set_trading_context(trading_ctx)
 
@@ -878,6 +882,7 @@ class LiveRunner:
             bus=bus,
             futures_client=self._futures_client,
             symbols=self._symbols,
+            exchange_stop_mgr=exchange_stop_mgr,
         )
         await health_scheduler.start()
 
@@ -925,6 +930,31 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await tasks.bot_task
         logger.info("Discord Bot stopped")
+
+    async def _create_providers_and_engine(
+        self,
+    ) -> tuple[RegimeService | None, FeatureStore | None, StrategyEngine | None]:
+        """데이터 enrichment providers + StrategyEngine 생성.
+
+        Returns:
+            (regime_service, feature_store, strategy_engine) 튜플
+        """
+        regime_service = self._create_regime_service()
+        derivatives_provider = await self._start_derivatives_feed()
+        onchain_provider = await self._start_onchain_feed()
+        feature_store = self._create_feature_store()
+
+        strategy_engine: StrategyEngine | None = None
+        if self._orchestrator is None:
+            strategy_engine = StrategyEngine(
+                self._strategy,
+                target_timeframe=self._target_timeframe,
+                regime_service=regime_service,
+                derivatives_provider=derivatives_provider,
+                feature_store=feature_store,
+                onchain_provider=onchain_provider,
+            )
+        return regime_service, feature_store, strategy_engine
 
     def _create_regime_service(self) -> RegimeService | None:
         """RegimeService 생성 (regime_config가 None이면 None)."""
@@ -1183,6 +1213,33 @@ class LiveRunner:
             return None
         await self._derivatives_feed.start()
         return self._derivatives_feed
+
+    def _init_onchain_feed(self, symbols: list[str]) -> None:
+        """LiveOnchainFeed 인스턴스 생성 (Silver 데이터 존재 시)."""
+        from src.eda.onchain_feed import LiveOnchainFeed
+
+        self._onchain_feed = LiveOnchainFeed(symbols)
+
+    async def _start_onchain_feed(self) -> Any:
+        """OnchainFeed 시작 (설정된 경우).
+
+        Returns:
+            OnchainProvider 또는 None
+        """
+        if self._onchain_feed is None:
+            return None
+        await self._onchain_feed.start()
+        # 캐시가 비어있으면 None 반환 (Silver 데이터 없음)
+        if not self._onchain_feed._cache:
+            await self._onchain_feed.stop()
+            self._onchain_feed = None
+            return None
+        return self._onchain_feed
+
+    async def _stop_onchain_feed(self) -> None:
+        """OnchainFeed 종료 (설정된 경우)."""
+        if self._onchain_feed is not None:
+            await self._onchain_feed.stop()
 
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.

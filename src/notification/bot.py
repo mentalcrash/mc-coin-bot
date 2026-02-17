@@ -62,6 +62,7 @@ class TradingContext:
     orchestrator: StrategyOrchestrator | None = None
     report_trigger: Callable[[], Coroutine[object, object, None]] | None = None
     health_trigger: Callable[[], Coroutine[object, object, None]] | None = None
+    exchange_stop_mgr: object | None = None
     _active: bool = field(default=True, init=False)
 
     @property
@@ -299,6 +300,26 @@ class DiscordBotService:
             )
         else:
             embed.add_field(name="Open Positions", value="None", inline=False)
+
+        # Safety stops 섹션
+        if ctx.exchange_stop_mgr is not None:
+            active_stops = ctx.exchange_stop_mgr.active_stops  # type: ignore[union-attr]
+            if active_stops:
+                stop_lines: list[str] = []
+                for sym, state in active_stops.items():
+                    fail_tag = (
+                        f" ({state.placement_failures} fails)" if state.placement_failures else ""
+                    )
+                    stop_lines.append(
+                        f"**{sym}** {state.position_side} @ ${state.stop_price:,.2f}{fail_tag}"
+                    )
+                embed.add_field(
+                    name=f"Safety Stops ({len(active_stops)})",
+                    value="\n".join(stop_lines),
+                    inline=False,
+                )
+            else:
+                embed.add_field(name="Safety Stops", value="None", inline=False)
 
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)

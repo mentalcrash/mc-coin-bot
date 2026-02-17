@@ -31,6 +31,7 @@ _FOOTER_TEXT = "MC-Coin-Bot"
 _DD_YELLOW_THRESHOLD = 0.05  # 5%
 _DD_RED_THRESHOLD = 0.08  # 8%
 _QUEUE_DEPTH_YELLOW = 50
+_SAFETY_STOP_FAILURE_THRESHOLD = 5
 
 # Regime color 임계값 (regime_score.py 라벨과 동일)
 _REGIME_EXTREME_THRESHOLD = 0.5
@@ -53,6 +54,7 @@ def _heartbeat_color(snapshot: SystemHealthSnapshot) -> int:
         or snapshot.current_drawdown > _DD_RED_THRESHOLD
         or all_stale
         or snapshot.is_notification_degraded
+        or snapshot.safety_stop_failures >= _SAFETY_STOP_FAILURE_THRESHOLD
     )
     if has_red:
         return _COLOR_RED
@@ -118,6 +120,16 @@ def format_heartbeat_embed(snapshot: SystemHealthSnapshot) -> dict[str, Any]:
             },
             {"name": "Queue Depth", "value": str(snapshot.max_queue_depth), "inline": True},
             {"name": "CB Status", "value": cb_label, "inline": True},
+            {
+                "name": "Safety Stops",
+                "value": f"{snapshot.safety_stop_count} active"
+                + (
+                    f" ({snapshot.safety_stop_failures} failures)"
+                    if snapshot.safety_stop_failures
+                    else ""
+                ),
+                "inline": True,
+            },
         ],
         "timestamp": snapshot.timestamp.isoformat(),
         "footer": {"text": _FOOTER_TEXT},
@@ -198,7 +210,9 @@ def format_strategy_health_embed(snapshot: StrategyHealthSnapshot) -> dict[str, 
         },
         {
             "name": "Profit Factor",
-            "value": f"{snapshot.profit_factor:.2f}",
+            "value": "N/A"
+            if snapshot.profit_factor == float("inf")
+            else f"{snapshot.profit_factor:.2f}",
             "inline": True,
         },
         {
@@ -212,8 +226,8 @@ def format_strategy_health_embed(snapshot: StrategyHealthSnapshot) -> dict[str, 
     if snapshot.open_positions:
         pos_lines: list[str] = []
         for pos in snapshot.open_positions:
-            pnl_pct = pos.unrealized_pnl
-            pos_lines.append(f"  {pos.direction}  {pos.symbol}  ${pnl_pct:+,.2f}")
+            pnl_usd = pos.unrealized_pnl
+            pos_lines.append(f"  {pos.direction}  {pos.symbol}  ${pnl_usd:+,.2f}")
         fields.append(
             {
                 "name": f"Open Positions ({len(snapshot.open_positions)})",

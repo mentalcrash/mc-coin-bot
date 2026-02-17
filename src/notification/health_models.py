@@ -57,6 +57,8 @@ class SystemHealthSnapshot(BaseModel):
     events_dropped: int
     max_queue_depth: int
     is_notification_degraded: bool
+    safety_stop_count: int = 0
+    safety_stop_failures: int = 0
 
 
 class SymbolDerivativesSnapshot(BaseModel):

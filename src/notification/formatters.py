@@ -10,6 +10,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -283,5 +284,57 @@ def format_weekly_report_embed(
             {"name": "Best Trade", "value": f"${best:+,.2f}", "inline": True},
             {"name": "Worst Trade", "value": f"${worst:+,.2f}", "inline": True},
         ],
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_safety_stop_failure_embed(symbol: str, failure_count: int) -> dict[str, Any]:
+    """Safety stop 연속 실패 CRITICAL 알림 embed.
+
+    Args:
+        symbol: 대상 심볼
+        failure_count: 연속 실패 횟수
+
+    Returns:
+        Discord Embed dict
+    """
+    return {
+        "title": "SAFETY STOP FAILURE",
+        "color": _COLOR_RED,
+        "description": (
+            f"**{symbol}** safety stop placement failed **{failure_count}** consecutive times.\n"
+            "Exchange safety net may be **INACTIVE** — manual intervention required."
+        ),
+        "fields": [
+            {"name": "Symbol", "value": symbol, "inline": True},
+            {"name": "Failures", "value": str(failure_count), "inline": True},
+        ],
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_safety_stop_stale_embed(symbol: str) -> dict[str, Any]:
+    """Stale safety stop 감지 WARNING 알림 embed.
+
+    재시작 후 거래소에 해당 주문이 존재하지 않을 때 발행합니다.
+
+    Args:
+        symbol: 대상 심볼
+
+    Returns:
+        Discord Embed dict
+    """
+    return {
+        "title": "SAFETY STOP STALE",
+        "color": _COLOR_ORANGE,
+        "description": (
+            f"**{symbol}** safety stop was restored from state "
+            "but not found on exchange. Will be re-placed on next bar."
+        ),
+        "fields": [
+            {"name": "Symbol", "value": symbol, "inline": True},
+        ],
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
