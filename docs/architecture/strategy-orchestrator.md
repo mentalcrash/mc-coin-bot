@@ -342,12 +342,12 @@ RETIRED       0.0                                    청산
 
 | 기준 | 기본값 | 설명 |
 |------|--------|------|
-| `min_live_days` | 90 | 최소 운용 기간 |
-| `min_sharpe` | 1.0 | 연환산 Sharpe ≥ 1.0 |
-| `max_drawdown` | 0.15 | MDD ≤ 15% |
-| `min_trade_count` | 30 | 최소 거래 횟수 |
-| `min_calmar` | 0.8 | CAGR/MDD ≥ 0.8 |
-| `max_portfolio_correlation` | 0.50 | 기존 포트폴리오 상관 ≤ 0.5 |
+| `min_live_days` | 30 | 최소 운용 기간 |
+| `min_sharpe` | 0.5 | 연환산 Sharpe ≥ 0.5 |
+| `max_drawdown` | 0.20 | MDD ≤ 20% |
+| `min_trade_count` | 5 | 최소 거래 횟수 |
+| `min_calmar` | 0.3 | CAGR/MDD ≥ 0.3 |
+| `max_portfolio_correlation` | 0.65 | 기존 포트폴리오 상관 ≤ 0.65 |
 
 ### 6.3 Degradation Detection (Page-Hinkley Test)
 
@@ -604,12 +604,12 @@ orchestrator:
     daily_loss_limit: 0.03          # -3% 일간 손실 → 전체 중단
 
   graduation:
-    min_live_days: 90
-    min_sharpe: 1.0
-    max_drawdown: 0.15
-    min_trade_count: 30
-    min_calmar: 0.8
-    max_portfolio_correlation: 0.50
+    min_live_days: 30
+    min_sharpe: 0.5
+    max_drawdown: 0.20
+    min_trade_count: 5
+    min_calmar: 0.3
+    max_portfolio_correlation: 0.65
 
   retirement:
     max_drawdown_breach: 0.25       # MDD > 25% → 즉시 RETIRED

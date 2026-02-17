@@ -164,28 +164,28 @@ class GraduationCriteria(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     min_live_days: int = Field(
-        default=90,
+        default=30,
         ge=1,
         description="최소 실운용 일수",
     )
     min_sharpe: float = Field(
-        default=1.0,
+        default=0.5,
         ge=0.0,
         description="최소 Sharpe 비율",
     )
     max_drawdown: float = Field(
-        default=0.15,
+        default=0.20,
         gt=0.0,
         le=1.0,
         description="최대 낙폭 한도",
     )
     min_trade_count: int = Field(
-        default=30,
+        default=5,
         ge=1,
         description="최소 거래 수",
     )
     min_calmar: float = Field(
-        default=0.8,
+        default=0.3,
         ge=0.0,
         description="최소 Calmar 비율",
     )
@@ -196,7 +196,7 @@ class GraduationCriteria(BaseModel):
         description="백테스트-실거래 성과 괴리 한도",
     )
     max_portfolio_correlation: float = Field(
-        default=0.50,
+        default=0.65,
         ge=0.0,
         le=1.0,
         description="기존 포트폴리오와의 최대 상관계수",
