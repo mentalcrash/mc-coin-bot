@@ -68,6 +68,16 @@ uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
 uv run mcbot ingest derivatives batch            # 8 Tier-1/2 assets
 uv run mcbot ingest derivatives batch --dry-run  # Preview targets
 uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
+
+# On-chain (DeFiLlama, Coin Metrics, Fear & Greed, Blockchain.com, Etherscan, mempool)
+uv run mcbot ingest onchain pipeline defillama stablecoin_total       # Single dataset
+uv run mcbot ingest onchain pipeline coinmetrics btc_metrics
+uv run mcbot ingest onchain batch --type all                          # All 22 datasets
+uv run mcbot ingest onchain batch --type stablecoin                   # By category
+uv run mcbot ingest onchain batch --type coinmetrics
+uv run mcbot ingest onchain batch --dry-run                           # Preview targets
+uv run mcbot ingest onchain info                                      # Data inventory
+uv run mcbot ingest onchain info --type sentiment                     # By category
 ```
 
 ## Backtest (VBT — Vectorized)

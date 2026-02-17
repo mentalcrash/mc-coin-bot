@@ -234,25 +234,16 @@ uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
 
 ## 데이터 수집
 
-### OHLCV (1분봉)
+OHLCV(1분봉), 파생상품(Funding/OI/LS/Taker), On-chain(6개 소스 22개 데이터셋) 데이터를 Medallion Architecture(Bronze→Silver)로 수집·정제합니다.
 
 ```bash
-uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025   # Bronze → Silver
-uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
-uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
-uv run mcbot ingest info                                          # 데이터 상태
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025       # OHLCV
+uv run mcbot ingest derivatives batch                                # 파생상품 (8 자산)
+uv run mcbot ingest onchain batch --type all                         # On-chain (22 데이터셋)
+uv run mcbot ingest info                                             # 데이터 상태
 ```
 
-### 파생상품 데이터
-
-Funding Rate, Open Interest, Long/Short Ratio, Taker Buy/Sell Ratio를 수집합니다.
-
-```bash
-uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest derivatives batch                # 8 Tier-1/2 자산 일괄 수집
-uv run mcbot ingest derivatives batch --dry-run      # 대상 목록 미리보기
-uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
-```
+> 상세 (저장 구조, Rate Limit, Publication Lag, 데이터 품질 등): [`docs/data-collection.md`](docs/data-collection.md)
 
 ---
 
@@ -352,6 +343,7 @@ uv run mcbot audit trend                                # 지표 추이
 
 | 문서 | 설명 |
 |------|------|
+| [`docs/data-collection.md`](docs/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |
 | [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
 | [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md) | **멀티 전략 오케스트레이터** (Pod, 배분, 생애주기, 넷팅) |
