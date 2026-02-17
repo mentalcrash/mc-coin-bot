@@ -248,9 +248,10 @@ class TestPrecompute:
                 ("alternative_me", "fear_greed"): _df({"value": [72, 68, 75]}, dc="timestamp"),
                 ("coinmetrics", "btc_metrics"): _df(
                     {
-                        "MVRV": [1.5, 1.6, 1.7],
-                        "NVTAdj90": [10.0, 11.0, 12.0],
-                        "RealCap": [400e9, 410e9, 420e9],
+                        "CapMVRVCur": [1.5, 1.6, 1.7],
+                        "CapMrktCurUSD": [400e9, 410e9, 420e9],
+                        "FlowInExUSD": [10e6, 11e6, 12e6],
+                        "FlowOutExUSD": [8e6, 9e6, 10e6],
                     },
                     dc="time",
                 ),

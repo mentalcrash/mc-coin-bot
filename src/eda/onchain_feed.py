@@ -17,6 +17,8 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from src.data.onchain.fetcher import CM_RENAME_MAP
+
 
 class BacktestOnchainProvider:
     """Backtest용 OnchainProvider — 사전 계산된 데이터 사용.
@@ -225,12 +227,22 @@ _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
 # Asset별 추가 데이터
 _ASSET_SOURCES: dict[str, list[tuple[str, str, list[str], dict[str, str]]]] = {
     "BTC": [
-        ("coinmetrics", "btc_metrics", ["MVRV", "NVTAdj90", "RealCap"], {}),
+        (
+            "coinmetrics",
+            "btc_metrics",
+            ["CapMVRVCur", "CapMrktCurUSD", "FlowInExUSD", "FlowOutExUSD"],
+            CM_RENAME_MAP,
+        ),
         ("blockchain_com", "bc_hash-rate", ["value"], {"value": "oc_hash_rate"}),
         ("mempool_space", "mining", ["avg_hashrate", "difficulty"], {}),
     ],
     "ETH": [
-        ("coinmetrics", "eth_metrics", ["MVRV", "NVTAdj90", "RealCap"], {}),
+        (
+            "coinmetrics",
+            "eth_metrics",
+            ["CapMVRVCur", "CapMrktCurUSD", "FlowInExUSD", "FlowOutExUSD"],
+            CM_RENAME_MAP,
+        ),
         ("etherscan", "eth_supply", ["eth_supply", "eth2_staking"], {}),
     ],
 }

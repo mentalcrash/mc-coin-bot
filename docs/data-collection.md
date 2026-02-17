@@ -63,9 +63,9 @@ External APIs ──────├─ Binance Futures API ───── Deriv
 | **DeFiLlama** | Stablecoin Supply (전체/체인/개별) | 7 | Daily | 2020~ |
 | **DeFiLlama** | TVL (전체/체인별) | 6 | Daily | 2020~ |
 | **DeFiLlama** | DEX Volume | 1 | Daily | 2020~ |
-| **Coin Metrics** | MVRV, RealCap, NVTAdj90 등 9개 메트릭 (BTC/ETH) | 2 | Daily | 2009~ |
+| **Coin Metrics** | 12개 Community 메트릭 (BTC/ETH) | 2 | Daily | 2009~ |
 | **Alternative.me** | Fear & Greed Index | 1 | Daily | 2018~ |
-| **Blockchain.com** | Hash Rate, Miners Revenue, Tx Fees (BTC) | 3 | Daily | 2009~ |
+| **Blockchain.com** | Hash Rate, Miners Revenue, Tx Fees (BTC) — ⚠️ 아래 참고 | 3 | Daily | 2009~ |
 | **Etherscan** | ETH Supply, Staking, Burned Fees | 1 | Snapshot | Near-RT |
 | **mempool.space** | BTC Hashrate, Difficulty | 1 | Real-time | Rolling |
 
@@ -91,8 +91,8 @@ External APIs ──────├─ Binance Futures API ───── Deriv
 | 13 | defillama | tvl_chain_Arbitrum | Arbitrum TVL |
 | 14 | defillama | tvl_chain_Solana | Solana TVL |
 | 15 | defillama | dex_volume | 전체 DEX 일일 볼륨 |
-| 16 | coinmetrics | btc_metrics | BTC 9개 메트릭 |
-| 17 | coinmetrics | eth_metrics | ETH 9개 메트릭 |
+| 16 | coinmetrics | btc_metrics | BTC 메트릭 (12 Community metrics) |
+| 17 | coinmetrics | eth_metrics | ETH 메트릭 (12 Community metrics) |
 | 18 | alternative_me | fear_greed | Fear & Greed Index |
 | 19 | blockchain_com | bc_hash-rate | BTC 해시레이트 |
 | 20 | blockchain_com | bc_miners-revenue | BTC 마이너 수익 |
@@ -101,6 +101,42 @@ External APIs ──────├─ Binance Futures API ───── Deriv
 | 23 | mempool_space | mining | BTC 해시레이트/난이도 |
 
 </details>
+
+> **Coin Metrics Community API 메트릭 마이그레이션 완료 (2026-02-18)**
+>
+> 2025-10-28 Community tier 변경으로 기존 9개 메트릭 중 7개가 Pro 전용 전환.
+> 12개 Community 무료 메트릭으로 교체 완료 (`src/data/onchain/fetcher.py`).
+>
+> | 기존 (deprecated) | 대체 (Community) | `oc_*` 컬럼명 |
+> |-------------------|-----------------|--------------|
+> | `MVRV` | `CapMVRVCur` | `oc_mvrv` |
+> | `RealCap` | `CapMrktCurUSD` | `oc_mktcap_usd` |
+> | `TxTfrValAdjUSD` | `FlowInExUSD` | `oc_flow_in_ex_usd` |
+> | `TxTfrValMeanUSD` | `FlowOutExUSD` | `oc_flow_out_ex_usd` |
+> | `TxTfrValMedUSD` | `TxTfrCnt` | `oc_txtfrcnt` |
+> | `VtyRet30d` | `ROI30d` | `oc_roi_30d` |
+> | `NVTAdj90` | (제거 — Community 대체 없음) | — |
+> | — | `HashRate` (신규) | `oc_cm_hashrate` |
+> | — | `SplyCur` (신규) | `oc_supply` |
+> | — | `IssTotUSD` (신규) | `oc_issuance_usd` |
+> | — | `BlkCnt` (신규) | `oc_blkcnt` |
+> | `AdrActCnt` (유지) | `AdrActCnt` | `oc_adractcnt` |
+> | `TxCnt` (유지) | `TxCnt` | `oc_txcnt` |
+
+> **⚠️ Blockchain.com Charts API 장애 (2026-02-18 확인)**
+>
+> `api.blockchain.info/charts/*` 엔드포인트가 **502/503 Bad Gateway**를 반환하고 있습니다.
+> 3개 차트(hash-rate, miners-revenue, transaction-fees-usd) 모두 동일 증상입니다.
+>
+> - 공식 상태 페이지([status.blockchain.com](https://status.blockchain.com))에는 "정상" 표시 — Charts API가 별도 모니터링 대상이 아닌 것으로 추정
+> - 커뮤니티/Reddit에 관련 보고 없음 (이 API 사용자가 극소수)
+> - **대체 소스**: mempool.space에서 BTC 해시레이트/난이도를 이미 수집 중이므로, `bc_hash-rate`는 `mempool_space/mining`으로 대체 가능
+> - **현재 코드 이슈**: `AsyncOnchainClient`가 5xx 에러에 대해 retry 없이 즉시 `NetworkError` raise — 5xx retry 로직 추가 필요
+>
+> **조치 사항**:
+> 1. ✅ `src/data/onchain/client.py`에 5xx 서버 에러 retry 로직 추가 완료 (exponential backoff, 최대 3회)
+> 2. Blockchain.com API 복구 시까지 `--type blockchain` 배치 수집은 실패 예상
+> 3. 장기 미복구 시 해당 소스 비활성화 또는 대체 소스 전환 검토
 
 ---
 

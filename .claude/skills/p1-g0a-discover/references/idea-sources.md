@@ -71,8 +71,16 @@
 현재 인프라 지원:
   ✅ OHLCV: 전 기간 (2020~)
   ✅ Derivatives: FR (전 기간), OI/LS/Taker (30일 제한)
-  ❌ On-chain: 미구축
-  ❌ Sentiment: 미구축
+  ✅ On-chain: 22개 데이터셋 (DeFiLlama 14 + CoinMetrics 12 + Alternative.me 1
+     + Blockchain.com 3 + Etherscan 1 + mempool.space 1)
+     — EDA auto-detect (Silver 있으면 자동 enrich), oc_* prefix
+     — 백테스트: merge_asof + publication lag (T+1) 자동 적용
+     — 라이브: LiveOnchainFeed (Silver 캐시, 1일 주기 refresh)
+     — CoinMetrics Community 12개: CapMVRVCur(MVRV), CapMrktCurUSD, FlowInExUSD,
+       FlowOutExUSD, TxTfrCnt, ROI30d, HashRate, SplyCur, IssTotUSD, BlkCnt,
+       AdrActCnt, TxCnt — 전량 무료 (2026-02-18 마이그레이션 완료)
+     — Blockchain.com: API 장애 중 (2026-02), mempool.space로 hashrate 대체 가능
+  ✅ Sentiment: Fear & Greed Index (Alternative.me, 2018~, oc_fear_greed 컬럼)
 ```
 
 ### 비용 현실성 체크 (Cost Reality Check)
@@ -349,6 +357,100 @@ TF 적합: 1D
 
 ---
 
+## 6.5. On-chain & Sentiment (✅ 인프라 구축 완료)
+
+22개 데이터셋 + 12개 CoinMetrics 메트릭 활용 가능. 전략 0개 사용 중 — **완전 미탐색 영역**.
+데이터 상세: [docs/data-collection.md](../../../../docs/data-collection.md)
+
+### 6.5-A. Stablecoin Flow Signal — ✅ 사용 가능
+
+```
+경제적 논거: Stablecoin 공급 증가 = 시장 유입 대기 자금 증가 → 매수 압력 선행.
+             USDT/USDC mcap 변화율은 시장 유동성의 leading indicator.
+비효율 원천: 정보 비대칭 — 온체인 데이터 분석 참여자 소수.
+지표:
+  - oc_stablecoin_total_circulating_usd 변화율 (7D/30D MA)
+  - 체인별 비교: Ethereum vs Tron vs Solana (자금 이동 방향)
+데이터: DeFiLlama (Silver), oc_* auto-enrich, 2020~
+구현 난이도: 낮음 (변화율 + threshold)
+TF 적합: 1D (T+1 lag)
+```
+
+### 6.5-B. MVRV Regime Filter — ✅ 사용 가능
+
+```
+경제적 논거: MVRV(Market Value / Realized Value) > 3.5 → 과열(분배 구간),
+             MVRV < 1.0 → 저평가(축적 구간). 2018~2024 사이클 검증.
+비효율 원천: 행동 편향 — retail은 MVRV를 모니터링하지 않음.
+지표:
+  - oc_mvrv (CapMVRVCur) — CoinMetrics Community 무료
+  - MVRV z-score (장기 평균 대비)
+데이터: CoinMetrics (Silver), BTC/ETH 전용, 2009~
+구현 난이도: 낮음 (threshold 기반)
+TF 적합: 1D
+주의: 단독 전략보다 기존 전략의 macro filter로 활용 권장
+```
+
+### 6.5-C. Exchange Net Flow — ✅ 사용 가능
+
+```
+경제적 논거: 거래소 순유입 증가 = 매도 의도 → 하락 선행.
+             거래소 순유출 증가 = HODLing → 공급 감소 → 상승 선행.
+비효율 원천: 정보 비대칭 — 온체인 flow 분석은 소수만 수행.
+지표:
+  - oc_flow_in_ex_usd - oc_flow_out_ex_usd (순유입)
+  - Net flow 7D MA + z-score
+데이터: CoinMetrics (Silver, FlowInExUSD/FlowOutExUSD), BTC/ETH 전용
+구현 난이도: 낮음
+TF 적합: 1D
+```
+
+### 6.5-D. Fear & Greed Contrarian — ✅ 사용 가능
+
+```
+경제적 논거: Extreme Fear (≤10) → 과매도 반등, Extreme Greed (≥90) → 과열 조정.
+             Contrarian 진입은 행동 편향(과잉 반응)을 역이용.
+비효율 원천: 행동 편향 — 군집 심리의 극단에서 역추세.
+지표:
+  - oc_fear_greed (0~100)
+  - 7D/14D MA로 smoothing
+  - 극단값에서만 시그널 생성 (나머지 구간 중립)
+데이터: Alternative.me (Silver), 2018~
+구현 난이도: 매우 낮음
+TF 적합: 1D
+```
+
+### 6.5-E. Network Activity Momentum — ✅ 사용 가능
+
+```
+경제적 논거: Active Address 증가 = 네트워크 사용 증가 = 수요 증가 → 가격 선행.
+             Tx Count 추세와 가격 추세의 divergence → 전환 시그널.
+비효율 원천: 정보 비대칭 — 온체인 활동 지표는 가격에 느리게 반영.
+지표:
+  - oc_adractcnt 변화율 (14D/30D)
+  - oc_txcnt 변화율
+  - 가격 추세와 oc_adractcnt divergence
+데이터: CoinMetrics (Silver, AdrActCnt/TxCnt), BTC/ETH 전용
+구현 난이도: 중간 (divergence 탐지)
+TF 적합: 1D
+```
+
+### 6.5-F. On-chain 복합 시그널 (앙상블 후보)
+
+```
+경제적 논거: 단일 온체인 지표는 noisy → 복수 지표 합의로 conviction 강화.
+             Stablecoin flow + MVRV + Fear&Greed 합의 시 high-conviction signal.
+접근법:
+  - A~E 중 2~3개 지표의 z-score 합산 또는 majority vote
+  - 기존 CTREND/Anchor-Mom에 on-chain filter overlay
+  - RegimeService + on-chain → 이중 필터 (market regime + macro regime)
+구현 난이도: 중간 (개별 지표 구현 후 결합)
+TF 적합: 1D
+주의: 개별 IC 검증 후 결합. 모든 지표 동시 투입은 과적합 위험.
+```
+
+---
+
 ## 7. 최신 학술 트렌드 (2025-2026)
 
 ### 7-A. GT-Score (Golden Ticket Score)
@@ -432,6 +534,18 @@ GitHub: shep-analytics/gt_score
 > RegimeService 공유 인프라 구축 완료 — 레짐 적응형 전략 설계 가능.
 
 ```
+0.8순위: On-chain Macro Signal ★ 블루오션 (전략 0개 사용 중)
+       — ✅ 22개 데이터셋 + 12개 CoinMetrics 인프라 완비, EDA auto-enrich
+       — publication lag T+1 → 1D 전략에 적합
+       — 구체적 전략 후보:
+         a) Stablecoin Flow Regime: oc_stablecoin_total 변화율 → 유동성 증감 프록시
+         b) TVL Health: oc_tvl_usd 변화율 → DeFi 생태계 건전성 → 위험 필터
+         c) Fear & Greed Contrarian: oc_fear_greed 극단값(10↓/90↑) → 역추세 진입
+         d) MVRV Regime: oc_mvrv > 3.5 과열 / < 1.0 저평가 → BTC 진입/퇴출
+         e) Exchange Flow: oc_flow_in_ex_usd - oc_flow_out_ex_usd → 매도압력 프록시
+         f) Active Address Momentum: oc_adractcnt 변화율 → 네트워크 활동 추세
+         g) On-chain 복합 시그널: a~f 중 2~3개 결합 → 앙상블 가능
+
 0순위: Funding Rate 기반 전략 (Carry, Contrarian, Regime Filter) ★ NEW
        — DerivativesDataService 인프라 완비, 학술 검증 (연 15-25% 리턴)
        — 기존 funding-carry 전략 재시도 가능 (G0 25/30, 데이터 부재로 폐기 → 인프라 구축 완료)
