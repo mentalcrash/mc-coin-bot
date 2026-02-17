@@ -11,6 +11,7 @@ Rules Applied:
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
@@ -25,8 +26,29 @@ from src.data.onchain.fetcher import (
 )
 from src.data.onchain.storage import OnchainSilverProcessor
 
+if TYPE_CHECKING:
+    from src.catalog.store import DataCatalogStore
+
 # ---------------------------------------------------------------------------
-# Batch Definitions (SSOT)
+# Catalog (optional — fallback to hardcoded constants)
+# ---------------------------------------------------------------------------
+
+
+def _try_load_catalog() -> DataCatalogStore | None:
+    """DataCatalogStore 로드 시도, 실패 시 None (fallback to constants)."""
+    try:
+        from src.catalog.store import DataCatalogStore
+
+        store = DataCatalogStore()
+        store.load_all()  # YAML 존재 여부 확인
+    except Exception:
+        return None
+    else:
+        return store
+
+
+# ---------------------------------------------------------------------------
+# Batch Definitions (SSOT) — deprecated: catalog로 마이그레이션 중
 # ---------------------------------------------------------------------------
 
 _STABLECOIN_DEFS: list[tuple[str, str]] = [
@@ -232,9 +254,11 @@ class OnchainDataService:
         self,
         settings: IngestionSettings | None = None,
         silver_processor: OnchainSilverProcessor | None = None,
+        catalog: DataCatalogStore | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._silver = silver_processor or OnchainSilverProcessor(self._settings)
+        self._catalog = catalog or _try_load_catalog()
 
     def get_batch_definitions(self, batch_type: str) -> list[tuple[str, str]]:
         """batch_type에 해당하는 (source, name) 리스트 반환.
@@ -248,10 +272,16 @@ class OnchainDataService:
         Raises:
             ValueError: 알 수 없는 batch_type
         """
+        # Catalog 우선, fallback to hardcoded constants
+        if self._catalog is not None:
+            defs = self._catalog.get_batch_definitions(batch_type)
+            if defs:
+                return defs
+
         if batch_type == "all":
             result: list[tuple[str, str]] = []
-            for defs in ONCHAIN_BATCH_DEFINITIONS.values():
-                result.extend(defs)
+            for defs_list in ONCHAIN_BATCH_DEFINITIONS.values():
+                result.extend(defs_list)
             return result
 
         if batch_type not in ONCHAIN_BATCH_DEFINITIONS:
@@ -393,6 +423,15 @@ class OnchainDataService:
 
         return result
 
+    def _resolve_lag_days(self, source: str) -> int:
+        """source의 publication lag 일수 조회 (catalog 우선)."""
+        if self._catalog is not None:
+            try:
+                return self._catalog.get_lag_days(source)
+            except KeyError:
+                pass
+        return SOURCE_LAG_DAYS.get(source, 0)
+
     def _load_and_prepare(
         self,
         source: str,
@@ -435,8 +474,8 @@ class OnchainDataService:
                 col_rename[col] = f"oc_{col.lower()}"
         subset.columns = pd.Index([col_rename.get(c, c) for c in subset.columns])
 
-        # Publication lag shift
-        lag = SOURCE_LAG_DAYS.get(source, 0)
+        # Publication lag shift (catalog 우선, fallback to constants)
+        lag = self._resolve_lag_days(source)
         if lag > 0:
             subset.index = subset.index + pd.Timedelta(days=lag)
 

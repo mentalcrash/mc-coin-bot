@@ -1,0 +1,549 @@
+# Data Catalog — Single Source of Truth
+# 데이터셋 메타데이터를 YAML로 구조화.
+# 전략 발굴 시 빠른 데이터 탐색 + Python 상수 대체.
+
+sources:
+  - id: binance_spot
+    name: Binance Spot
+    api_url: https://api.binance.com
+    date_column: timestamp
+    lag_days: 0
+    rate_limit_per_min: 1200
+
+  - id: binance_futures
+    name: Binance USDT-M Futures
+    api_url: https://fapi.binance.com
+    date_column: timestamp
+    lag_days: 0
+    rate_limit_per_min: 1200
+
+  - id: defillama
+    name: DeFiLlama
+    api_url: https://api.llama.fi
+    date_column: date
+    lag_days: 1
+    rate_limit_per_min: 300
+
+  - id: coinmetrics
+    name: Coin Metrics Community
+    api_url: https://community-api.coinmetrics.io/v4
+    date_column: time
+    lag_days: 1
+    rate_limit_per_min: 100
+
+  - id: alternative_me
+    name: Alternative.me
+    api_url: https://api.alternative.me/fng/
+    date_column: timestamp
+    lag_days: 1
+    rate_limit_per_min: 30
+
+  - id: blockchain_com
+    name: Blockchain.com
+    api_url: https://api.blockchain.info/charts
+    date_column: timestamp
+    lag_days: 1
+    rate_limit_per_min: 60
+
+  - id: etherscan
+    name: Etherscan
+    api_url: https://api.etherscan.io/v2/api
+    date_column: timestamp
+    lag_days: 0
+    rate_limit_per_min: 5
+
+  - id: mempool_space
+    name: mempool.space
+    api_url: https://mempool.space/api/v1
+    date_column: timestamp
+    lag_days: 0
+    rate_limit_per_min: 60
+
+datasets:
+  # ─── OHLCV ──────────────────────────────────────────────────────────
+  - id: ohlcv_1m
+    name: OHLCV 1-Minute
+    data_type: ohlcv
+    source_id: binance_spot
+    batch_group: ohlcv
+    description: "Binance Spot 1분봉 OHLCV (Medallion Bronze→Silver)"
+    resolution: 1m
+    available_since: "2017-08-17"
+    storage_path: "data/silver/{SYMBOL}_1m_{YEAR}.parquet"
+    columns: [open, high, low, close, volume]
+    strategy_hints:
+      - "모든 전략의 기본 입력 데이터"
+      - "CandleAggregator로 상위 TF 변환 (1D, 4H, 1H)"
+      - "volume spike → 변동성 확대 시그널"
+
+  # ─── Derivatives ────────────────────────────────────────────────────
+  - id: funding_rate
+    name: Funding Rate
+    data_type: derivatives
+    source_id: binance_futures
+    batch_group: derivatives
+    description: "USDT-M Futures 8시간 Funding Rate"
+    resolution: 8h
+    available_since: "2019-09-10"
+    storage_path: "data/silver/{SYMBOL}/{YEAR}_deriv.parquet"
+    columns: [funding_rate]
+    strategy_hints:
+      - "극단적 양(+) funding → 과매수, 숏 시그널"
+      - "극단적 음(-) funding → 과매도, 롱 시그널"
+      - "funding rate z-score 기반 mean-reversion"
+    silver_resample: 1h
+
+  - id: open_interest
+    name: Open Interest
+    data_type: derivatives
+    source_id: binance_futures
+    batch_group: derivatives
+    description: "USDT-M Futures 미결제약정"
+    resolution: 5m
+    available_since: "2019-09-10"
+    storage_path: "data/silver/{SYMBOL}/{YEAR}_deriv.parquet"
+    columns: [oi_sum, oi_value]
+    strategy_hints:
+      - "OI 급증 + 가격 상승 → 강한 추세"
+      - "OI 급감 → 포지션 청산, 추세 반전 가능"
+      - "OI/volume 비율 → 시장 레버리지 수준"
+    silver_resample: 1h
+
+  - id: long_short_ratio
+    name: Long/Short Ratio
+    data_type: derivatives
+    source_id: binance_futures
+    batch_group: derivatives
+    description: "Top Trader Long/Short 포지션 비율"
+    resolution: 5m
+    available_since: "2019-09-10"
+    storage_path: "data/silver/{SYMBOL}/{YEAR}_deriv.parquet"
+    columns: [ls_account_ratio, ls_position_ratio]
+    strategy_hints:
+      - "극단적 long bias → contrarian 숏 시그널"
+      - "극단적 short bias → contrarian 롱 시그널"
+      - "crowd positioning 기반 alpha"
+    silver_resample: 1h
+
+  - id: taker_ratio
+    name: Taker Buy/Sell Ratio
+    data_type: derivatives
+    source_id: binance_futures
+    batch_group: derivatives
+    description: "Taker 매수/매도 비율"
+    resolution: 5m
+    available_since: "2019-09-10"
+    storage_path: "data/silver/{SYMBOL}/{YEAR}_deriv.parquet"
+    columns: [taker_buy_vol, taker_sell_vol, taker_ratio]
+    strategy_hints:
+      - "taker ratio > 1 지속 → 매수 압력 강세"
+      - "급격한 taker ratio 변화 → 시장 전환점"
+    silver_resample: 1h
+
+  # ─── On-chain: Stablecoin ───────────────────────────────────────────
+  - id: stablecoin_total
+    name: Stablecoin Total Supply
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "전체 스테이블코인 발행량 (DeFiLlama)"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_total.parquet"
+    columns: [total_circulating_usd, total_circulating_usd_peg]
+    fetch_key: stablecoin_total
+    strategy_hints:
+      - "발행량 증가 → 시장 유동성 유입, 강세 신호"
+      - "발행량 감소 → 자금 이탈, risk-off"
+      - "변화율 z-score → regime indicator"
+    enrichment:
+      scope: global
+      columns: [total_circulating_usd]
+      rename_map:
+        total_circulating_usd: oc_stablecoin_total_usd
+
+  - id: stablecoin_chain_Ethereum
+    name: Stablecoin Supply (Ethereum)
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "Ethereum 체인 스테이블코인 발행량"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_chain_Ethereum.parquet"
+    columns: [total_circulating_usd]
+    fetch_key: stablecoin_chain_Ethereum
+    strategy_hints:
+      - "DeFi 유동성 프록시"
+      - "체인 간 자금 이동 모니터링"
+
+  - id: stablecoin_chain_Tron
+    name: Stablecoin Supply (Tron)
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "Tron 체인 스테이블코인 발행량"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_chain_Tron.parquet"
+    columns: [total_circulating_usd]
+    fetch_key: stablecoin_chain_Tron
+    strategy_hints:
+      - "아시아 리테일 자금 흐름 프록시"
+      - "Tron 비중 증가 → 거래소 입금 활동"
+
+  - id: stablecoin_chain_BSC
+    name: Stablecoin Supply (BSC)
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "BSC 체인 스테이블코인 발행량"
+    resolution: 1d
+    available_since: "2020-09-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_chain_BSC.parquet"
+    columns: [total_circulating_usd]
+    fetch_key: stablecoin_chain_BSC
+    strategy_hints:
+      - "리테일 DeFi 활동 지표"
+
+  - id: stablecoin_chain_Arbitrum
+    name: Stablecoin Supply (Arbitrum)
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "Arbitrum 체인 스테이블코인 발행량"
+    resolution: 1d
+    available_since: "2021-09-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_chain_Arbitrum.parquet"
+    columns: [total_circulating_usd]
+    fetch_key: stablecoin_chain_Arbitrum
+    strategy_hints:
+      - "L2 생태계 성장 지표"
+
+  - id: stablecoin_chain_Solana
+    name: Stablecoin Supply (Solana)
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "Solana 체인 스테이블코인 발행량"
+    resolution: 1d
+    available_since: "2021-01-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_chain_Solana.parquet"
+    columns: [total_circulating_usd]
+    fetch_key: stablecoin_chain_Solana
+    strategy_hints:
+      - "Solana 생태계 활성도 지표"
+
+  - id: stablecoin_usdt
+    name: USDT Supply
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "USDT 개별 발행량"
+    resolution: 1d
+    available_since: "2017-01-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_usdt.parquet"
+    columns: [circulating_usd]
+    fetch_key: stablecoin_usdt
+    strategy_hints:
+      - "USDT 발행량 변화 → 시장 유입/유출"
+      - "USDT dominance 변화 → 시장 선호도"
+
+  - id: stablecoin_usdc
+    name: USDC Supply
+    data_type: onchain
+    source_id: defillama
+    batch_group: stablecoin
+    description: "USDC 개별 발행량"
+    resolution: 1d
+    available_since: "2018-10-01"
+    storage_path: "data/silver/onchain/defillama/stablecoin_usdc.parquet"
+    columns: [circulating_usd]
+    fetch_key: stablecoin_usdc
+    strategy_hints:
+      - "기관 자금 프록시 (USDC = 규제 준수)"
+      - "USDT/USDC 비율 → 기관 vs 리테일 자금"
+
+  # ─── On-chain: TVL ──────────────────────────────────────────────────
+  - id: tvl_total
+    name: DeFi TVL Total
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "전체 DeFi TVL (Total Value Locked)"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/tvl_total.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_total
+    strategy_hints:
+      - "TVL 증가 → DeFi 신뢰도 상승, risk-on"
+      - "TVL/MarketCap 비율 → DeFi 침투율"
+      - "TVL 급락 → 프로토콜 위기, risk-off"
+    enrichment:
+      scope: global
+      columns: [tvl_usd]
+      rename_map:
+        tvl_usd: oc_tvl_usd
+
+  - id: tvl_chain_Ethereum
+    name: DeFi TVL (Ethereum)
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "Ethereum 체인 DeFi TVL"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/tvl_chain_Ethereum.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_chain_Ethereum
+    strategy_hints:
+      - "ETH TVL dominance → Ethereum 생태계 건강도"
+      - "ETH TVL vs ETH price 디커플링 → 기회"
+
+  - id: tvl_chain_Tron
+    name: DeFi TVL (Tron)
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "Tron 체인 DeFi TVL"
+    resolution: 1d
+    available_since: "2020-01-01"
+    storage_path: "data/silver/onchain/defillama/tvl_chain_Tron.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_chain_Tron
+    strategy_hints:
+      - "Tron TVL 급등 → 아시아 자금 유입"
+
+  - id: tvl_chain_BSC
+    name: DeFi TVL (BSC)
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "BSC 체인 DeFi TVL"
+    resolution: 1d
+    available_since: "2020-09-01"
+    storage_path: "data/silver/onchain/defillama/tvl_chain_BSC.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_chain_BSC
+    strategy_hints:
+      - "리테일 DeFi 활동 지표"
+
+  - id: tvl_chain_Arbitrum
+    name: DeFi TVL (Arbitrum)
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "Arbitrum 체인 DeFi TVL"
+    resolution: 1d
+    available_since: "2021-09-01"
+    storage_path: "data/silver/onchain/defillama/tvl_chain_Arbitrum.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_chain_Arbitrum
+    strategy_hints:
+      - "L2 성장 모니터링"
+
+  - id: tvl_chain_Solana
+    name: DeFi TVL (Solana)
+    data_type: onchain
+    source_id: defillama
+    batch_group: tvl
+    description: "Solana 체인 DeFi TVL"
+    resolution: 1d
+    available_since: "2021-01-01"
+    storage_path: "data/silver/onchain/defillama/tvl_chain_Solana.parquet"
+    columns: [tvl_usd]
+    fetch_key: tvl_chain_Solana
+    strategy_hints:
+      - "Solana DeFi 생태계 성장도"
+
+  # ─── On-chain: DEX ──────────────────────────────────────────────────
+  - id: dex_volume
+    name: DEX Volume
+    data_type: onchain
+    source_id: defillama
+    batch_group: dex
+    description: "전체 DEX 일일 거래량"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/dex_volume.parquet"
+    columns: [volume_usd]
+    fetch_key: dex_volume
+    strategy_hints:
+      - "DEX volume spike → 높은 시장 활성도"
+      - "DEX/CEX 비율 → 탈중앙화 추세"
+      - "DEX volume 이동평균 돌파 → 활동 확대"
+    enrichment:
+      scope: global
+      columns: [volume_usd]
+      rename_map:
+        volume_usd: oc_dex_volume_usd
+
+  # ─── On-chain: Coin Metrics ────────────────────────────────────────
+  - id: btc_metrics
+    name: BTC On-chain Metrics
+    data_type: onchain
+    source_id: coinmetrics
+    batch_group: coinmetrics
+    description: "Bitcoin 온체인 메트릭 12종 (MVRV, MarketCap, Exchange Flow 등)"
+    resolution: 1d
+    available_since: "2009-01-03"
+    storage_path: "data/silver/onchain/coinmetrics/btc_metrics.parquet"
+    columns: [AdrActCnt, TxCnt, CapMVRVCur, CapMrktCurUSD, FlowInExUSD, FlowOutExUSD, TxTfrCnt, ROI30d, HashRate, SplyCur, IssTotUSD, BlkCnt]
+    fetch_key: btc_metrics
+    strategy_hints:
+      - "MVRV < 1 → 역사적 저점, 축적 구간"
+      - "MVRV > 3.5 → 과열, 분배 구간"
+      - "Exchange Net Flow (In-Out) → 매도/매수 압력"
+      - "Active Address 추세 → 네트워크 활성도"
+    enrichment:
+      scope: asset
+      target_assets: [BTC]
+      columns: [CapMVRVCur, CapMrktCurUSD, FlowInExUSD, FlowOutExUSD]
+      rename_map:
+        CapMVRVCur: oc_mvrv
+        CapMrktCurUSD: oc_mktcap_usd
+        FlowInExUSD: oc_flow_in_ex_usd
+        FlowOutExUSD: oc_flow_out_ex_usd
+
+  - id: eth_metrics
+    name: ETH On-chain Metrics
+    data_type: onchain
+    source_id: coinmetrics
+    batch_group: coinmetrics
+    description: "Ethereum 온체인 메트릭 12종"
+    resolution: 1d
+    available_since: "2015-07-30"
+    storage_path: "data/silver/onchain/coinmetrics/eth_metrics.parquet"
+    columns: [AdrActCnt, TxCnt, CapMVRVCur, CapMrktCurUSD, FlowInExUSD, FlowOutExUSD, TxTfrCnt, ROI30d, HashRate, SplyCur, IssTotUSD, BlkCnt]
+    fetch_key: eth_metrics
+    strategy_hints:
+      - "ETH MVRV → BTC와 동일 논리"
+      - "Gas Fee 추세 → 네트워크 수요"
+      - "ETH Exchange Net Flow → 스테이킹 vs 매도"
+    enrichment:
+      scope: asset
+      target_assets: [ETH]
+      columns: [CapMVRVCur, CapMrktCurUSD, FlowInExUSD, FlowOutExUSD]
+      rename_map:
+        CapMVRVCur: oc_mvrv
+        CapMrktCurUSD: oc_mktcap_usd
+        FlowInExUSD: oc_flow_in_ex_usd
+        FlowOutExUSD: oc_flow_out_ex_usd
+
+  # ─── On-chain: Sentiment ───────────────────────────────────────────
+  - id: fear_greed
+    name: Fear & Greed Index
+    data_type: onchain
+    source_id: alternative_me
+    batch_group: sentiment
+    description: "Crypto Fear & Greed Index (0-100)"
+    resolution: 1d
+    available_since: "2018-02-01"
+    storage_path: "data/silver/onchain/alternative_me/fear_greed.parquet"
+    columns: [value, classification]
+    fetch_key: fear_greed
+    strategy_hints:
+      - "Extreme Fear (< 20) → contrarian 매수"
+      - "Extreme Greed (> 80) → contrarian 매도"
+      - "이동평균 crossover → regime 전환"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: oc_fear_greed
+
+  # ─── On-chain: Blockchain ──────────────────────────────────────────
+  - id: bc_hash-rate
+    name: BTC Hash Rate
+    data_type: onchain
+    source_id: blockchain_com
+    batch_group: blockchain
+    description: "Bitcoin 네트워크 해시레이트"
+    resolution: 1d
+    available_since: "2009-01-03"
+    storage_path: "data/silver/onchain/blockchain_com/bc_hash-rate.parquet"
+    columns: [value]
+    fetch_key: bc_hash-rate
+    strategy_hints:
+      - "Hash rate 지속 상승 → 채굴자 신뢰, 강세"
+      - "Hash rate 급락 → 채굴자 항복, 바닥 시그널"
+      - "Hash rate vs Price 다이버전스"
+    enrichment:
+      scope: asset
+      target_assets: [BTC]
+      columns: [value]
+      rename_map:
+        value: oc_hash_rate
+
+  - id: bc_miners-revenue
+    name: BTC Miners Revenue
+    data_type: onchain
+    source_id: blockchain_com
+    batch_group: blockchain
+    description: "Bitcoin 채굴자 일일 수익"
+    resolution: 1d
+    available_since: "2009-01-03"
+    storage_path: "data/silver/onchain/blockchain_com/bc_miners-revenue.parquet"
+    columns: [value]
+    fetch_key: bc_miners-revenue
+    strategy_hints:
+      - "채굴자 수익 감소 → 매도 압력 가능성"
+      - "Halving 전후 수익 변화 → 시장 사이클"
+
+  - id: bc_transaction-fees-usd
+    name: BTC Transaction Fees
+    data_type: onchain
+    source_id: blockchain_com
+    batch_group: blockchain
+    description: "Bitcoin 일일 트랜잭션 수수료 (USD)"
+    resolution: 1d
+    available_since: "2009-01-03"
+    storage_path: "data/silver/onchain/blockchain_com/bc_transaction-fees-usd.parquet"
+    columns: [value]
+    fetch_key: bc_transaction-fees-usd
+    strategy_hints:
+      - "수수료 급등 → 네트워크 혼잡, 높은 수요"
+      - "수수료/Revenue 비율 → 네트워크 보안 지속성"
+
+  # ─── On-chain: Etherscan ───────────────────────────────────────────
+  - id: eth_supply
+    name: ETH Supply
+    data_type: onchain
+    source_id: etherscan
+    batch_group: etherscan
+    description: "ETH 총 공급량 + ETH2 스테이킹량"
+    resolution: 1d
+    available_since: "2015-07-30"
+    storage_path: "data/silver/onchain/etherscan/eth_supply.parquet"
+    columns: [eth_supply, eth2_staking]
+    fetch_key: eth_supply
+    strategy_hints:
+      - "EIP-1559 이후 burn > issuance → deflationary signal"
+      - "스테이킹 비율 증가 → 유통 공급 감소"
+    enrichment:
+      scope: asset
+      target_assets: [ETH]
+      columns: [eth_supply, eth2_staking]
+      rename_map: {}
+
+  # ─── On-chain: Mempool ─────────────────────────────────────────────
+  - id: mining
+    name: BTC Mining Stats
+    data_type: onchain
+    source_id: mempool_space
+    batch_group: mempool
+    description: "Bitcoin 마이닝 통계 (해시레이트, 난이도)"
+    resolution: 1d
+    available_since: "2016-01-01"
+    storage_path: "data/silver/onchain/mempool_space/mining.parquet"
+    columns: [avg_hashrate, difficulty]
+    fetch_key: mining
+    strategy_hints:
+      - "난이도 조정 후 가격 반응 패턴"
+      - "실시간 해시레이트 변화 → 채굴자 활동"
+    enrichment:
+      scope: asset
+      target_assets: [BTC]
+      columns: [avg_hashrate, difficulty]
+      rename_map: {}

@@ -99,11 +99,11 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 
 | File | Scope | Description |
 |------|-------|-------------|
-| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit) |
+| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit/catalog) |
 | [lint.md](.claude/rules/lint.md) | `src/**`, `tests/**` | Ruff/Pyright 규칙 + 빈출 위반 해결법 |
 | [strategy.md](.claude/rules/strategy.md) | `src/strategy/**` | BaseStrategy API, Registry, Gotchas |
 | [exchange.md](.claude/rules/exchange.md) | `src/exchange/**` | CCXT + BinanceFuturesClient + 예외 계층 |
-| [data.md](.claude/rules/data.md) | `src/data/**` | 메달리온 (OHLCV + Derivatives) |
+| [data.md](.claude/rules/data.md) | `src/data/**`, `src/catalog/**` | 메달리온 (OHLCV + Derivatives + Catalog) |
 | [models.md](.claude/rules/models.md) | `src/models/**` | Pydantic V2 규칙 |
 | [backtest.md](.claude/rules/backtest.md) | `src/backtest/**` | VBT + TieredValidator + Advisor |
 | [testing.md](.claude/rules/testing.md) | `tests/**` | pytest + EDA 이벤트 테스트 패턴 |
@@ -122,6 +122,7 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 ```
 CLI → EDA, Backtest, Pipeline → Strategy, Market, Regime → Data, Exchange, Portfolio
   → Notification, Monitoring → Models, Core → Config
+Catalog → (standalone, Data/EDA에서 선택적 참조)
 ```
 
 ### 핵심 금지 사항

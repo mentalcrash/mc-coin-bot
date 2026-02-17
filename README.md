@@ -245,6 +245,19 @@ uv run mcbot ingest info                                             # 데이터
 
 > 상세 (저장 구조, Rate Limit, Publication Lag, 데이터 품질 등): [`docs/data-collection.md`](docs/data-collection.md)
 
+### 데이터 카탈로그
+
+8개 소스, 28개 데이터셋의 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다. 전략 발굴 시 어떤 데이터가 있고, 어떤 컬럼이 나오고, publication lag은 며칠인지 빠르게 탐색할 수 있습니다.
+
+```bash
+uv run mcbot catalog list                      # 전체 28개 데이터셋 목록
+uv run mcbot catalog list --type onchain       # 유형 필터 (ohlcv, derivatives, onchain)
+uv run mcbot catalog list --group stablecoin   # 그룹 필터 (stablecoin, tvl, coinmetrics, ...)
+uv run mcbot catalog show btc_metrics          # 상세 (컬럼, enrichment 설정, 전략 힌트)
+```
+
+각 데이터셋에는 `strategy_hints`(전략 활용 아이디어)와 `enrichment`(OHLCV 병합 설정)가 포함되어 있어, 새 전략 발굴 시 데이터 탐색 → 아이디어 도출 흐름을 지원합니다.
+
 ---
 
 ## 배포 (Docker Compose + Coolify)

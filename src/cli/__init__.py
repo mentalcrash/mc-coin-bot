@@ -7,6 +7,7 @@ Available subcommands:
     - orchestrate: Strategy Orchestrator (multi-strategy)
     - pipeline: Strategy pipeline management (YAML)
     - audit: Architecture audit report system
+    - catalog: Data catalog (dataset metadata)
 
 Usage:
     uv run mcbot pipeline table
@@ -15,6 +16,7 @@ Usage:
     uv run mcbot orchestrate backtest config/orchestrator-example.yaml
     uv run mcbot ingest bronze BTC/USDT --year 2025
     uv run mcbot audit list
+    uv run mcbot catalog list
 """
 
 import typer
@@ -27,6 +29,7 @@ def create_app() -> typer.Typer:
     """
     from src.cli.audit import app as audit_app
     from src.cli.backtest import app as backtest_app
+    from src.cli.catalog import app as catalog_app
     from src.cli.eda import app as eda_app
     from src.cli.ingest import app as ingest_app
     from src.cli.orchestrate import app as orchestrate_app
@@ -46,6 +49,7 @@ def create_app() -> typer.Typer:
     )
     main_app.add_typer(pipeline_app, name="pipeline", help="Strategy pipeline management (YAML)")
     main_app.add_typer(audit_app, name="audit", help="Architecture audit report system")
+    main_app.add_typer(catalog_app, name="catalog", help="Data catalog (dataset metadata)")
 
     return main_app
 

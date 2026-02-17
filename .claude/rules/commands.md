@@ -161,6 +161,19 @@ uv run mcbot pipeline lessons-show 1                    # Lesson details
 uv run mcbot pipeline lessons-add --title "제목" --body "설명" -c strategy-design -t tag1
 ```
 
+## Data Catalog
+
+```bash
+# Dataset 목록
+uv run mcbot catalog list                      # 전체 목록 (28 datasets)
+uv run mcbot catalog list --type onchain       # 유형 필터 (ohlcv, derivatives, onchain)
+uv run mcbot catalog list --group stablecoin   # 그룹 필터 (stablecoin, tvl, dex, coinmetrics, ...)
+
+# Dataset 상세
+uv run mcbot catalog show btc_metrics          # 상세 (columns, enrichment, strategy_hints)
+uv run mcbot catalog show fear_greed
+```
+
 ## Audit
 
 ```bash

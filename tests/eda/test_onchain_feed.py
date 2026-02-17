@@ -232,6 +232,7 @@ class TestPrecompute:
 
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
+        service._catalog = None
 
         dates = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
 
@@ -283,6 +284,7 @@ class TestPrecompute:
 
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
+        service._catalog = None
 
         dates = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
         service._silver = _make_mock_silver(
@@ -313,6 +315,7 @@ class TestPrecompute:
 
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
+        service._catalog = None
 
         dates = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
         service._silver = _make_mock_silver(
@@ -335,6 +338,7 @@ class TestPrecompute:
 
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
+        service._catalog = None
 
         dates = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
         service._silver = _make_mock_silver(
@@ -358,6 +362,7 @@ class TestPrecompute:
 
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
+        service._catalog = None
         service._silver = _make_mock_silver({})  # all loads will raise
 
         ohlcv_index = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")

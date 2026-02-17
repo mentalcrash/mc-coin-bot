@@ -212,6 +212,7 @@ class LiveOnchainFeed:
 # ---------------------------------------------------------------------------
 
 # 모든 심볼이 받는 글로벌 데이터: (source, name, columns, rename_map)
+# deprecated: catalog로 마이그레이션 중 — fallback용으로 유지
 _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
     (
         "defillama",
@@ -225,6 +226,7 @@ _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
 ]
 
 # Asset별 추가 데이터
+# deprecated: catalog로 마이그레이션 중 — fallback용으로 유지
 _ASSET_SOURCES: dict[str, list[tuple[str, str, list[str], dict[str, str]]]] = {
     "BTC": [
         (
@@ -248,10 +250,30 @@ _ASSET_SOURCES: dict[str, list[tuple[str, str, list[str], dict[str, str]]]] = {
 }
 
 
+def _try_catalog_precompute(
+    symbols: list[str],
+) -> dict[str, list[tuple[str, str, list[str], dict[str, str]]]] | None:
+    """Catalog에서 precompute map 로드 시도, 실패 시 None."""
+    try:
+        from src.catalog.store import DataCatalogStore
+
+        store = DataCatalogStore()
+        return store.build_precompute_map(symbols)
+    except Exception:
+        return None
+
+
 def build_precompute_map(
     symbols: list[str],
 ) -> dict[str, list[tuple[str, str, list[str], dict[str, str]]]]:
-    """Symbol 리스트에서 symbol→sources 매핑 생성."""
+    """Symbol 리스트에서 symbol→sources 매핑 생성.
+
+    Catalog 우선, 실패 시 hardcoded constants fallback.
+    """
+    catalog_result = _try_catalog_precompute(symbols)
+    if catalog_result is not None:
+        return catalog_result
+
     result: dict[str, list[tuple[str, str, list[str], dict[str, str]]]] = {}
     for symbol in symbols:
         asset = symbol.split("/")[0].upper()
