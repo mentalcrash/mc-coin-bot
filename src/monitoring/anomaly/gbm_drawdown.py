@@ -9,7 +9,10 @@ Follows PageHinkley pattern:
     - to_dict() / restore_from_dict()
 
 References:
-    Magdon-Ismail, M. et al. (2004). On the maximum drawdown of a Brownian motion.
+    Magdon-Ismail, M., Atiya, A. F., Pratap, A., & Abu-Mostafa, Y. S. (2004).
+    "On the Maximum Drawdown of a Brownian Motion."
+    Journal of Applied Probability, 41(1), 147-161.
+    DOI: 10.1239/jap/1077134674
 """
 
 from __future__ import annotations
@@ -196,6 +199,8 @@ class GBMDrawdownMonitor:
 
         For practical use, uses simplified bound:
             E[MDD] ≈ z * sigma * sqrt(n) (log-correction 포함)
+
+        See: Magdon-Ismail et al. (2004), J. Appl. Probab. 41(1), 147-161.
 
         Args:
             n_days: 관측 일수

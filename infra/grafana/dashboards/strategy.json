@@ -1,0 +1,154 @@
+{
+  "uid": "mcbot-strategy",
+  "title": "MC-Coin-Bot — Strategy",
+  "description": "Per-strategy PnL, Sharpe, Win Rate, Drift (template variable)",
+  "tags": ["mcbot"],
+  "timezone": "utc",
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "strategy",
+        "type": "query",
+        "query": "label_values(mcbot_strategy_pnl_usdt, strategy)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Strategy PnL (USDT)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "mcbot_strategy_pnl_usdt{strategy=~\"$strategy\"}",
+          "legendFormat": "{{ strategy }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Rolling Sharpe (30d)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "mcbot_strategy_sharpe{strategy=~\"$strategy\"}",
+          "legendFormat": "{{ strategy }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Win Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "mcbot_strategy_win_rate{strategy=~\"$strategy\"}",
+          "legendFormat": "{{ strategy }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.4 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Trade Count",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "mcbot_strategy_trade_count{strategy=~\"$strategy\"}",
+          "legendFormat": "{{ strategy }}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Position Drift (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        {
+          "expr": "mcbot_position_drift_pct{strategy=~\"$strategy\"}",
+          "legendFormat": "{{ symbol }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Strategy Signals (rate/hr)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(mcbot_strategy_signals_total{strategy=~\"$strategy\"}[1h]) * 3600",
+          "legendFormat": "{{ strategy }}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Strategy Fills (rate/hr)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(mcbot_strategy_fills_total{strategy=~\"$strategy\"}[1h]) * 3600",
+          "legendFormat": "{{ strategy }}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

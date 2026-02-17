@@ -26,7 +26,7 @@ from src.core.events import (
 from src.notification.formatters import (
     format_balance_embed,
     format_circuit_breaker_embed,
-    format_fill_embed,
+    format_fill_with_position_embed,
     format_position_embed,
     format_risk_alert_embed,
 )
@@ -46,6 +46,7 @@ class NotificationEngine:
 
     def __init__(self, queue: NotificationQueue) -> None:
         self._queue = queue
+        self._pending_fills: dict[str, FillEvent] = {}
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록.
@@ -61,15 +62,9 @@ class NotificationEngine:
         logger.info("NotificationEngine registered to EventBus")
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent -> TRADE_LOG 채널."""
+        """FillEvent -> 버퍼링 후 PositionUpdateEvent와 통합 발송."""
         assert isinstance(event, FillEvent)
-        embed = format_fill_embed(event)
-        item = NotificationItem(
-            severity=Severity.INFO,
-            channel=ChannelRoute.TRADE_LOG,
-            embed=embed,
-        )
-        await self._queue.enqueue(item)
+        self._pending_fills[event.symbol] = event
 
     async def _on_circuit_breaker(self, event: AnyEvent) -> None:
         """CircuitBreakerEvent -> ALERTS 채널 (CRITICAL)."""
@@ -108,9 +103,13 @@ class NotificationEngine:
         await self._queue.enqueue(item)
 
     async def _on_position_update(self, event: AnyEvent) -> None:
-        """PositionUpdateEvent -> TRADE_LOG 채널."""
+        """PositionUpdateEvent -> Fill과 통합 또는 단독 발송."""
         assert isinstance(event, PositionUpdateEvent)
-        embed = format_position_embed(event)
+        pending_fill = self._pending_fills.pop(event.symbol, None)
+        if pending_fill is not None:
+            embed = format_fill_with_position_embed(pending_fill, event)
+        else:
+            embed = format_position_embed(event)
         item = NotificationItem(
             severity=Severity.INFO,
             channel=ChannelRoute.TRADE_LOG,

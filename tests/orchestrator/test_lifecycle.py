@@ -179,7 +179,7 @@ class TestGraduation:
     def test_insufficient_live_days_stays(self) -> None:
         """live_days 미달 → INCUBATION 유지."""
         pod = _graduation_ready_pod()
-        _set_pod_performance(pod, live_days=50)
+        _set_pod_performance(pod, live_days=20)
 
         mgr = _make_manager()
         result = mgr.evaluate(pod)
@@ -188,7 +188,7 @@ class TestGraduation:
     def test_low_sharpe_stays(self) -> None:
         """sharpe 미달 → INCUBATION 유지."""
         pod = _graduation_ready_pod()
-        _set_pod_performance(pod, sharpe_ratio=0.5)
+        _set_pod_performance(pod, sharpe_ratio=0.3)
 
         mgr = _make_manager()
         result = mgr.evaluate(pod)
@@ -197,7 +197,7 @@ class TestGraduation:
     def test_high_mdd_stays(self) -> None:
         """MDD 초과 → INCUBATION 유지."""
         pod = _graduation_ready_pod()
-        _set_pod_performance(pod, max_drawdown=0.20)
+        _set_pod_performance(pod, max_drawdown=0.22)
 
         mgr = _make_manager()
         result = mgr.evaluate(pod)

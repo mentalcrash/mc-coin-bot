@@ -1811,3 +1811,115 @@ class TestCashSufficiencyGuard:
         assert pm._has_sufficient_cash(10020.0, "BUY") is False
         # notional=10005 → projected = -5 > -10 → 허용
         assert pm._has_sufficient_cash(10005.0, "BUY") is True
+
+
+class TestReconcileWithExchange:
+    """reconcile_with_exchange() 테스트 — phantom position 제거."""
+
+    def _make_pm_with_positions(
+        self,
+        positions: dict[str, tuple[float, Direction, float]],
+    ) -> EDAPortfolioManager:
+        """포지션이 있는 PM 생성. {symbol: (size, direction, last_price)}."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        for symbol, (size, direction, price) in positions.items():
+            from src.eda.portfolio_manager import Position
+
+            pm._positions[symbol] = Position(
+                symbol=symbol,
+                direction=direction,
+                size=size,
+                avg_entry_price=price,
+                last_price=price,
+                peak_price_since_entry=price,
+                trough_price_since_entry=price,
+            )
+        return pm
+
+    def test_remove_phantom_position(self) -> None:
+        """거래소에 없는 PM 포지션(phantom) 제거."""
+        pm = self._make_pm_with_positions({"BTC/USDT": (0.01, Direction.LONG, 50000.0)})
+        # 거래소에 빈 포지션
+        exchange: dict[str, tuple[float, Direction]] = {}
+        removed = pm.reconcile_with_exchange(exchange)
+
+        assert removed == ["BTC/USDT"]
+        pos = pm.positions["BTC/USDT"]
+        assert pos.size == 0.0
+        assert pos.direction == Direction.NEUTRAL
+        assert pos.avg_entry_price == 0.0
+
+    def test_keep_matching_position(self) -> None:
+        """거래소에도 있는 포지션은 유지."""
+        pm = self._make_pm_with_positions({"BTC/USDT": (0.01, Direction.LONG, 50000.0)})
+        exchange = {"BTC/USDT": (0.01, Direction.LONG)}
+        removed = pm.reconcile_with_exchange(exchange)
+
+        assert removed == []
+        assert pm.positions["BTC/USDT"].size == 0.01
+
+    def test_exchange_only_not_added(self) -> None:
+        """거래소에만 있는 포지션은 PM에 추가하지 않음."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        exchange = {"ETH/USDT": (1.0, Direction.LONG)}
+        removed = pm.reconcile_with_exchange(exchange)
+
+        assert removed == []
+        assert "ETH/USDT" not in pm.positions
+
+    def test_auxiliary_state_cleanup(self) -> None:
+        """phantom 제거 시 부가 상태도 정리."""
+        pm = self._make_pm_with_positions({"BTC/USDT": (0.01, Direction.LONG, 50000.0)})
+        # 부가 상태 설정
+        pm._last_target_weights["BTC/USDT"] = 0.5
+        pm._last_executed_targets["BTC/USDT"] = 0.5
+        pm._pending_signals["BTC/USDT"] = 0.5
+        pm._pending_close.add("BTC/USDT")
+        pm._deferred_close_targets["BTC/USDT"] = 0.0
+
+        removed = pm.reconcile_with_exchange({})
+
+        assert removed == ["BTC/USDT"]
+        assert "BTC/USDT" not in pm._last_target_weights
+        assert "BTC/USDT" not in pm._last_executed_targets
+        assert "BTC/USDT" not in pm._pending_signals
+        assert "BTC/USDT" not in pm._pending_close
+        assert "BTC/USDT" not in pm._deferred_close_targets
+
+    def test_partial_removal(self) -> None:
+        """여러 포지션 중 phantom만 제거."""
+        pm = self._make_pm_with_positions(
+            {
+                "BTC/USDT": (0.01, Direction.LONG, 50000.0),
+                "ETH/USDT": (1.0, Direction.SHORT, 3000.0),
+            }
+        )
+        exchange = {"BTC/USDT": (0.01, Direction.LONG)}
+        removed = pm.reconcile_with_exchange(exchange)
+
+        assert removed == ["ETH/USDT"]
+        assert pm.positions["BTC/USDT"].size == 0.01
+        assert pm.positions["ETH/USDT"].size == 0.0
+
+    def test_remove_all_phantoms(self) -> None:
+        """모든 PM 포지션이 phantom일 때 전체 제거."""
+        pm = self._make_pm_with_positions(
+            {
+                "BTC/USDT": (0.01, Direction.LONG, 50000.0),
+                "ETH/USDT": (1.0, Direction.SHORT, 3000.0),
+            }
+        )
+        removed = pm.reconcile_with_exchange({})
+
+        assert set(removed) == {"BTC/USDT", "ETH/USDT"}
+        assert all(not p.is_open for p in pm.positions.values())
+
+    def test_both_empty(self) -> None:
+        """PM과 거래소 모두 빈 포지션이면 빈 리스트."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        removed = pm.reconcile_with_exchange({})
+
+        assert removed == []

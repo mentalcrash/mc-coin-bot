@@ -164,14 +164,13 @@ class TestCollectStrategyHealth:
 
     def test_alpha_decay_detection(self) -> None:
         scheduler = _make_scheduler()
-        # 3번 연속 하락하는 Sharpe 기록 주입
+        # streak=1 (첫 하강)
         scheduler._sharpe_history = [2.0, 1.8, 1.5]
+        scheduler._detect_alpha_decay()
 
-        # 다음 수집 시 하락 추가
+        # streak=2 (2회 연속 → 발동) — collect 호출 시 0.0 추가됨
+        # [2.0, 1.8, 1.5, 0.0] → last 3 = [1.8, 1.5, 0.0] → 하강
         snapshot = scheduler._collect_strategy_health()
-        # 0.0이 추가됨 → [2.0, 1.8, 1.5, 0.0] → 마지막 3개 [1.5, 0.0] 하락 불충분
-        # 실제로 4개째: [2.0, 1.8, 1.5, 0.0] → last 3 = [1.5, 0.0] 아닌 [1.8, 1.5, 0.0]
-        # 1.8 > 1.5 > 0.0 → True
         assert snapshot.alpha_decay_detected is True
 
     def test_no_alpha_decay_insufficient_history(self) -> None:
@@ -230,15 +229,38 @@ class TestComputeTradeStats:
 
 
 class TestDetectAlphaDecay:
-    def test_consecutive_decline(self) -> None:
+    def test_single_decline_not_triggered(self) -> None:
+        """단일 하강 호출 → streak=1 → False (확인 윈도우 미도달)."""
         scheduler = _make_scheduler()
         scheduler._sharpe_history = [2.0, 1.5, 1.0]
+        assert scheduler._detect_alpha_decay() is False
+        assert scheduler._alpha_decay_streak == 1
+
+    def test_two_consecutive_declines_triggered(self) -> None:
+        """2회 연속 하강 호출 → streak=2 → True."""
+        scheduler = _make_scheduler()
+        scheduler._sharpe_history = [2.0, 1.5, 1.0]
+        scheduler._detect_alpha_decay()  # streak=1
+        # 다음 호출에서도 하강 유지
+        scheduler._sharpe_history = [1.5, 1.0, 0.5]
         assert scheduler._detect_alpha_decay() is True
+        assert scheduler._alpha_decay_streak == 2
+
+    def test_recovery_resets_streak(self) -> None:
+        """반등 시 streak 리셋."""
+        scheduler = _make_scheduler()
+        scheduler._sharpe_history = [2.0, 1.5, 1.0]
+        scheduler._detect_alpha_decay()  # streak=1
+        # 반등
+        scheduler._sharpe_history = [1.5, 1.0, 1.5]
+        assert scheduler._detect_alpha_decay() is False
+        assert scheduler._alpha_decay_streak == 0
 
     def test_no_decline(self) -> None:
         scheduler = _make_scheduler()
         scheduler._sharpe_history = [1.0, 1.5, 2.0]
         assert scheduler._detect_alpha_decay() is False
+        assert scheduler._alpha_decay_streak == 0
 
     def test_partial_decline(self) -> None:
         scheduler = _make_scheduler()
@@ -249,6 +271,7 @@ class TestDetectAlphaDecay:
         scheduler = _make_scheduler()
         scheduler._sharpe_history = [1.0, 0.5]
         assert scheduler._detect_alpha_decay() is False
+        assert scheduler._alpha_decay_streak == 0
 
 
 # ─── Send Methods 테스트 ─────────────────────────────────
@@ -327,7 +350,10 @@ class TestSendStrategyHealth:
     async def test_alpha_decay_warning_severity(self) -> None:
         queue = _make_mock_queue()
         scheduler = _make_scheduler(queue=queue)
-        scheduler._sharpe_history = [3.0, 2.0, 1.0]  # 하락 추세
+        # streak=1 (첫 하강)
+        scheduler._sharpe_history = [3.0, 2.0, 1.0]
+        scheduler._detect_alpha_decay()  # streak=1
+        # 다음 send에서 0.0 추가 → [3.0, 2.0, 1.0, 0.0] → streak=2 → True
 
         await scheduler._send_strategy_health()
 

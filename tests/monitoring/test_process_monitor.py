@@ -11,6 +11,7 @@ from prometheus_client import REGISTRY
 from src.monitoring.process_monitor import (
     ProcessMetricsCollector,
     _check_process_alerts,
+    _count_open_fds,
     monitor_process_and_loop,
 )
 
@@ -38,11 +39,26 @@ class TestProcessMetricsCollector:
         assert collector.last_rss_bytes > 0
 
     def test_collect_open_fds(self) -> None:
-        """FD 카운트는 0 이상."""
+        """FD 카운트는 최소 3 이상 (stdin/stdout/stderr)."""
         collector = ProcessMetricsCollector()
         collector.collect()
-        # macOS에서는 /proc 미지원으로 0일 수 있음
-        assert collector.last_open_fds >= 0
+        assert collector.last_open_fds >= 3
+
+
+class TestCountOpenFds:
+    """_count_open_fds() 단독 테스트."""
+
+    def test_returns_at_least_stdio(self) -> None:
+        """stdin/stdout/stderr 최소 3개."""
+        assert _count_open_fds() >= 3
+
+    def test_first_collect_no_cpu_spike(self) -> None:
+        """첫 collect()에서 CPU%가 비정상 스파이크 없음."""
+        collector = ProcessMetricsCollector()
+        collector.collect()
+        cpu = _sample("mcbot_process_cpu_percent")
+        assert cpu is not None
+        assert cpu < 200  # 합리적 범위 (멀티코어 고려)
 
     def test_cpu_percent_after_two_collects(self) -> None:
         """두 번 collect() 시 CPU% 계산."""
@@ -130,9 +146,7 @@ class TestMonitorLoop:
     @pytest.mark.asyncio
     async def test_runs_and_cancels(self) -> None:
         """루프 실행 후 취소해도 crash 없음."""
-        task = asyncio.create_task(
-            monitor_process_and_loop(interval=0.05, bus=None)
-        )
+        task = asyncio.create_task(monitor_process_and_loop(interval=0.05, bus=None))
         await asyncio.sleep(0.15)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -141,9 +155,7 @@ class TestMonitorLoop:
     @pytest.mark.asyncio
     async def test_updates_lag_gauge(self) -> None:
         """루프 실행 시 lag gauge 갱신."""
-        task = asyncio.create_task(
-            monitor_process_and_loop(interval=0.05, bus=None)
-        )
+        task = asyncio.create_task(monitor_process_and_loop(interval=0.05, bus=None))
         await asyncio.sleep(0.15)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -156,9 +168,7 @@ class TestMonitorLoop:
     @pytest.mark.asyncio
     async def test_updates_active_tasks(self) -> None:
         """루프 실행 시 active_tasks gauge 갱신."""
-        task = asyncio.create_task(
-            monitor_process_and_loop(interval=0.05, bus=None)
-        )
+        task = asyncio.create_task(monitor_process_and_loop(interval=0.05, bus=None))
         await asyncio.sleep(0.15)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -171,9 +181,7 @@ class TestMonitorLoop:
     @pytest.mark.asyncio
     async def test_bus_none_no_crash(self) -> None:
         """bus=None → crash 없이 동작."""
-        task = asyncio.create_task(
-            monitor_process_and_loop(interval=0.05, bus=None)
-        )
+        task = asyncio.create_task(monitor_process_and_loop(interval=0.05, bus=None))
         await asyncio.sleep(0.1)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

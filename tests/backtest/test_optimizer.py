@@ -16,6 +16,12 @@ from src.backtest.optimizer import (
     generate_g3_sweeps,
 )
 
+_OPTUNA_AVAILABLE = True
+try:
+    import optuna  # noqa: F401
+except ImportError:
+    _OPTUNA_AVAILABLE = False
+
 # ─── Test Config fixtures ──────────────────────────────────────────
 
 
@@ -128,6 +134,7 @@ class TestExtractSearchSpace:
 # ─── TestOptimizeStrategy ──────────────────────────────────────────
 
 
+@pytest.mark.skipif(not _OPTUNA_AVAILABLE, reason="optuna not installed")
 class TestOptimizeStrategy:
     @pytest.fixture
     def mock_engine(self) -> MagicMock:

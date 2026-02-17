@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 _KEY_PM_STATE = "pm_state"
 _KEY_RM_STATE = "rm_state"
 _KEY_OMS_STATE = "oms_processed_orders"
+_KEY_EXCHANGE_STOPS = "exchange_stops_state"
 _KEY_LAST_SAVE = "last_save_timestamp"
 
 # OMS processed orders: 최대 보관 개수 (메모리 절약)
@@ -87,19 +88,34 @@ class StateManager:
             processed = processed[-_MAX_PROCESSED_ORDERS:]
         await self._save_key(_KEY_OMS_STATE, json.dumps(processed))
 
+    async def save_exchange_stops_state(self, state: dict[str, object]) -> None:
+        """ExchangeStopManager 상태를 bot_state에 저장.
+
+        Args:
+            state: ExchangeStopManager.get_state() 반환값
+        """
+        await self._save_key(_KEY_EXCHANGE_STOPS, json.dumps(state))
+
     async def save_all(
         self,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         oms: OMS | None = None,
+        exchange_stops_state: dict[str, object] | None = None,
     ) -> None:
-        """PM + RM + OMS 상태를 한 번에 저장."""
+        """PM + RM + OMS + ExchangeStops 상태를 한 번에 저장."""
         await self.save_pm_state(pm)
         await self.save_rm_state(rm)
         if oms is not None:
             await self.save_oms_state(oms)
+        if exchange_stops_state is not None:
+            await self.save_exchange_stops_state(exchange_stops_state)
         await self._save_key(_KEY_LAST_SAVE, datetime.now(UTC).isoformat())
-        logger.debug("State saved (PM + RM{})", " + OMS" if oms else "")
+        logger.debug(
+            "State saved (PM + RM{}{})",
+            " + OMS" if oms else "",
+            " + ExchangeStops" if exchange_stops_state else "",
+        )
 
     # =========================================================================
     # 로드
@@ -126,6 +142,13 @@ class StateManager:
             return None
         order_ids: list[str] = json.loads(raw)
         return set(order_ids)
+
+    async def load_exchange_stops_state(self) -> dict[str, object] | None:
+        """저장된 ExchangeStopManager 상태를 로드. 없으면 None."""
+        raw = await self._load_key(_KEY_EXCHANGE_STOPS)
+        if raw is None:
+            return None
+        return json.loads(raw)  # type: ignore[no-any-return]
 
     async def get_last_save_timestamp(self) -> datetime | None:
         """마지막 저장 시각. 없으면 None."""

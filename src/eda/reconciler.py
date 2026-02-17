@@ -178,6 +178,47 @@ class PositionReconciler:
 
         return exchange_equity
 
+    @staticmethod
+    async def parse_exchange_positions(
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+    ) -> dict[str, tuple[float, Direction]]:
+        """거래소 포지션을 파싱하여 {symbol: (size, Direction)} 맵 반환.
+
+        Hedge Mode LONG/SHORT를 파싱하여 net position을 계산합니다.
+        LONG과 SHORT 모두 있으면 LONG 우선 (Hedge Mode에서는 보통 한쪽만).
+
+        Args:
+            futures_client: BinanceFuturesClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            {symbol: (size, Direction)} — size=0이면 포지션 없음
+        """
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
+
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
+        exchange_positions = await futures_client.fetch_positions(futures_symbols)
+
+        result: dict[str, tuple[float, Direction]] = {}
+        for pos in exchange_positions:
+            sym = str(pos.get("symbol", ""))
+            spot_sym = sym.split(":")[0] if ":" in sym else sym
+            contracts = abs(float(pos.get("contracts", 0)))
+            side = str(pos.get("side", "")).lower()
+
+            if contracts <= 0:
+                continue
+
+            if side == "long":
+                result[spot_sym] = (contracts, Direction.LONG)
+            elif side == "short" and spot_sym not in result:
+                result[spot_sym] = (contracts, Direction.SHORT)
+
+        return result
+
     async def _compare(
         self,
         pm: EDAPortfolioManager,
@@ -192,9 +233,11 @@ class PositionReconciler:
         Returns:
             불일치가 발견된 심볼 리스트
         """
-        from src.exchange.binance_futures_client import BinanceFuturesClient
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
 
-        futures_symbols = [BinanceFuturesClient.to_futures_symbol(s) for s in symbols]
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
         exchange_positions = await futures_client.fetch_positions(futures_symbols)
 
         # Hedge Mode: 심볼당 LONG/SHORT 분리 매핑
@@ -223,7 +266,8 @@ class PositionReconciler:
             pm_size = pm_pos.size if pm_pos and pm_pos.is_open else 0.0
             pm_dir = pm_pos.direction if pm_pos and pm_pos.is_open else Direction.NEUTRAL
 
-            if self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info):
+            drift_reasons = self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info)
+            if drift_reasons:
                 drifts.append(symbol)
 
                 # DriftDetail 수집
@@ -253,6 +297,11 @@ class PositionReconciler:
                         auto_corrected=corrected,
                     )
                 )
+
+        # 요약 로그 (개별 로그 대신 한 줄로 통합)
+        if drifts:
+            parts = [f"{d.symbol}:{d.drift_pct:.1f}%" for d in self._last_drift_details]
+            logger.warning("PositionReconciler: {} drift(s) — {}", len(drifts), " | ".join(parts))
 
         return drifts
 
@@ -320,11 +369,11 @@ class PositionReconciler:
         pm_size: float,
         pm_dir: Direction,
         ex_info: dict[str, float],
-    ) -> bool:
+    ) -> list[str]:
         """단일 심볼의 포지션 불일치 검사.
 
         Returns:
-            True면 drift 감지됨
+            drift 사유 리스트 (비어 있으면 정상)
         """
 
         # PM 방향에 맞는 거래소 사이즈 선택
@@ -335,7 +384,7 @@ class PositionReconciler:
         else:
             ex_size = ex_info["long_size"] + ex_info["short_size"]
 
-        has_drift = False
+        reasons: list[str] = []
 
         # 수량 불일치 (상대 비교)
         if pm_size > 0 or ex_size > 0:
@@ -344,42 +393,25 @@ class PositionReconciler:
                 drift_ratio = abs(pm_size - ex_size) / max_size
                 if drift_ratio > _DRIFT_THRESHOLD:
                     dir_label = pm_dir.value if pm_dir != Direction.NEUTRAL else "neutral"
-                    logger.warning(
-                        "PositionReconciler: {} size drift — PM={:.6f} ({}), Exchange={:.6f} ({:.1f}%)",
-                        symbol,
-                        pm_size,
-                        dir_label,
-                        ex_size,
-                        drift_ratio * 100,
+                    reasons.append(
+                        f"{symbol} size drift — PM={pm_size:.6f} ({dir_label}), Exchange={ex_size:.6f} ({drift_ratio * 100:.1f}%)"
                     )
-                    has_drift = True
 
         # 한쪽만 포지션 보유
         if (pm_size > 0) != (ex_size > 0):
             who_has = "PM" if pm_size > 0 else "Exchange"
-            logger.warning(
-                "PositionReconciler: {} — only {} has position (PM={:.6f}, Exchange={:.6f})",
-                symbol,
-                who_has,
-                pm_size,
-                ex_size,
+            reasons.append(
+                f"{symbol} — only {who_has} has position (PM={pm_size:.6f}, Exchange={ex_size:.6f})"
             )
-            has_drift = True
 
         # 거래소에 반대방향 포지션 존재 감지
         if pm_dir == Direction.LONG and ex_info["short_size"] > 0:
-            logger.warning(
-                "PositionReconciler: {} — PM is LONG but exchange has SHORT ({:.6f})",
-                symbol,
-                ex_info["short_size"],
+            reasons.append(
+                f"{symbol} — PM is LONG but exchange has SHORT ({ex_info['short_size']:.6f})"
             )
-            has_drift = True
         elif pm_dir == Direction.SHORT and ex_info["long_size"] > 0:
-            logger.warning(
-                "PositionReconciler: {} — PM is SHORT but exchange has LONG ({:.6f})",
-                symbol,
-                ex_info["long_size"],
+            reasons.append(
+                f"{symbol} — PM is SHORT but exchange has LONG ({ex_info['long_size']:.6f})"
             )
-            has_drift = True
 
-        return has_drift
+        return reasons

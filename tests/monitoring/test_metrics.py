@@ -242,9 +242,9 @@ class TestPositionUpdateEvent:
         pnl = _sample("mcbot_unrealized_pnl_usdt", {"symbol": "ETH/USDT"})
         assert pnl == -150.0
 
-    async def test_realized_pnl_counter(self) -> None:
+    async def test_realized_profit_counter(self) -> None:
         exporter = MetricsExporter(port=0)
-        before = _sample("mcbot_realized_pnl_usdt_total", {"symbol": "BTC/USDT"}) or 0.0
+        before = _sample("mcbot_realized_profit_usdt_total", {"symbol": "BTC/USDT"}) or 0.0
 
         event = PositionUpdateEvent(
             symbol="BTC/USDT",
@@ -255,9 +255,26 @@ class TestPositionUpdateEvent:
         )
         await _run_with_bus(exporter, [event])
 
-        after = _sample("mcbot_realized_pnl_usdt_total", {"symbol": "BTC/USDT"})
+        after = _sample("mcbot_realized_profit_usdt_total", {"symbol": "BTC/USDT"})
         assert after is not None
         assert after >= before + 250.0
+
+    async def test_realized_loss_counter(self) -> None:
+        exporter = MetricsExporter(port=0)
+        before = _sample("mcbot_realized_loss_usdt_total", {"symbol": "BTC/USDT"}) or 0.0
+
+        event = PositionUpdateEvent(
+            symbol="BTC/USDT",
+            direction=Direction.NEUTRAL,
+            size=0.0,
+            avg_entry_price=0.0,
+            realized_pnl=-300.0,
+        )
+        await _run_with_bus(exporter, [event])
+
+        after = _sample("mcbot_realized_loss_usdt_total", {"symbol": "BTC/USDT"})
+        assert after is not None
+        assert after >= before + 300.0
 
 
 class TestRiskAlertEvent:
@@ -935,5 +952,14 @@ class TestPrometheusWsDetailCallback:
 
     def test_satisfies_ws_status_protocol(self) -> None:
         """WsStatusCallback Protocol 호환 확인."""
+        from src.monitoring.metrics import WsStatusCallback
+
         cb = PrometheusWsDetailCallback()
-        assert isinstance(cb, PrometheusWsCallback.__class__) or hasattr(cb, "on_ws_status")
+        assert isinstance(cb, WsStatusCallback)
+
+    def test_simple_callback_satisfies_protocol(self) -> None:
+        """PrometheusWsCallback도 WsStatusCallback Protocol 충족."""
+        from src.monitoring.metrics import WsStatusCallback
+
+        cb = PrometheusWsCallback()
+        assert isinstance(cb, WsStatusCallback)

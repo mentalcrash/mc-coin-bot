@@ -147,6 +147,7 @@ class LiveRunner:
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
         self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
+        self._onchain_feed: Any = None  # LiveOnchainFeed | None
         self._orchestrator: StrategyOrchestrator | None = None
         self._start_time = time.monotonic()
 
@@ -186,6 +187,7 @@ class LiveRunner:
         )
         runner._client = client
         runner._symbols = symbols
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -224,6 +226,7 @@ class LiveRunner:
         )
         runner._client = client
         runner._symbols = symbols
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -274,6 +277,7 @@ class LiveRunner:
         from src.eda.derivatives_feed import LiveDerivativesFeed
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
+        runner._init_onchain_feed(symbols)
         return runner
 
     @classmethod
@@ -437,47 +441,45 @@ class LiveRunner:
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
         return runner
 
-    async def run(self) -> None:
-        """메인 루프. shutdown_event까지 실행."""
+    async def _init_capital_and_db(self) -> tuple[float, Any]:
+        """Pre-flight checks + DB 초기화.
+
+        Returns:
+            (capital, db) 튜플
+        """
         from src.eda.persistence.database import Database
-        from src.eda.persistence.trade_persistence import TradePersistence
 
-        self._init_tracing()
-
-        # 0. LIVE 모드 Pre-flight checks → 거래소 잔고로 capital override
         capital = self._initial_capital
         if self._mode == LiveMode.LIVE and self._futures_client is not None:
             capital = await self._preflight_checks()
 
-        # 1. DB 초기화 (db_path가 있을 때만)
         db: Database | None = None
         if self._db_path:
             db = Database(self._db_path)
             await db.connect()
+
+        return capital, db
+
+    async def run(self) -> None:
+        """메인 루프. shutdown_event까지 실행."""
+        from src.eda.persistence.trade_persistence import TradePersistence
+
+        self._init_tracing()
+
+        # 0. LIVE 모드 Pre-flight checks + DB 초기화
+        capital, db = await self._init_capital_and_db()
 
         discord_tasks: _DiscordTasks | None = None
         try:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
 
-            # RegimeService (선택적)
-            regime_service = self._create_regime_service()
-
-            # DerivativesFeed 라이프사이클 (Live 모드)
-            derivatives_provider = await self._start_derivatives_feed()
-
-            # FeatureStore (선택적)
-            feature_store = self._create_feature_store()
-
-            strategy_engine: StrategyEngine | None = None
-            if self._orchestrator is None:
-                strategy_engine = StrategyEngine(
-                    self._strategy,
-                    target_timeframe=self._target_timeframe,
-                    regime_service=regime_service,
-                    derivatives_provider=derivatives_provider,
-                    feature_store=feature_store,
-                )
+            # 2a. 데이터 enrichment providers + StrategyEngine 생성
+            (
+                regime_service,
+                feature_store,
+                strategy_engine,
+            ) = await self._create_providers_and_engine()
             pm = EDAPortfolioManager(
                 config=self._config,
                 initial_capital=capital,
@@ -502,10 +504,13 @@ class LiveRunner:
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm, oms)
 
-            # 3.5. Orchestrator 상태 복구
-            orch_persistence = await self._restore_orchestrator_state(state_mgr)
+            # 3.5. Orchestrator 상태 복구 + daily return MTM 초기화
+            orch_persistence = await self._restore_orchestrator_state(state_mgr, capital)
 
-            # 3.6. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
+            # 3.6. 거래소 기준 PM reconciliation (sync_capital 전에 실행!)
+            await self._reconcile_positions(pm)
+
+            # 3.7. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
             if self._mode == LiveMode.LIVE:
                 pm.sync_capital(capital)
                 rm.sync_peak_equity(capital)
@@ -513,6 +518,9 @@ class LiveRunner:
                     "LIVE sync: PM/RM capital reset to exchange balance ${:.2f}",
                     capital,
                 )
+
+            # 3.8. ExchangeStopManager 생성 + 상태 복구 (Live 모드, reconcile 이후)
+            exchange_stop_mgr = await self._create_exchange_stop_manager(pm, state_mgr)
 
             # 4. 모든 컴포넌트 등록 + warmup
             await self._register_and_warmup(
@@ -524,6 +532,7 @@ class LiveRunner:
                 rm,
                 oms,
                 analytics,
+                exchange_stop_mgr=exchange_stop_mgr,
             )
 
             # 5. TradePersistence 등록 (analytics 이후)
@@ -538,7 +547,17 @@ class LiveRunner:
             metrics_exporter = await self._setup_metrics(bus)
 
             # 6. Discord Bot + NotificationEngine (선택적)
-            discord_tasks = await self._setup_discord(bus, pm, rm, analytics)
+            discord_tasks = await self._setup_discord(
+                bus, pm, rm, analytics, exchange_stop_mgr=exchange_stop_mgr
+            )
+
+            # 6.5. ExchangeStopManager에 notification_queue 사후 주입
+            if exchange_stop_mgr is not None and discord_tasks is not None:
+                exchange_stop_mgr._notification_queue = discord_tasks.notification_queue
+
+            # 6.6. LiveOnchainFeed에 notification_queue 사후 주입
+            if self._onchain_feed is not None and discord_tasks is not None:
+                self._onchain_feed._notification_queue = discord_tasks.notification_queue
 
             # 7. Signal handler
             self._setup_signal_handlers()
@@ -558,6 +577,7 @@ class LiveRunner:
                         oms,
                         orch_persistence=orch_persistence,
                         orchestrator=self._orchestrator,
+                        exchange_stop_mgr=exchange_stop_mgr,
                     )
                 )
 
@@ -571,6 +591,7 @@ class LiveRunner:
                         self._futures_client,
                         getattr(self, "_orchestrator_metrics", None),
                         ws_detail_callback=getattr(self, "_ws_detail_callback", None),
+                        onchain_feed=self._onchain_feed,
                     )
                 )
 
@@ -614,6 +635,7 @@ class LiveRunner:
                 discord_tasks=discord_tasks,
                 state_mgr=state_mgr,
                 orch_persistence=orch_persistence,
+                exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
             await self._send_lifecycle_crash(discord_tasks, exc)
@@ -639,27 +661,45 @@ class LiveRunner:
         discord_tasks: _DiscordTasks | None,
         state_mgr: Any,
         orch_persistence: Any,
+        exchange_stop_mgr: Any = None,
     ) -> None:
         """Graceful shutdown 시퀀스 — run()에서 분리."""
         logger.warning("Initiating graceful shutdown...")
 
         # 주기적 task 취소
-        await self._cancel_periodic_tasks(save_task, uptime_task, process_monitor_task, reconciler_task)
+        await self._cancel_periodic_tasks(
+            save_task, uptime_task, process_monitor_task, reconciler_task
+        )
 
         await self._feed.stop()
         feed_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await feed_task
 
-        # DerivativesFeed 종료
+        # DerivativesFeed / OnchainFeed 종료
         await self._stop_derivatives_feed()
+        await self._stop_onchain_feed()
 
         if self._orchestrator is not None:
             await self._orchestrator.flush_pending_signals()
+            self._orchestrator.flush_daily_returns()
         await pm.flush_pending_signals()
         await bus.flush()
         await bus.stop()
         await bus_task
+
+        # Exchange Safety Stops: shutdown 처리
+        if exchange_stop_mgr is not None:
+            if self._config.cancel_stops_on_shutdown:
+                await exchange_stop_mgr.cancel_all_stops()
+                logger.info("Exchange safety stops cancelled on shutdown")
+            else:
+                active = exchange_stop_mgr.active_stops
+                if active:
+                    logger.info(
+                        "Exchange safety stops RETAINED on shutdown ({} symbols) — continues until restart",
+                        len(active),
+                    )
 
         # Lifecycle: shutdown 알림
         await self._send_lifecycle_shutdown(discord_tasks, pm, analytics)
@@ -669,7 +709,10 @@ class LiveRunner:
 
         # 최종 상태 저장
         if state_mgr:
-            await state_mgr.save_all(pm, rm, oms=oms)
+            exchange_stops_state = (
+                exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
+            )
+            await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
             if orch_persistence is not None and self._orchestrator is not None:
                 await orch_persistence.save(self._orchestrator)
             logger.info("Final state saved")
@@ -701,13 +744,24 @@ class LiveRunner:
         if otel_endpoint:
             setup_tracing(endpoint=otel_endpoint)
 
-    async def _restore_orchestrator_state(self, state_mgr: Any) -> Any:
-        """Orchestrator 상태를 복구합니다.
+    async def _restore_orchestrator_state(self, state_mgr: Any, capital: float = 0.0) -> Any:
+        """Orchestrator 상태를 복구하고 daily return MTM을 초기화합니다.
+
+        Args:
+            state_mgr: StateManager 또는 None
+            capital: 초기 자본 (daily return MTM 초기화용)
 
         Returns:
             OrchestratorStatePersistence 또는 None
         """
-        if state_mgr is None or self._orchestrator is None:
+        if self._orchestrator is None:
+            return None
+
+        # Daily return MTM 초기화 (set_base_equity는 복원된 값을 보호)
+        if capital > 0:
+            self._orchestrator.set_initial_capital(capital)
+
+        if state_mgr is None:
             return None
 
         from src.orchestrator.state_persistence import OrchestratorStatePersistence
@@ -717,6 +771,43 @@ class LiveRunner:
         if restored:
             logger.info("Orchestrator state restored")
         return orch_persistence
+
+    async def _create_exchange_stop_manager(
+        self,
+        pm: EDAPortfolioManager,
+        state_mgr: Any,
+    ) -> Any:
+        """ExchangeStopManager 생성 + 상태 복구 (Live 모드 전용).
+
+        Returns:
+            ExchangeStopManager 또는 None
+        """
+        if (
+            self._mode != LiveMode.LIVE
+            or self._futures_client is None
+            or not self._config.use_exchange_safety_stop
+        ):
+            return None
+
+        from src.eda.exchange_stop_manager import ExchangeStopManager
+
+        mgr = ExchangeStopManager(self._config, self._futures_client, pm)
+
+        # 상태 복구
+        if state_mgr is not None:
+            stops_state = await state_mgr.load_exchange_stops_state()
+            if stops_state:
+                mgr.restore_state(stops_state)
+
+        # 거래소 실제 주문 존재 여부 검증 (notification_queue는 사후 주입)
+        await mgr.verify_exchange_stops()
+
+        # 포지션 있는데 stop 없는 심볼에 안전망 stop 재배치
+        placed = await mgr.place_missing_stops()
+        if placed:
+            logger.info("Safety stops re-placed for {} symbols", placed)
+
+        return mgr
 
     @staticmethod
     async def _restore_state(
@@ -757,6 +848,7 @@ class LiveRunner:
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         analytics: AnalyticsEngine,
+        exchange_stop_mgr: Any = None,
     ) -> _DiscordTasks | None:
         """Discord Bot + NotificationEngine 초기화 (선택적).
 
@@ -781,6 +873,8 @@ class LiveRunner:
             analytics=analytics,
             runner_shutdown=self.request_shutdown,
             orchestrator=self._orchestrator,
+            exchange_stop_mgr=exchange_stop_mgr,
+            onchain_feed=self._onchain_feed,
         )
         bot_service.set_trading_context(trading_ctx)
 
@@ -812,6 +906,8 @@ class LiveRunner:
             bus=bus,
             futures_client=self._futures_client,
             symbols=self._symbols,
+            exchange_stop_mgr=exchange_stop_mgr,
+            onchain_feed=self._onchain_feed,
         )
         await health_scheduler.start()
 
@@ -859,6 +955,31 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await tasks.bot_task
         logger.info("Discord Bot stopped")
+
+    async def _create_providers_and_engine(
+        self,
+    ) -> tuple[RegimeService | None, FeatureStore | None, StrategyEngine | None]:
+        """데이터 enrichment providers + StrategyEngine 생성.
+
+        Returns:
+            (regime_service, feature_store, strategy_engine) 튜플
+        """
+        regime_service = self._create_regime_service()
+        derivatives_provider = await self._start_derivatives_feed()
+        onchain_provider = await self._start_onchain_feed()
+        feature_store = self._create_feature_store()
+
+        strategy_engine: StrategyEngine | None = None
+        if self._orchestrator is None:
+            strategy_engine = StrategyEngine(
+                self._strategy,
+                target_timeframe=self._target_timeframe,
+                regime_service=regime_service,
+                derivatives_provider=derivatives_provider,
+                feature_store=feature_store,
+                onchain_provider=onchain_provider,
+            )
+        return regime_service, feature_store, strategy_engine
 
     def _create_regime_service(self) -> RegimeService | None:
         """RegimeService 생성 (regime_config가 None이면 None)."""
@@ -1046,6 +1167,7 @@ class LiveRunner:
         rm: EDARiskManager,
         oms: OMS,
         analytics: AnalyticsEngine,
+        exchange_stop_mgr: Any = None,
     ) -> None:
         """모든 컴포넌트 등록 + REST API warmup."""
         # RegimeService → FeatureStore → StrategyEngine/Orchestrator 순서
@@ -1064,6 +1186,10 @@ class LiveRunner:
         await oms.register(bus)
         await analytics.register(bus)
 
+        # ExchangeStopManager: PM/OMS 이후 등록 (fill 처리 후 stop 관리)
+        if exchange_stop_mgr is not None:
+            await exchange_stop_mgr.register(bus)
+
         # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
         if self._orchestrator is not None:
             await self._warmup_orchestrator(self._orchestrator)
@@ -1071,6 +1197,37 @@ class LiveRunner:
             await self._warmup_strategy(
                 strategy_engine, regime_service=regime_service, feature_store=feature_store
             )
+
+    async def _reconcile_positions(self, pm: EDAPortfolioManager) -> list[str]:
+        """거래소 포지션 기준으로 PM phantom position 제거.
+
+        LIVE 모드 + futures_client 존재 시에만 동작합니다.
+        API 실패 시 빈 리스트 반환 (safety-first, 기존 동작 유지).
+
+        Returns:
+            제거된 심볼 리스트
+        """
+        if self._mode != LiveMode.LIVE or self._futures_client is None:
+            return []
+
+        from src.eda.reconciler import PositionReconciler
+
+        try:
+            exchange_positions = await PositionReconciler.parse_exchange_positions(
+                self._futures_client, self._symbols
+            )
+            removed = pm.reconcile_with_exchange(exchange_positions)
+        except Exception:
+            logger.exception("Startup reconciliation failed — continuing with existing state")
+            return []
+        else:
+            if removed:
+                logger.warning(
+                    "Startup reconciliation: removed {} phantom positions: {}",
+                    len(removed),
+                    removed,
+                )
+            return removed
 
     async def _setup_reconciler(
         self,
@@ -1085,10 +1242,31 @@ class LiveRunner:
         from src.eda.reconciler import PositionReconciler
 
         reconciler = PositionReconciler()
-        await reconciler.initial_check(pm, self._futures_client, self._symbols)
+        drifts = await reconciler.initial_check(pm, self._futures_client, self._symbols)
+
+        # Startup drift → Discord 알림
+        if drifts and notification_queue is not None:
+            from src.notification.reconciler_formatters import format_position_drift_embed
+
+            details = reconciler.last_drift_details
+            if details:
+                embed = format_position_drift_embed(details)
+                await notification_queue.enqueue(
+                    NotificationItem(
+                        severity=Severity.WARNING,
+                        channel=ChannelRoute.ALERTS,
+                        embed=embed,
+                        spam_key="startup_drift",
+                    )
+                )
+
         return asyncio.create_task(
             self._periodic_reconciliation(
-                reconciler, pm, rm, self._futures_client, self._symbols,
+                reconciler,
+                pm,
+                rm,
+                self._futures_client,
+                self._symbols,
                 notification_queue=notification_queue,
             )
         )
@@ -1108,6 +1286,33 @@ class LiveRunner:
             return None
         await self._derivatives_feed.start()
         return self._derivatives_feed
+
+    def _init_onchain_feed(self, symbols: list[str]) -> None:
+        """LiveOnchainFeed 인스턴스 생성 (Silver 데이터 존재 시)."""
+        from src.eda.onchain_feed import LiveOnchainFeed
+
+        self._onchain_feed = LiveOnchainFeed(symbols)
+
+    async def _start_onchain_feed(self) -> Any:
+        """OnchainFeed 시작 (설정된 경우).
+
+        Returns:
+            OnchainProvider 또는 None
+        """
+        if self._onchain_feed is None:
+            return None
+        await self._onchain_feed.start()
+        # 캐시가 비어있으면 None 반환 (Silver 데이터 없음)
+        if not self._onchain_feed._cache:
+            await self._onchain_feed.stop()
+            self._onchain_feed = None
+            return None
+        return self._onchain_feed
+
+    async def _stop_onchain_feed(self) -> None:
+        """OnchainFeed 종료 (설정된 경우)."""
+        if self._onchain_feed is not None:
+            await self._onchain_feed.stop()
 
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.
@@ -1150,14 +1355,28 @@ class LiveRunner:
                     diff_ratio,
                 )
 
-        # 3. 미체결 주문 감지
+        # 3. 미체결 주문 감지 (safety-stop 주문 제외)
+        from src.eda.exchange_stop_manager import SAFETY_STOP_PREFIX
+
         for symbol in self._symbols:
             futures_symbol = self._futures_client.to_futures_symbol(symbol)
             try:
                 open_orders = await self._futures_client.fetch_open_orders(futures_symbol)
-                if open_orders:
+                # safety-stop prefix 주문은 제외 (이전 세션의 안전망)
+                non_safety = [
+                    o
+                    for o in open_orders
+                    if not str(o.get("clientOrderId", "")).startswith(SAFETY_STOP_PREFIX)
+                ]
+                if non_safety:
                     logger.critical(
                         "Pre-flight: {} stale open orders for {} — cancel manually before trading!",
+                        len(non_safety),
+                        symbol,
+                    )
+                elif open_orders:
+                    logger.info(
+                        "Pre-flight: {} safety-stop orders found for {} (retained from previous session)",
                         len(open_orders),
                         symbol,
                     )
@@ -1206,13 +1425,17 @@ class LiveRunner:
         oms: OMS | None = None,
         orch_persistence: Any = None,
         orchestrator: Any = None,
+        exchange_stop_mgr: Any = None,
         interval: float = _DEFAULT_SAVE_INTERVAL,
     ) -> None:
-        """주기적으로 PM/RM/OMS/Orchestrator 상태를 저장."""
+        """주기적으로 PM/RM/OMS/ExchangeStops/Orchestrator 상태를 저장."""
         while True:
             await asyncio.sleep(interval)
             try:
-                await state_mgr.save_all(pm, rm, oms=oms)
+                exchange_stops_state = (
+                    exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
+                )
+                await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
                 if orch_persistence is not None and orchestrator is not None:
                     await orch_persistence.save(orchestrator)
             except Exception:
@@ -1280,9 +1503,10 @@ class LiveRunner:
         futures_client: BinanceFuturesClient | None,
         orchestrator_metrics: OrchestratorMetrics | None = None,
         ws_detail_callback: Any = None,
+        onchain_feed: Any = None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator 메트릭 갱신."""
+        """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator + onchain 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
@@ -1294,6 +1518,8 @@ class LiveRunner:
                 orchestrator_metrics.update()
             if ws_detail_callback is not None:
                 ws_detail_callback.update_message_ages()
+            if onchain_feed is not None:
+                onchain_feed.update_cache_metrics()
 
     @staticmethod
     async def _periodic_reconciliation(
@@ -1335,10 +1561,19 @@ class LiveRunner:
             # 잔고 검증 + RM equity sync
             exchange_equity = await reconciler.check_balance(pm, futures_client)
             if exchange_equity is not None:
-                await rm.sync_exchange_equity(exchange_equity)
+                balance_drift = reconciler.last_balance_drift_pct
+
+                # Balance drift가 작을 때만 RM peak sync
+                # 입금/출금 시 peak 오염 → 거짓 CircuitBreaker 방지
+                if balance_drift < _balance_notify_threshold:
+                    await rm.sync_exchange_equity(exchange_equity)
+                else:
+                    logger.info(
+                        "RM peak sync skipped: balance drift {:.1f}% (deposit/withdrawal suspected)",
+                        balance_drift,
+                    )
 
                 # Balance drift 알림
-                balance_drift = reconciler.last_balance_drift_pct
                 if balance_drift >= _balance_notify_threshold and notification_queue is not None:
                     embed = format_balance_drift_embed(
                         pm_equity=pm.total_equity,

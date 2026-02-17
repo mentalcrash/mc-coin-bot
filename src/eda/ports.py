@@ -93,6 +93,38 @@ class DerivativesProviderPort(Protocol):
 
 
 @runtime_checkable
+class OnchainProviderPort(Protocol):
+    """On-chain 데이터 제공 인터페이스.
+
+    Backtest: OnchainDataService 기반 precomputed 데이터
+    Live: LiveOnchainFeed 기반 Silver 캐시 데이터
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """DataFrame에 on-chain 컬럼 추가 (precomputed merge_asof).
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            on-chain 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_onchain_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 on-chain 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
+        """
+        ...
+
+
+@runtime_checkable
 class FeatureStorePort(Protocol):
     """공통 지표 캐시 서비스 인터페이스.
 

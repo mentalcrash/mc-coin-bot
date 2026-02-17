@@ -92,12 +92,14 @@ class NotificationQueue:
         queue_size: int = _DEFAULT_QUEUE_SIZE,
         cooldown_seconds: float = _DEFAULT_COOLDOWN,
         base_backoff: float = _BASE_BACKOFF,
+        poll_interval: float = 1.0,
     ) -> None:
         self._sender = sender
         self._max_retries = max_retries
         self._queue: asyncio.Queue[NotificationItem] = asyncio.Queue(maxsize=queue_size)
         self._spam_guard = SpamGuard(cooldown_seconds=cooldown_seconds)
         self._base_backoff = base_backoff
+        self._poll_interval = poll_interval
         self._running = False
         # Graceful degradation tracking
         self._consecutive_failures: int = 0
@@ -125,7 +127,7 @@ class NotificationQueue:
         logger.info("NotificationQueue worker started")
         while self._running:
             try:
-                item = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                item = await asyncio.wait_for(self._queue.get(), timeout=self._poll_interval)
             except TimeoutError:
                 continue
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 from prometheus_client import Counter, Enum, Gauge, Histogram, Info
@@ -59,8 +59,11 @@ position_notional_gauge = Gauge(
     "mcbot_position_notional_usdt", "Position notional value", ["symbol"]
 )
 unrealized_pnl_gauge = Gauge("mcbot_unrealized_pnl_usdt", "Unrealized PnL", ["symbol"])
-realized_pnl_counter = Counter(
-    "mcbot_realized_pnl_usdt_total", "Cumulative realized PnL", ["symbol"]
+realized_profit_counter = Counter(
+    "mcbot_realized_profit_usdt_total", "Cumulative realized profit", ["symbol"]
+)
+realized_loss_counter = Counter(
+    "mcbot_realized_loss_usdt_total", "Cumulative realized loss", ["symbol"]
 )
 aggregate_leverage_gauge = Gauge("mcbot_aggregate_leverage", "Portfolio aggregate leverage ratio")
 margin_used_gauge = Gauge("mcbot_margin_used_usdt", "Margin currently in use")
@@ -155,6 +158,41 @@ eventbus_handler_errors_counter = Counter(
 )
 
 # ==========================================================================
+# Layer 9: On-chain Data
+# ==========================================================================
+onchain_fetch_total = Counter(
+    "mcbot_onchain_fetch_total",
+    "On-chain fetch attempts",
+    ["source", "status"],  # status: success | failure | empty
+)
+onchain_fetch_latency_histogram = Histogram(
+    "mcbot_onchain_fetch_latency_seconds",
+    "Fetch latency per source",
+    ["source"],
+    buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
+)
+onchain_fetch_rows_gauge = Gauge(
+    "mcbot_onchain_fetch_rows",
+    "Rows returned by last fetch",
+    ["source", "name"],
+)
+onchain_last_success_gauge = Gauge(
+    "mcbot_onchain_last_success_timestamp",
+    "Last successful fetch Unix timestamp",
+    ["source"],
+)
+onchain_cache_size_gauge = Gauge(
+    "mcbot_onchain_cache_size",
+    "Cached on-chain columns per symbol",
+    ["symbol"],
+)
+onchain_cache_refresh_total = Counter(
+    "mcbot_onchain_cache_refresh_total",
+    "Cache refresh count",
+    ["status"],  # success | failure
+)
+
+# ==========================================================================
 # Meta
 # ==========================================================================
 bot_info = Info("mcbot", "Bot metadata")
@@ -211,6 +249,45 @@ class PrometheusApiCallback:
 
 
 # ==========================================================================
+# OnchainMetricsCallback — On-chain 데이터 수집 계측
+# ==========================================================================
+@runtime_checkable
+class OnchainMetricsCallback(Protocol):
+    """On-chain 데이터 수집 메트릭 콜백 Protocol.
+
+    route_fetch()에 주입하여 관심사 분리.
+    """
+
+    def on_fetch(
+        self, source: str, name: str, duration: float, status: str, row_count: int
+    ) -> None:
+        """Fetch 결과 기록.
+
+        Args:
+            source: 데이터 소스 (defillama, coinmetrics, ...)
+            name: 데이터 이름 (stablecoin_total, ...)
+            duration: 소요 시간 (초)
+            status: "success" | "failure" | "empty"
+            row_count: 반환된 행 수
+        """
+        ...
+
+
+class PrometheusOnchainCallback:
+    """Prometheus 기반 On-chain 메트릭 콜백 구현."""
+
+    def on_fetch(
+        self, source: str, name: str, duration: float, status: str, row_count: int
+    ) -> None:
+        """Fetch 결과를 Prometheus 메트릭으로 기록."""
+        onchain_fetch_total.labels(source=source, status=status).inc()
+        onchain_fetch_latency_histogram.labels(source=source).observe(duration)
+        if status == "success" and row_count > 0:
+            onchain_fetch_rows_gauge.labels(source=source, name=name).set(row_count)
+            onchain_last_success_gauge.labels(source=source).set(time.time())
+
+
+# ==========================================================================
 # WsStatusCallback — WebSocket 상태 콜백
 # ==========================================================================
 @runtime_checkable
@@ -226,13 +303,35 @@ class WsStatusCallback(Protocol):
         """
         ...
 
+    def on_ws_reconnect(self, symbol: str) -> None:
+        """WS 재연결 발생.
+
+        Args:
+            symbol: 거래 심볼
+        """
+        ...
+
+    def on_ws_message(self, symbol: str) -> None:
+        """WS 메시지 수신.
+
+        Args:
+            symbol: 거래 심볼
+        """
+        ...
+
 
 class PrometheusWsCallback:
-    """Prometheus 기반 WS 상태 콜백 구현."""
+    """Prometheus 기반 WS 상태 콜백 구현 (기본)."""
 
     def on_ws_status(self, symbol: str, *, connected: bool) -> None:
         """WS 연결 상태를 Prometheus gauge로 기록."""
         exchange_ws_connected_gauge.labels(symbol=symbol).set(1 if connected else 0)
+
+    def on_ws_reconnect(self, symbol: str) -> None:
+        """WS 재연결 (no-op — 상세 추적은 PrometheusWsDetailCallback 사용)."""
+
+    def on_ws_message(self, symbol: str) -> None:
+        """WS 메시지 수신 (no-op — 상세 추적은 PrometheusWsDetailCallback 사용)."""
 
 
 class PrometheusWsDetailCallback:
@@ -520,7 +619,9 @@ class MetricsExporter:
 
             # Execution anomaly detection
             bps_for_anomaly = (
-                _calculate_slippage_bps(expected, event.fill_price) if expected and expected > 0 else 0.0
+                _calculate_slippage_bps(expected, event.fill_price)
+                if expected and expected > 0
+                else 0.0
             )
             anomalies = self._anomaly_detector.on_fill(latency, bps_for_anomaly)
             for anomaly in anomalies:
@@ -560,9 +661,11 @@ class MetricsExporter:
         position_notional_gauge.labels(symbol=event.symbol).set(notional)
         unrealized_pnl_gauge.labels(symbol=event.symbol).set(event.unrealized_pnl)
 
-        # 실현 손익 (체결 시 PM이 발행하는 realized_pnl > 0이면 누적)
-        if event.realized_pnl != 0:
-            realized_pnl_counter.labels(symbol=event.symbol).inc(abs(event.realized_pnl))
+        # 실현 손익: profit/loss 분리 (Counter는 단조 증가만 가능)
+        if event.realized_pnl > 0:
+            realized_profit_counter.labels(symbol=event.symbol).inc(event.realized_pnl)
+        elif event.realized_pnl < 0:
+            realized_loss_counter.labels(symbol=event.symbol).inc(abs(event.realized_pnl))
 
     async def _on_order_request(self, event: AnyEvent) -> None:
         """OrderRequestEvent → pending 등록 + 기준가 저장."""
@@ -656,7 +759,9 @@ class MetricsExporter:
                 "WARNING", f"Elevated fill latency {latency:.1f}s on {symbol}"
             )
 
-    async def _publish_execution_alert(self, level: str, message: str) -> None:
+    async def _publish_execution_alert(
+        self, level: Literal["WARNING", "CRITICAL"], message: str
+    ) -> None:
         """RiskAlertEvent를 EventBus에 발행.
 
         Args:
@@ -666,7 +771,7 @@ class MetricsExporter:
         if self._bus is None:
             return
         alert = RiskAlertEvent(
-            alert_level=level,  # type: ignore[arg-type]
+            alert_level=level,
             message=message,
             source="MetricsExporter:execution_quality",
         )

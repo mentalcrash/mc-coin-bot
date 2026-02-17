@@ -8,6 +8,7 @@ from src.notification.formatters import (
     format_balance_embed,
     format_circuit_breaker_embed,
     format_fill_embed,
+    format_fill_with_position_embed,
     format_position_embed,
     format_risk_alert_embed,
 )
@@ -96,6 +97,46 @@ class TestFormatBalanceEmbed:
         assert "$10,500" in embed["fields"][0]["value"]
         assert "$8,000" in embed["fields"][1]["value"]
         assert "$2,500" in embed["fields"][2]["value"]
+
+
+class TestFormatFillWithPositionEmbed:
+    def test_combined_embed(
+        self, sample_fill: FillEvent, sample_position_update: PositionUpdateEvent
+    ) -> None:
+        embed = format_fill_with_position_embed(sample_fill, sample_position_update)
+        assert "BUY" in embed["title"]
+        assert "BTC/USDT" in embed["title"]
+        assert embed["color"] == _COLOR_GREEN
+        assert len(embed["fields"]) == 7
+        field_names = [f["name"] for f in embed["fields"]]
+        assert field_names == [
+            "Price",
+            "Qty",
+            "Fee",
+            "Value",
+            "Position",
+            "Avg Entry",
+            "Realized PnL",
+        ]
+
+    def test_combined_sell(
+        self, sample_fill_sell: FillEvent, sample_position_update: PositionUpdateEvent
+    ) -> None:
+        embed = format_fill_with_position_embed(sample_fill_sell, sample_position_update)
+        assert "SELL" in embed["title"]
+        assert embed["color"] == _COLOR_RED
+
+    def test_position_field_value(
+        self, sample_fill: FillEvent, sample_position_update: PositionUpdateEvent
+    ) -> None:
+        embed = format_fill_with_position_embed(sample_fill, sample_position_update)
+        pos_field = embed["fields"][4]
+        assert pos_field["name"] == "Position"
+        assert "LONG" in pos_field["value"]
+        avg_field = embed["fields"][5]
+        assert "$50,000" in avg_field["value"]
+        pnl_field = embed["fields"][6]
+        assert "$+100.00" in pnl_field["value"]
 
 
 class TestFormatPositionEmbed:

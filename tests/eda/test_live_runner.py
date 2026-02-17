@@ -916,3 +916,87 @@ class TestLiveRunIntegration:
         assert runner._executor._pm is not None
         # Reconciler가 fetch_positions를 호출했어야 함
         futures_client.fetch_positions.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Startup Reconciliation Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStartupReconciliation:
+    """_reconcile_positions() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_non_live_mode_skips(self) -> None:
+        """PAPER 모드에서는 reconciliation을 스킵."""
+        strategy = AlwaysLongStrategy.from_params()
+        client = _make_mock_client()
+        runner = LiveRunner.paper(
+            strategy=strategy,
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+        )
+        pm = MagicMock()
+        result = await runner._reconcile_positions(pm)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_live_mode_removes_phantom(self) -> None:
+        """LIVE 모드에서 phantom position을 제거."""
+        strategy = AlwaysLongStrategy.from_params()
+        client = _make_mock_client()
+        futures_client = MagicMock()
+        futures_client.fetch_positions = AsyncMock(return_value=[])
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=strategy,
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+
+        # PM에 phantom position 설정
+        from src.eda.portfolio_manager import EDAPortfolioManager, Position
+        from src.models.types import Direction
+
+        pm = EDAPortfolioManager(config=_make_config(), initial_capital=10000.0)
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.01,
+            avg_entry_price=50000.0,
+            last_price=50000.0,
+        )
+
+        result = await runner._reconcile_positions(pm)
+
+        assert result == ["BTC/USDT"]
+        assert pm.positions["BTC/USDT"].size == 0.0
+
+    @pytest.mark.asyncio
+    async def test_api_failure_returns_empty(self) -> None:
+        """거래소 API 실패 시 빈 리스트 반환 (기존 동작 유지)."""
+        strategy = AlwaysLongStrategy.from_params()
+        client = _make_mock_client()
+        futures_client = MagicMock()
+        futures_client.fetch_positions = AsyncMock(side_effect=RuntimeError("API error"))
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=strategy,
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+
+        pm = MagicMock()
+        result = await runner._reconcile_positions(pm)
+
+        assert result == []

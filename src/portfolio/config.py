@@ -131,6 +131,36 @@ class PortfolioManagerConfig(BaseModel):
     )
 
     # ==========================================================================
+    # Exchange Safety Net (거래소 안전망 — Live 모드 전용)
+    # ==========================================================================
+    use_exchange_safety_stop: bool = Field(
+        default=False,
+        description="거래소 STOP_MARKET 안전망 활성화 (Live 모드 전용)",
+    )
+    exchange_safety_margin: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.10,
+        description="SL 대비 추가 마진 (0.02 = 2%, 거래소 stop = SL + 2%)",
+    )
+    exchange_trailing_safety_margin: float = Field(
+        default=0.005,
+        ge=0.0,
+        le=0.05,
+        description="TS 대비 추가 마진 (0.005 = 0.5%)",
+    )
+    exchange_stop_update_threshold: float = Field(
+        default=0.005,
+        ge=0.001,
+        le=0.05,
+        description="거래소 stop 업데이트 임계값 (0.005 = 0.5% 이상 변동 시)",
+    )
+    cancel_stops_on_shutdown: bool = Field(
+        default=False,
+        description="Shutdown 시 거래소 stop 취소 여부 (False = 유지하여 재시작까지 보호)",
+    )
+
+    # ==========================================================================
     # Capital Management (자금 관리)
     # ==========================================================================
     cash_sharing: bool = Field(

@@ -24,11 +24,21 @@ from src.notification.models import ChannelRoute
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
 
+    from prometheus_client import Gauge
+
     from src.eda.analytics import AnalyticsEngine
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.eda.risk_manager import EDARiskManager
     from src.notification.config import DiscordBotConfig
     from src.orchestrator.orchestrator import StrategyOrchestrator
+
+
+def _read_gauge_value(gauge: Gauge) -> float:
+    """Prometheus Gauge의 현재 값을 public API로 읽는다."""
+    metrics = list(gauge.collect())
+    if metrics and metrics[0].samples:
+        return float(metrics[0].samples[0].value)
+    return 0.0
 
 
 @dataclass
@@ -52,6 +62,8 @@ class TradingContext:
     orchestrator: StrategyOrchestrator | None = None
     report_trigger: Callable[[], Coroutine[object, object, None]] | None = None
     health_trigger: Callable[[], Coroutine[object, object, None]] | None = None
+    exchange_stop_mgr: object | None = None
+    onchain_feed: object | None = None
     _active: bool = field(default=True, init=False)
 
     @property
@@ -199,12 +211,30 @@ class DiscordBotService:
         async def metrics_cmd(interaction: discord.Interaction) -> None:
             await self._handle_metrics(interaction)
 
-        self._tree.command(name="status", description="Open positions and equity status", guild=guild_obj)(status_cmd)
-        self._tree.command(name="balance", description="Account balance overview", guild=guild_obj)(balance_cmd)
-        self._tree.command(name="strategies", description="Strategy pod overview", guild=guild_obj)(strategies_cmd)
-        self._tree.command(name="report", description="Trigger daily report now", guild=guild_obj)(report_cmd)
-        self._tree.command(name="health", description="System health check", guild=guild_obj)(health_cmd)
-        self._tree.command(name="metrics", description="Key metrics summary", guild=guild_obj)(metrics_cmd)
+        async def onchain_cmd(interaction: discord.Interaction) -> None:
+            await self._handle_onchain(interaction)
+
+        self._tree.command(
+            name="status", description="Open positions and equity status", guild=guild_obj
+        )(status_cmd)
+        self._tree.command(name="balance", description="Account balance overview", guild=guild_obj)(
+            balance_cmd
+        )
+        self._tree.command(name="strategies", description="Strategy pod overview", guild=guild_obj)(
+            strategies_cmd
+        )
+        self._tree.command(name="report", description="Trigger daily report now", guild=guild_obj)(
+            report_cmd
+        )
+        self._tree.command(name="health", description="System health check", guild=guild_obj)(
+            health_cmd
+        )
+        self._tree.command(name="metrics", description="Key metrics summary", guild=guild_obj)(
+            metrics_cmd
+        )
+        self._tree.command(
+            name="onchain", description="On-chain data source status", guild=guild_obj
+        )(onchain_cmd)
 
     def _setup_action_commands(self) -> None:
         """액션형 Slash Commands 등록."""
@@ -227,9 +257,15 @@ class DiscordBotService:
             await self._handle_resume(interaction, name)
 
         self._tree.command(name="kill", description="Emergency shutdown", guild=guild_obj)(kill_cmd)
-        self._tree.command(name="strategy", description="Strategy detail", guild=guild_obj)(strategy_cmd)
-        self._tree.command(name="pause", description="Pause a strategy pod", guild=guild_obj)(pause_cmd)
-        self._tree.command(name="resume", description="Resume a strategy pod", guild=guild_obj)(resume_cmd)
+        self._tree.command(name="strategy", description="Strategy detail", guild=guild_obj)(
+            strategy_cmd
+        )
+        self._tree.command(name="pause", description="Pause a strategy pod", guild=guild_obj)(
+            pause_cmd
+        )
+        self._tree.command(name="resume", description="Resume a strategy pod", guild=guild_obj)(
+            resume_cmd
+        )
 
     async def _handle_status(self, interaction: discord.Interaction) -> None:
         """``/status`` -- 오픈 포지션 + equity."""
@@ -271,6 +307,26 @@ class DiscordBotService:
             )
         else:
             embed.add_field(name="Open Positions", value="None", inline=False)
+
+        # Safety stops 섹션
+        if ctx.exchange_stop_mgr is not None:
+            active_stops = ctx.exchange_stop_mgr.active_stops  # type: ignore[union-attr]
+            if active_stops:
+                stop_lines: list[str] = []
+                for sym, state in active_stops.items():
+                    fail_tag = (
+                        f" ({state.placement_failures} fails)" if state.placement_failures else ""
+                    )
+                    stop_lines.append(
+                        f"**{sym}** {state.position_side} @ ${state.stop_price:,.2f}{fail_tag}"
+                    )
+                embed.add_field(
+                    name=f"Safety Stops ({len(active_stops)})",
+                    value="\n".join(stop_lines),
+                    inline=False,
+                )
+            else:
+                embed.add_field(name="Safety Stops", value="None", inline=False)
 
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)
@@ -406,7 +462,9 @@ class DiscordBotService:
             return
 
         if pod.paused:
-            await interaction.response.send_message(f"Pod `{name}` is already paused.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Pod `{name}` is already paused.", ephemeral=True
+            )
             return
 
         view = _ConfirmView()
@@ -463,7 +521,9 @@ class DiscordBotService:
         """``/health`` -- 시스템 건강 상태."""
         ctx = self._trading_ctx
         if ctx is None:
-            await interaction.response.send_message("Trading context not available.", ephemeral=True)
+            await interaction.response.send_message(
+                "Trading context not available.", ephemeral=True
+            )
             return
 
         pm = ctx.pm
@@ -495,9 +555,58 @@ class DiscordBotService:
 
         embed = discord.Embed(title="Metrics Summary", color=0xF39C12)
 
-        # Read gauge values
-        equity_val = equity_gauge._value.get()  # type: ignore[union-attr]
+        # Read gauge values via public collect() API
+        equity_val = _read_gauge_value(equity_gauge)
         embed.add_field(name="Equity", value=f"${equity_val:,.2f}", inline=True)
+
+        embed.set_footer(text="MC-Coin-Bot")
+        await interaction.response.send_message(embed=embed)
+
+    async def _handle_onchain(self, interaction: discord.Interaction) -> None:
+        """``/onchain`` -- On-chain 데이터 소스 상태."""
+        ctx = self._trading_ctx
+        if ctx is None:
+            await interaction.response.send_message(
+                "Trading context not available.", ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(title="On-chain Data Status", color=0x9B59B6)
+
+        # Cache 상태
+        if ctx.onchain_feed is not None:
+            health = ctx.onchain_feed.get_health_status()  # type: ignore[union-attr]
+            embed.add_field(
+                name="Cache",
+                value=f"{health['symbols_cached']} symbols, {health['total_columns']} columns",
+                inline=True,
+            )
+        else:
+            embed.add_field(name="Cache", value="Not active", inline=True)
+
+        # Source별 마지막 fetch 상태 (Prometheus gauge)
+        try:
+            import time as _time
+
+            from src.monitoring.metrics import onchain_last_success_gauge
+
+            metrics = list(onchain_last_success_gauge.collect())
+            if metrics and metrics[0].samples:
+                now = _time.time()
+                lines: list[str] = []
+                for sample in metrics[0].samples:
+                    source = sample.labels.get("source", "?")
+                    age_h = (now - sample.value) / 3600
+                    icon = "[+]" if age_h < 48 else "[-]"  # noqa: PLR2004
+                    lines.append(f"{icon} **{source}** — {age_h:.1f}h ago")
+                if lines:
+                    embed.add_field(
+                        name="Sources",
+                        value="\n".join(lines),
+                        inline=False,
+                    )
+        except ImportError:
+            pass
 
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)

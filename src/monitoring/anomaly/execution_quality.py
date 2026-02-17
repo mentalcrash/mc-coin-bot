@@ -200,13 +200,20 @@ class ExecutionAnomalyDetector:
         }
 
     def restore_from_dict(self, data: dict[str, Any]) -> None:
-        """Restore mutable state from persisted dict."""
+        """Restore mutable state from persisted dict.
+
+        Note: _order_timestamps / _fill_timestamps are monotonic clock-based
+        and meaningless across process restarts, so they are explicitly cleared.
+        """
         self._avg_latency = float(data.get("avg_latency", 0.0))
         self._latency_count = int(data.get("latency_count", 0))
         self._consecutive_rejections = int(data.get("consecutive_rejections", 0))
         self._slippage_increase_count = int(data.get("slippage_increase_count", 0))
         raw = data.get("last_slippages", [])
         self._last_slippages = [float(x) for x in raw] if isinstance(raw, list) else []
+        # Monotonic timestamps are invalid after restart
+        self._order_timestamps = []
+        self._fill_timestamps = []
 
     # ── Private ──────────────────────────────────────────────────
 

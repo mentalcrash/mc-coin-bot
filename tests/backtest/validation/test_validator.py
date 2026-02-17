@@ -12,6 +12,14 @@ from src.data.market_data import MarketDataSet
 from src.portfolio import Portfolio
 from src.strategy.tsmom import TSMOMStrategy
 
+_VBT_AVAILABLE = True
+try:
+    import vectorbt  # noqa: F401
+except ImportError:
+    _VBT_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(not _VBT_AVAILABLE, reason="vectorbt not installed")
+
 
 @pytest.fixture
 def sample_market_data() -> MarketDataSet:

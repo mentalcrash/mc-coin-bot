@@ -77,6 +77,18 @@ class IngestionSettings(BaseSettings):
         default=Path("logs"),
         description="로그 파일 저장 경로",
     )
+    onchain_bronze_dir: Path = Field(
+        default=Path("data/bronze/onchain"),
+        description="On-chain Bronze 데이터 저장 경로",
+    )
+    onchain_silver_dir: Path = Field(
+        default=Path("data/silver/onchain"),
+        description="On-chain Silver 데이터 저장 경로",
+    )
+    etherscan_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="Etherscan API Key (ETH supply 수집용, 무료 tier)",
+    )
 
     # ==========================================================================
     # API Rate Limiting
@@ -130,7 +142,14 @@ class IngestionSettings(BaseSettings):
     # ==========================================================================
     # Validators
     # ==========================================================================
-    @field_validator("bronze_dir", "silver_dir", "log_dir", mode="before")
+    @field_validator(
+        "bronze_dir",
+        "silver_dir",
+        "log_dir",
+        "onchain_bronze_dir",
+        "onchain_silver_dir",
+        mode="before",
+    )
     @classmethod
     def ensure_path(cls, v: str | Path) -> Path:
         """문자열을 Path 객체로 변환.
@@ -214,15 +233,49 @@ class IngestionSettings(BaseSettings):
         safe_symbol = symbol.replace("/", "_")
         return self.silver_dir / safe_symbol / f"{year}_deriv.parquet"
 
+    def get_onchain_bronze_path(self, source: str, name: str) -> Path:
+        """On-chain Bronze Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (예: "defillama")
+            name: 데이터 이름 (예: "stablecoin_total")
+
+        Returns:
+            Bronze Parquet 파일 경로
+
+        Example:
+            >>> settings.get_onchain_bronze_path("defillama", "stablecoin_total")
+            PosixPath('data/bronze/onchain/defillama/stablecoin_total.parquet')
+        """
+        return self.onchain_bronze_dir / source / f"{name}.parquet"
+
+    def get_onchain_silver_path(self, source: str, name: str) -> Path:
+        """On-chain Silver Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (예: "defillama")
+            name: 데이터 이름 (예: "stablecoin_total")
+
+        Returns:
+            Silver Parquet 파일 경로
+
+        Example:
+            >>> settings.get_onchain_silver_path("defillama", "stablecoin_total")
+            PosixPath('data/silver/onchain/defillama/stablecoin_total.parquet')
+        """
+        return self.onchain_silver_dir / source / f"{name}.parquet"
+
     def ensure_directories(self) -> None:
         """필요한 디렉토리들을 생성.
 
-        Bronze, Silver, Log 디렉토리를 생성합니다.
+        Bronze, Silver, Log, On-chain 디렉토리를 생성합니다.
         이미 존재하면 무시합니다.
         """
         self.bronze_dir.mkdir(parents=True, exist_ok=True)
         self.silver_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.onchain_bronze_dir.mkdir(parents=True, exist_ok=True)
+        self.onchain_silver_dir.mkdir(parents=True, exist_ok=True)
 
     def has_api_credentials(self) -> bool:
         """API 자격 증명이 설정되어 있는지 확인.

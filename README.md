@@ -222,6 +222,7 @@ uv run mcbot eda run-live config/paper.yaml --mode live     # Live — Binance �
 
 Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage)로 실행됩니다.
 60초마다 거래소 포지션과 PM 상태를 교차 검증(PositionReconciler)하며, 불일치 시 경고만 발행합니다(자동 수정 없음).
+봇 장애 시 포지션 보호를 위한 거래소 STOP_MARKET 안전망은 [`docs/exchange-safety-stop.md`](docs/exchange-safety-stop.md) 참조.
 
 ### 일괄 백테스트
 
@@ -354,3 +355,4 @@ uv run mcbot audit trend                                # 지표 추이
 | [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
 | [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md) | **멀티 전략 오케스트레이터** (Pod, 배분, 생애주기, 넷팅) |
+| [`docs/exchange-safety-stop.md`](docs/exchange-safety-stop.md) | Exchange Safety Stop (봇 장애 시 거래소 STOP_MARKET 안전망) |

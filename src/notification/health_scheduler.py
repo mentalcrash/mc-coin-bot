@@ -18,7 +18,7 @@ import asyncio
 import contextlib
 import time
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -58,7 +58,9 @@ _STRATEGY_HEALTH_INTERVAL = 28800.0  # 8시간
 _ROLLING_SHARPE_DAYS = 30
 _RECENT_TRADES_COUNT = 20
 _ALPHA_DECAY_WINDOW = 3
+_ALPHA_DECAY_CONFIRMATIONS = 2
 _MAX_SHARPE_HISTORY = 10
+_SHARPE_HEALTHY_THRESHOLD = 0.5
 
 # 연환산 계수 (일봉 기준)
 _ANNUALIZE_SQRT = 365.0**0.5
@@ -88,6 +90,8 @@ class HealthCheckScheduler:
         bus: EventBus,
         futures_client: BinanceFuturesClient | None,
         symbols: list[str],
+        exchange_stop_mgr: Any = None,
+        onchain_feed: Any = None,
     ) -> None:
         self._queue = queue
         self._pm = pm
@@ -96,6 +100,8 @@ class HealthCheckScheduler:
         self._feed = feed
         self._bus = bus
         self._symbols = symbols
+        self._exchange_stop_mgr = exchange_stop_mgr
+        self._onchain_feed = onchain_feed
         self._snapshot_fetcher = DerivativesSnapshotFetcher(futures_client)
 
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -104,6 +110,7 @@ class HealthCheckScheduler:
 
         self._start_time = time.monotonic()
         self._sharpe_history: list[float] = []
+        self._alpha_decay_streak: int = 0
 
     async def start(self) -> None:
         """스케줄 task 시작."""
@@ -241,6 +248,25 @@ class HealthCheckScheduler:
         trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
         today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
 
+        # Safety stop 상태 수집
+        safety_stop_count = 0
+        safety_stop_failures = 0
+        if self._exchange_stop_mgr is not None:
+            active_stops = self._exchange_stop_mgr.active_stops
+            safety_stop_count = len(active_stops)
+            safety_stop_failures = max(
+                (s.placement_failures for s in active_stops.values()), default=0
+            )
+
+        # On-chain 상태 수집
+        onchain_sources_ok = 0
+        onchain_sources_total = 0
+        onchain_cache_columns = 0
+        if self._onchain_feed is not None:
+            health = self._onchain_feed.get_health_status()
+            onchain_cache_columns = health["total_columns"]
+            onchain_sources_total, onchain_sources_ok = self._count_onchain_sources()
+
         return SystemHealthSnapshot(
             timestamp=datetime.now(UTC),
             uptime_seconds=uptime,
@@ -259,6 +285,11 @@ class HealthCheckScheduler:
             events_dropped=self._bus.metrics.events_dropped,
             max_queue_depth=self._bus.metrics.max_queue_depth,
             is_notification_degraded=self._queue.is_degraded,
+            safety_stop_count=safety_stop_count,
+            safety_stop_failures=safety_stop_failures,
+            onchain_sources_ok=onchain_sources_ok,
+            onchain_sources_total=onchain_sources_total,
+            onchain_cache_columns=onchain_cache_columns,
         )
 
     def _collect_strategy_health(self) -> StrategyHealthSnapshot:
@@ -311,6 +342,28 @@ class HealthCheckScheduler:
             strategy_breakdown=tuple(strategy_breakdown),
         )
 
+    def _count_onchain_sources(self) -> tuple[int, int]:
+        """Prometheus gauge에서 on-chain source staleness 판정.
+
+        Returns:
+            (total, ok) 튜플. 48시간 이내 fetch = OK.
+        """
+        stale_threshold = 48 * 3600  # 48시간
+        try:
+            from src.monitoring.metrics import onchain_last_success_gauge
+
+            metrics = list(onchain_last_success_gauge.collect())
+            if not metrics or not metrics[0].samples:
+                return 0, 0
+
+            now = time.time()
+            total = len(metrics[0].samples)
+            ok = sum(1 for s in metrics[0].samples if (now - s.value) < stale_threshold)
+        except ImportError:
+            return 0, 0
+        else:
+            return total, ok
+
     # ─── Helper Functions ─────────────────────────────────────
 
     def _build_strategy_breakdown(
@@ -346,8 +399,7 @@ class HealthCheckScheduler:
             )
 
             # 상태 아이콘 결정
-            _sharpe_healthy = 0.5
-            if sharpe > _sharpe_healthy:
+            if sharpe > _SHARPE_HEALTHY_THRESHOLD:
                 status = "HEALTHY"
             elif sharpe >= 0:
                 status = "WATCH"
@@ -396,12 +448,23 @@ class HealthCheckScheduler:
         return (mean / std) * _ANNUALIZE_SQRT
 
     def _detect_alpha_decay(self) -> bool:
-        """직전 3개 Sharpe가 모두 하강 추세인지 감지."""
+        """직전 3개 Sharpe가 연속 _ALPHA_DECAY_CONFIRMATIONS 회 하강 추세인지 감지.
+
+        8h 주기 x 2회 확인 = 16h 지속해야 발동 (false positive 억제).
+        """
         if len(self._sharpe_history) < _ALPHA_DECAY_WINDOW:
+            self._alpha_decay_streak = 0
             return False
 
         recent = self._sharpe_history[-_ALPHA_DECAY_WINDOW:]
-        return all(recent[i] > recent[i + 1] for i in range(_ALPHA_DECAY_WINDOW - 1))
+        is_declining = all(recent[i] > recent[i + 1] for i in range(_ALPHA_DECAY_WINDOW - 1))
+
+        if is_declining:
+            self._alpha_decay_streak += 1
+        else:
+            self._alpha_decay_streak = 0
+
+        return self._alpha_decay_streak >= _ALPHA_DECAY_CONFIRMATIONS
 
     @staticmethod
     def _compute_trade_stats(

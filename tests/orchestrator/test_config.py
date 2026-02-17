@@ -96,13 +96,13 @@ class TestPodConfig:
 class TestGraduationCriteria:
     def test_defaults(self) -> None:
         g = GraduationCriteria()
-        assert g.min_live_days == 90
-        assert g.min_sharpe == 1.0
-        assert g.max_drawdown == 0.15
-        assert g.min_trade_count == 30
-        assert g.min_calmar == 0.8
+        assert g.min_live_days == 30
+        assert g.min_sharpe == 0.5
+        assert g.max_drawdown == 0.20
+        assert g.min_trade_count == 5
+        assert g.min_calmar == 0.3
         assert g.max_backtest_live_gap == 0.30
-        assert g.max_portfolio_correlation == 0.50
+        assert g.max_portfolio_correlation == 0.65
 
     def test_frozen(self) -> None:
         g = GraduationCriteria()
@@ -224,5 +224,5 @@ class TestOrchestratorConfig:
         cfg = OrchestratorConfig(pods=(_make_pod(),))
         assert isinstance(cfg.graduation, GraduationCriteria)
         assert isinstance(cfg.retirement, RetirementCriteria)
-        assert cfg.graduation.min_live_days == 90
+        assert cfg.graduation.min_live_days == 30
         assert cfg.retirement.probation_days == 30

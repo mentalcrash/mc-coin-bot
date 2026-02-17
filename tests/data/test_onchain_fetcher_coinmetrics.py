@@ -1,0 +1,235 @@
+"""Tests for Coin Metrics fetcher in src/data/onchain/fetcher.py."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from src.data.onchain.fetcher import (
+    CM_ASSETS,
+    CM_METRICS,
+    CM_PAGE_SIZE,
+    COINMETRICS_BASE_URL,
+    OnchainFetcher,
+)
+
+
+@pytest.fixture()
+def mock_client() -> AsyncMock:
+    """Mock AsyncOnchainClient."""
+    return AsyncMock()
+
+
+@pytest.fixture()
+def fetcher(mock_client: AsyncMock) -> OnchainFetcher:
+    """OnchainFetcher with mock client."""
+    return OnchainFetcher(client=mock_client)
+
+
+class TestCoinMetricsConstants:
+    def test_base_url(self) -> None:
+        assert COINMETRICS_BASE_URL == "https://community-api.coinmetrics.io/v4"
+
+    def test_metrics_list(self) -> None:
+        assert "MVRV" in CM_METRICS
+        assert "RealCap" in CM_METRICS
+        assert "NVTAdj90" in CM_METRICS
+        assert len(CM_METRICS) == 9
+
+    def test_assets(self) -> None:
+        assert "btc" in CM_ASSETS
+        assert "eth" in CM_ASSETS
+        assert len(CM_ASSETS) == 2
+
+    def test_page_size(self) -> None:
+        assert CM_PAGE_SIZE == 10000
+
+
+class TestFetchCoinMetrics:
+    @pytest.mark.asyncio()
+    async def test_success_single_page(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-01T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.3",
+                    "RealCap": "400000000000",
+                },
+                {
+                    "time": "2024-01-02T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.4",
+                    "RealCap": "410000000000",
+                },
+            ],
+        }
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+
+        assert len(df) == 2
+        assert "time" in df.columns
+        assert "asset" in df.columns
+        assert "MVRV" in df.columns
+        assert "RealCap" in df.columns
+        assert df["asset"].iloc[0] == "btc"
+        assert df["MVRV"].iloc[0] == Decimal("2.3")
+
+    @pytest.mark.asyncio()
+    async def test_decimal_precision(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-01T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.345678901234",
+                },
+            ],
+        }
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+
+        val = df["MVRV"].iloc[0]
+        assert isinstance(val, Decimal)
+        assert val == Decimal("2.345678901234")
+
+    @pytest.mark.asyncio()
+    async def test_empty_response(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+
+        assert df.empty
+        assert list(df.columns) == ["time", "asset", "MVRV", "RealCap"]
+
+    @pytest.mark.asyncio()
+    async def test_missing_metric_value(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-01T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.3",
+                    # RealCap missing entirely
+                },
+            ],
+        }
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+
+        assert df["MVRV"].iloc[0] == Decimal("2.3")
+        assert df["RealCap"].iloc[0] is None
+
+    @pytest.mark.asyncio()
+    async def test_empty_string_metric(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-01T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "",
+                },
+            ],
+        }
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+
+        assert df["MVRV"].iloc[0] is None
+
+    @pytest.mark.asyncio()
+    async def test_pagination(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        page1_response = MagicMock()
+        page1_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-01T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.3",
+                },
+            ],
+            "next_page_url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?next_page_token=abc",
+        }
+
+        page2_response = MagicMock()
+        page2_response.json.return_value = {
+            "data": [
+                {
+                    "time": "2024-01-02T00:00:00.000000000Z",
+                    "asset": "btc",
+                    "MVRV": "2.4",
+                },
+            ],
+        }
+
+        mock_client.get.side_effect = [page1_response, page2_response]
+
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+
+        assert len(df) == 2
+        assert mock_client.get.call_count == 2
+        # Second call uses next_page_url directly
+        second_call_url = mock_client.get.call_args_list[1][0][0]
+        assert "next_page_token=abc" in second_call_url
+
+    @pytest.mark.asyncio()
+    async def test_url_construction(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+        mock_client.get.return_value = mock_response
+
+        await fetcher.fetch_coinmetrics(
+            "btc", metrics=["MVRV"], start="2024-01-01", end="2024-12-31"
+        )
+
+        called_url = mock_client.get.call_args[0][0]
+        assert "/timeseries/asset-metrics" in called_url
+
+        called_params = mock_client.get.call_args[1]["params"]
+        assert called_params["assets"] == "btc"
+        assert called_params["metrics"] == "MVRV"
+        assert called_params["frequency"] == "1d"
+        assert called_params["start_time"] == "2024-01-01"
+        assert called_params["end_time"] == "2024-12-31"
+        assert called_params["page_size"] == CM_PAGE_SIZE
+
+    @pytest.mark.asyncio()
+    async def test_default_metrics(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+        mock_client.get.return_value = mock_response
+
+        await fetcher.fetch_coinmetrics("btc")
+
+        called_params = mock_client.get.call_args[1]["params"]
+        assert called_params["metrics"] == ",".join(CM_METRICS)
+
+    @pytest.mark.asyncio()
+    async def test_no_end_param_omitted(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+        mock_client.get.return_value = mock_response
+
+        await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+
+        called_params = mock_client.get.call_args[1]["params"]
+        assert "end_time" not in called_params

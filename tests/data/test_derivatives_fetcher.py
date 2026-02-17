@@ -34,8 +34,10 @@ def mock_client() -> AsyncMock:
 
 @pytest.fixture()
 def fetcher(mock_client: AsyncMock) -> DerivativesFetcher:
-    """DerivativesFetcher with mock client."""
-    return DerivativesFetcher(client=mock_client)
+    """DerivativesFetcher with mock client (rate limit sleep disabled)."""
+    f = DerivativesFetcher(client=mock_client)
+    f._rate_limit_sleep = AsyncMock()  # type: ignore[method-assign]
+    return f
 
 
 class TestGetYearTimestamps:
