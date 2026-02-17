@@ -178,6 +178,47 @@ class PositionReconciler:
 
         return exchange_equity
 
+    @staticmethod
+    async def parse_exchange_positions(
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+    ) -> dict[str, tuple[float, Direction]]:
+        """거래소 포지션을 파싱하여 {symbol: (size, Direction)} 맵 반환.
+
+        Hedge Mode LONG/SHORT를 파싱하여 net position을 계산합니다.
+        LONG과 SHORT 모두 있으면 LONG 우선 (Hedge Mode에서는 보통 한쪽만).
+
+        Args:
+            futures_client: BinanceFuturesClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            {symbol: (size, Direction)} — size=0이면 포지션 없음
+        """
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
+
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
+        exchange_positions = await futures_client.fetch_positions(futures_symbols)
+
+        result: dict[str, tuple[float, Direction]] = {}
+        for pos in exchange_positions:
+            sym = str(pos.get("symbol", ""))
+            spot_sym = sym.split(":")[0] if ":" in sym else sym
+            contracts = abs(float(pos.get("contracts", 0)))
+            side = str(pos.get("side", "")).lower()
+
+            if contracts <= 0:
+                continue
+
+            if side == "long":
+                result[spot_sym] = (contracts, Direction.LONG)
+            elif side == "short" and spot_sym not in result:
+                result[spot_sym] = (contracts, Direction.SHORT)
+
+        return result
+
     async def _compare(
         self,
         pm: EDAPortfolioManager,
@@ -192,9 +233,11 @@ class PositionReconciler:
         Returns:
             불일치가 발견된 심볼 리스트
         """
-        from src.exchange.binance_futures_client import BinanceFuturesClient
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
 
-        futures_symbols = [BinanceFuturesClient.to_futures_symbol(s) for s in symbols]
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
         exchange_positions = await futures_client.fetch_positions(futures_symbols)
 
         # Hedge Mode: 심볼당 LONG/SHORT 분리 매핑

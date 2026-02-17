@@ -1017,3 +1017,74 @@ class TestVerifyExchangeStops:
         await mgr.verify_exchange_stops()
 
         assert "BTC/USDT" not in mgr._stops
+
+
+# ---------------------------------------------------------------------------
+# place_missing_stops() Tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlaceMissingStops:
+    """place_missing_stops() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_place_for_open_position_without_stop(self) -> None:
+        """열린 포지션에 stop이 없으면 배치."""
+        config = _make_config()
+        client = _make_futures_client()
+        pos = _make_position()
+        pm = _make_pm({"BTC/USDT": pos})
+        mgr = ExchangeStopManager(config, client, pm)
+
+        placed = await mgr.place_missing_stops()
+
+        assert placed == 1
+        assert "BTC/USDT" in mgr._stops
+
+    @pytest.mark.asyncio
+    async def test_skip_existing_stop(self) -> None:
+        """이미 stop이 있으면 스킵."""
+        config = _make_config()
+        client = _make_futures_client()
+        pos = _make_position()
+        pm = _make_pm({"BTC/USDT": pos})
+        mgr = ExchangeStopManager(config, client, pm)
+
+        # 기존 stop 설정
+        mgr._stops["BTC/USDT"] = StopOrderState(
+            symbol="BTC/USDT",
+            exchange_order_id="existing",
+            client_order_id="c1",
+            stop_price=44000.0,
+            position_side="LONG",
+            close_side="sell",
+        )
+
+        placed = await mgr.place_missing_stops()
+
+        assert placed == 0
+
+    @pytest.mark.asyncio
+    async def test_skip_closed_position(self) -> None:
+        """포지션이 닫혀있으면 스킵."""
+        config = _make_config()
+        client = _make_futures_client()
+        closed_pos = _make_position(size=0.0, direction=Direction.NEUTRAL)
+        pm = _make_pm({"BTC/USDT": closed_pos})
+        mgr = ExchangeStopManager(config, client, pm)
+
+        placed = await mgr.place_missing_stops()
+
+        assert placed == 0
+
+    @pytest.mark.asyncio
+    async def test_no_positions(self) -> None:
+        """포지션이 없으면 0 반환."""
+        config = _make_config()
+        client = _make_futures_client()
+        pm = _make_pm()
+        mgr = ExchangeStopManager(config, client, pm)
+
+        placed = await mgr.place_missing_stops()
+
+        assert placed == 0

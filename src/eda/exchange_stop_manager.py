@@ -491,6 +491,28 @@ class ExchangeStopManager:
                 len(self._stops),
             )
 
+    async def place_missing_stops(self) -> int:
+        """PM에 열린 포지션이 있지만 stop이 없는 심볼에 안전망 stop 배치.
+
+        재시작 후 verify_exchange_stops()에서 stale stop이 제거된 경우,
+        또는 reconciliation 후 새로운 포지션이 확인된 경우 호출합니다.
+
+        Returns:
+            배치된 stop 수
+        """
+        placed = 0
+        for symbol, pos in self._pm.positions.items():
+            if not pos.is_open:
+                continue
+            if symbol in self._stops:
+                continue
+            await self._place_safety_stop(symbol, pos)
+            if symbol in self._stops:
+                placed += 1
+        if placed:
+            logger.info("Placed {} missing safety stops", placed)
+        return placed
+
     def is_safety_stop_order(self, client_order_id: str) -> bool:
         """client_order_id가 안전망 stop 주문인지 확인."""
         return client_order_id.startswith(SAFETY_STOP_PREFIX)

@@ -236,6 +236,74 @@ class EDAPortfolioManager:
         assert isinstance(let, dict)
         self._last_executed_targets = {k: float(v) for k, v in let.items()}
 
+    def reconcile_with_exchange(
+        self,
+        exchange_positions: dict[str, tuple[float, Direction]],
+    ) -> list[str]:
+        """거래소 실제 포지션과 PM 상태를 비교하여 phantom position 제거.
+
+        거래소에 없지만 PM에만 남아있는 포지션(phantom)을 정리합니다.
+        거래소에만 있는 포지션은 PM에 추가하지 않습니다 (경고 로그만).
+
+        Args:
+            exchange_positions: {symbol: (size, Direction)} 거래소 포지션 맵.
+                size=0이면 해당 심볼에 포지션 없음을 의미.
+
+        Returns:
+            제거된 심볼 리스트
+        """
+        removed: list[str] = []
+
+        for symbol, pos in list(self._positions.items()):
+            if not pos.is_open:
+                continue
+
+            ex_size, _ = exchange_positions.get(symbol, (0.0, Direction.NEUTRAL))
+            if ex_size > 0:
+                continue
+
+            # Phantom position: 거래소에 없으므로 PM에서 제거
+            logger.warning(
+                "Reconcile: removing phantom position {} (size={:.6f}, dir={})",
+                symbol,
+                pos.size,
+                pos.direction.name,
+            )
+            pos.size = 0.0
+            pos.direction = Direction.NEUTRAL
+            pos.avg_entry_price = 0.0
+            pos.unrealized_pnl = 0.0
+            pos.current_weight = 0.0
+            pos.last_price = 0.0
+            pos.peak_price_since_entry = 0.0
+            pos.trough_price_since_entry = 0.0
+            pos.atr_values = []
+
+            # 부가 상태 정리
+            self._last_target_weights.pop(symbol, None)
+            self._last_executed_targets.pop(symbol, None)
+            self._pending_signals.pop(symbol, None)
+            self._pending_close.discard(symbol)
+            self._deferred_close_targets.pop(symbol, None)
+
+            removed.append(symbol)
+
+        # 거래소에만 있는 포지션 경고
+        pm_symbols = {s for s, p in self._positions.items() if p.is_open}
+        for symbol, (ex_size, ex_dir) in exchange_positions.items():
+            if ex_size > 0 and symbol not in pm_symbols:
+                logger.warning(
+                    "Reconcile: exchange-only position {} (size={:.6f}, dir={}) — not added to PM",
+                    symbol,
+                    ex_size,
+                    ex_dir.name,
+                )
+
+        if removed:
+            logger.info("Reconcile: removed {} phantom positions: {}", len(removed), removed)
+
+        return removed
+
     def sync_capital(self, exchange_equity: float) -> None:
         """LIVE 모드: 거래소 잔고 기준으로 capital 동기화.
 

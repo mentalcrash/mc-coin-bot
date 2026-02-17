@@ -412,9 +412,7 @@ class TestDriftDetails:
         pm = _make_pm({})
         pm.total_equity = 10000.0
         client = MagicMock()
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 10300.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10300.0}})
 
         reconciler = PositionReconciler()
         await reconciler.check_balance(pm, client)
@@ -426,9 +424,7 @@ class TestDriftDetails:
         pm = _make_pm({})
         pm.total_equity = 0.0
         client = MagicMock()
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 10000.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10000.0}})
 
         reconciler = PositionReconciler()
         await reconciler.check_balance(pm, client)
@@ -524,3 +520,50 @@ class TestAutoCorrection:
         assert reconciler.corrections_applied == 1
         assert positions["BTC/USDT"].size == 0.0
         assert positions["BTC/USDT"].direction == Direction.NEUTRAL
+
+
+# ---------------------------------------------------------------------------
+# parse_exchange_positions() Tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseExchangePositions:
+    """parse_exchange_positions() static method 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_long_position(self) -> None:
+        """LONG 포지션 파싱."""
+        client = _make_futures_client(
+            [{"symbol": "BTC/USDT:USDT", "contracts": 0.01, "side": "long"}]
+        )
+        result = await PositionReconciler.parse_exchange_positions(client, ["BTC/USDT"])
+        assert "BTC/USDT" in result
+        size, direction = result["BTC/USDT"]
+        assert size == pytest.approx(0.01)
+        assert direction == Direction.LONG
+
+    @pytest.mark.asyncio
+    async def test_short_position(self) -> None:
+        """SHORT 포지션 파싱."""
+        client = _make_futures_client(
+            [{"symbol": "ETH/USDT:USDT", "contracts": 1.0, "side": "short"}]
+        )
+        result = await PositionReconciler.parse_exchange_positions(client, ["ETH/USDT"])
+        assert "ETH/USDT" in result
+        size, direction = result["ETH/USDT"]
+        assert size == pytest.approx(1.0)
+        assert direction == Direction.SHORT
+
+    @pytest.mark.asyncio
+    async def test_no_positions(self) -> None:
+        """포지션 없으면 빈 dict."""
+        client = _make_futures_client([])
+        result = await PositionReconciler.parse_exchange_positions(client, ["BTC/USDT"])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_zero_contracts_excluded(self) -> None:
+        """contracts=0인 포지션은 제외."""
+        client = _make_futures_client([{"symbol": "BTC/USDT:USDT", "contracts": 0, "side": "long"}])
+        result = await PositionReconciler.parse_exchange_positions(client, ["BTC/USDT"])
+        assert result == {}
