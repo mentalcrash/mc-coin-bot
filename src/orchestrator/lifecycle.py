@@ -163,9 +163,22 @@ class LifecycleManager:
         *,
         now: datetime,
     ) -> None:
-        """INCUBATION → PRODUCTION 졸업 평가."""
+        """INCUBATION → PRODUCTION 졸업 또는 → RETIRED timeout 평가."""
+        # 졸업 기준 충족 → PRODUCTION
         if self._check_graduation(pod, portfolio_returns):
             self._transition(pod, pod_ls, LifecycleState.PRODUCTION, now=now)
+            return
+
+        # 최대 INCUBATION 기간 초과 → RETIRED
+        days_in_incubation = (now - pod_ls.state_entered_at).days
+        if days_in_incubation >= self._graduation.max_incubation_days:
+            logger.warning(
+                "Pod {}: INCUBATION timeout ({} days >= {}) → RETIRED",
+                pod.pod_id,
+                days_in_incubation,
+                self._graduation.max_incubation_days,
+            )
+            self._transition(pod, pod_ls, LifecycleState.RETIRED, now=now)
 
     def _evaluate_production(
         self,

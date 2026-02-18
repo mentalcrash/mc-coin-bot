@@ -28,7 +28,7 @@
                     │                                              │
                     │  INCUBATION ──── graduation ────► PRODUCTION │
                     │      │                              │  ▲     │
-                    │      │ hard stop              PH    │  │     │
+                    │      │ hard stop / timeout    PH    │  │     │
                     │      ▼                     degrade  │  │     │
                     │  RETIRED ◄── expire ── PROBATION    │  │     │
                     │      ▲                     ▲   │    ▼  │     │
@@ -44,6 +44,7 @@
 | From | To | Trigger | 조건 |
 |------|----|---------|------|
 | INCUBATION | PRODUCTION | Graduation | 6개 기준 ALL 충족 |
+| INCUBATION | RETIRED | Timeout | `max_incubation_days`(90) 경과, 졸업 미충족 |
 | PRODUCTION | WARNING | PH Detection | PH score > lambda |
 | WARNING | PRODUCTION | Recovery | PH score < lambda*0.2 AND 5일+ 경과 |
 | WARNING | PROBATION | Timeout | 30일 미회복 |
@@ -84,7 +85,8 @@
 ### 졸업 실패 시
 
 - INCUBATION 유지, `initial_fraction`으로 고정 배분
-- 리밸런스마다 재평가 — 기간 제한 없음 (Hard Stop에 걸리지 않는 한 영구 대기)
+- 리밸런스마다 재평가
+- `max_incubation_days`(기본 90일) 초과 시 자동 RETIRED (저성과 전략의 무기한 자본 점유 방지)
 
 > 코드: `lifecycle.py:264` — `_check_graduation()`
 > 설정: `config.py` — `GraduationCriteria`
@@ -178,7 +180,7 @@ Detection: m_t - M_t > λ              (λ=50.0)
 #### Strong Recovery (→ PRODUCTION)
 
 - **조건**: `sharpe_ratio >= min_sharpe` AND `ph_detector.score <= 0.0`
-- 의미: Sharpe가 졸업 기준(1.0) 이상이고 PH detector가 완전 안정
+- 의미: Sharpe가 졸업 기준(`min_sharpe`, 기본값 0.5) 이상이고 PH detector가 완전 안정
 - PRODUCTION 복귀 시 **PH detector reset**
 
 #### Expired (→ RETIRED)
@@ -349,11 +351,12 @@ orchestrator:
     min_calmar: 0.3
     max_portfolio_correlation: 0.65
     max_backtest_live_gap: 0.30        # deferred
+    max_incubation_days: 90            # INCUBATION timeout
 
   retirement:
     max_drawdown_breach: 0.25          # hard stop
     consecutive_loss_months: 6         # hard stop
-    rolling_sharpe_floor: 0.3
+    rolling_sharpe_floor: 0.3          # deferred (미사용)
     probation_days: 30
 
 pods:

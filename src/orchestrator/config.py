@@ -208,6 +208,11 @@ class GraduationCriteria(BaseModel):
         le=1.0,
         description="기존 포트폴리오와의 최대 상관계수",
     )
+    max_incubation_days: int = Field(
+        default=90,
+        ge=1,
+        description="INCUBATION 최대 유지 기간 (일). 초과 시 RETIRED",
+    )
 
 
 class RetirementCriteria(BaseModel):

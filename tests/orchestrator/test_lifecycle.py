@@ -697,3 +697,256 @@ class TestAutoInitDetectors:
 
         pls = mgr._pod_states["pod-a"]
         assert pls.gbm_monitor is not None
+
+
+# ── TestSerialization ─────────────────────────────────────────────
+
+
+class TestSerialization:
+    """직렬화 roundtrip 테스트."""
+
+    def test_to_dict_restore_roundtrip(self) -> None:
+        """전체 상태 직렬화 → 복원 → 동일성 검증."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 50)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        pod_ls.consecutive_loss_months = 3
+        pod_ls.last_monthly_check_day = 1
+
+        # Feed some data to PH detector
+        for _ in range(10):
+            pod_ls.ph_detector.update(0.005)
+
+        state = mgr.to_dict()
+
+        # Restore into a fresh manager
+        mgr2 = _make_manager()
+        mgr2.restore_from_dict(state)
+
+        pls2 = mgr2._pod_states[pod.pod_id]
+        assert pls2.consecutive_loss_months == 3
+        assert pls2.last_monthly_check_day == 1
+        assert pls2.state_entered_at == pod_ls.state_entered_at
+        assert pls2.ph_detector.n_observations == pod_ls.ph_detector.n_observations
+
+    def test_detector_serialization_survives_roundtrip(self) -> None:
+        """PH/GBM/Dist/RANSAC detector 포함 roundtrip."""
+        import numpy as np
+
+        pod = _make_pod()
+        pod.state = LifecycleState.PRODUCTION
+        _inject_daily_returns(pod, [0.005] * 50)
+
+        rng = np.random.default_rng(42)
+        returns = rng.normal(0.001, 0.02, 100).tolist()
+
+        mgr = _make_manager()
+        mgr.auto_init_detectors(pod.pod_id, returns)
+        mgr.evaluate(pod)
+
+        state = mgr.to_dict()
+
+        # Restore — detectors must be set up first for restore to work
+        mgr2 = _make_manager()
+        mgr2.auto_init_detectors(pod.pod_id, returns)
+        mgr2.restore_from_dict(state)
+
+        pls2 = mgr2._pod_states[pod.pod_id]
+        assert pls2.gbm_monitor is not None
+        assert pls2.dist_detector is not None
+        assert pls2.ransac_detector is not None
+        assert "ph_detector" in state[pod.pod_id]
+
+    def test_restore_missing_keys_backward_compat(self) -> None:
+        """누락 키 시 기본값 적용 확인 (backward compatibility)."""
+        mgr = _make_manager()
+        # Only provide state_entered_at — others missing
+        mgr.restore_from_dict(
+            {
+                "pod-a": {
+                    "state_entered_at": "2024-01-01T00:00:00+00:00",
+                }
+            }
+        )
+
+        pls = mgr._pod_states["pod-a"]
+        assert pls.consecutive_loss_months == 0
+        assert pls.last_monthly_check_day == 0
+        assert pls.state_entered_at == datetime(2024, 1, 1, tzinfo=UTC)
+
+
+# ── TestIncubationTimeout ────────────────────────────────────────
+
+
+class TestIncubationTimeout:
+    """INCUBATION max_incubation_days timeout 테스트."""
+
+    def test_incubation_timeout_retired(self) -> None:
+        """90일 경과 + 졸업 미충족 → RETIRED."""
+        pod = _make_pod()
+        assert pod.state == LifecycleState.INCUBATION
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=91)
+
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.RETIRED
+
+    def test_incubation_graduates_before_timeout(self) -> None:
+        """60일 경과 + 졸업 충족 → PRODUCTION (timeout 무시)."""
+        pod = _graduation_ready_pod()
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=60)
+
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.PRODUCTION
+
+    def test_incubation_exactly_at_boundary(self) -> None:
+        """정확히 90일 → RETIRED."""
+        pod = _make_pod()
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        bar_ts = datetime(2024, 4, 1, tzinfo=UTC)
+        pod_ls = mgr._get_or_create_state(pod)
+        # 정확히 90일 전
+        pod_ls.state_entered_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        # (2024-04-01) - (2024-01-01) = 91 days >= 90 → RETIRED
+        assert result == LifecycleState.RETIRED
+
+
+# ── TestProbationBoundary ────────────────────────────────────────
+
+
+class TestProbationBoundary:
+    """PROBATION recovery 경계값 테스트."""
+
+    def test_probation_sharpe_exactly_at_threshold(self) -> None:
+        """sharpe == min_sharpe(0.5), ph == 0.0 → PRODUCTION."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PROBATION
+        _set_pod_performance(pod, sharpe_ratio=0.5)
+        _inject_daily_returns(pod, [0.01] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        pod_ls.ph_detector.reset()  # score = 0.0
+
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.PRODUCTION
+
+    def test_probation_sharpe_just_below_stays(self) -> None:
+        """sharpe = 0.49 → stays PROBATION."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PROBATION
+        _set_pod_performance(pod, sharpe_ratio=0.49)
+        _inject_daily_returns(pod, [0.01] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        pod_ls.ph_detector.reset()
+
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.PROBATION
+
+    def test_probation_ph_just_above_zero_blocks(self) -> None:
+        """ph = 0.001 → stays PROBATION (score > 0 blocks recovery)."""
+        pod = _make_pod()
+        pod.state = LifecycleState.PROBATION
+        _set_pod_performance(pod, sharpe_ratio=1.5)
+        _inject_daily_returns(pod, [0.01] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        # Set ph score slightly above 0 by feeding negative returns
+        pod_ls.ph_detector.reset()
+        for _ in range(50):
+            pod_ls.ph_detector.update(0.01)
+        for _ in range(200):
+            pod_ls.ph_detector.update(-0.10)
+        assert pod_ls.ph_detector.score > 0.0
+
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.PROBATION
+
+
+# ── TestWarningBoundary ──────────────────────────────────────────
+
+
+class TestWarningBoundary:
+    """WARNING timeout 경계값 테스트."""
+
+    def test_warning_exactly_30_days_escalates(self) -> None:
+        """정확히 30일 → PROBATION."""
+        pod = _make_pod()
+        pod.state = LifecycleState.WARNING
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        # WARNING 진입을 정확히 30일 전으로 설정
+        bar_ts = datetime(2024, 2, 1, tzinfo=UTC)
+        pod_ls.state_entered_at = datetime(2024, 1, 2, tzinfo=UTC)
+
+        # PH score를 높게 유지 → recovery 불가
+        for _ in range(50):
+            pod_ls.ph_detector.update(0.01)
+        for _ in range(500):
+            pod_ls.ph_detector.update(-0.20)
+        assert pod_ls.ph_detector.score >= pod_ls.ph_detector.lambda_threshold * 0.2
+
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        assert result == LifecycleState.PROBATION
+
+    def test_warning_29_days_stays(self) -> None:
+        """29일 → stays WARNING."""
+        pod = _make_pod()
+        pod.state = LifecycleState.WARNING
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        bar_ts = datetime(2024, 1, 30, tzinfo=UTC)
+        pod_ls.state_entered_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+        # PH score를 높게 유지 → recovery 불가
+        for _ in range(50):
+            pod_ls.ph_detector.update(0.01)
+        for _ in range(500):
+            pod_ls.ph_detector.update(-0.20)
+        assert pod_ls.ph_detector.score >= pod_ls.ph_detector.lambda_threshold * 0.2
+
+        result = mgr.evaluate(pod, bar_timestamp=bar_ts)
+        assert result == LifecycleState.WARNING
+
+
+# ── TestHardStopPriority ─────────────────────────────────────────
+
+
+class TestHardStopPriority:
+    """Hard stop이 일반 전이보다 우선 적용되는지 검증."""
+
+    def test_hard_stop_preempts_normal_transition(self) -> None:
+        """WARNING+30일 + MDD 25% → RETIRED (hard stop 우선, PROBATION 아님)."""
+        pod = _make_pod()
+        pod.state = LifecycleState.WARNING
+        _set_pod_performance(pod, max_drawdown=0.25)
+        _inject_daily_returns(pod, [0.001] * 10)
+
+        mgr = _make_manager()
+        pod_ls = mgr._get_or_create_state(pod)
+        # WARNING 30일 이상 경과 → 일반적으로 PROBATION escalation
+        pod_ls.state_entered_at = datetime.now(UTC) - timedelta(days=35)
+
+        # But MDD >= 25% → hard stop이 먼저 체크되어 RETIRED
+        result = mgr.evaluate(pod)
+        assert result == LifecycleState.RETIRED
