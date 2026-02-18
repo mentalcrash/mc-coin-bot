@@ -1,0 +1,26 @@
+meta:
+  name: fear-divergence
+  display_name: Fear-Greed Divergence
+  category: Behavioral
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: IMPLEMENTED
+  created_at: '2026-02-18'
+  retired_at: null
+  economic_rationale: F&G 극단 + 가격 다이버전스 contrarian. 행동 편향 기반. F&G<10 Sharpe 8.0.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-18'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

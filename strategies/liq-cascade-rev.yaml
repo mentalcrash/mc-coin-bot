@@ -1,0 +1,26 @@
+meta:
+  name: liq-cascade-rev
+  display_name: Liquidation Cascade Reversal
+  category: Structural
+  timeframe: 4H
+  short_mode: FULL
+  status: IMPLEMENTED
+  created_at: '2026-02-18'
+  retired_at: null
+  economic_rationale: 레버리지 캐스케이드 후 가격 오버슈트 평균회귀. BIS/SSRN 2025 실증.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      score: 24
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-18'
+  gate: G0A
+  verdict: PASS
+  rationale: 24/30점

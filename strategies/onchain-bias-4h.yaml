@@ -1,0 +1,27 @@
+meta:
+  name: onchain-bias-4h
+  display_name: On-chain Bias 4H
+  category: On-chain
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: IMPLEMENTED
+  created_at: '2026-02-18'
+  retired_at: null
+  economic_rationale: On-chain Phase(MVRV/Flow/Stablecoin) 1D gate + 4H momentum timing.
+    교훈#41 해결.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      score: 23
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-18'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
