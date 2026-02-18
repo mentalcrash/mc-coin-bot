@@ -82,6 +82,23 @@ class ExecutionAnomalyDetector:
         self._last_slippages: list[float] = []
         self._slippage_increase_count: int = 0
 
+    @property
+    def consecutive_rejections(self) -> int:
+        """현재 연속 거부 횟수."""
+        return self._consecutive_rejections
+
+    def get_fill_rate(self) -> float:
+        """현재 1h 윈도우 fill rate (0.0~1.0).
+
+        Returns:
+            Fill rate. 주문 없으면 1.0 (정상 취급).
+        """
+        self._prune_timestamps()
+        order_count = len(self._order_timestamps)
+        if order_count == 0:
+            return 1.0
+        return len(self._fill_timestamps) / order_count
+
     def on_fill(
         self,
         latency_seconds: float,

@@ -120,19 +120,82 @@ groups:
           summary: "Distribution drift detected for {{ $labels.strategy }} (p={{ $value | printf \"%.4f\" }})"
           description: "KS test p-value below 0.05 for over 1 day. Live return distribution may have shifted from backtest reference."
 
-      # 13. Structural Decay — RANSAC decay detected for 1 day
+      # 13. Structural Decay — WARNING tier (slope<=0 OR conformal breach)
       - alert: StructuralDecay
         expr: mcbot_ransac_decay_detected == 1
         for: 1d
         labels:
-          severity: critical
+          severity: warning
         annotations:
           summary: "Structural decay detected for {{ $labels.strategy }}"
           description: "Conformal-RANSAC detector indicates structural performance decay (slope <= 0 or conformal bound breach)."
 
+      # 13b. Structural Decay — CRITICAL tier (slope<=0 AND conformal breach)
+      - alert: StructuralDecayCritical
+        expr: mcbot_ransac_slope <= 0 and mcbot_ransac_current_cumulative < mcbot_ransac_conformal_lower
+        for: 1d
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical structural decay for {{ $labels.strategy }}"
+          description: "RANSAC slope <= 0 AND cumulative return below conformal lower bound. Strategy may have lost its edge."
+
+      # 12b. Distribution Drift — CRITICAL tier (p-value < 0.01 for 1 day)
+      - alert: DistributionDriftCritical
+        expr: mcbot_distribution_p_value < 0.01 and mcbot_distribution_p_value > 0
+        for: 1d
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical distribution drift for {{ $labels.strategy }} (p={{ $value | printf \"%.4f\" }})"
+          description: "KS test p-value below 0.01 for over 1 day. Live return distribution has significantly shifted from backtest reference."
+
+      # 12c. GBM Drawdown — WARNING (depth OR duration > 95% CI)
+      - alert: GBMDrawdownWarning
+        expr: mcbot_gbm_severity == 1
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "GBM drawdown warning for {{ $labels.strategy }}"
+          description: "Drawdown depth OR duration exceeds 95% GBM CI. Current depth: {{ with printf \"mcbot_gbm_drawdown_depth{strategy='%s'}\" $labels.strategy | query }}{{ . | first | value | printf \"%.2f\" }}{{ end }}"
+
+      # 12d. GBM Drawdown — CRITICAL (depth AND duration > 95% CI)
+      - alert: GBMDrawdownCritical
+        expr: mcbot_gbm_severity == 2
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical GBM drawdown for {{ $labels.strategy }}"
+          description: "Drawdown depth AND duration both exceed 95% GBM CI. Immediate review recommended."
+
+      # 12e. Execution Anomaly — Low fill rate
+      - alert: ExecutionLowFillRate
+        expr: mcbot_execution_fill_rate < 0.8 and mcbot_execution_fill_rate > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low execution fill rate ({{ $value | printf \"%.1f\" }}%)"
+          description: "1h fill rate below 80%. Execution quality may be degraded."
+
+      # 12f. Execution Anomaly — Consecutive rejections
+      - alert: ExecutionConsecutiveRejections
+        expr: mcbot_execution_consecutive_rejections >= 5
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consecutive order rejections ({{ $value | printf \"%.0f\" }})"
+          description: "{{ $value | printf \"%.0f\" }} consecutive order rejections. Order execution may be blocked."
+
       # 14. On-chain fetch 실패율 50% 초과 — 24시간 기준, 1시간 유지
       - alert: OnchainFetchHighFailureRate
-        expr: rate(mcbot_onchain_fetch_total{status="failure"}[24h]) / rate(mcbot_onchain_fetch_total[24h]) > 0.5
+        expr: >-
+          rate(mcbot_onchain_fetch_total{status="failure"}[24h])
+          / rate(mcbot_onchain_fetch_total[24h]) > 0.5
+          and rate(mcbot_onchain_fetch_total[24h]) > 0
         for: 1h
         labels:
           severity: warning
@@ -327,3 +390,60 @@ groups:
         annotations:
           summary: "High gross exposure ({{ $value | printf \"%.2f\" }})"
           description: "Pod간 총 gross exposure 3.0 초과. 레버리지 과다 위험."
+
+      # 34. 과도 레버리지 — 강제 청산 위험
+      - alert: HighAggregateLeverage
+        expr: mcbot_aggregate_leverage > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aggregate leverage dangerously high ({{ $value | printf \"%.1f\" }}x)"
+          description: "Portfolio aggregate leverage exceeds 5x for over 1 minute. Liquidation risk elevated."
+
+      # 35. Live API 차단 — 무음 주문 차단 감지
+      - alert: LiveAPIBlocked
+        expr: increase(mcbot_live_api_blocked_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Live orders blocked due to unhealthy API ({{ $value | printf \"%.0f\" }} in 5m)"
+          description: "Orders are being silently blocked because exchange API is unhealthy. Check APIUnhealthy alert and network status."
+
+      # 36. 마진 사용률 80% 초과 — margin call 사전 경고
+      - alert: HighMarginUtilization
+        expr: mcbot_margin_used_usdt / mcbot_equity_usdt > 0.8 and mcbot_equity_usdt > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High margin utilization ({{ $value | printf \"%.1f\" }}%)"
+          description: "Margin utilization exceeds 80% for over 2 minutes. Margin call risk. Reduce position sizes or add margin."
+
+      # 37. Thread 수 과다 — thread leak 감지
+      - alert: HighThreadCount
+        expr: mcbot_process_thread_count > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High thread count ({{ $value | printf \"%.0f\" }})"
+          description: "Process thread count exceeds 50 for over 5 minutes. Possible thread leak from ThreadPoolExecutor or blocking I/O."
+
+      # 38. Fill 파싱 실패 — 포지션 추적 부정확 위험
+      - alert: LiveFillParseFailure
+        expr: increase(mcbot_live_fill_parse_failure_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fill parse failure detected ({{ $value | printf \"%.0f\" }} in 5m)"
+          description: "Exchange fill response parsing failed. Position tracking may be inaccurate. Check exchange API response format changes."
+
+      # 39. MIN_NOTIONAL 빈번 스킵 — allocation 조정 필요
+      - alert: LiveFrequentMinNotionalSkip
+        expr: increase(mcbot_live_min_notional_skip_total[1h]) >= 3
+        labels:
+          severity: info
+        annotations:
+          summary: "Frequent MIN_NOTIONAL skips ({{ $value | printf \"%.0f\" }} in 1h)"
+          description: "MIN_NOTIONAL threshold skipped 3+ times in 1 hour. Consider adjusting allocation or minimum order size for affected symbols."
