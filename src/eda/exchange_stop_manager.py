@@ -155,7 +155,6 @@ class ExchangeStopManager:
             result = await self._client.create_stop_market_order(
                 symbol=futures_symbol,
                 side=close_side,
-                position_side=position_side,
                 stop_price=stop_price,
                 client_order_id=client_order_id,
             )
@@ -224,7 +223,6 @@ class ExchangeStopManager:
             result = await self._client.create_stop_market_order(
                 symbol=futures_symbol,
                 side=state.close_side,
-                position_side=state.position_side,
                 stop_price=new_stop_price,
                 client_order_id=client_order_id,
             )

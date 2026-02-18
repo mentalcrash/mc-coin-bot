@@ -325,13 +325,13 @@ class TestLiveExecutorSafetyChecks:
         fill = await executor.execute(order)
         assert fill is None
 
-    async def test_resolve_position_side_without_pm_raises(self) -> None:
-        """PM 미설정 시 _resolve_position_side()는 RuntimeError 발생."""
+    async def test_resolve_reduce_only_without_pm_raises(self) -> None:
+        """PM 미설정 시 _resolve_reduce_only()는 RuntimeError 발생."""
         executor = self._make_live_executor()
         # PM 설정하지 않음
         order = _make_order()
         with pytest.raises(RuntimeError, match="PM set"):
-            executor._resolve_position_side(order)
+            executor._resolve_reduce_only(order)
 
     async def test_execute_single_without_pm_raises(self) -> None:
         """PM 미설정 시 _execute_single()은 RuntimeError 발생."""
@@ -342,7 +342,6 @@ class TestLiveExecutorSafetyChecks:
             await executor._execute_single(
                 order=order,
                 futures_symbol="BTC/USDT:USDT",
-                position_side="LONG",
                 reduce_only=False,
             )
 
@@ -386,7 +385,7 @@ class TestLiveExecutorSafetyChecks:
         assert confirmed["status"] == "closed"
 
     async def test_execute_with_pm_and_healthy_api(self) -> None:
-        """PM 설정 + API healthy 시 _resolve_position_side 호출."""
+        """PM 설정 + API healthy 시 _resolve_reduce_only 호출."""
         executor = self._make_live_executor()
         mock_pm = MagicMock()
         mock_pm.positions = {}

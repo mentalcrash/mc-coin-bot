@@ -79,7 +79,6 @@ class TestCreateStopMarketOrder:
         result = await client.create_stop_market_order(
             symbol="BTC/USDT:USDT",
             side="sell",
-            position_side="LONG",
             stop_price=44000.0,
             client_order_id="safety-stop-BTC",
         )
@@ -94,7 +93,7 @@ class TestCreateStopMarketOrder:
         assert call_args[0][2] == "sell"  # side
 
         params = call_args[0][5]
-        assert params["positionSide"] == "LONG"
+        assert "positionSide" not in params
         assert params["stopPrice"] == "44000.0"
         assert params["closePosition"] == "true"
         assert params["newClientOrderId"] == "safety-stop-BTC"
@@ -107,13 +106,12 @@ class TestCreateStopMarketOrder:
         await client.create_stop_market_order(
             symbol="ETH/USDT:USDT",
             side="buy",
-            position_side="SHORT",
             stop_price=3500.0,
         )
 
         call_args = mock.create_order.call_args
         params = call_args[0][5]
-        assert params["positionSide"] == "SHORT"
+        assert "positionSide" not in params
         assert params["stopPrice"] == "3500.0"
 
     @pytest.mark.asyncio
@@ -126,7 +124,6 @@ class TestCreateStopMarketOrder:
             await client.create_stop_market_order(
                 symbol="BTC/USDT:USDT",
                 side="sell",
-                position_side="LONG",
                 stop_price=0.0,
             )
 
@@ -140,7 +137,6 @@ class TestCreateStopMarketOrder:
             await client.create_stop_market_order(
                 symbol="BTC/USDT:USDT",
                 side="sell",
-                position_side="LONG",
                 stop_price=44000.0,
             )
 
@@ -158,7 +154,6 @@ class TestCreateStopMarketOrder:
             await client.create_stop_market_order(
                 symbol="BTC/USDT:USDT",
                 side="sell",
-                position_side="LONG",
                 stop_price=44000.0,
             )
 
@@ -171,7 +166,6 @@ class TestCreateStopMarketOrder:
         await client.create_stop_market_order(
             symbol="BTC/USDT:USDT",
             side="sell",
-            position_side="LONG",
             stop_price=44000.0,
         )
 
@@ -187,7 +181,6 @@ class TestCreateStopMarketOrder:
         await client.create_stop_market_order(
             symbol="BTC/USDT:USDT",
             side="sell",
-            position_side="LONG",
             stop_price=44000.0,
         )
 
