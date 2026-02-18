@@ -22,42 +22,42 @@ sources:
     api_url: https://api.llama.fi
     date_column: date
     lag_days: 1
-    rate_limit_per_min: 300
+    rate_limit_per_min: 25
 
   - id: coinmetrics
     name: Coin Metrics Community
     api_url: https://community-api.coinmetrics.io/v4
     date_column: time
     lag_days: 1
-    rate_limit_per_min: 100
+    rate_limit_per_min: 90
 
   - id: alternative_me
     name: Alternative.me
     api_url: https://api.alternative.me/fng/
     date_column: timestamp
     lag_days: 1
-    rate_limit_per_min: 30
+    rate_limit_per_min: 10
 
   - id: blockchain_com
     name: Blockchain.com
     api_url: https://api.blockchain.info/charts
     date_column: timestamp
     lag_days: 1
-    rate_limit_per_min: 60
+    rate_limit_per_min: 5
 
   - id: etherscan
     name: Etherscan
     api_url: https://api.etherscan.io/v2/api
     date_column: timestamp
     lag_days: 0
-    rate_limit_per_min: 5
+    rate_limit_per_min: 4
 
   - id: mempool_space
     name: mempool.space
     api_url: https://mempool.space/api/v1
     date_column: timestamp
     lag_days: 0
-    rate_limit_per_min: 60
+    rate_limit_per_min: 8
 
   - id: fred
     name: FRED (Federal Reserve Economic Data)

@@ -53,6 +53,8 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 | Binance Futures | Open Interest | 1H | 30일 제한 | 〃 |
 | Binance Futures | Long/Short Ratio | 1H | 30일 제한 | 〃 |
 | Binance Futures | Taker Buy/Sell Ratio | 1H | 30일 제한 | 〃 |
+| Binance Futures | Top Trader Account L/S Ratio | 1H | 30일 제한 | 〃 |
+| Binance Futures | Top Trader Position L/S Ratio | 1H | 30일 제한 | 〃 |
 
 - **대상 에셋**: 16종 (Tier 1 + Tier 2), `src/config/universe.py`에서 중앙 관리
   - **Tier 1** (8종): BTC, ETH, BNB, SOL, DOGE, LINK, ADA, AVAX — 6종 전체 수집
@@ -63,11 +65,11 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 
 ### On-chain (온체인 데이터)
 
-총 **6개 소스**, **22개 데이터셋**을 수집합니다. (전체 14개 소스, 75개 데이터셋 — Macro/Options/DerivExt 포함)
+총 **6개 소스**, **23개 데이터셋**을 수집합니다. (전체 14개 소스, 75개 데이터셋 — Macro/Options/DerivExt 포함)
 
 | 소스 | 데이터 | 데이터셋 수 | 해상도 | 히스토리 |
 |------|--------|:-----------:|--------|---------|
-| **DeFiLlama** | Stablecoin Supply (전체/체인/개별) | 7 | Daily | 2020~ |
+| **DeFiLlama** | Stablecoin Supply (전체/체인/개별) | 8 | Daily | 2020~ |
 | **DeFiLlama** | TVL (전체/체인별) | 6 | Daily | 2020~ |
 | **DeFiLlama** | DEX Volume | 1 | Daily | 2020~ |
 | **Coin Metrics** | 12개 Community 메트릭 (BTC/ETH) | 2 | Daily | 2009~ |
@@ -79,7 +81,7 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 **저장 경로**: `data/{layer}/onchain/{source}/{name}.parquet`
 
 <details>
-<summary>데이터셋 전체 목록 (22개)</summary>
+<summary>데이터셋 전체 목록 (23개)</summary>
 
 | # | Source | Name | 설명 |
 |---|--------|------|------|
@@ -474,10 +476,10 @@ uv run mcbot ingest deriv-ext info
 | mempool.space | ~10 req/min | **8 req/min** | 보수적 |
 | **FRED** | ~120 req/min | **100 req/min** | 매우 관대 |
 | **yfinance** | ~2,000 req/hr (비공식) | 보수적 사용 | 비공식 API — 정책 변경 가능 |
-| **CoinGecko Demo** | 30 req/min, 10K/month | **25 req/min** | 월간 콜 제한 주의 |
-| **Deribit** | ~20 req/s (token-bucket) | **10 req/s** | Public endpoint |
-| **Coinalyze** | 40 req/min | **35 req/min** | 키 등록 필요 |
-| **Hyperliquid** | 비공식 | 보수적 사용 | POST 방식 |
+| **CoinGecko Demo** | 30 req/min, 10K/month | **30 req/min** | 월간 콜 제한 주의 |
+| **Deribit** | ~20 req/s (token-bucket) | **300 req/min** | Public endpoint |
+| **Coinalyze** | 40 req/min | **40 req/min** | 키 등록 필요 |
+| **Hyperliquid** | 비공식 | **60 req/min** | POST 방식 |
 
 - On-chain 클라이언트: `AsyncOnchainClient` — 소스별 `RateLimiter` + exponential backoff retry (최대 3회)
 - Macro/Options/DerivExt: 각 모듈 내 `client.py`에 자체 `RateLimiter` 포함
