@@ -69,7 +69,10 @@ allowed-tools:
 1. **참신성 추구**: 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
 1. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
 1. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
-1. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode 검토
+1. **적극적 Long/Short 활용 (One-way Mode)**: 거래소는 One-way Mode(심볼당 단일 방향, netting).
+   동일 심볼 Long+Short 동시 보유 불가. 포지션 전환은 flat 거치거나 방향 flip.
+   ShortMode.FULL/HEDGE_ONLY를 기본 검토하며, 하락장 alpha를 적극 추구한다.
+   DISABLED는 명확한 근거가 있을 때만 선택
 1. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
 1. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
 1. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
@@ -300,6 +303,14 @@ Full Short (2)      | 하락장 수익  | 평균회귀 원래| Vol 매도    | A
 ─────────────────---|-------------|-------------|------------|-----------|
 권장                | HEDGE_ONLY  | FULL        | HEDGE_ONLY | FULL      |
 ```
+
+> **One-way Mode 제약:**
+>
+> - 동일 심볼 Long+Short 동시 보유 불가 (netting — 반대 주문은 기존 포지션 축소/청산)
+> - HEDGE_ONLY = 수비적 숏 허용 (동시 보유 아님, 롱 청산 후 숏 진입)
+> - 시그널 상태: +1(롱) / 0(플랫) / -1(숏) — 혼합 상태 없음
+> - 기본 권장: FULL 또는 HEDGE_ONLY (DISABLED는 명확한 근거 시만)
+> - 밈코인(DOGE 등) FULL Short 주의 (교훈 #10: MDD -622%)
 
 #### 4-B. 타임프레임 적합성
 
