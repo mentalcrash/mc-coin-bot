@@ -132,7 +132,12 @@ class LiveOnchainFeed:
             cache: dict[str, float] = {}
             for source, name, columns, rename_map in sources:
                 try:
-                    df = service.load(source, name)
+                    if source in ("fred", "yfinance"):
+                        from src.data.macro.storage import MacroSilverProcessor
+
+                        df = MacroSilverProcessor().load(source, name)
+                    else:
+                        df = service.load(source, name)
                 except Exception:
                     logger.debug("No Silver data for {}/{}, skipping", source, name)
                     continue
@@ -223,6 +228,33 @@ _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
     ("defillama", "tvl_total", ["tvl_usd"], {"tvl_usd": "oc_tvl_usd"}),
     ("defillama", "dex_volume", ["volume_usd"], {"volume_usd": "oc_dex_volume_usd"}),
     ("alternative_me", "fear_greed", ["value"], {"value": "oc_fear_greed"}),
+]
+
+# Macro 글로벌 데이터 (FRED + yfinance) — fallback용
+# deprecated: catalog로 마이그레이션 중 — fallback용으로 유지
+MACRO_GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
+    ("fred", "dxy", ["value"], {"value": "macro_dxy"}),
+    ("fred", "gold", ["value"], {"value": "macro_gold"}),
+    ("fred", "dgs10", ["value"], {"value": "macro_dgs10"}),
+    ("fred", "dgs2", ["value"], {"value": "macro_dgs2"}),
+    ("fred", "t10y2y", ["value"], {"value": "macro_yield_curve"}),
+    ("fred", "vix", ["value"], {"value": "macro_vix"}),
+    ("fred", "m2", ["value"], {"value": "macro_m2"}),
+    ("yfinance", "spy", ["close"], {"close": "macro_spy_close"}),
+    ("yfinance", "qqq", ["close"], {"close": "macro_qqq_close"}),
+    ("yfinance", "gld", ["close"], {"close": "macro_gld_close"}),
+    ("yfinance", "tlt", ["close"], {"close": "macro_tlt_close"}),
+    ("yfinance", "uup", ["close"], {"close": "macro_uup_close"}),
+    ("yfinance", "hyg", ["close"], {"close": "macro_hyg_close"}),
+    # CoinGecko
+    ("coingecko", "global_metrics", ["btc_dominance"], {"btc_dominance": "macro_btc_dom"}),
+    (
+        "coingecko",
+        "global_metrics",
+        ["total_market_cap_usd"],
+        {"total_market_cap_usd": "macro_total_mcap"},
+    ),
+    ("coingecko", "defi_global", ["defi_dominance"], {"defi_dominance": "macro_defi_dom"}),
 ]
 
 # Asset별 추가 데이터

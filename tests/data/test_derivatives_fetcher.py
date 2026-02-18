@@ -18,6 +18,8 @@ from src.models.derivatives import (
     LongShortRatioRecord,
     OpenInterestRecord,
     TakerRatioRecord,
+    TopTraderAccountRatioRecord,
+    TopTraderPositionRatioRecord,
 )
 
 
@@ -29,6 +31,8 @@ def mock_client() -> AsyncMock:
     client.fetch_open_interest_history = AsyncMock(return_value=[])
     client.fetch_long_short_ratio = AsyncMock(return_value=[])
     client.fetch_taker_buy_sell_ratio = AsyncMock(return_value=[])
+    client.fetch_top_long_short_account_ratio = AsyncMock(return_value=[])
+    client.fetch_top_long_short_position_ratio = AsyncMock(return_value=[])
     return client
 
 
@@ -207,6 +211,58 @@ class TestFetchTakerRatio:
         assert records[0].buy_sell_ratio == Decimal("1.25")
 
 
+class TestFetchTopAccountRatio:
+    @pytest.mark.asyncio()
+    async def test_empty(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+        records = await fetcher.fetch_top_account_ratio("BTC/USDT", 0, 1000)
+        assert records == []
+
+    @pytest.mark.asyncio()
+    async def test_single_record(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+        ts = 500
+        mock_client.fetch_top_long_short_account_ratio.side_effect = [
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.60",
+                    "shortAccount": "0.40",
+                    "longShortRatio": "1.50",
+                }
+            ],
+            [],
+        ]
+        records = await fetcher.fetch_top_account_ratio("BTC/USDT", 0, 1000)
+        assert len(records) == 1
+        assert isinstance(records[0], TopTraderAccountRatioRecord)
+        assert records[0].long_short_ratio == Decimal("1.50")
+
+
+class TestFetchTopPositionRatio:
+    @pytest.mark.asyncio()
+    async def test_empty(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+        records = await fetcher.fetch_top_position_ratio("BTC/USDT", 0, 1000)
+        assert records == []
+
+    @pytest.mark.asyncio()
+    async def test_single_record(self, fetcher: DerivativesFetcher, mock_client: AsyncMock) -> None:
+        ts = 500
+        mock_client.fetch_top_long_short_position_ratio.side_effect = [
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.65",
+                    "shortAccount": "0.35",
+                    "longShortRatio": "1.86",
+                }
+            ],
+            [],
+        ]
+        records = await fetcher.fetch_top_position_ratio("BTC/USDT", 0, 1000)
+        assert len(records) == 1
+        assert isinstance(records[0], TopTraderPositionRatioRecord)
+        assert records[0].long_short_ratio == Decimal("1.86")
+
+
 class TestFetchYear:
     @pytest.mark.asyncio()
     async def test_empty_year(self, fetcher: DerivativesFetcher) -> None:
@@ -242,14 +298,38 @@ class TestFetchYear:
             [{"timestamp": ts, "buyVol": "1000", "sellVol": "800", "buySellRatio": "1.25"}],
             [],
         ]
+        mock_client.fetch_top_long_short_account_ratio.side_effect = [
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.60",
+                    "shortAccount": "0.40",
+                    "longShortRatio": "1.50",
+                }
+            ],
+            [],
+        ]
+        mock_client.fetch_top_long_short_position_ratio.side_effect = [
+            [
+                {
+                    "timestamp": ts,
+                    "longAccount": "0.65",
+                    "shortAccount": "0.35",
+                    "longShortRatio": "1.86",
+                }
+            ],
+            [],
+        ]
 
         batch = await fetcher.fetch_year("BTC/USDT", 2024)
         assert not batch.is_empty
-        assert batch.total_records == 4
+        assert batch.total_records == 6
         assert len(batch.funding_rates) == 1
         assert len(batch.open_interest) == 1
         assert len(batch.long_short_ratios) == 1
         assert len(batch.taker_ratios) == 1
+        assert len(batch.top_acct_ratios) == 1
+        assert len(batch.top_pos_ratios) == 1
 
 
 class TestRateLimiting:

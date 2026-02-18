@@ -11,6 +11,8 @@ from src.models.derivatives import (
     LongShortRatioRecord,
     OpenInterestRecord,
     TakerRatioRecord,
+    TopTraderAccountRatioRecord,
+    TopTraderPositionRatioRecord,
 )
 
 
@@ -125,6 +127,86 @@ class TestTakerRatioRecord:
         assert r.timestamp.year == 2024
 
 
+class TestTopTraderAccountRatioRecord:
+    def test_create(self) -> None:
+        r = TopTraderAccountRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.60"),
+            short_account=Decimal("0.40"),
+            long_short_ratio=Decimal("1.50"),
+        )
+        assert r.long_account == Decimal("0.60")
+        assert r.short_account == Decimal("0.40")
+
+    def test_frozen(self) -> None:
+        r = TopTraderAccountRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.55"),
+            short_account=Decimal("0.45"),
+            long_short_ratio=Decimal("1.22"),
+        )
+        with pytest.raises((TypeError, ValueError)):
+            r.symbol = "ETH/USDT"  # type: ignore[misc]
+
+    def test_timestamp_from_unix_ms(self) -> None:
+        ts_ms = int(datetime(2024, 6, 15, 8, 0, 0, tzinfo=UTC).timestamp() * 1000)
+        r = TopTraderAccountRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=ts_ms,
+            long_account=Decimal("0.55"),
+            short_account=Decimal("0.45"),
+            long_short_ratio=Decimal("1.22"),
+        )
+        assert r.timestamp.year == 2024
+        assert r.timestamp.tzinfo is not None
+
+    def test_le_one_constraint(self) -> None:
+        with pytest.raises((TypeError, ValueError)):
+            TopTraderAccountRatioRecord(
+                symbol="BTC/USDT",
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                long_account=Decimal("1.5"),
+                short_account=Decimal("0.45"),
+                long_short_ratio=Decimal("3.33"),
+            )
+
+
+class TestTopTraderPositionRatioRecord:
+    def test_create(self) -> None:
+        r = TopTraderPositionRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.65"),
+            short_account=Decimal("0.35"),
+            long_short_ratio=Decimal("1.86"),
+        )
+        assert r.long_account == Decimal("0.65")
+        assert r.long_short_ratio == Decimal("1.86")
+
+    def test_frozen(self) -> None:
+        r = TopTraderPositionRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.55"),
+            short_account=Decimal("0.45"),
+            long_short_ratio=Decimal("1.22"),
+        )
+        with pytest.raises((TypeError, ValueError)):
+            r.symbol = "ETH/USDT"  # type: ignore[misc]
+
+    def test_le_one_constraint(self) -> None:
+        with pytest.raises((TypeError, ValueError)):
+            TopTraderPositionRatioRecord(
+                symbol="BTC/USDT",
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                long_account=Decimal("0.50"),
+                short_account=Decimal("1.5"),
+                long_short_ratio=Decimal("0.33"),
+            )
+
+
 class TestDerivativesBatch:
     def test_empty_batch(self) -> None:
         batch = DerivativesBatch(symbol="BTC/USDT")
@@ -148,6 +230,29 @@ class TestDerivativesBatch:
             symbol="BTC/USDT",
             funding_rates=(fr,),
             open_interest=(oi,),
+        )
+        assert not batch.is_empty
+        assert batch.total_records == 2
+
+    def test_batch_with_top_trader(self) -> None:
+        ta = TopTraderAccountRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.60"),
+            short_account=Decimal("0.40"),
+            long_short_ratio=Decimal("1.50"),
+        )
+        tp = TopTraderPositionRatioRecord(
+            symbol="BTC/USDT",
+            timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+            long_account=Decimal("0.65"),
+            short_account=Decimal("0.35"),
+            long_short_ratio=Decimal("1.86"),
+        )
+        batch = DerivativesBatch(
+            symbol="BTC/USDT",
+            top_acct_ratios=(ta,),
+            top_pos_ratios=(tp,),
         )
         assert not batch.is_empty
         assert batch.total_records == 2

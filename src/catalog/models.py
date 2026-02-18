@@ -22,6 +22,8 @@ class DataType(StrEnum):
     OHLCV = "ohlcv"
     DERIVATIVES = "derivatives"
     ONCHAIN = "onchain"
+    MACRO = "macro"
+    OPTIONS = "options"
 
 
 class EnrichmentScope(StrEnum):

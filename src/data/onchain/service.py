@@ -432,6 +432,23 @@ class OnchainDataService:
                 pass
         return SOURCE_LAG_DAYS.get(source, 0)
 
+    def _load_silver_df(self, source: str, name: str) -> pd.DataFrame | None:
+        """source/name에 해당하는 Silver 데이터를 로드.
+
+        macro source는 MacroSilverProcessor를 사용합니다.
+
+        Returns:
+            DataFrame 또는 None (데이터 없음/에러)
+        """
+        try:
+            if source in ("fred", "yfinance"):
+                from src.data.macro.storage import MacroSilverProcessor
+
+                return MacroSilverProcessor(self._settings).load(source, name)
+            return self._silver.load(source, name)
+        except Exception:
+            return None
+
     def _load_and_prepare(
         self,
         source: str,
@@ -444,11 +461,8 @@ class OnchainDataService:
         Returns:
             준비된 DataFrame 또는 None (데이터 없음)
         """
-        try:
-            df = self._silver.load(source, name)
-        except Exception:
-            return None
-        if df.empty:
+        df = self._load_silver_df(source, name)
+        if df is None or df.empty:
             return None
 
         # date 컬럼 → DatetimeIndex

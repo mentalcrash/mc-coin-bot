@@ -23,6 +23,8 @@ def _make_mock_futures_client() -> MagicMock:
     )
     client.fetch_long_short_ratio = AsyncMock(return_value=[{"longShortRatio": 1.47}])
     client.fetch_taker_buy_sell_ratio = AsyncMock(return_value=[{"buySellRatio": 1.12}])
+    client.fetch_top_long_short_account_ratio = AsyncMock(return_value=[{"longShortRatio": 1.55}])
+    client.fetch_top_long_short_position_ratio = AsyncMock(return_value=[{"longShortRatio": 1.72}])
     return client
 
 
@@ -44,6 +46,8 @@ class TestFetchViaFuturesClient:
         assert result.funding_rate == pytest.approx(0.00023)
         assert result.ls_ratio == pytest.approx(1.47)
         assert result.taker_ratio == pytest.approx(1.12)
+        assert result.top_acct_ls_ratio == pytest.approx(1.55)
+        assert result.top_pos_ls_ratio == pytest.approx(1.72)
 
     @pytest.mark.asyncio
     async def test_fetch_symbol_annualized_rate(self) -> None:
@@ -65,6 +69,8 @@ class TestFetchViaFuturesClient:
         client.fetch_open_interest_history = AsyncMock(return_value=[])
         client.fetch_long_short_ratio = AsyncMock(return_value=[])
         client.fetch_taker_buy_sell_ratio = AsyncMock(return_value=[])
+        client.fetch_top_long_short_account_ratio = AsyncMock(return_value=[])
+        client.fetch_top_long_short_position_ratio = AsyncMock(return_value=[])
         fetcher = DerivativesSnapshotFetcher(futures_client=client)
 
         result = await fetcher.fetch_symbol("BTC/USDT")
@@ -74,6 +80,8 @@ class TestFetchViaFuturesClient:
         assert result.open_interest == 0.0
         assert result.ls_ratio == 1.0
         assert result.taker_ratio == 1.0
+        assert result.top_acct_ls_ratio == 1.0
+        assert result.top_pos_ls_ratio == 1.0
 
     @pytest.mark.asyncio
     async def test_fetch_symbol_exception_returns_none(self) -> None:
@@ -167,6 +175,12 @@ class TestFetchViaOwnExchange:
         mock_exchange.fapipublic_get_futures_data_takerlongshortratio = AsyncMock(
             return_value=[{"buySellRatio": 0.98}]
         )
+        mock_exchange.fapipublic_get_futures_data_toplongshortaccountratio = AsyncMock(
+            return_value=[{"longShortRatio": 1.42}]
+        )
+        mock_exchange.fapipublic_get_futures_data_toplongshortpositionratio = AsyncMock(
+            return_value=[{"longShortRatio": 1.63}]
+        )
 
         fetcher._own_exchange = mock_exchange
 
@@ -177,6 +191,8 @@ class TestFetchViaOwnExchange:
         assert result.price == 3280.0
         assert result.funding_rate == pytest.approx(0.00015)
         assert result.ls_ratio == pytest.approx(1.31)
+        assert result.top_acct_ls_ratio == pytest.approx(1.42)
+        assert result.top_pos_ls_ratio == pytest.approx(1.63)
 
     @pytest.mark.asyncio
     async def test_start_creates_own_exchange(self) -> None:

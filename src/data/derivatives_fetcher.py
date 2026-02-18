@@ -25,6 +25,8 @@ from src.models.derivatives import (
     LongShortRatioRecord,
     OpenInterestRecord,
     TakerRatioRecord,
+    TopTraderAccountRatioRecord,
+    TopTraderPositionRatioRecord,
 )
 
 if TYPE_CHECKING:
@@ -329,10 +331,142 @@ class DerivativesFetcher:
         )
         return records
 
+    async def fetch_top_account_ratio(
+        self,
+        symbol: str,
+        start_ts: int,
+        end_ts: int,
+        *,
+        period: str = "1h",
+    ) -> list[TopTraderAccountRatioRecord]:
+        """Top Trader Account Ratio 히스토리 수집 (Binance-specific, limit=30).
+
+        Args:
+            symbol: 거래 심볼
+            start_ts: 시작 시각 (Unix ms)
+            end_ts: 종료 시각 (Unix ms)
+            period: 기간 (기본 "1h")
+
+        Returns:
+            TopTraderAccountRatioRecord 리스트
+        """
+        records: list[TopTraderAccountRatioRecord] = []
+        since = start_ts
+        page_limit = 30
+
+        while since < end_ts:
+            try:
+                raw = await self._client.fetch_top_long_short_account_ratio(
+                    symbol, period=period, since=since, limit=page_limit
+                )
+            except (CcxtBadRequest, CcxtExchangeError) as e:
+                logger.warning(
+                    "Top acct ratio history unavailable for {} (startTime={}): {}",
+                    symbol,
+                    since,
+                    str(e)[:80],
+                )
+                break
+            if not raw:
+                break
+
+            for item in raw:
+                ts = int(item.get("timestamp", 0))
+                if ts > end_ts:
+                    break
+                records.append(
+                    TopTraderAccountRatioRecord(
+                        symbol=symbol,
+                        timestamp=datetime.fromtimestamp(ts / 1000, tz=UTC),
+                        long_account=Decimal(str(item.get("longAccount", 0))),
+                        short_account=Decimal(str(item.get("shortAccount", 0))),
+                        long_short_ratio=Decimal(str(item.get("longShortRatio", 0))),
+                    )
+                )
+
+            last_ts = int(raw[-1].get("timestamp", 0))
+            if last_ts <= since:
+                break
+            since = last_ts + 1
+            await self._rate_limit_sleep()
+
+        logger.info(
+            "Fetched {} top acct ratio records for {}",
+            len(records),
+            symbol,
+        )
+        return records
+
+    async def fetch_top_position_ratio(
+        self,
+        symbol: str,
+        start_ts: int,
+        end_ts: int,
+        *,
+        period: str = "1h",
+    ) -> list[TopTraderPositionRatioRecord]:
+        """Top Trader Position Ratio 히스토리 수집 (Binance-specific, limit=30).
+
+        Args:
+            symbol: 거래 심볼
+            start_ts: 시작 시각 (Unix ms)
+            end_ts: 종료 시각 (Unix ms)
+            period: 기간 (기본 "1h")
+
+        Returns:
+            TopTraderPositionRatioRecord 리스트
+        """
+        records: list[TopTraderPositionRatioRecord] = []
+        since = start_ts
+        page_limit = 30
+
+        while since < end_ts:
+            try:
+                raw = await self._client.fetch_top_long_short_position_ratio(
+                    symbol, period=period, since=since, limit=page_limit
+                )
+            except (CcxtBadRequest, CcxtExchangeError) as e:
+                logger.warning(
+                    "Top pos ratio history unavailable for {} (startTime={}): {}",
+                    symbol,
+                    since,
+                    str(e)[:80],
+                )
+                break
+            if not raw:
+                break
+
+            for item in raw:
+                ts = int(item.get("timestamp", 0))
+                if ts > end_ts:
+                    break
+                records.append(
+                    TopTraderPositionRatioRecord(
+                        symbol=symbol,
+                        timestamp=datetime.fromtimestamp(ts / 1000, tz=UTC),
+                        long_account=Decimal(str(item.get("longAccount", 0))),
+                        short_account=Decimal(str(item.get("shortAccount", 0))),
+                        long_short_ratio=Decimal(str(item.get("longShortRatio", 0))),
+                    )
+                )
+
+            last_ts = int(raw[-1].get("timestamp", 0))
+            if last_ts <= since:
+                break
+            since = last_ts + 1
+            await self._rate_limit_sleep()
+
+        logger.info(
+            "Fetched {} top pos ratio records for {}",
+            len(records),
+            symbol,
+        )
+        return records
+
     async def fetch_year(self, symbol: str, year: int) -> DerivativesBatch:
         """지정 연도의 전체 파생상품 데이터 수집.
 
-        4종 데이터를 순차적으로 수집하여 DerivativesBatch로 반환합니다.
+        6종 데이터를 순차적으로 수집하여 DerivativesBatch로 반환합니다.
 
         Args:
             symbol: 거래 심볼 (예: "BTC/USDT")
@@ -352,6 +486,8 @@ class DerivativesFetcher:
         oi = await self.fetch_open_interest(symbol, start_ts, end_ts)
         ls_ratio = await self.fetch_long_short_ratio(symbol, start_ts, end_ts)
         taker = await self.fetch_taker_ratio(symbol, start_ts, end_ts)
+        top_acct = await self.fetch_top_account_ratio(symbol, start_ts, end_ts)
+        top_pos = await self.fetch_top_position_ratio(symbol, start_ts, end_ts)
 
         batch = DerivativesBatch(
             symbol=symbol,
@@ -359,10 +495,12 @@ class DerivativesFetcher:
             open_interest=tuple(oi),
             long_short_ratios=tuple(ls_ratio),
             taker_ratios=tuple(taker),
+            top_acct_ratios=tuple(top_acct),
+            top_pos_ratios=tuple(top_pos),
         )
 
         logger.info(
-            "Derivatives fetch complete for {} {}: {} total records (FR={}, OI={}, LS={}, Taker={})",
+            "Derivatives fetch complete for {} {}: {} total records (FR={}, OI={}, LS={}, Taker={}, TopAcct={}, TopPos={})",
             symbol,
             year,
             batch.total_records,
@@ -370,6 +508,8 @@ class DerivativesFetcher:
             len(oi),
             len(ls_ratio),
             len(taker),
+            len(top_acct),
+            len(top_pos),
         )
 
         return batch

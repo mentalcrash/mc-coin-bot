@@ -37,6 +37,12 @@ DERIV_COLUMNS = [
     "taker_ratio",
     "taker_buy_vol",
     "taker_sell_vol",
+    "top_acct_ls_ratio",
+    "top_acct_long_pct",
+    "top_acct_short_pct",
+    "top_pos_ls_ratio",
+    "top_pos_long_pct",
+    "top_pos_short_pct",
 ]
 
 
@@ -110,6 +116,36 @@ def batch_to_dataframe(batch: DerivativesBatch) -> pd.DataFrame:
         df_tk = pd.DataFrame(records).set_index("timestamp")
         df_tk.index = pd.to_datetime(df_tk.index, utc=True)
         frames.append(df_tk)
+
+    # Top Trader Account Ratio (1h 간격)
+    if batch.top_acct_ratios:
+        records = [
+            {
+                "timestamp": r.timestamp,
+                "top_acct_ls_ratio": float(r.long_short_ratio),
+                "top_acct_long_pct": float(r.long_account),
+                "top_acct_short_pct": float(r.short_account),
+            }
+            for r in batch.top_acct_ratios
+        ]
+        df_ta = pd.DataFrame(records).set_index("timestamp")
+        df_ta.index = pd.to_datetime(df_ta.index, utc=True)
+        frames.append(df_ta)
+
+    # Top Trader Position Ratio (1h 간격)
+    if batch.top_pos_ratios:
+        records = [
+            {
+                "timestamp": r.timestamp,
+                "top_pos_ls_ratio": float(r.long_short_ratio),
+                "top_pos_long_pct": float(r.long_account),
+                "top_pos_short_pct": float(r.short_account),
+            }
+            for r in batch.top_pos_ratios
+        ]
+        df_tp = pd.DataFrame(records).set_index("timestamp")
+        df_tp.index = pd.to_datetime(df_tp.index, utc=True)
+        frames.append(df_tp)
 
     if not frames:
         return pd.DataFrame(columns=pd.Index(DERIV_COLUMNS))
