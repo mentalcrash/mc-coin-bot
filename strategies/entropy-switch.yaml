@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: entropy-switch
   display_name: Entropy-Switch
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: Shannon Entropy로 시장 예측가능성을 측정. 낮은 엔트로피(규칙적 패턴)에서만 추세추종 진입, 높은
     엔트로피(무작위)에서 거래 중단. Entropy+ADX 87% regime 정확도 학술 검증.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 26
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: 7/7 Critical 결함 0개
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -62,10 +65,10 @@ asset_performance:
   profit_factor: 0.67
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 26/30점 — 경제적 논거 4, 참신성 5, 데이터 5, 구현 4, 용량 4, 레짐독립 4
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 7/7 Critical 결함 0개, W2 (params=6)

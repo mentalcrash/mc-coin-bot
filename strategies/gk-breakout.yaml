@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: gk-breakout
   display_name: GK Breakout
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 변동성 압축(squeeze)은 에너지 축적을 의미하며, 해소 시 강한 방향성 움직임이 나타난다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -56,10 +59,10 @@ asset_performance:
   profit_factor: 0.96
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.39, Decay 59.0%

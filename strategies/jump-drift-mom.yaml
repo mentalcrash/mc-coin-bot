@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: jump-drift-mom
   display_name: Jump Drift Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-14'
   economic_rationale: '4H bipower variation 기반 jump 감지 후 post-jump drift 추종. 크립토 jump은
     정보 이벤트(고래, 규제, liquidation cascade) 반영. rv-jump-cont(15m)과 TF 차이 근본적(교훈 #25).'
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 22
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details:
@@ -29,7 +32,7 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
@@ -41,15 +44,15 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 285 tests passed.
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '즉시 폐기: 전 에셋 Sharpe<0. BTC -2.08, ETH -1.07. Jump-drift decomposition
     4H에서 alpha 생성 실패.'

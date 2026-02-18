@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: aroc-mom
   display_name: Adaptive ROC Momentum
@@ -12,18 +13,18 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 26
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details: {}
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
@@ -32,14 +33,14 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 26/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best DOGE Sharpe 0.51 < 1.0; BTC/ETH/BNB 음수 Sharpe; 4H 노이즈 매매 과다

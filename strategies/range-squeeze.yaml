@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: range-squeeze
   display_name: Range-Squeeze
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: NR7 패턴 + range ratio squeeze 후 vol compression이 해소되며 발생하는 방향성
     breakout을 포착. Crypto의 높은 vol로 squeeze-breakout 사이클이 뚜렷.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: Critical 0, High 0 (수정완료), Medium 4
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -62,11 +65,11 @@ asset_performance:
   profit_factor: 0.68
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점 -- 경제적 논거 4, 참신성 3, 데이터 5, 구현 5, 용량 4, 레짐독립 3
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: Critical 0개. HIGH 3건 발견 -> 2건 수정 완료 (isclose, clip), 1건 아키텍처 의존 (vol_scalar
     PM 클램핑)

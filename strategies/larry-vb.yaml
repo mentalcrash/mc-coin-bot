@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: larry-vb
   display_name: Larry VB
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 전일 변동폭 대비 일정 비율 이상 상승 시 강한 매수세가 존재한다고 판단한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 20
       max_score: 30
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -55,10 +58,10 @@ asset_performance:
   profit_factor: 0.87
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 20/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: DOGE/USDT Sharpe 0.15

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: liq-cascade-rev
   display_name: Liquidation Cascade Reversal
@@ -11,14 +12,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-18'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-18'
     details:
@@ -30,23 +31,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 2.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-18'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-18'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-18'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W: multi-phase state machine for loop (5-state FSM,
     벡터화 불가), FR derivatives ffill 확인 필요'
 - date: '2026-02-18'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best Sharpe 0.75 (ETH) but only 4 trades in 6 years. 전 에셋 Trades < 50
     (4~15). FSM cascade 패턴 극히 드물어 통계적 유의성 부재

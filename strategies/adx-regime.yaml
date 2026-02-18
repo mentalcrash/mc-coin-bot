@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: adx-regime
   display_name: ADX Regime
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: ADX가 높은 구간(강추세)에서는 모멘텀이, 낮은 구간(횡보)에서는 평균회귀가 유효하다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 24
       max_score: 30
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -56,10 +59,10 @@ asset_performance:
   profit_factor: 1.32
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe -0.68, Decay 146.3%

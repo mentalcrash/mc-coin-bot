@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: fear-divergence
   display_name: Fear-Greed Divergence
@@ -11,14 +12,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-18'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-18'
     details:
@@ -30,23 +31,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 2.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-18'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-18'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-18'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W: state machine for loop, HEDGE_ONLY=FULL 동일 처리 (entry
     조건 자체가 hedge gate)'
 - date: '2026-02-18'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best Sharpe 0.10 (BNB). 4/5 에셋 Sharpe 음수. F&G Index는 BTC-specific인데 전
     코인 동일 적용 → 구조적 한계. 저빈도 (27~56 trades)

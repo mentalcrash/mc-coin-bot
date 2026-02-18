@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: cmf-persist
   display_name: CMF Trend Persistence
@@ -12,45 +13,41 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 23
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details: {}
-  G1:
-    status: PASS
-    date: '2026-02-14'
-    details:
-      sharpe: 1.01
-      cagr: 1627.2%
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
-      oos_sharpe: -0.4
-      decay: 125.6%
+      g1_sharpe: 1.01
+      g1_cagr: 1627.2%
+      g2_oos_sharpe: -0.4
+      g2_decay: 125.6%
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 260/260 tests passed, pyright 0 errors, ruff 0 errors
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: ETH Sharpe 1.01, CAGR +1627%, Trades 827; CMF 누적 패턴이 4H 추세에 효과적
 - date: '2026-02-14'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe -0.40 (기준 >=0.3), Decay 125.6% (기준 <50%); IS→OOS 완전 붕괴, 2024-2025
     시장 구조 변화에 취약

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: risk-mom
   display_name: Risk Momentum
@@ -8,9 +9,11 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 변동성이 높을 때 포지션을 줄이고, 낮을 때 늘려서 위험 조정 수익률을 개선한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
@@ -49,6 +52,6 @@ asset_performance:
   profit_factor: 1.07
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점

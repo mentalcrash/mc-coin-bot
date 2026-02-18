@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: flow-imbalance
   display_name: Flow Imbalance
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: BVC(Bulk Volume Classification)로 매수/매도 볼륨을 추정하고, OFI(Order Flow
     Imbalance)와 VPIN proxy로 주문 흐름 불균형을 감지하여 방향 예측
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,14 +63,14 @@ asset_performance:
   profit_factor: 0.55
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: shift(1) lookahead 방지, vectorized ops, Pydantic frozen config
 - date: '2026-02-10'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-0.12~-1.63)'

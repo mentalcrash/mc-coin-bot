@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: session-breakout
   display_name: Session Breakout
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: Asian session (00-08 UTC) low-vol range를 EU/US 세션 open 시 breakout
     포착
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 27
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,14 +63,14 @@ asset_performance:
   profit_factor: 0.52
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 27/30점. FX에서 검증된 session breakout 가설
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 코드 품질 검증 통과
 - date: '2026-02-10'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-1.67 ~ -3.49)'

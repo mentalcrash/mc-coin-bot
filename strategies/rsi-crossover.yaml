@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: rsi-crossover
   display_name: RSI Crossover
@@ -8,9 +9,11 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: RSI 극단값은 가격의 과도한 이동을 나타내며, 평균으로의 복귀 확률이 높다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
@@ -49,6 +52,6 @@ asset_performance:
   profit_factor: 0.6
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 21/30점

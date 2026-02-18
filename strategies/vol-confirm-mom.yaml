@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-confirm-mom
   display_name: Volume-Confirmed Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 모멘텀 + 거래량 추세 동시 확인 시에만 진입. 크립토 리스크관리 모멘텀이 Sharpe 1.12→1.42 개선(학술
     실증). 거래량 상승 = 참여 증가 = 모멘텀 지속 연료
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,25 +32,21 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: PASS
     date: '2026-02-13'
     details:
-      best_asset: DOGE/USDT
-      sharpe: 1.29
-      cagr: 36.1
-      mdd: 24.1
-      trades: 851.0
-  G2:
-    status: PASS
-    date: '2026-02-13'
-    details:
-      is_sharpe: 1.44
-      oos_sharpe: 0.78
-      decay: 45.9
-      oos_trades: 244.0
-      overfit_prob: 0.28
-  G3:
+      g1_best_asset: DOGE/USDT
+      g1_sharpe: 1.29
+      g1_cagr: 36.1
+      g1_mdd: 24.1
+      g1_trades: 851.0
+      g2_is_sharpe: 1.44
+      g2_oos_sharpe: 0.78
+      g2_decay: 45.9
+      g2_oos_trades: 244.0
+      g2_overfit_prob: 0.28
+  P5:
     status: FAIL
     date: '2026-02-13'
     details:
@@ -58,25 +57,25 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 143 tests passed.
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: DOGE Sharpe 1.29, CAGR +36.1%, MDD -24.1%, 851 trades. ETH/SOL도 Sharpe
     0.82~0.92 양호. BTC만 음수(-0.34)로 BTC-dependent 아님.
 - date: '2026-02-13'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 0.78 >= 0.3, Decay 45.9% < 50% (borderline). OOS MDD 15.2%
     < IS 24.1%. Consistency 100%.
 - date: '2026-02-13'
-  gate: G3
+  phase: P5
   verdict: FAIL
   rationale: vol_short_window plateau 40% < 60%. 10~20 범위만 유효, 25+ 급감. 단기 볼륨 SMA 윈도우가
     좁은 봉우리형 — 과적합 위험.

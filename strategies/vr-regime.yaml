@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vr-regime
   display_name: VR-Regime
@@ -10,20 +11,22 @@ meta:
   economic_rationale: Lo-MacKinlay Variance Ratio로 random walk hypothesis를 검정. VR
     > 1 → trending (momentum), VR < 1 → mean-reverting (contrarian). Non-parametric
     test 기반.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: Critical 0, High 0 (수정완료), Medium 4
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,10 +63,10 @@ asset_performance:
   trades: 2
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점 — 경제적 논거 4, 참신성 4, 데이터 5, 구현 4, 용량 3, 레짐독립 4
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: Critical 0개. HIGH 2건 발견 → 전수 수정 완료 (warmup vr_k 반영, 주석 정정, drawdown shift)

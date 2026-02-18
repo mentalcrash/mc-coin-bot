@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vw-tsmom
   display_name: VW-TSMOM
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 거래량 가중 모멘텀으로 가격 추세의 확신도를 반영, 노이즈 필터링
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 21
       max_score: 30
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -56,10 +59,10 @@ asset_performance:
   profit_factor: 1.16
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 21/30점
 - date: '2026-02-10'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.12, Decay 92.1%, Overfit Prob 95.3%

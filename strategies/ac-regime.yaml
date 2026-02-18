@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: ac-regime
   display_name: AC-Regime
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: Returns의 serial correlation 부호로 regime을 분류. 양수 AC → trending
     (정보 점진적 반영), 음수 AC → mean-reverting (과잉반응 후 복귀).
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 27
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: Critical 0, High 0 (수정완료), Medium 4
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,11 +63,11 @@ asset_performance:
   profit_factor: 0.6
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 27/30점 — 경제적 논거 4, 참신성 5, 데이터 5, 구현 4, 용량 4, 레짐독립 5
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: Critical 0개. HIGH 2건 발견 → 전수 수정 완료 (AC sqrt 분모, drawdown shift, warmup
     fix)

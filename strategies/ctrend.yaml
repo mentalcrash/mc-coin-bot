@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: ctrend
   display_name: CTREND
@@ -8,50 +9,22 @@ meta:
   created_at: '2026-02-10'
   retired_at: null
   economic_rationale: 다수 기술적 지표의 앙상블 합산으로 개별 지표 노이즈를 상쇄하고 공통 방향성 추출
+  rationale_references: []
+  rationale_category: null
 parameters:
   training_window: 68
   prediction_horizon: 12
   alpha: 0.6812015499640257
   vol_window: 24
   vol_target: 0.4772428861436267
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 2.05
-      cagr: 97.8
-      mdd: 27.7
-  G2:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.78
-      oos_sharpe: 1.78
-      decay: 33.7
-  G3:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 4/4 파라미터 고원 + ±20% 안정
-  G4:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 'WFA PASS, PBO 60% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)'
-  G5:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 2.82
-      cagr: 173.8
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -63,16 +36,38 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 1(W3)
-  G2H:
+  P6:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 'WFA PASS, PBO 60% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)'
+  P7:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      sharpe: 2.82
+      cagr: 173.8
+  P4:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      g1_sharpe: 2.05
+      g1_cagr: 97.8
+      g1_mdd: 27.7
+      g2_sharpe: 1.78
+      g2_oos_sharpe: 1.78
+      g2_decay: 33.7
+  P5:
     status: PASS
     date: '2026-02-14'
     details:
-      best_sharpe_is: 3.685
-      default_sharpe_is: 2.693
-      improvement_pct: 36.8
-      oos_sharpe: 2.543
-      n_trials: 100
-      n_completed: 100
+      g2h_best_sharpe_is: 3.685
+      g2h_default_sharpe_is: 2.693
+      g2h_improvement_pct: 36.8
+      g2h_oos_sharpe: 2.543
+      g2h_n_trials: 100
+      g2h_n_completed: 100
+      g3_note: 4/4 파라미터 고원 + ±20% 안정
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 2.05
@@ -106,36 +101,36 @@ asset_performance:
   profit_factor: 1.44
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-10'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: SOL/USDT Sharpe 2.05, CAGR +97.8%, MDD -27.7%, 288 trades
 - date: '2026-02-10'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 1.78, Decay 33.7%, Overfit Prob 20.2%
 - date: '2026-02-10'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 4/4 파라미터 고원 + ±20% 안정. vol_target 거의 평탄, alpha 전 범위 안정
 - date: '2026-02-10'
-  gate: G4
+  phase: P6
   verdict: PASS
   rationale: WFA PASS (OOS 1.49, Decay 39%, Consist 67%). PBO 60% 경로 B PASS (전 fold
     OOS 양수 + MC p=0.000)
 - date: '2026-02-10'
-  gate: G5
+  phase: P7
   verdict: PASS
   rationale: EDA Sharpe 2.82 vs VBT 2.05. 수익 부호 일치. Trades 72 (PM threshold 필터링)
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. shift(1) 적용 확인, rolling window ML training 정상, vol_scalar
     0-div 방어, annualization 365, ShortMode 3분기 확인. Warning 1건(W3 regime concentration).
 - date: '2026-02-14'
-  gate: G2H
+  phase: P5
   verdict: PASS
   rationale: IS Sharpe 2.69→3.68 (+36.8%), OOS=2.54

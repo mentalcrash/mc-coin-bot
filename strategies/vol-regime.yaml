@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-regime
   display_name: Vol Regime
@@ -8,27 +9,25 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 시장 변동성 수준에 따라 최적 전략 파라미터가 다르며, 자동 전환이 성과를 개선한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.41
-      mdd: 32.34
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
-      is_sharpe: 1.8581
-      oos_sharpe: 0.0857
-      decay: 95.4
+      g1_sharpe: 1.41
+      g1_mdd: 32.34
+      g2_is_sharpe: 1.8581
+      g2_oos_sharpe: 0.0857
+      g2_decay: 95.4
 asset_performance:
 - symbol: ETH/USDT
   sharpe: 1.41
@@ -62,14 +61,14 @@ asset_performance:
   profit_factor: 1.17
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: ETH/USDT Sharpe 1.41
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.37, Decay 77.3%

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: asym-semivar-mr
   display_name: Asymmetric Semivariance MR
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 방향별 semivariance 비율로 공포/탐욕 과잉반응 감지 → contrarian 진입. Downside
     semivariance 예측력이 total variance 대비 우수(Kyei-Mensah 2024).
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-12'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-12'
     details:
@@ -29,7 +32,7 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details:
@@ -41,16 +44,16 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-12'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-12'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전봉 기준 시그널, rolling semivariance/zscore
     무 leakage, 벡터화 연산, vol_scalar 0나눗셈 방어, ShortMode 3분기 정상
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '전 에셋 Sharpe 음수 (즉시 폐기 #2). Best SOL -0.38, CAGR -8.5%, MDD -47.5%. 4H
     semivar ratio MR이 크립토 추세시장에서 역추세 손실'

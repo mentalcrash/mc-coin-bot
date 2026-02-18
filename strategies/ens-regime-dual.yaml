@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: ens-regime-dual
   display_name: Regime-Adaptive Dual-Alpha Ensemble
@@ -32,8 +33,8 @@ parameters:
   aggregation: inverse_volatility
   vol_target: 0.35
   vol_lookback: 63
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
@@ -41,7 +42,7 @@ gates:
       max_score: 30
       ensemble_score: 21
       avg_pairwise_correlation: 0.03
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details:
@@ -55,7 +56,7 @@ gates:
       warnings: 2.0
       W1: OK(warmup_periods()=agg_lookback+vol_window+1)
       W7: OK(서브전략 위임, ensemble aggregators 재사용)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
@@ -65,16 +66,16 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: G0A 21/30점 + G0E 21/30점, 평균 쌍별 상관 0.03 < 0.6
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W: ShortMode에 HEDGE_ONLY 미지원(설계상 의도, ensemble ShortMode
     enum에 없음), vol_window 상한 252는 범위제약(annualization_factor=365 정상)'
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best SOL Sharpe 1.14이나 CAGR 7.9% < 20%. BNB/DOGE Sharpe 음수. regime-mf-mr
     서브전략 전멸이 앙상블 성과 잠식

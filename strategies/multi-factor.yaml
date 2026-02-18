@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: multi-factor
   display_name: Multi-Factor
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 모멘텀/변동성/추세 등 직교 팩터 결합으로 단일 팩터 대비 안정적 alpha
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -56,10 +59,10 @@ asset_performance:
   profit_factor: 1.09
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-10'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.17, Decay 83.3%, Overfit Prob 90%

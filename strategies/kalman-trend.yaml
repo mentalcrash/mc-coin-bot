@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: kalman-trend
   display_name: Kalman-Trend
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: 칼만 필터로 가격에서 노이즈를 베이지안 최적으로 분리. Velocity(1st derivative) 기반 추세
     감지. Adaptive Q로 변동성 레짐에 자동 적응. 고정 lookback MA 대비 lag 감소, false signal 60% 필터링.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: 7/7 Critical 결함 0개
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -56,10 +59,10 @@ asset_performance:
   profit_factor: 1.09
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점 — 경제적 논거 4, 참신성 4, 데이터 5, 구현 3, 용량 4, 레짐독립 4
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 7/7 Critical 결함 0개, W1 (Kalman loop 예외), W2 (params=5)
