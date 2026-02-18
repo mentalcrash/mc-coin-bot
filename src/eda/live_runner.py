@@ -638,7 +638,7 @@ class LiveRunner:
             # 구조화된 startup summary
             self._log_startup_summary(capital)
 
-            # Lifecycle: startup 알림
+            # Lifecycle: startup 알림 (Discord Bot ready 대기 포함)
             await self._send_lifecycle_startup(discord_tasks, capital)
 
             logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
@@ -978,6 +978,25 @@ class LiveRunner:
         )
 
     @staticmethod
+    async def _wait_for_discord_ready(
+        bot_service: DiscordBotService,
+        max_wait: float = 15.0,
+    ) -> None:
+        """Discord Bot이 ready 상태가 될 때까지 대기.
+
+        Args:
+            bot_service: DiscordBotService 인스턴스
+            max_wait: 최대 대기 시간 (초)
+        """
+        _poll_interval = 0.2
+        elapsed = 0.0
+        while not bot_service.is_ready and elapsed < max_wait:
+            await asyncio.sleep(_poll_interval)
+            elapsed += _poll_interval
+        if not bot_service.is_ready:
+            logger.warning("Discord Bot not ready after {:.1f}s, proceeding anyway", max_wait)
+
+    @staticmethod
     async def _shutdown_discord(tasks: _DiscordTasks | None) -> None:
         """Discord Bot/Queue/ReportScheduler/HealthCheckScheduler 정리."""
         if tasks is None:
@@ -1160,8 +1179,8 @@ class LiveRunner:
         """
         assert self._client is not None
 
-        # CCXT TF 변환: Binance는 소문자 사용 (1D → 1d)
-        ccxt_tf = timeframe.lower() if timeframe.endswith("D") else timeframe
+        # CCXT TF 변환: Binance는 소문자만 지원 (1D → 1d, 12H → 12h)
+        ccxt_tf = timeframe.lower()
 
         raw: list[list[Any]] = await self._client.fetch_ohlcv_raw(
             symbol, ccxt_tf, limit=min(limit, 1000)
@@ -1750,9 +1769,14 @@ class LiveRunner:
         discord_tasks: _DiscordTasks | None,
         capital: float,
     ) -> None:
-        """봇 시작 알림을 Discord ALERTS 채널에 전송."""
+        """봇 시작 알림을 Discord ALERTS 채널에 전송.
+
+        Discord Bot이 ready 상태가 될 때까지 대기한 후 전송합니다.
+        """
         if discord_tasks is None:
             return
+
+        await self._wait_for_discord_ready(discord_tasks.bot_service)
 
         from src.notification.lifecycle import format_startup_embed
 

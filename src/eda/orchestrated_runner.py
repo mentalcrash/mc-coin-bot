@@ -50,6 +50,7 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
 
     Orchestrator가 리스크를 관리하므로 PM은 safety-net 가드레일만 설정합니다.
     PM stop-loss = max_portfolio_drawdown * 1.5 (cap 30%).
+    TS/Rebalance: Pod-level 설정을 집계 (any True → True, max multiplier).
 
     Args:
         orch_config: OrchestratorConfig
@@ -61,11 +62,18 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
         orch_config.max_portfolio_drawdown * _PM_STOP_LOSS_HEADROOM,
         _PM_STOP_LOSS_CAP,
     )
+
+    # Pod-level TS/rebalance 설정 집계
+    use_ts = any(p.use_trailing_stop for p in orch_config.pods)
+    ts_multiplier = max(p.trailing_stop_atr_multiplier for p in orch_config.pods)
+    rebalance_threshold = min(p.rebalance_threshold for p in orch_config.pods)
+
     return PortfolioManagerConfig(
         max_leverage_cap=orch_config.max_gross_leverage,
         system_stop_loss=pm_stop_loss,
-        use_trailing_stop=False,
-        rebalance_threshold=0.01,
+        use_trailing_stop=use_ts,
+        trailing_stop_atr_multiplier=ts_multiplier,
+        rebalance_threshold=rebalance_threshold,
         cash_sharing=True,
         cost_model=CostModel(
             taker_fee=orch_config.cost_bps / 10000,

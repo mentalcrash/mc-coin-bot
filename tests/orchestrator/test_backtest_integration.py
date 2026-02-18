@@ -330,8 +330,8 @@ class TestPMConfigDerivation:
         # H-4: system_stop_loss는 이제 max_portfolio_drawdown * 1.5
         assert pm_config.system_stop_loss is not None
         assert pm_config.system_stop_loss == pytest.approx(orch_config.max_portfolio_drawdown * 1.5)
-        assert pm_config.use_trailing_stop is False
-        assert pm_config.rebalance_threshold == 0.01
+        assert pm_config.use_trailing_stop is False  # PodConfig default
+        assert pm_config.rebalance_threshold == 0.05  # PodConfig default (aggregated from pods)
         assert pm_config.cash_sharing is True
         assert pm_config.cost_model.taker_fee == pytest.approx(0.0008)
 
@@ -351,6 +351,40 @@ class TestPMConfigDerivation:
 
         pm_config = _derive_pm_config(orch_config)
         assert pm_config.system_stop_loss == pytest.approx(0.30)
+
+    def test_derive_pm_config_ts_aggregation(self) -> None:
+        """Pod-level TS 설정이 PM config에 집계되는지 검증."""
+        pod_a = PodConfig(
+            pod_id="pod-a",
+            strategy_name="tsmom",
+            symbols=("BTC/USDT",),
+            initial_fraction=0.5,
+            max_fraction=0.50,
+            min_fraction=0.02,
+            use_trailing_stop=True,
+            trailing_stop_atr_multiplier=3.0,
+            rebalance_threshold=0.10,
+        )
+        pod_b = PodConfig(
+            pod_id="pod-b",
+            strategy_name="tsmom",
+            symbols=("ETH/USDT",),
+            initial_fraction=0.5,
+            max_fraction=0.50,
+            min_fraction=0.02,
+            use_trailing_stop=False,
+            trailing_stop_atr_multiplier=2.0,
+            rebalance_threshold=0.05,
+        )
+        orch_config = _make_orch_config((pod_a, pod_b))
+        pm_config = _derive_pm_config(orch_config)
+
+        # any pod TS=True → PM TS=True
+        assert pm_config.use_trailing_stop is True
+        # max multiplier across pods
+        assert pm_config.trailing_stop_atr_multiplier == 3.0
+        # min rebalance_threshold across pods
+        assert pm_config.rebalance_threshold == 0.05
 
     def test_asset_weights_uniform(self) -> None:
         """uniform weights 검증."""
