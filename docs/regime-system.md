@@ -371,8 +371,8 @@ Hysteresis는 **앙상블 블렌딩 후** 최종 라벨에 적용됩니다 (per-
 Post-blend 방식을 선택한 이유:
 
 1. 단일 `min_hold_bars` 파라미터로 시스템 전체 안정성 제어
-2. 앙상블 효과(노이즈 상쇄) 이후 적용하므로 불필요한 이중 필터링 방지
-3. vectorized와 incremental에서 동일한 `apply_hysteresis()` 함수 공유 가능
+1. 앙상블 효과(노이즈 상쇄) 이후 적용하므로 불필요한 이중 필터링 방지
+1. vectorized와 incremental에서 동일한 `apply_hysteresis()` 함수 공유 가능
 
 ---
 
@@ -439,7 +439,8 @@ transition_prob = 1.0 - P(current_label -> current_label)
 > Live에서는 `_update_transition_counts()`로 expanding window 누적합니다.
 > transition_prob는 정보용 메트릭이므로 전략 시그널에 직접 영향을 주지 않습니다.
 > Phase 3에서 expanding-window 방식으로 개선 예정입니다.
-- `_on_bar()`에서 incremental 카운터로 matrix 갱신
+>
+> - `_on_bar()`에서 incremental 카운터로 matrix 갱신
 
 ### 7.6 RegimeContext (전략 소비용 API)
 
@@ -826,9 +827,9 @@ elif config.hmm is not None:
 ### 17.4 구현 우선순위
 
 1. **P1:** RegimeTracker 클래스 (FILL + REGIME_CHANGE 구독, in-memory 집계)
-2. **P2:** Prometheus exporter 연동 (기존 `src/monitoring/metrics.py` 확장)
-3. **P3:** Grafana 대시보드 템플릿 (JSON export)
-4. **P4:** Regime-conditional sizing (RegimeContext.suggested_vol_scalar 확장)
+1. **P2:** Prometheus exporter 연동 (기존 `src/monitoring/metrics.py` 확장)
+1. **P3:** Grafana 대시보드 템플릿 (JSON export)
+1. **P4:** Regime-conditional sizing (RegimeContext.suggested_vol_scalar 확장)
 
 ---
 
