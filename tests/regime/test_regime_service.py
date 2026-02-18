@@ -736,8 +736,10 @@ class TestRegimeChangeEvent:
         bus.subscribe(EventType.REGIME_CHANGE, capture_event)
         await service.register(bus)
 
-        # EventBus 소비 루프 시작
-        await bus.start()
+        # EventBus 소비 루프 시작 (백그라운드 태스크)
+        import asyncio
+
+        consumer_task = asyncio.create_task(bus.start())
 
         # Phase 1: 강한 상승 추세 (40 bars) → TRENDING 확립
         warmup_prices: list[float] = []
@@ -770,6 +772,7 @@ class TestRegimeChangeEvent:
             await bus.flush()
 
         await bus.stop()
+        await consumer_task
 
         # 레짐 변경 이벤트가 반드시 발행되어야 함
         assert len(events_received) > 0, "REGIME_CHANGE event should be published"

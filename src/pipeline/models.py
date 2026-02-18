@@ -3,7 +3,7 @@
 전략 수명주기 메타데이터를 관리하는 모델:
 - StrategyMeta: 전략 기본 정보
 - AssetMetrics: 에셋별 백테스트 성과
-- GateResult: Gate 검증 결과
+- PhaseResult: Phase 검증 결과
 - Decision: 의사결정 기록
 - StrategyRecord: 전략 전체 레코드 (YAML 1:1 매핑)
 """
@@ -29,34 +29,32 @@ class StrategyStatus(StrEnum):
     RETIRED = "RETIRED"
 
 
-class GateId(StrEnum):
-    """Gate 식별자."""
+class PhaseId(StrEnum):
+    """Phase 식별자 (v2)."""
 
-    G0A = "G0A"
-    G0B = "G0B"
-    G1 = "G1"
-    G2 = "G2"
-    G2H = "G2H"
-    G3 = "G3"
-    G4 = "G4"
-    G5 = "G5"
+    P1 = "P1"  # Alpha Research
+    P2 = "P2"  # Implementation
+    P3 = "P3"  # Code Audit
+    P4 = "P4"  # Backtest
+    P5 = "P5"  # Robustness
+    P6 = "P6"  # Deep Validation
+    P7 = "P7"  # Live Readiness
 
 
-# Gate 순서 (진행도 계산용)
-GATE_ORDER: list[GateId] = [
-    GateId.G0A,
-    GateId.G0B,
-    GateId.G1,
-    GateId.G2,
-    GateId.G2H,
-    GateId.G3,
-    GateId.G4,
-    GateId.G5,
+# Phase 순서 (진행도 계산용)
+PHASE_ORDER: list[PhaseId] = [
+    PhaseId.P1,
+    PhaseId.P2,
+    PhaseId.P3,
+    PhaseId.P4,
+    PhaseId.P5,
+    PhaseId.P6,
+    PhaseId.P7,
 ]
 
 
-class GateVerdict(StrEnum):
-    """Gate 판정 결과."""
+class PhaseVerdict(StrEnum):
+    """Phase 판정 결과."""
 
     PASS = "PASS"
     FAIL = "FAIL"
@@ -126,12 +124,12 @@ class AssetMetrics(BaseModel):
     beta: float | None = None
 
 
-class GateResult(BaseModel):
-    """Gate 검증 결과 (공통 스키마 + 유연한 details)."""
+class PhaseResult(BaseModel):
+    """Phase 검증 결과 (공통 스키마 + 유연한 details)."""
 
     model_config = ConfigDict(frozen=True)
 
-    status: GateVerdict
+    status: PhaseVerdict
     date: date
     details: dict[str, Any] = Field(default_factory=dict)
 
@@ -142,8 +140,8 @@ class Decision(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     date: date
-    gate: GateId
-    verdict: GateVerdict
+    phase: PhaseId
+    verdict: PhaseVerdict
     rationale: str
 
 
