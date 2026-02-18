@@ -535,6 +535,10 @@ class MultiAssetConfig(BaseModel):
     end_date: datetime
     initial_capital: Decimal = Field(default=Decimal(100_000))
     asset_weights: dict[str, float] = Field(..., description="심볼별 배분 비중")
+    asset_allocation_method: str | None = Field(
+        default=None,
+        description="동적 에셋 배분 방법 (None=정적)",
+    )
     maker_fee: float = Field(default=0.0002, ge=0)
     taker_fee: float = Field(default=0.0004, ge=0)
     slippage: float = Field(default=0.0005, ge=0)

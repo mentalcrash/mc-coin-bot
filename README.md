@@ -252,29 +252,45 @@ uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
 
 ## 데이터 수집
 
-OHLCV(1분봉), 파생상품(Funding/OI/LS/Taker), On-chain(6개 소스 22개 데이터셋) 데이터를 Medallion Architecture(Bronze→Silver)로 수집·정제합니다.
+14개 소스, 75개 데이터셋을 Medallion Architecture(Bronze→Silver)로 수집·정제합니다. 완전 무료($0/mo).
 
 ```bash
-uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025       # OHLCV
-uv run mcbot ingest derivatives batch                                # 파생상품 (8 자산)
-uv run mcbot ingest onchain batch --type all                         # On-chain (22 데이터셋)
-uv run mcbot ingest info                                             # 데이터 상태
+# OHLCV (1분봉)
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
+
+# 파생상품 — Binance Futures (8 자산)
+uv run mcbot ingest derivatives batch
+
+# On-chain — DeFiLlama, Coin Metrics, F&G 등 (22 데이터셋)
+uv run mcbot ingest onchain batch --type all
+
+# Macro — FRED(DXY/VIX/Gold/Yields/M2) + yfinance(SPY/QQQ/GLD/TLT) + CoinGecko
+uv run mcbot ingest macro batch --type all
+
+# Options — Deribit (DVOL, Put/Call Ratio, Historical Vol, Term Structure, Max Pain)
+uv run mcbot ingest options batch
+
+# Extended Derivatives — Coinalyze(멀티거래소 OI/Funding/Liq/CVD) + Hyperliquid
+uv run mcbot ingest deriv-ext batch --type all
+
+# 데이터 상태
+uv run mcbot ingest info
 ```
 
 > 상세 (저장 구조, Rate Limit, Publication Lag, 데이터 품질 등): [`docs/data-collection.md`](docs/data-collection.md)
 
 ### 데이터 카탈로그
 
-8개 소스, 28개 데이터셋의 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다. 전략 발굴 시 어떤 데이터가 있고, 어떤 컬럼이 나오고, publication lag은 며칠인지 빠르게 탐색할 수 있습니다.
+14개 소스, 75개 데이터셋의 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다. 전략 발굴 시 어떤 데이터가 있고, 어떤 컬럼이 나오고, publication lag은 며칠인지 빠르게 탐색할 수 있습니다.
 
 ```bash
-uv run mcbot catalog list                      # 전체 28개 데이터셋 목록
-uv run mcbot catalog list --type onchain       # 유형 필터 (ohlcv, derivatives, onchain)
-uv run mcbot catalog list --group stablecoin   # 그룹 필터 (stablecoin, tvl, coinmetrics, ...)
+uv run mcbot catalog list                      # 전체 75개 데이터셋 목록
+uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
+uv run mcbot catalog list --group macro_rates  # 그룹 필터
 uv run mcbot catalog show btc_metrics          # 상세 (컬럼, enrichment 설정, 전략 힌트)
 ```
 
-각 데이터셋에는 `strategy_hints`(전략 활용 아이디어)와 `enrichment`(OHLCV 병합 설정)가 포함되어 있어, 새 전략 발굴 시 데이터 탐색 → 아이디어 도출 흐름을 지원합니다.
+각 데이터셋에는 `strategy_hints`(전략 활용 아이디어)와 `enrichment`(OHLCV 병합 설정, scope: global/per_asset)가 포함되어 있어, 새 전략 발굴 시 데이터 탐색 → 아이디어 도출 흐름을 지원합니다.
 
 ---
 
@@ -348,7 +364,7 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
 2. **자산 다각화**: 8종 → 15~20종 (Tier-2/3 altcoin 추가)
 3. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([상세](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
-4. **Derivatives 활용**: Funding Rate(8h), OI, LS Ratio를 1D 전략의 보조 필터로 활용
+4. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
 
 ---
 
@@ -388,7 +404,7 @@ uv run mcbot backtest diagnose BTC/USDT -s tsmom
 
 ### 교훈 관리
 
-74개 전략 평가 과정에서 축적된 30개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+87개 전략 평가 과정에서 축적된 44개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
 
 ```bash
 uv run mcbot pipeline lessons-list                      # 전체 교훈 목록

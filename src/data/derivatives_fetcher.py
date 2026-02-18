@@ -463,26 +463,45 @@ class DerivativesFetcher:
         )
         return records
 
-    async def fetch_year(self, symbol: str, year: int) -> DerivativesBatch:
-        """지정 연도의 전체 파생상품 데이터 수집.
+    async def fetch_year(
+        self, symbol: str, year: int, *, fr_only: bool = False
+    ) -> DerivativesBatch:
+        """지정 연도의 파생상품 데이터 수집.
 
-        6종 데이터를 순차적으로 수집하여 DerivativesBatch로 반환합니다.
+        ``fr_only=True`` 이면 Funding Rate만 수집합니다 (Tier 2 에셋용).
+        나머지 데이터(OI, LS Ratio 등)는 Binance 30일 제한으로 Tier 2에는 불필요.
 
         Args:
             symbol: 거래 심볼 (예: "BTC/USDT")
             year: 수집 연도
+            fr_only: True면 Funding Rate만 수집
 
         Returns:
             DerivativesBatch 객체
         """
         start_ts, end_ts = _get_year_timestamps(year)
         logger.info(
-            "Fetching derivatives data for {} year {}",
+            "Fetching derivatives data for {} year {} (fr_only={})",
             symbol,
             year,
+            fr_only,
         )
 
         funding_rates = await self.fetch_funding_rates(symbol, start_ts, end_ts)
+
+        if fr_only:
+            batch = DerivativesBatch(
+                symbol=symbol,
+                funding_rates=tuple(funding_rates),
+            )
+            logger.info(
+                "Derivatives fetch complete for {} {} (FR only): {} records",
+                symbol,
+                year,
+                len(funding_rates),
+            )
+            return batch
+
         oi = await self.fetch_open_interest(symbol, start_ts, end_ts)
         ls_ratio = await self.fetch_long_short_ratio(symbol, start_ts, end_ts)
         taker = await self.fetch_taker_ratio(symbol, start_ts, end_ts)

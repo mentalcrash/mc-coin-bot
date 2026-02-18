@@ -5,7 +5,6 @@
 # 1. Security & Credentials (CRITICAL)
 # 에이전트가 실수로 API Key를 읽거나 학습하지 않도록 최우선 차단
 .env
-.env.*
 secrets.json
 config.json
 credentials/

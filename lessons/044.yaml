@@ -1,0 +1,17 @@
+id: 44
+title: Multi-state FSM 전략의 극저빈도 함정 — 통계적 유의성 불가
+body: liq-cascade-rev 5-state FSM(idle→alert→confirm→entry→hold)이 6년간 4~15 trades
+  생성. 개별 phase transition 확률이 낮은 상태들의 직렬 연결은 전체 trigger 확률을 곱셈적으로 감소시킴. ETH 4건 100%
+  win은 표본 부족에 의한 착시. 향후 multi-phase 전략 설계 시 G0A에서 phase transition 확률 사전 추정 + 최소 연간
+  10건 이상 trigger 검증 필요.
+category: strategy-design
+tags:
+- FSM
+- state-machine
+- low-frequency
+- statistical-significance
+strategies:
+- liq-cascade-rev
+timeframes:
+- 4H
+added_at: '2026-02-18'

@@ -86,7 +86,7 @@ YAML 기반 데이터셋 메타데이터 관리 (`catalogs/datasets.yaml`):
 
 | Component | Location | Description |
 |-----------|----------|-------------|
-| **YAML** | `catalogs/datasets.yaml` | 8 sources + 28 datasets SSOT |
+| **YAML** | `catalogs/datasets.yaml` | 14 sources + 75 datasets SSOT |
 | **Models** | `src/catalog/models.py` | DataType, SourceMeta, DatasetEntry, EnrichmentConfig |
 | **Store** | `src/catalog/store.py` | DataCatalogStore (GateCriteriaStore 패턴) |
 | **CLI** | `src/cli/catalog.py` | `catalog list`, `catalog show` |
@@ -114,6 +114,20 @@ store.build_precompute_map(["BTC/USDT"])   # → symbol→sources 매핑
 - `OnchainDataService.__init__`에 `catalog` 인자 (자동 로드)
 - `build_precompute_map()` → `_try_catalog_precompute()` 시도
 - 기존 `ONCHAIN_BATCH_DEFINITIONS`, `SOURCE_DATE_COLUMNS`, `SOURCE_LAG_DAYS` 유지 (deprecated)
+
+## Macro / Options / DerivExt Data Layers
+
+On-chain과 동일한 패턴. 각 모듈은 `client.py`, `models.py`, `fetcher.py`, `storage.py`, `service.py` 5파일 구조.
+
+| Module | Path | Scope | Prefix | Sources |
+|--------|------|-------|--------|---------|
+| **Macro** | `src/data/macro/` | GLOBAL | `macro_*` | FRED, yfinance, CoinGecko |
+| **Options** | `src/data/options/` | GLOBAL | `opt_*` | Deribit |
+| **DerivExt** | `src/data/deriv_ext/` | PER-ASSET | `dext_*` | Coinalyze, Hyperliquid |
+
+- **GLOBAL scope**: 모든 심볼에 동일 데이터 (DXY, VIX, DVOL 등)
+- **PER-ASSET scope**: 심볼별 독립 (BTC agg OI ≠ ETH agg OI)
+- **EDA Feed**: `src/eda/{macro,options,deriv_ext}_feed.py` — Backtest Provider + Live Feed
 
 ## Pandas Best Practices
 

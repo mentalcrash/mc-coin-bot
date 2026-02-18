@@ -148,6 +148,9 @@ class LiveRunner:
         self._symbols: list[str] = []
         self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
         self._onchain_feed: Any = None  # LiveOnchainFeed | None
+        self._macro_feed: Any = None  # LiveMacroFeed | None
+        self._options_feed: Any = None  # LiveOptionsFeed | None
+        self._deriv_ext_feed: Any = None  # LiveDerivExtFeed | None
         self._orchestrator: StrategyOrchestrator | None = None
         self._start_time = time.monotonic()
 
@@ -188,6 +191,9 @@ class LiveRunner:
         runner._client = client
         runner._symbols = symbols
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -227,6 +233,9 @@ class LiveRunner:
         runner._client = client
         runner._symbols = symbols
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -278,6 +287,9 @@ class LiveRunner:
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -318,7 +330,9 @@ class LiveRunner:
         multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
         feed = LiveDataFeed(
-            symbols, target_timeframe, client,
+            symbols,
+            target_timeframe,
+            client,
             target_timeframes=all_tfs if multi_tf else None,
         )
         executor = BacktestExecutor(cost_model=pm_config.cost_model)
@@ -402,7 +416,9 @@ class LiveRunner:
         multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
         feed = LiveDataFeed(
-            symbols, target_timeframe, client,
+            symbols,
+            target_timeframe,
+            client,
             target_timeframes=all_tfs if multi_tf else None,
         )
         executor = LiveExecutor(futures_client)
@@ -687,9 +703,12 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await feed_task
 
-        # DerivativesFeed / OnchainFeed 종료
+        # DerivativesFeed / OnchainFeed / Macro / Options / DerivExt 종료
         await self._stop_derivatives_feed()
         await self._stop_onchain_feed()
+        await self._stop_macro_feed()
+        await self._stop_options_feed()
+        await self._stop_deriv_ext_feed()
 
         if self._orchestrator is not None:
             await self._orchestrator.flush_pending_signals()
@@ -979,6 +998,9 @@ class LiveRunner:
         derivatives_provider = await self._start_derivatives_feed()
         onchain_provider = await self._start_onchain_feed()
         feature_store = self._create_feature_store()
+        macro_provider = await self._start_macro_feed()
+        options_provider = await self._start_options_feed()
+        deriv_ext_provider = await self._start_deriv_ext_feed()
 
         strategy_engine: StrategyEngine | None = None
         if self._orchestrator is None:
@@ -989,6 +1011,9 @@ class LiveRunner:
                 derivatives_provider=derivatives_provider,
                 feature_store=feature_store,
                 onchain_provider=onchain_provider,
+                macro_provider=macro_provider,
+                options_provider=options_provider,
+                deriv_ext_provider=deriv_ext_provider,
             )
         return regime_service, feature_store, strategy_engine
 
@@ -1325,6 +1350,84 @@ class LiveRunner:
         if self._onchain_feed is not None:
             await self._onchain_feed.stop()
 
+    def _init_macro_feed(self) -> None:
+        """LiveMacroFeed 인스턴스 생성."""
+        from src.eda.macro_feed import LiveMacroFeed
+
+        self._macro_feed = LiveMacroFeed()
+
+    async def _start_macro_feed(self) -> Any:
+        """MacroFeed 시작 (설정된 경우).
+
+        Returns:
+            MacroProvider 또는 None
+        """
+        if self._macro_feed is None:
+            return None
+        await self._macro_feed.start()
+        if not self._macro_feed._cache:
+            await self._macro_feed.stop()
+            self._macro_feed = None
+            return None
+        return self._macro_feed
+
+    async def _stop_macro_feed(self) -> None:
+        """MacroFeed 종료 (설정된 경우)."""
+        if self._macro_feed is not None:
+            await self._macro_feed.stop()
+
+    def _init_options_feed(self) -> None:
+        """LiveOptionsFeed 인스턴스 생성."""
+        from src.eda.options_feed import LiveOptionsFeed
+
+        self._options_feed = LiveOptionsFeed()
+
+    async def _start_options_feed(self) -> Any:
+        """OptionsFeed 시작 (설정된 경우).
+
+        Returns:
+            OptionsProvider 또는 None
+        """
+        if self._options_feed is None:
+            return None
+        await self._options_feed.start()
+        if not self._options_feed._cache:
+            await self._options_feed.stop()
+            self._options_feed = None
+            return None
+        return self._options_feed
+
+    async def _stop_options_feed(self) -> None:
+        """OptionsFeed 종료 (설정된 경우)."""
+        if self._options_feed is not None:
+            await self._options_feed.stop()
+
+    def _init_deriv_ext_feed(self, symbols: list[str]) -> None:
+        """LiveDerivExtFeed 인스턴스 생성."""
+        from src.eda.deriv_ext_feed import LiveDerivExtFeed
+
+        self._deriv_ext_feed = LiveDerivExtFeed(symbols)
+
+    async def _start_deriv_ext_feed(self) -> Any:
+        """DerivExtFeed 시작 (설정된 경우).
+
+        Returns:
+            DerivExtProvider 또는 None
+        """
+        if self._deriv_ext_feed is None:
+            return None
+        await self._deriv_ext_feed.start()
+        if not self._deriv_ext_feed._cache:
+            await self._deriv_ext_feed.stop()
+            self._deriv_ext_feed = None
+            return None
+        return self._deriv_ext_feed
+
+    async def _stop_deriv_ext_feed(self) -> None:
+        """DerivExtFeed 종료 (설정된 경우)."""
+        if self._deriv_ext_feed is not None:
+            await self._deriv_ext_feed.stop()
+
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.
 
@@ -1629,9 +1732,7 @@ class LiveRunner:
             else self._strategy.name
         )
         pod_summaries = (
-            self._orchestrator.get_pod_summary()
-            if self._orchestrator is not None
-            else None
+            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
         )
         embed = format_startup_embed(
             mode=self._mode.value,
@@ -1668,13 +1769,9 @@ class LiveRunner:
             for t in trades
             if t.exit_time and t.exit_time >= today_start and t.pnl is not None
         )
-        unrealized_pnl = sum(
-            p.unrealized_pnl for p in pm.positions.values() if p.is_open
-        )
+        unrealized_pnl = sum(p.unrealized_pnl for p in pm.positions.values() if p.is_open)
         pod_summaries = (
-            self._orchestrator.get_pod_summary()
-            if self._orchestrator is not None
-            else None
+            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
         )
 
         embed = format_shutdown_embed(
@@ -1715,9 +1812,7 @@ class LiveRunner:
             try:
                 final_equity = pm.total_equity
                 open_positions = pm.open_position_count
-                unrealized_pnl = sum(
-                    p.unrealized_pnl for p in pm.positions.values() if p.is_open
-                )
+                unrealized_pnl = sum(p.unrealized_pnl for p in pm.positions.values() if p.is_open)
             except Exception:
                 logger.debug("Could not collect PM state for crash embed")
 

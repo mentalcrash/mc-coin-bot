@@ -4,9 +4,9 @@ meta:
   category: Derivatives-Enhanced Trend
   timeframe: 4H
   short_mode: FULL
-  status: IMPLEMENTED
+  status: RETIRED
   created_at: '2026-02-18'
-  retired_at: null
+  retired_at: '2026-02-18'
   economic_rationale: 가격 추세(SMA cross)가 primary alpha, FR z-score는 포지셔닝 압력/군중 밀집도
     리스크 필터로만 사용. 과도 레버리지 청산 캐스케이드 회피.
   rationale_references: []

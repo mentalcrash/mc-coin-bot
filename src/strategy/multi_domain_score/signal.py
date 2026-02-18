@@ -52,7 +52,11 @@ def generate_signals(df: pd.DataFrame, config: MultiDomainScoreConfig) -> Strate
     # --- D2: Volume Score [-1, 1] ---
     obv_abs = obv_slope.abs()
     # Use median of obv_abs as normalization threshold
-    obv_threshold = obv_abs.rolling(42, min_periods=10).median().fillna(obv_abs.median())
+    obv_threshold = (
+        obv_abs.rolling(42, min_periods=10)
+        .median()
+        .fillna(obv_abs.expanding(min_periods=1).median())
+    )
     obv_norm = (obv_abs / obv_threshold.replace(0, float("nan"))).clip(upper=1.0).fillna(0)
     volume_score = np.sign(obv_slope.fillna(0)) * obv_norm
 

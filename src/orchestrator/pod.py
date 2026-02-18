@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from loguru import logger
 
+from src.orchestrator.asset_allocator import IntraPodAllocator
 from src.orchestrator.models import LifecycleState, PodPerformance, PodPosition
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ _DEFAULT_WARMUP = 50
 _PERIODS_PER_YEAR = 365
 _EPSILON = 1e-12
 _MIN_METRICS_SAMPLES = 2
+_MIN_RETURN_BARS = 3  # return 계산에 필요한 최소 버퍼 크기
 
 
 # ── StrategyPod ──────────────────────────────────────────────────
@@ -79,6 +81,16 @@ class StrategyPod:
         # MTM equity 추적 (daily return 계산용)
         self._base_equity: float = 0.0
         self._prev_equity: float = 0.0
+
+        # Intra-pod asset allocation
+        self._asset_allocator: IntraPodAllocator | None = None
+        self._asset_returns: dict[str, list[float]] = {}
+        self._prev_closes: dict[str, float] = {}
+        if config.asset_allocation is not None:
+            self._asset_allocator = IntraPodAllocator(
+                config=config.asset_allocation,
+                symbols=config.symbols,
+            )
 
         # warmup 감지
         self._warmup = self._detect_warmup()
@@ -227,13 +239,18 @@ class StrategyPod:
         direction = int(signals.direction.iloc[-1])
         strength = float(signals.strength.iloc[-1])
 
+        # 5. Intra-pod asset allocation
+        self._update_asset_returns(symbol, self._buffers[symbol])
+        self._maybe_rebalance_assets(symbol, strength)
+        adjusted_strength = self._apply_asset_weight(symbol, strength)
+
         # target_weight 저장
-        weight = direction * strength
+        weight = direction * adjusted_strength
         if abs(weight) < _MIN_WEIGHT_THRESHOLD:
             weight = 0.0
         self._target_weights[symbol] = weight
 
-        return (direction, strength)
+        return (direction, adjusted_strength)
 
     def get_target_weights(self) -> dict[str, float]:
         """Pod 내부 가중치 반환."""
@@ -513,6 +530,11 @@ class StrategyPod:
             "last_updated": perf.last_updated.isoformat(),
         }
 
+        # Asset allocator state
+        asset_allocator_data: dict[str, object] | None = None
+        if self._asset_allocator is not None:
+            asset_allocator_data = self._asset_allocator.to_dict()
+
         return {
             "state": self._state.value,
             "capital_fraction": self._capital_fraction,
@@ -522,6 +544,8 @@ class StrategyPod:
             "paused": self._paused,
             "base_equity": self._base_equity,
             "prev_equity": self._prev_equity,
+            "asset_allocator": asset_allocator_data,
+            "asset_returns": {s: list(r) for s, r in self._asset_returns.items()},
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -579,6 +603,18 @@ class StrategyPod:
         perf_val = data.get("performance")
         if isinstance(perf_val, dict):
             self._restore_performance(perf_val)
+
+        # Asset allocator
+        alloc_val = data.get("asset_allocator")
+        if isinstance(alloc_val, dict) and self._asset_allocator is not None:
+            self._asset_allocator.restore_from_dict(alloc_val)
+
+        # Asset returns
+        returns_val = data.get("asset_returns")
+        if isinstance(returns_val, dict):
+            self._asset_returns = {
+                str(k): [float(x) for x in v] for k, v in returns_val.items() if isinstance(v, list)
+            }
 
     def restore_daily_returns(self, returns: list[float]) -> None:
         """Restore daily_returns and sync live_days (persistence용)."""
@@ -664,6 +700,57 @@ class StrategyPod:
         # win_rate
         positive = sum(1 for r in returns if r > 0)
         perf.win_rate = positive / n
+
+    def _update_asset_returns(
+        self,
+        symbol: str,
+        buf: list[dict[str, float]],
+    ) -> None:
+        """수익률 히스토리 업데이트 (look-ahead bias 방지).
+
+        buf[-1] = 현재 bar, buf[-2] = 이전 bar.
+        return = buf[-2].close / buf[-3].close - 1 (현재 bar의 close 미사용).
+        """
+        if len(buf) < _MIN_RETURN_BARS:
+            return
+        prev_close = buf[-3].get("close", 0.0)
+        curr_close = buf[-2].get("close", 0.0)
+        if prev_close > _EPSILON:
+            ret = curr_close / prev_close - 1.0
+            if symbol not in self._asset_returns:
+                self._asset_returns[symbol] = []
+            self._asset_returns[symbol].append(ret)
+
+    def _maybe_rebalance_assets(
+        self,
+        symbol: str,
+        strength: float,
+    ) -> None:
+        """주기적으로 allocator를 호출하여 에셋 비중 재계산."""
+        if self._asset_allocator is None:
+            return
+
+        strengths = dict.fromkeys(self._config.symbols, 0.0)
+        strengths[symbol] = strength
+
+        self._asset_allocator.on_bar(
+            returns=self._asset_returns,
+            strengths=strengths,
+        )
+
+    def _apply_asset_weight(self, symbol: str, strength: float) -> float:
+        """에셋별 비중을 strength에 적용.
+
+        adjusted_strength = strength * asset_weight[symbol] * N
+        EW: 0.25 * 4 = 1.0 (변화 없음, 하위 호환)
+        """
+        if self._asset_allocator is None:
+            return strength
+
+        weights = self._asset_allocator.weights
+        n = len(self._config.symbols)
+        asset_w = weights.get(symbol, 1.0 / n)
+        return strength * asset_w * n
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지."""

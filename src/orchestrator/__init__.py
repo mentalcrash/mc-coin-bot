@@ -4,6 +4,10 @@
 """
 
 from src.orchestrator.allocator import CapitalAllocator
+from src.orchestrator.asset_allocator import (
+    AssetAllocationConfig,
+    IntraPodAllocator,
+)
 from src.orchestrator.config import (
     GraduationCriteria,
     OrchestratorConfig,
@@ -15,6 +19,7 @@ from src.orchestrator.lifecycle import LifecycleManager
 from src.orchestrator.metrics import OrchestratorMetrics
 from src.orchestrator.models import (
     AllocationMethod,
+    AssetAllocationMethod,
     LifecycleState,
     PodPerformance,
     PodPosition,
@@ -36,8 +41,11 @@ from src.orchestrator.state_persistence import OrchestratorStatePersistence
 
 __all__ = [
     "AllocationMethod",
+    "AssetAllocationConfig",
+    "AssetAllocationMethod",
     "CapitalAllocator",
     "GraduationCriteria",
+    "IntraPodAllocator",
     "LifecycleManager",
     "LifecycleState",
     "OrchestratedResult",

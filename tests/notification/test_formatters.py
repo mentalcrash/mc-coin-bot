@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING
 from src.notification.formatters import (
     format_balance_embed,
     format_circuit_breaker_embed,
+    format_daily_report_embed,
     format_fill_embed,
     format_fill_with_position_embed,
     format_position_embed,
     format_risk_alert_embed,
+    format_weekly_report_embed,
 )
 
 if TYPE_CHECKING:
@@ -162,3 +164,59 @@ class TestFormatPositionEmbed:
         embed = format_position_embed(event)
         assert embed["color"] == _COLOR_RED
         assert embed["fields"][0]["value"] == "SHORT"
+
+
+class TestFormatDailyReportEmbed:
+    def test_embed_structure(self) -> None:
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.max_drawdown = 5.2
+        metrics.sharpe_ratio = 1.35
+        embed = format_daily_report_embed(
+            metrics, open_positions=3, total_equity=10500.0, trades_today=[]
+        )
+        assert embed["title"] == "Daily Report"
+        assert embed["color"] == _COLOR_BLUE
+        assert len(embed["fields"]) == 6
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Today's Trades" in field_names
+        assert "Sharpe Ratio" in field_names
+
+    def test_has_timestamp(self) -> None:
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.max_drawdown = 5.0
+        metrics.sharpe_ratio = 1.0
+        embed = format_daily_report_embed(
+            metrics, open_positions=0, total_equity=10000.0, trades_today=[]
+        )
+        assert "timestamp" in embed
+        assert len(embed["timestamp"]) > 0
+
+
+class TestFormatWeeklyReportEmbed:
+    def test_embed_structure(self) -> None:
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.max_drawdown = 3.1
+        metrics.sharpe_ratio = 1.5
+        embed = format_weekly_report_embed(metrics, trades_week=[])
+        assert embed["title"] == "Weekly Report"
+        assert embed["color"] == _COLOR_BLUE
+        assert len(embed["fields"]) == 6
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Weekly Trades" in field_names
+        assert "Best Trade" in field_names
+
+    def test_has_timestamp(self) -> None:
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.max_drawdown = 3.0
+        metrics.sharpe_ratio = 1.0
+        embed = format_weekly_report_embed(metrics, trades_week=[])
+        assert "timestamp" in embed
+        assert len(embed["timestamp"]) > 0

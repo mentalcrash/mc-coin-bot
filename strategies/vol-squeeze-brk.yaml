@@ -4,9 +4,9 @@ meta:
   category: Event-Driven Breakout
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: IMPLEMENTED
+  status: RETIRED
   created_at: '2026-02-18'
-  retired_at: null
+  retired_at: '2026-02-18'
   economic_rationale: 변동성 극저 스퀴즈 후 방향성 탈출 포착. 변동성 군집(GARCH) 기반 구조적 비효율. 이벤트 드리븐으로
     극저빈도 거래.
   rationale_references: []

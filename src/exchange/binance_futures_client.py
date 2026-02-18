@@ -742,6 +742,78 @@ class BinanceFuturesClient:
 
         return await self._retry_with_backoff(_do_fetch)
 
+    async def fetch_top_long_short_account_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Top Trader Long/Short Account Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            Top Trader Account Ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[
+                dict[str, Any]
+            ] = await self.exchange.fapidata_get_toplongshortaccountratio(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_top_long_short_position_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Top Trader Long/Short Position Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            Top Trader Position Ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[
+                dict[str, Any]
+            ] = await self.exchange.fapidata_get_toplongshortpositionratio(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
     @staticmethod
     def to_futures_symbol(symbol: str) -> str:
         """Spot 심볼 → Futures 심볼 변환.

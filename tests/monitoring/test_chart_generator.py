@@ -109,18 +109,30 @@ class TestTradePnlDistribution:
 
 
 class TestDailyReport:
-    def test_returns_equity_chart(self) -> None:
+    def test_returns_four_charts(self) -> None:
         gen = ChartGenerator()
-        series = _make_equity_series()
+        series = _make_equity_series(days=180)
         trades = _make_trades()
-        # metrics는 daily_report에서 직접 사용하지 않지만 인터페이스 호환
         from unittest.mock import MagicMock
 
         metrics = MagicMock()
         result = gen.generate_daily_report(series, trades, metrics)
-        assert len(result) >= 1
         filenames = [name for name, _ in result]
         assert "equity_curve.png" in filenames
+        assert "drawdown.png" in filenames
+        assert "monthly_heatmap.png" in filenames
+        assert "trade_pnl_dist.png" in filenames
+
+    def test_all_pngs_valid(self) -> None:
+        gen = ChartGenerator()
+        series = _make_equity_series(days=180)
+        trades = _make_trades()
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        result = gen.generate_daily_report(series, trades, metrics)
+        for name, data in result:
+            assert data[:4] == _PNG_MAGIC, f"{name} is not valid PNG"
 
     def test_empty_data(self) -> None:
         gen = ChartGenerator()

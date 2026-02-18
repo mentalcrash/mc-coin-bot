@@ -271,6 +271,54 @@ class TestFetchYear:
         assert batch.is_empty
 
     @pytest.mark.asyncio()
+    async def test_fr_only_skips_other_fetches(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
+        """fr_only=True 시 FR만 수집하고 나머지는 호출하지 않음."""
+        ts = int(datetime(2024, 6, 1, tzinfo=UTC).timestamp() * 1000)
+        mock_client.fetch_funding_rate_history.side_effect = [
+            [{"timestamp": ts, "fundingRate": "0.0001", "markPrice": "42000"}],
+            [],
+        ]
+
+        batch = await fetcher.fetch_year("BTC/USDT", 2024, fr_only=True)
+
+        assert len(batch.funding_rates) == 1
+        assert batch.funding_rates[0].funding_rate == Decimal("0.0001")
+        # 나머지 필드는 빈 tuple
+        assert len(batch.open_interest) == 0
+        assert len(batch.long_short_ratios) == 0
+        assert len(batch.taker_ratios) == 0
+        assert len(batch.top_acct_ratios) == 0
+        assert len(batch.top_pos_ratios) == 0
+        # OI/LS/Taker/TopAcct/TopPos fetch 메서드가 호출되지 않아야 함
+        mock_client.fetch_open_interest_history.assert_not_called()
+        mock_client.fetch_long_short_ratio.assert_not_called()
+        mock_client.fetch_taker_buy_sell_ratio.assert_not_called()
+        mock_client.fetch_top_long_short_account_ratio.assert_not_called()
+        mock_client.fetch_top_long_short_position_ratio.assert_not_called()
+
+    @pytest.mark.asyncio()
+    async def test_fr_only_empty(self, fetcher: DerivativesFetcher) -> None:
+        """fr_only=True + 빈 응답 → 빈 배치."""
+        batch = await fetcher.fetch_year("XRP/USDT", 2024, fr_only=True)
+        assert batch.is_empty
+
+    @pytest.mark.asyncio()
+    async def test_fr_only_not_empty(
+        self, fetcher: DerivativesFetcher, mock_client: AsyncMock
+    ) -> None:
+        """fr_only=True + FR 데이터 있으면 is_empty=False."""
+        ts = int(datetime(2024, 3, 1, tzinfo=UTC).timestamp() * 1000)
+        mock_client.fetch_funding_rate_history.side_effect = [
+            [{"timestamp": ts, "fundingRate": "0.0003", "markPrice": "0.85"}],
+            [],
+        ]
+        batch = await fetcher.fetch_year("POL/USDT", 2024, fr_only=True)
+        assert not batch.is_empty
+        assert batch.total_records == 1
+
+    @pytest.mark.asyncio()
     async def test_combined_batch(
         self, fetcher: DerivativesFetcher, mock_client: AsyncMock
     ) -> None:

@@ -228,6 +228,18 @@ class ChartGenerator:
         if equity_png:
             result.append(("equity_curve.png", equity_png))
 
+        dd_png = self.generate_drawdown(equity_series)
+        if dd_png:
+            result.append(("drawdown.png", dd_png))
+
+        heatmap_png = self.generate_monthly_heatmap(equity_series)
+        if heatmap_png:
+            result.append(("monthly_heatmap.png", heatmap_png))
+
+        pnl_png = self.generate_trade_pnl_distribution(trades)
+        if pnl_png:
+            result.append(("trade_pnl_dist.png", pnl_png))
+
         return result
 
     def generate_weekly_report(

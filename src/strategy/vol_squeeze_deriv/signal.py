@@ -41,7 +41,8 @@ def generate_signals(df: pd.DataFrame, config: VolSqueezeDerivConfig) -> Strateg
     vol_scalar: pd.Series = df["vol_scalar"].shift(1)  # type: ignore[assignment]
 
     # --- Phase Detection ---
-    squeeze = vol_rank < config.squeeze_threshold
+    # vol_percentile_rank returns 0~1 scale; config thresholds are in 0~100 percentile.
+    squeeze = vol_rank < (config.squeeze_threshold / 100.0)
     expanding = atr_ratio > config.expansion_ratio
 
     # --- State Machine: squeeze duration + breakout ---
@@ -105,8 +106,8 @@ def _squeeze_breakout_direction(
         else:
             squeeze_count = 0
 
-        # Exit: vol overextended
-        if pos != 0 and vr_arr[i] > config.vol_exit_rank:
+        # Exit: vol overextended (vol_exit_rank is 0~100 percentile, vr_arr is 0~1)
+        if pos != 0 and vr_arr[i] > (config.vol_exit_rank / 100.0):
             pos = 0
 
         # Entry: squeeze met + expansion + no existing position

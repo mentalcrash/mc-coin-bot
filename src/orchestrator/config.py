@@ -13,6 +13,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
 
 
@@ -116,6 +117,12 @@ class PodConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="리밸런스 이탈 임계값",
+    )
+
+    # Asset allocation
+    asset_allocation: AssetAllocationConfig | None = Field(
+        default=None,
+        description="Pod 내 에셋 배분 설정 (None=균등분배)",
     )
 
     @model_validator(mode="after")

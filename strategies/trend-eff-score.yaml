@@ -4,9 +4,9 @@ meta:
   category: Multi-Signal Trend
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: IMPLEMENTED
+  status: RETIRED
   created_at: '2026-02-18'
-  retired_at: null
+  retired_at: '2026-02-18'
   economic_rationale: ER로 추세 품질을 측정, 품질 높을 때만 다중 수평선 모멘텀 합의로 방향 결정. 행동 편향(군집 행동) 기반
     비효율.
   rationale_references: []

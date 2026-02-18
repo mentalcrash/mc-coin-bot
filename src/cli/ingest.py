@@ -619,7 +619,7 @@ def bulk_download(
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s) to fetch (can specify multiple)"),
-    ] = [2023, 2024, 2025],  # noqa: B006
+    ] = [2020, 2021, 2022, 2023, 2024, 2025, 2026],  # noqa: B006
     quote: Annotated[
         str,
         typer.Option("--quote", "-q", help="Quote currency for filtering symbols"),

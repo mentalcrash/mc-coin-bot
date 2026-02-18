@@ -78,6 +78,28 @@ uv run mcbot ingest onchain batch --type coinmetrics
 uv run mcbot ingest onchain batch --dry-run                           # Preview targets
 uv run mcbot ingest onchain info                                      # Data inventory
 uv run mcbot ingest onchain info --type sentiment                     # By category
+
+# Macro (FRED, yfinance, CoinGecko — 15 datasets, GLOBAL scope)
+uv run mcbot ingest macro pipeline fred dxy                           # FRED single series
+uv run mcbot ingest macro pipeline yfinance spy                       # yfinance single ticker
+uv run mcbot ingest macro pipeline coingecko global_metrics           # CoinGecko
+uv run mcbot ingest macro batch --type fred                           # FRED all (7)
+uv run mcbot ingest macro batch --type yfinance                       # yfinance all (6)
+uv run mcbot ingest macro batch --type all                            # All (15)
+uv run mcbot ingest macro info                                        # Data inventory
+
+# Options (Deribit — 6 datasets, GLOBAL scope)
+uv run mcbot ingest options pipeline deribit btc_dvol                 # Single dataset
+uv run mcbot ingest options batch                                     # All (6)
+uv run mcbot ingest options info                                      # Data inventory
+
+# Extended Derivatives (Coinalyze + Hyperliquid — 10 datasets, PER-ASSET scope)
+uv run mcbot ingest deriv-ext pipeline coinalyze btc_agg_oi           # Single dataset
+uv run mcbot ingest deriv-ext pipeline hyperliquid hl_asset_contexts
+uv run mcbot ingest deriv-ext batch --type coinalyze                  # Coinalyze (8)
+uv run mcbot ingest deriv-ext batch --type hyperliquid                # Hyperliquid (2)
+uv run mcbot ingest deriv-ext batch --type all                        # All (10)
+uv run mcbot ingest deriv-ext info                                    # Data inventory
 ```
 
 ## Backtest (VBT — Vectorized)
@@ -165,9 +187,9 @@ uv run mcbot pipeline lessons-add --title "제목" --body "설명" -c strategy-d
 
 ```bash
 # Dataset 목록
-uv run mcbot catalog list                      # 전체 목록 (28 datasets)
-uv run mcbot catalog list --type onchain       # 유형 필터 (ohlcv, derivatives, onchain)
-uv run mcbot catalog list --group stablecoin   # 그룹 필터 (stablecoin, tvl, dex, coinmetrics, ...)
+uv run mcbot catalog list                      # 전체 목록 (75 datasets)
+uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
+uv run mcbot catalog list --group macro_rates  # 그룹 필터 (stablecoin, tvl, macro_rates, macro_volatility, ...)
 
 # Dataset 상세
 uv run mcbot catalog show btc_metrics          # 상세 (columns, enrichment, strategy_hints)
