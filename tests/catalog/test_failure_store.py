@@ -17,7 +17,7 @@ _SAMPLE_YAML = {
             "name": "거래비용 잠식",
             "description": "4H 이하 TF에서 비용 잠식",
             "frequency": "high",
-            "affected_gates": ["G1", "G2"],
+            "affected_phases": ["P4"],
             "detection_rules": [
                 {"metric": "total_trades", "operator": ">", "threshold": 500},
             ],
@@ -30,7 +30,7 @@ _SAMPLE_YAML = {
             "name": "IS/OOS 붕괴",
             "description": "Out-of-Sample 성과 급락",
             "frequency": "high",
-            "affected_gates": ["G2"],
+            "affected_phases": ["P4"],
             "prevention": ["Walk-Forward 검증"],
             "examples": ["kama-1d", "max-min-1d"],
         },
@@ -39,7 +39,7 @@ _SAMPLE_YAML = {
             "name": "극저빈도 거래",
             "description": "거래 횟수 부족",
             "frequency": "medium",
-            "affected_gates": ["G1"],
+            "affected_phases": ["P4", "P6"],
             "prevention": ["최소 연간 10건"],
             "examples": ["squeeze-breakout-1d"],
         },
@@ -71,7 +71,7 @@ class TestFailurePatternStore:
         p = store.load("cost_erosion")
         assert p.name == "거래비용 잠식"
         assert p.frequency == Frequency.HIGH
-        assert "G1" in p.affected_gates
+        assert "P4" in p.affected_phases
 
     def test_load_not_found(self, store: FailurePatternStore) -> None:
         with pytest.raises(KeyError, match="nonexistent"):
@@ -82,16 +82,16 @@ class TestFailurePatternStore:
         with pytest.raises(FileNotFoundError):
             s.load_all()
 
-    def test_filter_by_gate(self, store: FailurePatternStore) -> None:
-        g1_patterns = store.filter_by_gate("G1")
-        assert len(g1_patterns) == 2
-        ids = [p.id for p in g1_patterns]
+    def test_filter_by_phase(self, store: FailurePatternStore) -> None:
+        p4_patterns = store.filter_by_phase("P4")
+        assert len(p4_patterns) == 3
+        ids = [p.id for p in p4_patterns]
         assert "cost_erosion" in ids
         assert "low_trade_count" in ids
 
-    def test_filter_by_gate_g2(self, store: FailurePatternStore) -> None:
-        g2_patterns = store.filter_by_gate("G2")
-        assert len(g2_patterns) == 2
+    def test_filter_by_phase_p6(self, store: FailurePatternStore) -> None:
+        p6_patterns = store.filter_by_phase("P6")
+        assert len(p6_patterns) == 1
 
     def test_filter_by_frequency_high(self, store: FailurePatternStore) -> None:
         high = store.filter_by_frequency("high")

@@ -1,6 +1,6 @@
 """Anchored Trend-Following 3H 전략 설정.
 
-Anchor-Mom(12H G5 PASS)의 3H TF 적응 -- 심리적 앵커링 효과의 TF 불변성 검증.
+Anchor-Mom(12H P7 PASS)의 3H TF 적응 -- 심리적 앵커링 효과의 TF 불변성 검증.
 """
 
 from __future__ import annotations

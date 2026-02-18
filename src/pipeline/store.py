@@ -27,18 +27,6 @@ from src.pipeline.models import (
 
 _DEFAULT_BASE_DIR = Path("strategies")
 
-# v1 Gate → v2 Phase 매핑 (역직렬화용)
-GATE_TO_PHASE: dict[str, PhaseId] = {
-    "G0A": PhaseId.P1,
-    "G0B": PhaseId.P3,
-    "G1": PhaseId.P4,
-    "G2": PhaseId.P4,  # G1+G2 → P4 (merge)
-    "G2H": PhaseId.P5,
-    "G3": PhaseId.P5,  # G2H+G3 → P5 (merge)
-    "G4": PhaseId.P6,
-    "G5": PhaseId.P7,
-}
-
 
 class StrategyStore:
     """YAML 기반 전략 메타데이터 저장소."""
@@ -199,117 +187,29 @@ def _serialize(record: StrategyRecord) -> dict[str, Any]:
     }
 
 
-_V2_FORMAT_VERSION = 2
-
-
-def _merge_gate_results(
-    results: dict[str, dict[str, Any]],
-    gate_a: str,
-    gate_b: str,
-) -> dict[str, Any] | None:
-    """두 Gate 결과를 하나의 Phase 결과로 머지.
-
-    규칙: 나중 날짜 사용, details는 gate prefix로 합침.
-    둘 다 없으면 None, 하나만 있으면 그 결과 사용.
-    """
-    a = results.get(gate_a)
-    b = results.get(gate_b)
-    if a is None and b is None:
-        return None
-    if a is None:
-        return b
-    if b is None:
-        return a
-
-    # 둘 다 존재 → 머지
-    merged_status = "FAIL" if a["status"] == "FAIL" or b["status"] == "FAIL" else "PASS"
-
-    # 나중 날짜 사용
-    date_a = a["date"]
-    date_b = b["date"]
-    merged_date = max(date_a, date_b) if date_a and date_b else date_a or date_b
-
-    # details 합침 with prefix
-    prefix_a = gate_a.lower() + "_"
-    prefix_b = gate_b.lower() + "_"
-    merged_details: dict[str, Any] = {}
-    for k, v in a.get("details", {}).items():
-        merged_details[prefix_a + k] = v
-    for k, v in b.get("details", {}).items():
-        merged_details[prefix_b + k] = v
-
-    return {"status": merged_status, "date": merged_date, "details": merged_details}
-
-
 def _deserialize(raw: dict[str, Any]) -> StrategyRecord:
-    """YAML dict → StrategyRecord (v1/v2 듀얼 지원)."""
-    raw_meta = raw.get("meta", {})
-    meta = StrategyMeta(**raw_meta)
-
-    version = raw.get("version", 1)
+    """YAML dict → StrategyRecord."""
+    meta = StrategyMeta(**raw.get("meta", {}))
 
     phases: dict[PhaseId, PhaseResult] = {}
-
-    if "phases" in raw and version >= _V2_FORMAT_VERSION:
-        # v2 직접 로드
-        for pid_str, pdata in raw["phases"].items():
-            phases[PhaseId(pid_str)] = PhaseResult(
-                status=PhaseVerdict(pdata["status"]),
-                date=pdata["date"],
-                details=pdata.get("details", {}),
-            )
-    elif "gates" in raw:
-        # v1 → v2 변환
-        gate_results: dict[str, dict[str, Any]] = dict(raw["gates"].items())
-
-        # 단순 1:1 매핑 (G0A→P1, G0B→P3, G4→P6, G5→P7)
-        simple_map = {"G0A": PhaseId.P1, "G0B": PhaseId.P3, "G4": PhaseId.P6, "G5": PhaseId.P7}
-        for gid, pid in simple_map.items():
-            if gid in gate_results:
-                gdata = gate_results[gid]
-                phases[pid] = PhaseResult(
-                    status=PhaseVerdict(gdata["status"]),
-                    date=gdata["date"],
-                    details=gdata.get("details", {}),
-                )
-
-        # G1+G2 → P4 머지
-        merged_p4 = _merge_gate_results(gate_results, "G1", "G2")
-        if merged_p4:
-            phases[PhaseId.P4] = PhaseResult(
-                status=PhaseVerdict(merged_p4["status"]),
-                date=merged_p4["date"],
-                details=merged_p4.get("details", {}),
-            )
-
-        # G2H+G3 → P5 머지
-        merged_p5 = _merge_gate_results(gate_results, "G2H", "G3")
-        if merged_p5:
-            phases[PhaseId.P5] = PhaseResult(
-                status=PhaseVerdict(merged_p5["status"]),
-                date=merged_p5["date"],
-                details=merged_p5.get("details", {}),
-            )
+    for pid_str, pdata in raw.get("phases", {}).items():
+        phases[PhaseId(pid_str)] = PhaseResult(
+            status=PhaseVerdict(pdata["status"]),
+            date=pdata["date"],
+            details=pdata.get("details", {}),
+        )
 
     assets = [AssetMetrics(**a) for a in raw.get("asset_performance", [])]
 
-    decisions: list[Decision] = []
-    for d in raw.get("decisions", []):
-        # v1: "gate" key → v2: "phase" key
-        if "phase" in d:
-            phase_id = PhaseId(d["phase"])
-        elif "gate" in d:
-            phase_id = GATE_TO_PHASE.get(d["gate"], PhaseId.P1)
-        else:
-            phase_id = PhaseId.P1
-        decisions.append(
-            Decision(
-                date=d["date"],
-                phase=phase_id,
-                verdict=PhaseVerdict(d["verdict"]),
-                rationale=d["rationale"],
-            )
+    decisions = [
+        Decision(
+            date=d["date"],
+            phase=PhaseId(d["phase"]),
+            verdict=PhaseVerdict(d["verdict"]),
+            rationale=d["rationale"],
         )
+        for d in raw.get("decisions", [])
+    ]
 
     return StrategyRecord(
         meta=meta,

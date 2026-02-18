@@ -6,7 +6,7 @@ patterns:
     name: "거래비용 잠식"
     description: "4H 이하 TF에서 빈번한 시그널 전환으로 round-trip 비용이 edge를 잠식"
     frequency: high
-    affected_gates: [G1, G2]
+    affected_phases: [P4]
     detection_rules:
       - metric: total_trades
         operator: ">"
@@ -29,7 +29,7 @@ patterns:
     name: "IS/OOS 붕괴"
     description: "In-Sample에서 양호하나 Out-of-Sample에서 성과 급락 (과적합)"
     frequency: high
-    affected_gates: [G2]
+    affected_phases: [P4]
     detection_rules:
       - metric: oos_sharpe_ratio
         operator: "<"
@@ -51,7 +51,7 @@ patterns:
     name: "단일 에셋 편향 (DOGE 과적합)"
     description: "특정 에셋(주로 DOGE)에서만 양호한 성과, 다른 에셋 적용 시 음수 Sharpe"
     frequency: high
-    affected_gates: [G1]
+    affected_phases: [P4]
     detection_rules:
       - metric: best_asset_sharpe_ratio
         operator: ">"
@@ -73,7 +73,7 @@ patterns:
     name: "단일 지표 의존"
     description: "하나의 기술적 지표에만 의존하여 시장 상태 변화에 취약"
     frequency: high
-    affected_gates: [G1, G4]
+    affected_phases: [P4, P6]
     detection_rules:
       - metric: indicator_count
         operator: "=="
@@ -92,7 +92,7 @@ patterns:
     name: "극저빈도 거래"
     description: "직렬 조건 확률 곱셈으로 6년간 4~15건만 발생, 통계적 유의성 부족"
     frequency: medium
-    affected_gates: [G1]
+    affected_phases: [P4]
     detection_rules:
       - metric: total_trades
         operator: "<"
@@ -113,7 +113,7 @@ patterns:
     name: "레짐 취약성"
     description: "특정 시장 레짐(추세/횡보)에서만 작동하고 레짐 전환 시 대규모 손실"
     frequency: medium
-    affected_gates: [G2, G4]
+    affected_phases: [P4, P6]
     detection_rules:
       - metric: max_drawdown
         operator: ">"
@@ -134,7 +134,7 @@ patterns:
     name: "BTC/ETH 음수 Sharpe"
     description: "대형 자산(BTC/ETH)에서 음수 Sharpe — 시장 주도 자산에서 alpha 부재"
     frequency: medium
-    affected_gates: [G1]
+    affected_phases: [P4]
     detection_rules:
       - metric: btc_sharpe_ratio
         operator: "<"

@@ -50,10 +50,10 @@ class FailurePatternStore:
         catalog = self._ensure_loaded()
         return list(catalog.patterns)
 
-    def filter_by_gate(self, gate: str) -> list[FailurePattern]:
-        """Gate별 필터."""
+    def filter_by_phase(self, phase: str) -> list[FailurePattern]:
+        """Phase별 필터."""
         catalog = self._ensure_loaded()
-        return [p for p in catalog.patterns if gate in p.affected_gates]
+        return [p for p in catalog.patterns if phase in p.affected_phases]
 
     def filter_by_frequency(self, freq: str) -> list[FailurePattern]:
         """빈도별 필터."""

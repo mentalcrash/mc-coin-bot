@@ -1,7 +1,7 @@
 """Information Coefficient (IC) Quick Check module.
 
 전략 구현 전 지표 예측력을 사전 검증합니다.
-Rank IC, IC IR, Hit Rate 등을 분석하여 G1 FAIL 가능성을 사전 필터링합니다.
+Rank IC, IC IR, Hit Rate 등을 분석하여 P4 FAIL 가능성을 사전 필터링합니다.
 
 Usage:
     >>> from src.backtest.ic_analyzer import ICAnalyzer
