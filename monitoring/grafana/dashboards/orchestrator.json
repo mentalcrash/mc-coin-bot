@@ -1,0 +1,253 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_pod_equity_usdt, pod_id)",
+        "name": "pod_id",
+        "type": "query",
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Row 1: Pod Performance",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Pod Equity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_pod_equity_usdt{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Pod Drawdown",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_pod_drawdown_pct{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Pod Rolling Sharpe",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_pod_rolling_sharpe{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Pod Lifecycle State",
+      "type": "state-timeline",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "mcbot_pod_lifecycle_state{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": {
+              "0": { "text": "incubation", "color": "blue" },
+              "1": { "text": "production", "color": "green" },
+              "2": { "text": "warning", "color": "yellow" },
+              "3": { "text": "probation", "color": "orange" },
+              "4": { "text": "retired", "color": "red" }
+            }}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Row 2: Allocation & Risk",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "collapsed": false
+    },
+    {
+      "title": "Allocation Fraction",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "mcbot_pod_allocation_fraction{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] }
+    },
+    {
+      "title": "Risk Contribution (PRC)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "mcbot_pod_risk_contribution{pod_id=~\"$pod_id\"}", "legendFormat": "{{pod_id}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Active Pods",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 16 },
+      "targets": [
+        { "expr": "mcbot_active_pods", "legendFormat": "Active", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Row 3: Diversification & Netting",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "collapsed": false
+    },
+    {
+      "title": "Effective N (1/HHI)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "mcbot_portfolio_effective_n", "legendFormat": "Effective N", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Avg Correlation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 25 },
+      "targets": [
+        { "expr": "mcbot_portfolio_avg_correlation", "legendFormat": "Avg Corr", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 0.7 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Gross vs Net Exposure",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 25 },
+      "targets": [
+        { "expr": "mcbot_netting_gross_exposure", "legendFormat": "Gross", "refId": "A" },
+        { "expr": "mcbot_netting_net_exposure", "legendFormat": "Net", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Netting Offset Ratio",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 25 },
+      "targets": [
+        { "expr": "mcbot_netting_offset_ratio", "legendFormat": "Offset", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 0.1 },
+              { "color": "yellow", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["trading", "mc-coin-bot", "orchestrator"],
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "MC Coin Bot — Orchestrator",
+  "uid": "mc-orchestrator",
+  "version": 1
+}

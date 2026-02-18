@@ -129,7 +129,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
       "targets": [
         {
-          "expr": "mcbot_ws_connected",
+          "expr": "mcbot_exchange_ws_connected",
           "legendFormat": "{{ symbol }}"
         }
       ],

@@ -1,7 +1,7 @@
 {
   "uid": "mcbot-strategy",
   "title": "MC-Coin-Bot — Strategy",
-  "description": "Per-strategy PnL, Sharpe, Win Rate, Drift (template variable)",
+  "description": "Per-strategy PnL, Rolling Sharpe, Profit Factor, Pod Drawdown (template variable)",
   "tags": ["mcbot"],
   "timezone": "utc",
   "editable": true,
@@ -45,8 +45,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "mcbot_strategy_sharpe{strategy=~\"$strategy\"}",
-          "legendFormat": "{{ strategy }}"
+          "expr": "mcbot_pod_rolling_sharpe{pod_id=~\"$strategy\"}",
+          "legendFormat": "{{ pod_id }}"
         }
       ],
       "fieldConfig": {
@@ -64,24 +64,24 @@
     },
     {
       "id": 3,
-      "title": "Win Rate",
+      "title": "Profit Factor",
       "type": "stat",
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "mcbot_strategy_win_rate{strategy=~\"$strategy\"}",
+          "expr": "rate(mcbot_strategy_realized_profit_usdt_total{strategy=~\"$strategy\"}[1d]) / clamp_min(rate(mcbot_strategy_realized_loss_usdt_total{strategy=~\"$strategy\"}[1d]), 0.01)",
           "legendFormat": "{{ strategy }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.4 },
-              { "color": "green", "value": 0.5 }
+              { "color": "yellow", "value": 1.0 },
+              { "color": "green", "value": 1.5 }
             ]
           }
         }
@@ -94,20 +94,20 @@
       "gridPos": { "h": 4, "w": 8, "x": 8, "y": 8 },
       "targets": [
         {
-          "expr": "mcbot_strategy_trade_count{strategy=~\"$strategy\"}",
+          "expr": "mcbot_strategy_trade_count_total{strategy=~\"$strategy\"}",
           "legendFormat": "{{ strategy }}"
         }
       ]
     },
     {
       "id": 5,
-      "title": "Position Drift (%)",
+      "title": "Pod Drawdown (%)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
       "targets": [
         {
-          "expr": "mcbot_position_drift_pct{strategy=~\"$strategy\"}",
-          "legendFormat": "{{ symbol }}"
+          "expr": "mcbot_pod_drawdown_pct{pod_id=~\"$strategy\"}",
+          "legendFormat": "{{ pod_id }}"
         }
       ],
       "fieldConfig": {
@@ -117,8 +117,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 2 },
-              { "color": "red", "value": 5 }
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
             ]
           }
         }

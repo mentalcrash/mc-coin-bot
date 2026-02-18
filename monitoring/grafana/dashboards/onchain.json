@@ -1,0 +1,134 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_onchain_fetch_total, source)",
+        "name": "source",
+        "type": "query",
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Row 1: Fetch Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Fetch Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "rate(mcbot_onchain_fetch_total{source=~\"$source\"}[1h])", "legendFormat": "{{source}} ({{status}})", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Fetch Latency P95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(mcbot_onchain_fetch_latency_seconds_bucket{source=~\"$source\"}[1h]))", "legendFormat": "P95 {{source}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "title": "Rows per Source",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        { "expr": "mcbot_onchain_fetch_rows{source=~\"$source\"}", "legendFormat": "{{source}} / {{name}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Row 2: Cache",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false
+    },
+    {
+      "title": "Last Success Age",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "time() - mcbot_onchain_last_success_timestamp{source=~\"$source\"}", "legendFormat": "{{source}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3600 },
+              { "color": "red", "value": 86400 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Cache Size per Symbol",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "targets": [
+        { "expr": "mcbot_onchain_cache_size", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Cache Refresh Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "targets": [
+        { "expr": "rate(mcbot_onchain_cache_refresh_total[1h])", "legendFormat": "{{status}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["trading", "mc-coin-bot", "onchain"],
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "MC Coin Bot — On-chain Data",
+  "uid": "mc-onchain",
+  "version": 1
+}

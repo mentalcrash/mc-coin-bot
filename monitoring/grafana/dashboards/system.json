@@ -156,6 +156,78 @@
         { "expr": "rate(mcbot_eventbus_handler_errors_total[5m])", "legendFormat": "Errors/s", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Row 3: Advanced Process",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false
+    },
+    {
+      "title": "GC Collections Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 27 },
+      "targets": [
+        { "expr": "rate(mcbot_process_gc_collections_total[5m])", "legendFormat": "gen{{generation}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Thread Count",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 27 },
+      "targets": [
+        { "expr": "mcbot_process_thread_count", "legendFormat": "Threads", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Peak RSS Memory",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 27 },
+      "targets": [
+        { "expr": "mcbot_process_memory_rss_bytes", "legendFormat": "Current RSS", "refId": "A" },
+        { "expr": "mcbot_process_memory_rss_peak_bytes", "legendFormat": "Peak RSS", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1073741824 },
+              { "color": "red", "value": 2147483648 }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,
