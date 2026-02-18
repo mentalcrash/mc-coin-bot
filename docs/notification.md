@@ -155,9 +155,9 @@ MC Coin Bot CRASHED
 시스템 상태 요약.
 
 **Color Logic:**
-- GREEN: DD < 5%, stale symbols = 0, CB off, queue normal
-- YELLOW: DD 5-8%, stale > 0, queue depth > 50
-- RED: DD > 8%, CB active, all stale, notification degraded
+- GREEN: DD < 5%, stale symbols = 0, CB off, queue normal, safety_stop_failures < 5
+- YELLOW: DD 5-8%, stale > 0, queue depth > 50, on-chain sources degraded (ok < total)
+- RED: DD > 8%, CB active, all stale, notification degraded, safety_stop_failures >= 5
 
 **Fields:**
 - Uptime, Equity, Drawdown, WS Status, Positions, Leverage
@@ -170,7 +170,7 @@ MC Coin Bot CRASHED
 
 **Fields:**
 - Regime Label & Score (-1.0 ~ +1.0)
-- Per-symbol: Funding Rate, LS Ratio, Taker Ratio
+- Per-symbol: Price, Funding Rate (annualized), LS Ratio, Taker Ratio
 
 #### Strategy Health (8h) -> DAILY_REPORT
 
@@ -178,18 +178,19 @@ MC Coin Bot CRASHED
 
 **Fields:**
 - Rolling Sharpe (30d), Win Rate (recent 20), Profit Factor
-- Open Positions, Alpha Decay (3 consecutive Sharpe declines)
-- Per-strategy breakdown: PnL, trade count, status (HEALTHY/WATCH/DEGRADING)
+- Trades Total, Open Positions, CB Status
+- Alpha Decay (3 consecutive Sharpe declines × 2 confirmations = 16h window)
+- Per-strategy breakdown: Sharpe, WR, PnL, trade count, status (HEALTHY/WATCH/DEGRADING)
 
 ### Report Scheduler
 
-| Schedule | Trigger | Content |
-|----------|---------|---------|
-| Daily (00:00 UTC) | Auto | Equity curve + drawdown + monthly heatmap + PnL distribution |
-| Weekly (Mon 00:00 UTC) | Auto | 동일 (주간 집계) |
-| Manual | `/report` command | 즉시 daily report 생성 |
+| Schedule | Trigger | Embed Fields | Charts |
+|----------|---------|-------------|--------|
+| Daily (00:00 UTC) | Auto | Today's Trades, Today's PnL, Total Equity, Max Drawdown, Open Positions, Sharpe Ratio | 4종 (아래 참조) |
+| Weekly (Mon 00:00 UTC) | Auto | Weekly Trades, Weekly PnL, Sharpe Ratio, Max Drawdown, Best Trade, Worst Trade | 4종 (아래 참조) |
+| Manual | `/report` command | 즉시 daily report 생성 | 4종 |
 
-**Charts (PNG, matplotlib):**
+**Charts (PNG, matplotlib) — Daily & Weekly 공통:**
 - Equity Curve (timeseries with fill)
 - Drawdown (% with fill)
 - Monthly Return Heatmap (RdYlGn colormap)
@@ -199,7 +200,7 @@ MC Coin Bot CRASHED
 
 | Schedule | Content | Channel |
 |----------|---------|---------|
-| Daily (00:05 UTC) | Pod summaries, Total equity, Diversification, Correlation | DAILY_REPORT |
+| Daily (00:05 UTC) | Pod table (State/Alloc/Days), Total Equity, Effective N, Correlation, Drawdown, Gross Leverage, Active Pods | DAILY_REPORT |
 | On Event | Lifecycle transition, Capital rebalance, Risk alerts | ALERTS / TRADE_LOG |
 
 **Lifecycle Color:**
@@ -215,28 +216,37 @@ MC Coin Bot CRASHED
 
 `PositionReconciler` drift 감지 시 ALERTS 채널 전송.
 
+> **Note:** 현재 `_setup_reconciler`에서 `PositionReconciler(auto_correct=False)`로 생성되므로,
+> Action은 항상 `Manual review needed`으로 표시됩니다.
+
 ### Position Drift
 
 ```
-Position Drift Detected
-  BTC/USDT
-    Expected: 0.050 BTC (LONG)
-    Actual:   0.048 BTC (LONG)
-    Drift:    4.0%
-    Action:   Auto-corrected
+Position Drift Detected (2 symbols)
 
-  ETH/USDT
-    Expected: 0.00 (FLAT)
-    Actual:   0.10 ETH (LONG)
-    Drift:    ORPHAN POSITION
-    Action:   Manual review needed
+  BTC/USDT
+    PM: 0.050000 (LONG)
+    Exchange: 0.048000 (LONG)
+    Drift: 4.0% | Manual review needed
+
+  ORPHAN ETH/USDT
+    PM: 0.000000 (FLAT)
+    Exchange: 0.100000 (LONG)
+    Drift: 100.0% | Manual review needed
 ```
 
 **Color:** ORANGE (drift < 10%), RED (orphan or drift >= 10%)
 
 ### Balance Drift
 
-**Color:** YELLOW (2-5%), RED (>= 5%)
+```
+Balance Drift WARNING
+  PM Equity:        $10,000
+  Exchange Equity:  $10,350
+  Drift:            3.5%
+```
+
+**Color:** YELLOW (2~5%), RED (>= 5%) — drift >= 2% 시 알림 트리거
 
 ---
 
@@ -252,7 +262,7 @@ Position Drift Detected
 SAFETY STOP FAILURE
   Symbol:    BTC/USDT
   Failures:  5
-  거래소 safety net 비활성화 가능 — 수동 확인 필요
+  Exchange safety net may be INACTIVE — manual intervention required.
 ```
 
 ### Safety Stop Stale (ORANGE)
@@ -262,7 +272,7 @@ SAFETY STOP FAILURE
 ```
 SAFETY STOP STALE
   Symbol:    BTC/USDT
-  다음 bar에서 자동 재배치 예정
+  Restored from state but not found on exchange. Will be re-placed on next bar.
 ```
 
 ---
@@ -276,7 +286,7 @@ On-chain Alert — LiveOnchainFeed
   Cache refresh failed
 ```
 
-**Severity:** WARNING, **Spam Key:** `onchain_refresh_fail` (300s 쿨다운)
+**Color:** YELLOW, **Severity:** WARNING, **Spam Key:** `onchain_refresh_fail` (300s 쿨다운)
 
 ---
 
