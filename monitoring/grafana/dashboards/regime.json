@@ -10,8 +10,10 @@
       {
         "current": { "text": "All", "value": "$__all" },
         "definition": "label_values(mcbot_last_bar_age_seconds, symbol)",
+        "query": "label_values(mcbot_last_bar_age_seconds, symbol)",
         "name": "symbol",
         "type": "query",
+        "refresh": 2,
         "includeAll": true,
         "multi": true,
         "datasource": { "type": "prometheus", "uid": "prometheus" }

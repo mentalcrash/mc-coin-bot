@@ -10,8 +10,10 @@
       {
         "current": { "text": "All", "value": "$__all" },
         "definition": "label_values(mcbot_pod_equity_usdt, pod_id)",
+        "query": "label_values(mcbot_pod_equity_usdt, pod_id)",
         "name": "pod_id",
         "type": "query",
+        "refresh": 2,
         "includeAll": true,
         "multi": true,
         "datasource": { "type": "prometheus", "uid": "prometheus" }
