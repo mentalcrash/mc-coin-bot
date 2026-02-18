@@ -479,7 +479,7 @@ GitHub: shep-analytics/gt_score
   4. Financial Logic = 경제적 해석 가능성
   5. Diversity (DH) = Eigenvalue-based diversity entropy
 결과: Composite score 기반 포트폴리오가 IC-only 대비 수익/리스크 모두 우월.
-적용: Gate 0 단계에서 IC + AlphaEval로 시그널 품질 사전 필터링.
+적용: Phase 1 단계에서 IC + AlphaEval로 시그널 품질 사전 필터링.
 ```
 
 ### 7-C. QuantEvolve Framework
@@ -499,7 +499,7 @@ GitHub: shep-analytics/gt_score
 개념: AI 생성 아이디어 + 인간의 경제적 논거 검증.
       Shadow Execution → Feature Distribution Monitoring → Kill Switch.
       과적합 방지: 인간이 "왜 작동하는가?"를 설명 못하면 폐기.
-적용: 이 스킬의 Gate 0 스코어카드가 이 패턴을 따름.
+적용: 이 스킬의 Phase 1 스코어카드가 이 패턴을 따름.
 ```
 
 ### 7-E. 크립토 Microstructure 실증 (2026)
@@ -548,7 +548,7 @@ GitHub: shep-analytics/gt_score
 
 0순위: Funding Rate 기반 전략 (Carry, Contrarian, Regime Filter) ★ NEW
        — DerivativesDataService 인프라 완비, 학술 검증 (연 15-25% 리턴)
-       — 기존 funding-carry 전략 재시도 가능 (G0 25/30, 데이터 부재로 폐기 → 인프라 구축 완료)
+       — 기존 funding-carry 전략 재시도 가능 (P1 25/30, 데이터 부재로 폐기 → 인프라 구축 완료)
        — FR z-score, FR momentum, FR regime 등 파생 전략 가능
        — 기존 전략에 FR을 추가 필터로 사용 (극단 FR 시 진입 억제 등)
        — 참조 구현: src/strategy/funding_carry/

@@ -1,6 +1,6 @@
-# Gate 판정 기준 — Machine-Readable Reference
+# Phase 판정 기준 — Machine-Readable Reference
 
-> `gates/criteria.yaml`의 정량 기준 요약. `pipeline gates-show G1`로 확인.
+> `gates/phase-criteria.yaml`의 정량 기준 요약. `pipeline phase-show P4`로 확인.
 > 파이프라인 실행 시 이 파일의 수치를 기준으로 PASS/FAIL을 판정한다.
 
 ---
@@ -35,7 +35,7 @@
 
 ---
 
-## Gate 1: 단일에셋 백테스트
+## Phase 4A: 단일에셋 백테스트
 
 ### PASS 조건 (Best Asset 기준)
 
@@ -71,7 +71,7 @@ uv run python scripts/bulk_backtest.py
 
 ---
 
-## Gate 2: IS/OOS 70/30
+## Phase 4B: IS/OOS 70/30
 
 ### PASS 조건
 
@@ -101,9 +101,9 @@ uv run mcbot backtest validate \
 
 ---
 
-## Gate 2H: 파라미터 최적화 (정보 전용)
+## Phase 5A: 파라미터 최적화 (정보 전용)
 
-> Always PASS — 최적화 완료 여부만 확인. 과적합 방어는 G4에서 담당.
+> Always PASS — 최적화 완료 여부만 확인. 과적합 방어는 P6에서 담당.
 
 ### PASS 조건
 
@@ -121,12 +121,12 @@ uv run mcbot backtest validate \
 ### CLI 명령
 
 ```bash
-uv run mcbot pipeline gate2h-run {strategy} --n-trials 100 --seed 42 --json
+uv run mcbot pipeline phase5-run {strategy} --n-trials 100 --seed 42 --json
 ```
 
 ---
 
-## Gate 3: 파라미터 안정성
+## Phase 5B: 파라미터 안정성
 
 ### PASS 조건 (파라미터별)
 
@@ -148,8 +148,7 @@ plateau_exists = plateau_count >= 3
 ### CLI 명령
 
 ```bash
-# 사전 조건: STRATEGIES dict에 전략 등록 필요
-uv run python scripts/gate3_param_sweep.py {strategy}
+uv run mcbot pipeline phase5-stability {strategy} --json
 ```
 
 ### 파라미터 그리드 설계 원칙
@@ -164,7 +163,7 @@ uv run python scripts/gate3_param_sweep.py {strategy}
 
 ---
 
-## Gate 4: 심층검증
+## Phase 6: 심층검증
 
 ### PASS 조건
 
@@ -196,14 +195,14 @@ Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS (PBO < 8
 ### CLI 명령
 
 ```bash
-# Phase A: WFA
+# Phase 6A: WFA
 uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m milestone \
   -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
 
-# Phase B: CPCV + PBO + DSR + Monte Carlo
+# Phase 6B: CPCV + PBO + DSR + Monte Carlo
 uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
@@ -213,37 +212,37 @@ uv run mcbot backtest validate \
 
 ---
 
-## CTREND 참조 벤치마크 (전 Gate)
+## CTREND 참조 벤치마크 (전 Phase)
 
-| Gate | 핵심 지표 | CTREND 결과 | 판정 |
-|:----:|----------|------------|:----:|
-| G1 | Best Sharpe | 2.05 (SOL) | PASS |
-| G1 | Best CAGR | +97.8% | PASS |
-| G1 | Best MDD | -27.7% | PASS |
-| G1 | Best Trades | 288 | PASS |
-| G2 | OOS Sharpe | 1.78 | PASS |
-| G2 | Decay | 33.7% | PASS |
-| G2H | Optimization | Completed | PASS |
-| G3 | 파라미터 | 4/4 PASS | PASS |
-| G4 | WFA OOS | 1.49 | PASS |
-| G4 | WFA Decay | 39% | PASS |
-| G4 | PBO | 60% | PASS (경로 B) |
-| G4 | DSR (batch) | 1.00 | PASS |
-| G4 | MC p-value | 0.000 | PASS |
+| Phase | 핵심 지표 | CTREND 결과 | 판정 |
+|:-----:|----------|------------|:----:|
+| P4A | Best Sharpe | 2.05 (SOL) | PASS |
+| P4A | Best CAGR | +97.8% | PASS |
+| P4A | Best MDD | -27.7% | PASS |
+| P4A | Best Trades | 288 | PASS |
+| P4B | OOS Sharpe | 1.78 | PASS |
+| P4B | Decay | 33.7% | PASS |
+| P5A | Optimization | Completed | PASS |
+| P5B | 파라미터 | 4/4 PASS | PASS |
+| P6A | WFA OOS | 1.49 | PASS |
+| P6A | WFA Decay | 39% | PASS |
+| P6B | PBO | 60% | PASS (경로 B) |
+| P6B | DSR (batch) | 1.00 | PASS |
+| P6B | MC p-value | 0.000 | PASS |
 
 > CTREND은 PBO 60%로 경로 A(< 40%) FAIL이나, 전 CPCV fold OOS 양수 + MC p=0.000으로
 > 경로 B를 통해 PASS. Anchor-Mom도 PBO 80%이나 동일 경로 B PASS.
 
 ---
 
-## Gate 간 일관성 체크
+## Phase 간 일관성 체크
 
 파이프라인 진행 중 아래 일관성을 확인한다:
 
 | 비교 | 기대 | 경고 조건 |
 |------|------|----------|
-| G1 Sharpe → G2 OOS Sharpe | OOS >= G1 × 0.3 | OOS < G1 × 0.3이면 과적합 의심 |
-| G2 Decay → G4 WFA Decay | 유사 (±15%p) | 차이 > 20%p이면 CV 방법론 민감도 |
-| G2H OOS → G4 WFA OOS | 유사 방향 | G2H OOS 양수인데 G4 OOS 음수이면 IS 구간 의존 |
-| G2 OOS → G4 WFA OOS | WFA >= G2 × 0.5 | WFA < G2 × 0.5이면 window 의존 |
-| G3 Sharpe → G4 MC CI | G3 baseline ∈ CI | G3 baseline < CI 하한이면 불안정 |
+| P4A Sharpe → P4B OOS Sharpe | OOS >= P4A × 0.3 | OOS < P4A × 0.3이면 과적합 의심 |
+| P4B Decay → P6A WFA Decay | 유사 (±15%p) | 차이 > 20%p이면 CV 방법론 민감도 |
+| P5A OOS → P6A WFA OOS | 유사 방향 | P5A OOS 양수인데 P6A OOS 음수이면 IS 구간 의존 |
+| P4B OOS → P6A WFA OOS | WFA >= P4B × 0.5 | WFA < P4B × 0.5이면 window 의존 |
+| P5B Sharpe → P6B MC CI | P5B baseline ∈ CI | P5B baseline < CI 하한이면 불안정 |

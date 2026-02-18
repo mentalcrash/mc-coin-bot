@@ -134,7 +134,7 @@ total = 200 + 126 + 30 + 1 = 357 bars
 |---|---------|----------|------|
 | AP1 | **동질성 함정** | 전원 동일 카테고리, 평균 상관 > 0.6 | 다른 카테고리 전략 교체/추가 |
 | AP2 | **이중 Vol Scaling** | 서브전략+앙상블 모두 vol_target 적용 | 서브전략 vol_target 비활성 또는 앙상블 vol_target=1.0 |
-| AP3 | **과적합 전략 세탁** | G2(IS/OOS) FAIL 전략을 앙상블로 구제 | G1 PASS 이상만 서브전략 후보 |
+| AP3 | **과적합 전략 세탁** | P4B(IS/OOS) FAIL 전략을 앙상블로 구제 | P4A PASS 이상만 서브전략 후보 |
 | AP4 | **warmup 불일치** | total_warmup > 데이터 10% | 데이터 확보 또는 서브전략/aggregation 변경 |
 | AP5 | **ShortMode 충돌** | 서브전략간 DISABLED/FULL 혼재 | 통일 (전원 DISABLED 또는 전원 FULL) |
 | AP6 | **과다 서브전략** | N > 5 | 상관 높은 쌍 제거, 4개 이하 유지 |
@@ -146,7 +146,7 @@ total = 200 + 126 + 30 + 1 = 357 bars
 ```
 1. AP1 → 카테고리 다양성 + 상관 행렬
 2. AP2 → 서브전략 config에서 vol_target 확인
-3. AP3 → pipeline table로 Gate 이력 확인
+3. AP3 → pipeline table로 Phase 이력 확인
 4. AP5 → 서브전략 short_mode 통일 여부
 5. AP7 → 서브전략 TF 동일 확인
 6. AP6 → 서브전략 수 확인
@@ -165,8 +165,8 @@ total = 200 + 126 + 30 + 1 = 357 bars
 | `parameters.strategy_name` | `"{strategy-name}"` | `"ensemble"` |
 | `parameters.sub_strategies` | 없음 | 필수 (리스트) |
 | `meta.category` | 전략 유형 | `"메타 앙상블"` |
-| Gate 0 | G0A (30점) | G0E (30점) |
-| Gate 1 | G1 (Sharpe>1.0 기준) | G1E (Best 서브전략 초과 기준) |
+| Phase 1 | P1 (30점) | P1E (30점) |
+| Phase 4 | P4A (Sharpe>1.0 기준) | P4E (Best 서브전략 초과 기준) |
 
 ---
 
@@ -205,9 +205,9 @@ parameters:
   vol_window: 30
   short_mode: 0
 
-gates:
-  G0A: {score: null, status: null, date: null}
-  G0E: {score: 22, status: PASS, date: "2026-02-14"}
+phases:
+  P1: {score: null, status: null, date: null}
+  P1E: {score: 22, status: PASS, date: "2026-02-14"}
 
 meta:
   category: "메타 앙상블"

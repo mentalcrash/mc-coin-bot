@@ -1,10 +1,10 @@
-# Gate 5 EDA Parity 리포트 출력 형식
+# Phase 7 EDA Parity 리포트 출력 형식
 
 모든 검증 완료 후 아래 형식으로 리포트를 출력한다:
 
 ```
 ============================================================
-  GATE 5: EDA PARITY VERIFICATION REPORT
+  PHASE 7: EDA PARITY VERIFICATION REPORT
   전략: {display_name} ({registry_key})
   실행일: {YYYY-MM-DD}
   검증 기간: {start} ~ {end} ({period})
@@ -62,11 +62,11 @@
   │ MDD 변화       │ -28.5%  │  XX.X%    │ {해석}            │
 
 ============================================================
-  GATE 5 SUMMARY
+  PHASE 7 SUMMARY
   Parity: [PASS / FAIL]
   Live Readiness: [PASS / WARNING / FAIL]
   최종 판정: [PASS / CONDITIONAL PASS / FAIL]
-  다음 단계: [G6 Paper Trading / 코드 수정 후 G5 재시도 / 폐기]
+  다음 단계: [Paper Trading / 코드 수정 후 P7 재시도 / 폐기]
   YAML:       strategies/{strategy_name}.yaml (갱신 완료)
   대시보드:   pipeline report (콘솔 출력, --output로 파일 저장)
 ============================================================

@@ -1,5 +1,5 @@
 #!/bin/bash
-# scan_strategy.sh — Gate 0B 전략 코드 자동 프리스캔
+# scan_strategy.sh — Phase 3 전략 코드 자동 프리스캔
 #
 # 사용법: bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh <strategy_dir>
 # 예시:   bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh src/strategy/range_squeeze
@@ -69,7 +69,7 @@ scan() {
 
 # ================================================================
 echo "============================================================"
-echo "  GATE 0B: STRATEGY AUTO-SCAN"
+echo "  PHASE 3: STRATEGY AUTO-SCAN"
 echo "  Target: ${STRATEGY_DIR}"
 echo "  Date:   $(date '+%Y-%m-%d %H:%M')"
 echo "============================================================"

@@ -1,7 +1,7 @@
 ---
-name: p1-g0a-discover
+name: p1-research
 description: >
-  새 트레이딩 전략 아이디어 발굴 + Gate 0A 검증 (IC/스코어카드/YAML 등록).
+  새 트레이딩 전략 아이디어 발굴 + Phase 1 검증 (IC/스코어카드/YAML 등록).
   사용 시점: 전략 발굴, 알파 리서치, 전략 탐색 요청 시.
 argument-hint: <timeframe or theme>
 allowed-tools:
@@ -87,7 +87,7 @@ allowed-tools:
 ```
 1. 파이프라인 현황 확인 (필수 — CLI 사용)
    uv run mcbot pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
-   uv run mcbot pipeline table     # 전체 전략 Gate 진행도
+   uv run mcbot pipeline table     # 전체 전략 Phase 진행도
 
 2. 교훈 데이터 참조 (필수 — 실패 반복 방지)
    uv run mcbot pipeline lessons-list              # 전체 교훈 목록
@@ -97,14 +97,14 @@ allowed-tools:
    # → 교훈에서 명시된 안티패턴/실패 유형을 아이디어 생성 시 반드시 회피
 
 3. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
-   - 1D (일봉): 가장 안정적, 비용 효율적. 프로젝트 주력. 유일한 G5 PASS가 1D
+   - 1D (일봉): 가장 안정적, 비용 효율적. 프로젝트 주력. 유일한 P7 PASS가 1D
    - 4H: 중간 빈도. 비용과 신호 밸런스
    - 1H: 높은 빈도. Tier 5 4종 전멸 (교훈 #13~#16). 극히 신중하게 접근
    - 1m→aggregation: EDA 전용 (CandleAggregator 활용)
 
 4. 현재 포트폴리오 구성 확인
    uv run mcbot pipeline list --status ACTIVE   # 활성 전략
-   # G5 도달까지: G1 통과율 ~50%, G2 통과율 ~20%, G4 통과율 ~5%
+   # P7 도달까지: P4 통과율 ~50%, P4 IS/OOS 통과율 ~20%, P6 통과율 ~5%
 
 5. 폐기 전략 실패 패턴 확인 (필수)
    uv run mcbot pipeline list --status RETIRED   # YAML 기반 동적 조회
@@ -188,19 +188,19 @@ allowed-tools:
 1. Predictive Power (PPS): IC + RankIC 결합
 2. Temporal Stability (RRE): Rolling IC의 순위 엔트로피 → 시간 안정성
 3. Robustness (PFS): 입력 노이즈 섭동 후 시그널 유지율
-4. Financial Logic: 경제적 논거 설명 가능성 (Gate 0 [1]과 연동)
+4. Financial Logic: 경제적 논거 설명 가능성 (Phase 1 [1]과 연동)
 5. Diversity (DH): 기존 전략 시그널과의 독립성 (상관 eigenvalue 분석)
 ```
 
 **IC 검증 실패 시 → 전략 개발 진행하지 않는다.**
 
-### Step 2: 아이디어 평가 — Gate 0 스코어카드
+### Step 2: 아이디어 평가 — Phase 1 스코어카드
 
 6가지 기준을 각각 1~5점으로 평가한다.
 
 ```
 ══════════════════════════════════════════════════════
-  GATE 0: IDEA VIABILITY SCORECARD
+  PHASE 1: IDEA VIABILITY SCORECARD
   전략: [이름]  |  타임프레임: [TF]
 ══════════════════════════════════════════════════════
 
@@ -342,9 +342,9 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 
 **CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
 
-### Step 4.5–4.6: YAML 파이프라인 등록 (Gate 0A PASS 시 필수)
+### Step 4.5–4.6: YAML 파이프라인 등록 (Phase 1 PASS 시 필수)
 
-Gate 0 PASS인 아이디어를 `pipeline create` CLI로 YAML에 등록한다.
+Phase 1 PASS인 아이디어를 `pipeline create` CLI로 YAML에 등록한다.
 
 ```bash
 uv run mcbot pipeline create {strategy-name} \
@@ -353,15 +353,15 @@ uv run mcbot pipeline create {strategy-name} \
   --timeframe {TF} \
   --short-mode {SHORT_MODE} \
   --rationale "{경제적 논거}" \
-  --g0a-score {점수} \
+  --p1-score {점수} \
   --status CANDIDATE
 ```
 
-- `strategies/{strategy-name}.yaml` 생성 (status: CANDIDATE, G0A: PASS)
+- `strategies/{strategy-name}.yaml` 생성 (status: CANDIDATE, P1: PASS)
 - YAML이 Single Source of Truth. 별도 임시 파일 불필요
 - 생성 후 Dashboard 갱신: `uv run mcbot pipeline report`
 
-**상태 전이**: 후보 → 사용자 승인 → 구현중 → Gate 1+ → 구현완료 / 폐기
+**상태 전이**: 후보 → 사용자 승인 → 구현중 → Phase 4+ → 구현완료 / 폐기
 
 ---
 
@@ -382,7 +382,7 @@ uv run mcbot pipeline create {strategy-name} \
 
 3. 후보 적격 조건
    - Registry 등록 완료 (@register)
-   - 단독 Sharpe >= 0.5 (G1 기준 하한)
+   - 단독 Sharpe >= 0.5 (P4 기준 하한)
    - 기존 후보와 평균 상관 < 0.5
    - from_params() 구현 (EnsembleStrategy가 호출)
 
@@ -391,11 +391,11 @@ uv run mcbot pipeline create {strategy-name} \
    - 내부 앙상블: 단일 전략 내부 다중 TF/파라미터 (CTREND/Donchian 패턴)
 ```
 
-### Step 2E: 앙상블 Gate 0E 스코어카드
+### Step 2E: 앙상블 Phase 1E 스코어카드
 
 ```
 ══════════════════════════════════════════════════════
-  GATE 0E: ENSEMBLE VIABILITY SCORECARD
+  PHASE 1E: ENSEMBLE VIABILITY SCORECARD
   앙상블: [이름]  |  서브전략 수: [N]
 ══════════════════════════════════════════════════════
 
@@ -440,7 +440,7 @@ uv run mcbot pipeline create {strategy-name} \
 |---|---------|----------|
 | AP1 | 동질성 함정 | 전원 동일 카테고리 → 상관 > 0.6 |
 | AP2 | 이중 Vol Scaling | 서브전략 vol_target + 앙상블 vol_target 중복 |
-| AP3 | 과적합 전략 세탁 | G2 FAIL 전략을 앙상블로 구제 시도 |
+| AP3 | 과적합 전략 세탁 | P4 IS/OOS FAIL 전략을 앙상블로 구제 시도 |
 | AP4 | warmup 불일치 | max(sub_warmup) > 앙상블 데이터 시작 |
 | AP5 | ShortMode 충돌 | 서브전략간 DISABLED/FULL 혼재 시 방향 상쇄 |
 | AP6 | 과다 서브전략 | N > 5 → 관리 복잡도 + 개별 기여도 희석 |
@@ -451,7 +451,7 @@ uv run mcbot pipeline create {strategy-name} \
 
 ```
 uv run mcbot pipeline lessons-list -t ensemble
-# Donchian Ensemble G1 FAIL 등 기존 실패 사례 반드시 참조
+# Donchian Ensemble P4 FAIL 등 기존 실패 사례 반드시 참조
 ```
 
 위반 항목 없을 시 Step 4E 진행.
@@ -512,9 +512,9 @@ parameters:
   aggregation: "equal_weight"
   vol_target: 0.35
 
-gates:
-  G0A: {score: _, status: PASS, date: "YYYY-MM-DD"}
-  G0E: {score: _, status: PASS, date: "YYYY-MM-DD"}
+phases:
+  P1: {score: _, status: PASS, date: "YYYY-MM-DD"}
+  P1E: {score: _, status: PASS, date: "YYYY-MM-DD"}
 
 meta:
   category: "메타 앙상블"
@@ -537,11 +537,11 @@ S Mode에서 발굴한 새 전략의 앙상블 편입을 평가한다:
 → 미충족 시 단독 전략으로 운영
 ```
 
-### Step 6E: 앙상블 Gate 1E 판정
+### Step 6E: 앙상블 Phase 4E 판정
 
 ```
 ══════════════════════════════════════════════════════
-  GATE 1E: ENSEMBLE BACKTEST SCORECARD
+  PHASE 4E: ENSEMBLE BACKTEST SCORECARD
 ══════════════════════════════════════════════════════
 
   PASS 조건 (3개 모두 충족):
@@ -558,8 +558,8 @@ S Mode에서 발굴한 새 전략의 앙상블 편입을 평가한다:
 ══════════════════════════════════════════════════════
 ```
 
-Gate 1E PASS → Gate 2+ 진행 (별도 세션).
-Gate 1E FAIL → Aggregation 방법 변경 또는 서브전략 교체 후 재시도 (최대 2회).
+Phase 4E PASS → Phase 4 IS/OOS+ 진행 (별도 세션).
+Phase 4E FAIL → Aggregation 방법 변경 또는 서브전략 교체 후 재시도 (최대 2회).
 
 ---
 
@@ -585,14 +585,14 @@ Gate 1E FAIL → Aggregation 방법 변경 또는 서브전략 교체 후 재시
 #### 6-A. 표준 백테스트 실행
 
 ```bash
-# 5개 에셋, 6년 데이터 (Gate 1 표준)
+# 5개 에셋, 6년 데이터 (Phase 4 표준)
 for symbol in BTC/USDT ETH/USDT BNB/USDT SOL/USDT DOGE/USDT; do
   uv run mcbot backtest run {strategy-name} $symbol \
     --start 2020-01-01 --end 2025-12-31
 done
 ```
 
-#### 6-B. Gate 1 판정 기준 (Best Asset 기준)
+#### 6-B. Phase 4 판정 기준 (Best Asset 기준)
 
 ```
 PASS: Sharpe > 1.0 AND CAGR > 20% AND MDD < 40% AND 거래 50건+
@@ -607,9 +607,9 @@ FAIL: 총수익 음수 + 거래 20건 미만, 또는 MDD > 50%
 ### Step 7: 반복 또는 종료 결정
 
 ```
-Gate 1 PASS → Gate 2 IS/OOS 진행 (별도 세션)
-Gate 1 WATCH → 파라미터 조정 후 재실행 (최대 2회)
-Gate 1 FAIL → 아이디어 폐기, Step 1로 복귀
+Phase 4 PASS → Phase 4 IS/OOS 진행 (별도 세션)
+Phase 4 WATCH → 파라미터 조정 후 재실행 (최대 2회)
+Phase 4 FAIL → 아이디어 폐기, Step 1로 복귀
 ```
 
 **파라미터 최적화 시 GT-Score 활용 권장** (arXiv:2602.00080):
@@ -635,7 +635,7 @@ uv run mcbot pipeline list --status ACTIVE    # 활성 전략 확인
 ## 출력 형식
 
 리포트 형식: [references/report-template.md](references/report-template.md) 참조.
-Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step 4.5).
+Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step 4.5).
 
 ## 안티패턴 — 반드시 피해야 할 것
 
@@ -651,7 +651,7 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 | 8 | OHLCV microstructure | BVC 근사 불충분, L2 order book 필요 |
 | 9 | 레짐 감지 = 전략 | ADX/HMM/Hurst/AC/VR 7개 전멸. 오버레이로만 사용 |
 | 10 | 앙상블 동질성 함정 | 전원 동일 카테고리 → 상관 > 0.6 → 분산 효과 없음 |
-| 11 | 과적합 전략 세탁 | G2 FAIL 전략을 앙상블로 구제 → 앙상블도 과적합 |
+| 11 | 과적합 전략 세탁 | P4 IS/OOS FAIL 전략을 앙상블로 구제 → 앙상블도 과적합 |
 | 12 | 비효율 원천 불명 | "왜 돈을 버는지" 설명 불가 → 과적합. 비효율 원천 5가지 중 미해당 |
 | 13 | 비용 비율 > 30% | edge가 거래 비용에 잠식됨. 빈도 감소 또는 TF 상향 필요 |
 | 14 | OHLCV만으로 알파 기대 | 가격/거래량은 가장 빠르게 감쇠. Derivatives/On-chain/Sentiment 우선 (✅ 인프라 구축 완료) |
@@ -662,7 +662,7 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 
 - [ ] 비효율 원천 분석 완료 (Step 1-0 질문 3개+ 답변)
 - [ ] 교훈 데이터 확인됨 (`lessons-list` TF/카테고리/전략)
-- [ ] Gate 0 스코어카드 18점 이상
+- [ ] Phase 1 스코어카드 18점 이상
 - [ ] 폐기 전략과 중복 없음 (교훈 + discarded-strategies)
 - [ ] 비효율 원천 + 지속 이유 1문단 이상
 - [ ] 비용 추정: 연간 거래비용/총수익 < 30%
@@ -680,11 +680,11 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 
 - [ ] 서브전략 후보 풀 구성 (pipeline list로 수집)
 - [ ] 쌍별 상관 행렬 분석 완료
-- [ ] Gate 0E 스코어카드 18점+ (킬러: 평균 상관 < 0.6)
+- [ ] Phase 1E 스코어카드 18점+ (킬러: 평균 상관 < 0.6)
 - [ ] AP1~AP8 안티패턴 위반 없음
 - [ ] Aggregation 방법 선택 + 근거 명시
 - [ ] EnsembleConfig 파라미터 결정
 - [ ] 이론적 Sharpe 예측 산출
 - [ ] `strategies/ens-{name}.yaml` 등록됨
 - [ ] 백테스트 config YAML 작성됨
-- [ ] Gate 1E 판정 완료 (Sharpe > Best 서브전략)
+- [ ] Phase 4E 판정 완료 (Sharpe > Best 서브전략)

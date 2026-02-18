@@ -1,7 +1,7 @@
 # Critical Checklist (C1-C7) — 상세 검증 가이드
 
 > 이 프로젝트의 전략 코드 패턴에 특화된 검증 기준.
-> **1개라도 FAIL이면 Gate 0B 불통과.**
+> **1개라도 FAIL이면 Phase 3 불통과.**
 
 ---
 

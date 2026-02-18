@@ -1,7 +1,7 @@
 ---
-name: p3-g0b-verify
+name: p3-audit
 description: >
-  Gate 0B 전략 코드 검증 — C1~C7 Critical + W1~W7 Warning 판정.
+  Phase 3 전략 코드 검증 — C1~C7 Critical + W1~W7 Warning 판정.
   사용 시점: 구현 완료 후 백테스트 전, "검증" "verify" 요청 시.
 context: fork
 allowed-tools:
@@ -12,7 +12,7 @@ allowed-tools:
 argument-hint: <strategy-name-or-directory>
 ---
 
-# Gate 0B: 전략 코드 검증 (p3-g0b-verify)
+# Phase 3: 전략 코드 검증 (p3-audit)
 
 ## 역할
 
@@ -26,7 +26,7 @@ argument-hint: <strategy-name-or-directory>
 
 ---
 
-## 판정 기준 (gates/criteria.yaml 기준)
+## 판정 기준 (gates/phase-criteria.yaml 기준)
 
 | 판정 | 조건 |
 |------|------|
@@ -72,10 +72,10 @@ src/strategy/{name}/
 2. 테스트 파일 존재 확인: tests/strategy/{name}/
 3. YAML 메타데이터 확인 (필수)
    cat strategies/{strategy_name}.yaml
-   # meta.status가 IMPLEMENTED이고 gates.G0A.status가 PASS인지 확인
+   # meta.status가 IMPLEMENTED이고 phases.P1.status가 PASS인지 확인
    # YAML 없음 → "/p2-implement를 먼저 실행하세요"
-   # G0A 미통과 → "p1-g0a-discover에서 G0A를 먼저 통과하세요"
-4. 자동 스캔 실행: bash .claude/skills/p3-g0b-verify/scripts/scan_strategy.sh src/strategy/{name}
+   # P1 미통과 → "p1-research에서 P1을 먼저 통과하세요"
+4. 자동 스캔 실행: bash .claude/skills/p3-audit/scripts/scan_strategy.sh src/strategy/{name}
 ```
 
 ### 1단계: [C1] Look-Ahead Bias (CRITICAL)
@@ -234,24 +234,24 @@ FAIL 사유는 아니나 반드시 기록:
 
 ```bash
 uv run mcbot pipeline record {strategy_name} \
-  --gate G0B --verdict PASS \
+  --phase P3 --verdict PASS \
   --detail "C1=PASS" --detail "C2=PASS" --detail "C3=PASS" \
   --detail "C4=PASS" --detail "C5=PASS" --detail "C6=PASS" --detail "C7=PASS" \
   --detail "warnings=0" \
   --rationale "C1-C7 전항목 PASS. Warning N건"
 ```
 
-> `--detail key=value`로 C1-C7 개별 결과를 구조화하여 저장. YAML의 `gates.G0B.details`에 기록됨.
+> `--detail key=value`로 C1-C7 개별 결과를 구조화하여 저장. YAML의 `phases.P3.details`에 기록됨.
 
 **FAIL 시**:
 
 ```bash
 uv run mcbot pipeline record {strategy_name} \
-  --gate G0B --verdict FAIL --no-retire \
+  --phase P3 --verdict FAIL --no-retire \
   --rationale "{C항목} FAIL: {사유}"
 ```
 
-> `--no-retire`: G0B FAIL은 폐기가 아닌 **수정 후 재검증**이므로 auto-retire를 방지한다. status는 IMPLEMENTED 유지.
+> `--no-retire`: P3 FAIL은 폐기가 아닌 **수정 후 재검증**이므로 auto-retire를 방지한다. status는 IMPLEMENTED 유지.
 
 ### Dashboard 자동 생성
 
@@ -286,7 +286,7 @@ uv run mcbot pipeline lessons-add \
 
 ## 심각도 기준
 
-| 등급 | 정의 | Gate 0B 영향 |
+| 등급 | 정의 | Phase 3 영향 |
 |------|------|-------------|
 | **CRITICAL** | 자금 손실 직접 유발 또는 백테스트 신뢰도 완전 훼손 | **FAIL** |
 | **HIGH** | 백테스트 결과 과대/과소 평가 | **FAIL** (C1-C7 해당 시) |

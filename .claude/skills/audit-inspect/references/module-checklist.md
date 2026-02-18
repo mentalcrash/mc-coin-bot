@@ -65,7 +65,7 @@
 |---|------|------|
 | P1 | YAML serialization | `model_dump(mode="json")` 사용 |
 | P2 | Store caching | lazy cache 패턴 |
-| P3 | Gate 순서 gap 허용 | `continue` not `break` |
+| P3 | Phase 순서 gap 허용 | `continue` not `break` |
 
 ### src/notification (알림 시스템)
 

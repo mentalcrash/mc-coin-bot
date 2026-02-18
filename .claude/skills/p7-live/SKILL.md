@@ -1,8 +1,8 @@
 ---
-name: p5-g5-eda-parity
+name: p7-live
 description: >
-  G5 EDA Parity 검증 — VBT vs EDA 수익 정합성 + 라이브 준비 상태 점검.
-  사용 시점: G4 PASS 전략의 EDA 검증, "G5" "EDA parity" 요청 시.
+  Phase 7 EDA Parity 검증 — VBT vs EDA 수익 정합성 + 라이브 준비 상태 점검.
+  사용 시점: P6 PASS 전략의 EDA 검증, "P7" "EDA parity" "live" 요청 시.
 context: fork
 allowed-tools:
   - Bash
@@ -14,7 +14,7 @@ allowed-tools:
 argument-hint: <strategy-name> [--symbol SYMBOL] [--period 1y|2y]
 ---
 
-# Gate 5: EDA Parity 검증
+# Phase 7: EDA Parity 검증
 
 ## 역할
 
@@ -25,13 +25,13 @@ argument-hint: <strategy-name> [--symbol SYMBOL] [--period 1y|2y]
 - **정합성 우선**: VBT와 EDA 결과의 불일치 원인을 구조적으로 분석
 - **라이브 관점**: "이 시스템으로 실거래해도 안전한가?" 판단
 - **수치 근거**: 모든 판정에 구체적 수치 비교 동반
-- **CTREND 선례 비교**: G5 통과 유일 전략과의 상대적 위치 파악
+- **CTREND 선례 비교**: P7 통과 유일 전략과의 상대적 위치 파악
 
 ---
 
-## Gate 5의 목적
+## Phase 7의 목적
 
-Gate 5는 **성능 평가가 아닌 구현 정합성 검증**이다.
+Phase 7은 **성능 평가가 아닌 구현 정합성 검증**이다.
 
 | 질문 | 기준 |
 |------|------|
@@ -69,18 +69,18 @@ ls src/strategy/{name_underscore}/
 # config.py, preprocessor.py, signal.py, strategy.py 존재 확인
 ```
 
-### 0-2. YAML 메타데이터 + G4 PASS
+### 0-2. YAML 메타데이터 + P6 PASS
 
 ```bash
 cat strategies/{strategy_name}.yaml
-# gates 섹션에서 G4: status: PASS 확인
+# phases 섹션에서 P6: status: PASS 확인
 ```
 
-YAML 없으면 `uv run mcbot pipeline create`로 생성. G4 PASS 없으면 중단.
+YAML 없으면 `uv run mcbot pipeline create`로 생성. P6 PASS 없으면 중단.
 
 ### 0-3. Best Asset + TF 추출
 
-YAML에서 추출: `best_asset`, `best_tf`, `g1_sharpe`, `g1_cagr`. `--symbol` 인수가 있으면 best_asset 덮어씀.
+YAML에서 추출: `best_asset`, `best_tf`, `p4a_sharpe`, `p4a_cagr`. `--symbol` 인수가 있으면 best_asset 덮어씀.
 
 ### 0-4. 1분봉 Silver 데이터 존재
 
@@ -95,7 +95,7 @@ ls data/silver/{symbol_underscore}_1m.parquet
 ls config/{strategy_name}*.yaml
 ```
 
-없으면 생성 (사용자 승인 필요). 파일명: `config/{strategy_name}_g5_{period}.yaml`.
+없으면 생성 (사용자 승인 필요). 파일명: `config/{strategy_name}_p7_{period}.yaml`.
 기존 config에서 기간만 조정. 필수 섹션: `backtest` (symbols, timeframe, start, end, capital), `strategy` (name, params), `portfolio` (max_leverage_cap, rebalance_threshold, system_stop_loss, use_trailing_stop, trailing_stop_atr_multiplier, cost_model).
 
 ### 0-6. max_leverage_cap 확인
@@ -121,7 +121,7 @@ uv run mcbot backtest run {strategy_name} {best_asset} \
 
 수집: `vbt_sharpe`, `vbt_cagr`, `vbt_return`, `vbt_mdd`, `vbt_trades`, `vbt_winrate`, `vbt_pf`.
 
-> G5 검증 기간은 G1(6년)보다 짧으므로 VBT 지표가 G1과 다를 수 있다. **동일 기간 VBT vs EDA 비교**가 핵심.
+> P7 검증 기간은 P4A(6년)보다 짧으므로 VBT 지표가 P4A와 다를 수 있다. **동일 기간 VBT vs EDA 비교**가 핵심.
 
 ---
 
@@ -129,10 +129,10 @@ uv run mcbot backtest run {strategy_name} {best_asset} \
 
 ```bash
 # fast mode (forward_return/EWM 전략)
-uv run mcbot eda run config/{strategy_name}_g5_{period}.yaml --fast
+uv run mcbot eda run config/{strategy_name}_p7_{period}.yaml --fast
 
 # standard mode (순수 rolling indicator 전략)
-uv run mcbot eda run config/{strategy_name}_g5_{period}.yaml
+uv run mcbot eda run config/{strategy_name}_p7_{period}.yaml
 ```
 
 수집: `eda_sharpe`, `eda_cagr`, `eda_return`, `eda_mdd`, `eda_trades`, `eda_winrate`, `eda_pf`.
@@ -240,7 +240,7 @@ EDA 코드의 라이브 안전성 7항목 점검. 상세 검증 패턴: [referen
 | 수익률 편차 < 20% | ? | ? |
 | 거래 수 비율 0.5x~2.0x (또는 구조적 사유) | ? | ? |
 
-**Parity 종합**: 3개 모두 PASS → **G5 Parity PASS**
+**Parity 종합**: 3개 모두 PASS → **P7 Parity PASS**
 
 ### 6-2. Live Readiness 판정
 
@@ -250,7 +250,7 @@ EDA 코드의 라이브 안전성 7항목 점검. 상세 검증 패턴: [referen
 
 **Live Readiness 종합**: 전 항목 PASS → **Live Ready**
 
-### 6-3. Gate 5 최종 판정
+### 6-3. Phase 7 최종 판정
 
 | 판정 | 조건 |
 |------|------|
@@ -266,7 +266,7 @@ EDA 코드의 라이브 안전성 7항목 점검. 상세 검증 패턴: [referen
 
 ```bash
 uv run mcbot pipeline record {strategy_name} \
-  --gate G5 --verdict PASS \
+  --phase P7 --verdict PASS \
   --detail "eda_sharpe={X.XX}" --detail "vbt_sharpe={X.XX}" \
   --rationale "EDA Parity PASS. 수익 부호 일치, Sharpe 편차 XX%"
 # PASS 시: store.update_status(name, StrategyStatus.ACTIVE)
@@ -275,7 +275,7 @@ uv run mcbot pipeline record {strategy_name} \
 ### 진행 현황 + 의사결정 기록
 
 ```markdown
-| {날짜} | G5 | PASS/FAIL | EDA Sharpe X.XX vs VBT X.XX. Trades N. Live Ready 7/7 |
+| {날짜} | P7 | PASS/FAIL | EDA Sharpe X.XX vs VBT X.XX. Trades N. Live Ready 7/7 |
 ```
 
 ### 교훈 기록 (FAIL 시, 새로운 패턴만)
@@ -283,7 +283,7 @@ uv run mcbot pipeline record {strategy_name} \
 ```bash
 uv run mcbot pipeline lessons-list --tag EDA
 uv run mcbot pipeline lessons-add \
-  --title "{괴리 원인}" --category {category} --tag EDA --tag G5
+  --title "{괴리 원인}" --category {category} --tag EDA --tag P7
 ```
 
 ### Dashboard
@@ -317,4 +317,4 @@ uv run mcbot pipeline report
 
 - [references/parity-criteria.md](references/parity-criteria.md) — Parity 정량 기준 + 괴리 원인 카탈로그
 - [references/live-readiness-checklist.md](references/live-readiness-checklist.md) — 라이브 준비 7항목 상세 검증 패턴
-- [references/report-template.md](references/report-template.md) — G5 리포트 출력 형식
+- [references/report-template.md](references/report-template.md) — P7 리포트 출력 형식

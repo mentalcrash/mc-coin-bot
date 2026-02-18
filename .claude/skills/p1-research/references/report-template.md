@@ -21,7 +21,7 @@
   ShortMode    : [DISABLED / HEDGE_ONLY / FULL]
   예상 빈도    : [거래/년]
   비용 추정    : [연간 거래비용 / 예상 총수익 = X%]
-  Gate 0 점수  : [__/30]
+  Phase 1 점수  : [__/30]
   레짐 적응    : [없음 / 패턴A 확률가중 / 패턴B 조건부 / 패턴C 방향가중]
   CTREND 상관  : [낮음 / 중간 / 높음]
   앙상블 가치  : [단독 운영 / 약한alpha+낮은상관→앙상블 편입 후보]
@@ -41,7 +41,7 @@
 
 ## 후보 문서 기록 (자동)
 
-Gate 0 PASS 아이디어는 **자동으로** `pipeline create` CLI로 YAML에 등록한다.
+Phase 1 PASS 아이디어는 **자동으로** `pipeline create` CLI로 YAML에 등록한다.
 Step 4.5의 절차를 따른다.
 
 ---
@@ -74,7 +74,7 @@ Step 4.5의 절차를 따른다.
   이론적 Sharpe : [X.XX]
     (= sqrt(N) * avg(Sharpe) * sqrt(1 - avg(rho)))
 
-  Gate 0E 점수 : [__/30]
+  Phase 1E 점수 : [__/30]
   킬러 지표    : [PASS / FAIL (상관 >= 0.6)]
   AP 위반      : [없음 / AP# 목록]
   ----------------------------------------------

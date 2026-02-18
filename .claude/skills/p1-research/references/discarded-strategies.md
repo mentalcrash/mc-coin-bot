@@ -1,6 +1,6 @@
 # Discarded Strategies — 폐기 전략 목록 (2026-02-10)
 
-이 파일은 p1-g0a-discover 스킬에서 중복 회피를 위해 참조한다.
+이 파일은 p1-research 스킬에서 중복 회피를 위해 참조한다.
 **동일 접근법 재시도는 금지**하며, 차별화 포인트를 명시해야 한다.
 
 > 최신 현황은 `pipeline report`로 확인.
@@ -8,20 +8,20 @@
 
 ---
 
-## Gate 4 실패 — WFA 심층검증 (2개)
+## Phase 6 실패 — WFA 심층검증 (2개)
 
 | 전략 | Registry | WFA Decay | OOS | 실패 사유 |
 |------|----------|-----------|-----|----------|
 | KAMA | `kama` | 56% | Fold 2: -0.06 | WFA Decay 56%, 개별 Fold 실패 |
 | MAX-MIN | `max-min` | — | 0.47 | WFA OOS < 0.5, Fold 2: -0.34 |
 
-## Gate 3 실패 — 파라미터 불안정 (1개)
+## Phase 5 실패 — 파라미터 불안정 (1개)
 
 | 전략 | Registry | 실패 사유 |
 |------|----------|----------|
 | TTM Squeeze | `ttm-squeeze` | bb_period, kc_mult에 고원 부재. +/-2 변경 시 Sharpe 급락 |
 
-## Gate 2 실패 — IS/OOS 과적합 (16개)
+## Phase 4B 실패 — IS/OOS 과적합 (16개)
 
 | 전략 | Registry | IS Sharpe | OOS Sharpe | Decay | 핵심 교훈 |
 |------|----------|-----------|-----------|-------|----------|
@@ -42,7 +42,7 @@
 | GK Breakout | `gk-breakout` | 0.77 | 0.39 | 59% | Garman-Klass, Decay 59% |
 | Vol Structure | `vol-structure` | 1.18 | 0.59 | 57% | Short/long vol ratio, Decay 57% |
 
-## Gate 1 실패 — Sharpe/CAGR 미달 (5개)
+## Phase 4A 실패 — Sharpe/CAGR 미달 (5개)
 
 | 전략 | Registry | Sharpe | CAGR | 실패 사유 |
 |------|----------|--------|------|----------|
@@ -52,7 +52,7 @@
 | BB-RSI | `bb-rsi` | 0.59 | +4.6% | CAGR < 20% |
 | Entropy-Switch | `entropy-switch` | 0.52 | +11.1% | 전 에셋 Sharpe < 1.0. 레짐 필터만으로 alpha 생성 불가 |
 
-## Gate 1 실패 — 전 에셋 Sharpe 음수/0 근접 (12개)
+## Phase 4A 실패 — 전 에셋 Sharpe 음수/0 근접 (12개)
 
 ### 1D 전략 (4개)
 
@@ -72,19 +72,19 @@
 | Flow-Imbalance | `flow-imbalance` | -0.12 | -27% | ~54 | BVC 근사로 flow 방향 예측 불가. OFI>0.6 진입 후 mean reversion |
 | Hour-Season | `hour-season` | -1.01 | -45% | ~190 | 30일 rolling t-stat이 noise 과적합. BTC(-4.46) 최악 = 효율적 시장에서 계절성 즉시 차익거래 |
 
-## Gate 1 실패 — 데이터 부재 (1개)
+## Phase 4A 실패 — 데이터 부재 (1개)
 
-| 전략 | Registry | G0 점수 | 실패 사유 |
+| 전략 | Registry | P1 점수 | 실패 사유 |
 |------|----------|---------|----------|
 | Copula Pairs | `copula-pairs` | 20/30 | pair_close 데이터 부재, 인프라 미구축 → 폐기 |
 
 ## 재시도 대기 — 데이터 확보 (1개)
 
-| 전략 | Registry | G0 점수 | 상태 |
+| 전략 | Registry | P1 점수 | 상태 |
 |------|----------|---------|------|
 | Funding Carry | `funding-carry` | 25/30 | ✅ DerivativesDataService 인프라 구축 완료 → 재시도 가능 |
 
-## Gate 1 실패 — 구조적 결함 / 코드 삭제 (7개)
+## Phase 4A 실패 — 구조적 결함 / 코드 삭제 (7개)
 
 | 전략 | Registry | 폐기 사유 |
 |------|----------|----------|
@@ -103,13 +103,13 @@
 > 최신 교훈은 `pipeline lessons-list`로 확인.
 
 1. **앙상블 > 단일지표**: ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수
-1. **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐
+1. **IS Sharpe ≠ 실전 성과**: P4A PASS 전략 24개 중 P6까지 도달한 전략은 4개뿐
 1. **SOL/USDT = Best Asset**: 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리
 1. **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 조기 제거
 1. **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증 합리적
 1. **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블
 1. **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수
-1. **G0A 이론 ≠ G1 실전**: G0A 고득점이 G1 성과를 보장하지 않음. 46개 중 G5 도달 1개(2.2%)
+1. **P1 이론 ≠ P4A 실전**: P1 고득점이 P4A 성과를 보장하지 않음. 46개 중 P7 도달 1개(2.2%)
 1. **통계적 검정 전략의 한계**: significance threshold가 거래 빈도를 극단 제한 (BTC 6년간 2건)
 1. **밈코인 FULL Short = 구조적 자살**: DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적
 1. **칼만 필터 ≠ 알파**: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음

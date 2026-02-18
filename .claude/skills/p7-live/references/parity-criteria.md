@@ -1,6 +1,6 @@
 # Parity 정량 기준 + 괴리 원인 카탈로그
 
-> Gate 5 EDA Parity 검증의 상세 판정 기준과 VBT-EDA 괴리 원인을 체계적으로 분류한다.
+> Phase 7 EDA Parity 검증의 상세 판정 기준과 VBT-EDA 괴리 원인을 체계적으로 분류한다.
 
 ---
 
@@ -190,7 +190,7 @@ winrate_deviation = eda_winrate - vbt_winrate
 
 ## 7. 멀티에셋 검증 (참고)
 
-Gate 5는 **단일에셋** 검증이 기본이지만, 멀티에셋 EDA 검증도 가능:
+Phase 7는 **단일에셋** 검증이 기본이지만, 멀티에셋 EDA 검증도 가능:
 
 ### 멀티에셋 추가 확인 사항
 
@@ -201,4 +201,4 @@ Gate 5는 **단일에셋** 검증이 기본이지만, 멀티에셋 EDA 검증도
 | flush_pending_signals | Runner에서 호출 확인 |
 | common_index | 심볼 간 데이터 교집합 처리 |
 
-멀티에셋은 G5 필수 아님. 단일에셋 PASS 후 선택적 실행.
+멀티에셋은 P7 필수 아님. 단일에셋 PASS 후 선택적 실행.
