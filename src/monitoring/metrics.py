@@ -43,6 +43,7 @@ from src.core.events import (
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
+    from src.monitoring.anomaly.execution_quality import ExecutionAnomaly
 
 # ==========================================================================
 # Layer 2: Position & PnL — Gauges (기존)
@@ -545,6 +546,28 @@ ransac_conformal_lower_gauge = Gauge(
 ransac_decay_detected_gauge = Gauge(
     "mcbot_ransac_decay_detected", "RANSAC structural decay detected (0 or 1)", ["strategy"]
 )
+ransac_current_cumulative_gauge = Gauge(
+    "mcbot_ransac_current_cumulative", "RANSAC current cumulative return", ["strategy"]
+)
+
+# GBM Drawdown gauges (per-strategy)
+gbm_drawdown_depth_gauge = Gauge(
+    "mcbot_gbm_drawdown_depth", "Current drawdown depth (0.0~1.0)", ["strategy"]
+)
+gbm_drawdown_duration_gauge = Gauge(
+    "mcbot_gbm_drawdown_duration_days", "Current drawdown duration in days", ["strategy"]
+)
+gbm_severity_gauge = Gauge(
+    "mcbot_gbm_severity", "GBM severity (0=NORMAL, 1=WARNING, 2=CRITICAL)", ["strategy"]
+)
+
+# Execution Anomaly gauges (global, single-instance)
+execution_consecutive_rejections_gauge = Gauge(
+    "mcbot_execution_consecutive_rejections", "Consecutive order rejections"
+)
+execution_fill_rate_gauge = Gauge(
+    "mcbot_execution_fill_rate", "1h window fill rate (0.0~1.0)"
+)
 
 strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy realized PnL", ["strategy"])
 strategy_signals_counter = Counter(
@@ -776,6 +799,9 @@ class MetricsExporter:
             for anomaly in anomalies:
                 await self._publish_execution_alert(anomaly.severity, anomaly.message)
 
+        # Update execution gauges (always, not just when pending matched)
+        execution_consecutive_rejections_gauge.set(self._anomaly_detector.consecutive_rejections)
+
     async def _on_signal(self, event: AnyEvent) -> None:
         """SignalEvent → signals counter + strategy signals counter."""
         assert isinstance(event, SignalEvent)
@@ -881,6 +907,7 @@ class MetricsExporter:
         rejection_anomalies = self._anomaly_detector.on_rejection()
         for anomaly in rejection_anomalies:
             await self._publish_execution_alert(anomaly.severity, anomaly.message)
+        execution_consecutive_rejections_gauge.set(self._anomaly_detector.consecutive_rejections)
 
         # pending 있으면 orders_total도 기록 후 제거
         pending = self._pending_orders.pop(event.client_order_id, None)
@@ -897,13 +924,32 @@ class MetricsExporter:
         assert isinstance(event, HeartbeatEvent)
         heartbeat_timestamp_gauge.set(event.timestamp.timestamp())
 
-    def check_execution_health(self) -> object | None:
+    def check_execution_health(self) -> ExecutionAnomaly | None:
         """Fill rate 주기적 체크용 (external caller).
 
         Returns:
             ExecutionAnomaly 또는 None (정상/데이터 부족)
         """
         return self._anomaly_detector.check_fill_rate()
+
+    async def publish_execution_alert(
+        self, level: Literal["WARNING", "CRITICAL"], message: str
+    ) -> None:
+        """Execution alert를 외부에서 발행 (LiveRunner 등).
+
+        Args:
+            level: "WARNING" or "CRITICAL"
+            message: 알림 메시지
+        """
+        await self._publish_execution_alert(level, message)
+
+    def get_execution_fill_rate(self) -> float:
+        """현재 execution fill rate 조회 (0.0~1.0).
+
+        Returns:
+            Fill rate. 주문 없으면 1.0.
+        """
+        return self._anomaly_detector.get_fill_rate()
 
     # ------------------------------------------------------------------
     # Execution quality alerts

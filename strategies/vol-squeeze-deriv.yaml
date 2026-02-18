@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-squeeze-deriv
   display_name: Vol Squeeze + Derivatives
@@ -12,14 +13,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-18'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-18'
     details:
@@ -31,23 +32,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 1.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-18'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-18'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-18'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS (수정 후). vol_percentile_rank 0~1 vs config 0~100 단위 불일치
     수정 완료 (squeeze_threshold/100, vol_exit_rank/100)
 - date: '2026-02-18'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋 0건 거래. 시그널 미생성. squeeze_threshold/vol_exit_rank 조건이 6년간 한번도 충족되지
     않음. 설계 결함

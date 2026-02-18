@@ -12,7 +12,7 @@
 - [ ] 카테고리 (Momentum, MR, Regime, Behavioral 등)
 - [ ] 타임프레임 + annualization_factor
 - [ ] ShortMode (DISABLED / HEDGE_ONLY / FULL)
-- [ ] Gate 0 점수 (>= 18/30)
+- [ ] Phase 1 점수 (>= 18/30)
 - [ ] 핵심 가설 (경제적 논거)
 - [ ] 사용 지표 (구체적 수식)
 - [ ] 시그널 생성 로직 (조건 + 방향)
@@ -28,7 +28,7 @@
 
 ## 폐기 전략 실패 패턴 (Anti-Pattern)
 
-### Pattern 1: 단일 지표 의존 (12개 G2 FAIL)
+### Pattern 1: 단일 지표 의존 (12개 P4B FAIL)
 
 ```
 ❌ signal = SMA_fast > SMA_slow               (VW-TSMOM, TSMOM)

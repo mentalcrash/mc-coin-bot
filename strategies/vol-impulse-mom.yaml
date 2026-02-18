@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-impulse-mom
   display_name: Volume-Impulse Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 비정상 거래량(3x+ spike)이 방향성 가격 이동과 동시 발생 시 informed trading이며 continuation
     유발. Vol-Climax(반전 가설)의 정반대 접근
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,23 +32,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 적용 확인, 벡터화 완전, vol-scalar safe division,
     ShortMode 3분기 완비
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋 Sharpe -3.6~-6.2, MDD 91-98%. 15m volume-impulse momentum 전략 거래
     2700-3800건, 비용 구조적 한계

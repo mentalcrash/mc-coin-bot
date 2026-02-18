@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: donchian-ensemble
   display_name: Donchian Ensemble
@@ -8,36 +9,34 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 다양한 lookback의 평균은 특정 기간에 대한 과적합을 방지하고, 앙상블 효과로 안정성을 높인다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 25
       max_score: 30
-  G1:
-    status: FAIL
-    date: '2026-02-10'
-    details:
-      cagr: 10.8
-  G2:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 0.99
-      oos_sharpe: 0.99
-      decay: 1.7
-  G3:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 2/2 고원 + ±20% 안정
-  G4:
+  P6:
     status: PASS
     date: '2026-02-10'
     details:
       decay: 13.0
+  P4:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      g1_cagr: 10.8
+      g2_sharpe: 0.99
+      g2_oos_sharpe: 0.99
+      g2_decay: 1.7
+  P5:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 2/2 고원 + ±20% 안정
 asset_performance:
 - symbol: ETH/USDT
   sharpe: 0.99
@@ -71,22 +70,22 @@ asset_performance:
   profit_factor: 1.59
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 0.99, Decay 1.7%
 - date: '2026-02-09'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 2/2 파라미터 고원+안정
 - date: '2026-02-09'
-  gate: G4
+  phase: P6
   verdict: PASS
   rationale: WFA Decay 13%+Consistency 100%, CPCV OOS 1.02
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: CAGR +10.8% < 20% 최소 기준 미달 (기준 변경에 의한 소급 적용)

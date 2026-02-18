@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: donchian
   display_name: Donchian Channel
@@ -8,27 +9,25 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 신고가/신저가 돌파는 추세 시작의 강한 시그널이며, 터틀 트레이딩으로 검증되었다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 25
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.01
-      mdd: 50.01
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
-      is_sharpe: 1.4928
-      oos_sharpe: -0.1742
-      decay: 111.7
+      g1_sharpe: 1.01
+      g1_mdd: 50.01
+      g2_is_sharpe: 1.4928
+      g2_oos_sharpe: -0.1742
+      g2_decay: 111.7
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 1.01
@@ -62,14 +61,14 @@ asset_performance:
   profit_factor: 1.64
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: SOL/USDT Sharpe 1.01
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.12, Decay 91.1%

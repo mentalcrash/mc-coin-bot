@@ -54,7 +54,7 @@ str (CCXT API)
 
 주문 실행 전용 클라이언트 (데이터 스트리밍은 `BinanceClient` 사용):
 
-- **Hedge Mode**: Long/Short 포지션 동시 보유
+- **One-way Mode**: 심볼당 단일 방향 포지션 (netting)
 - **Cross Margin**: 전체 잔고를 마진으로 사용
 - **1x Leverage**: 레버리지 없음 (안전 우선)
 
@@ -62,7 +62,7 @@ str (CCXT API)
 async with BinanceFuturesClient() as client:
     result = await client.create_order(
         symbol="BTC/USDT:USDT", side="buy", amount=0.001,
-        position_side="LONG",
+        reduce_only=True,
     )
 ```
 

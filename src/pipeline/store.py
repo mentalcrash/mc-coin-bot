@@ -2,8 +2,8 @@
 
 strategies/ 디렉토리에 전략별 YAML 파일을 저장/로드:
 - CRUD: load, save, load_all, exists
-- Query: filter_by_status, get_active, get_at_gate, get_failed_at
-- Mutation: record_gate, update_status, set_asset_performance
+- Query: filter_by_status, get_active, get_at_phase, get_failed_at_phase
+- Mutation: record_phase, update_status, set_asset_performance
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ import yaml
 from src.pipeline.models import (
     AssetMetrics,
     Decision,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
@@ -95,43 +95,43 @@ class StrategyStore:
         """RETIRED 전략 목록."""
         return self.filter_by_status(StrategyStatus.RETIRED)
 
-    def get_at_gate(self, gate: GateId) -> list[StrategyRecord]:
-        """특정 Gate에 도달한 전략 (current_gate == gate)."""
-        return [r for r in self.load_all() if r.current_gate == gate]
+    def get_at_phase(self, phase: PhaseId) -> list[StrategyRecord]:
+        """특정 Phase에 도달한 전략 (current_phase == phase)."""
+        return [r for r in self.load_all() if r.current_phase == phase]
 
-    def get_failed_at(self, gate: GateId) -> list[StrategyRecord]:
-        """특정 Gate에서 FAIL된 전략."""
-        return [r for r in self.load_all() if r.fail_gate == gate]
+    def get_failed_at_phase(self, phase: PhaseId) -> list[StrategyRecord]:
+        """특정 Phase에서 FAIL된 전략."""
+        return [r for r in self.load_all() if r.fail_phase == phase]
 
     # ─── Mutation ────────────────────────────────────────────────────
 
-    def record_gate(
+    def record_phase(
         self,
         name: str,
-        gate: GateId,
-        verdict: GateVerdict,
+        phase: PhaseId,
+        verdict: PhaseVerdict,
         details: dict[str, Any],
         rationale: str,
     ) -> StrategyRecord:
-        """Gate 결과 기록 (frozen model → copy + modify)."""
+        """Phase 결과 기록 (frozen model → copy + modify)."""
         record = self.load(name)
-        new_gates = dict(record.gates)
-        new_gates[gate] = GateResult(status=verdict, date=date.today(), details=details)
+        new_phases = dict(record.phases)
+        new_phases[phase] = PhaseResult(status=verdict, date=date.today(), details=details)
 
         new_decisions = [
             *record.decisions,
             Decision(
                 date=date.today(),
-                gate=gate,
+                phase=phase,
                 verdict=verdict,
                 rationale=rationale,
             ),
         ]
 
-        updated = record.model_copy(update={"gates": new_gates, "decisions": new_decisions})
+        updated = record.model_copy(update={"phases": new_phases, "decisions": new_decisions})
 
         # IMPLEMENTED + PASS → TESTING 자동 전환
-        if updated.meta.status == StrategyStatus.IMPLEMENTED and verdict == GateVerdict.PASS:
+        if updated.meta.status == StrategyStatus.IMPLEMENTED and verdict == PhaseVerdict.PASS:
             new_meta = updated.meta.model_copy(update={"status": StrategyStatus.TESTING})
             updated = updated.model_copy(update={"meta": new_meta})
 
@@ -169,18 +169,19 @@ def _serialize(record: StrategyRecord) -> dict[str, Any]:
     # mode="json" converts StrEnum/date to plain str automatically
     meta = record.meta.model_dump(mode="json")
 
-    gates: dict[str, Any] = {}
-    for gid, result in record.gates.items():
-        gates[str(gid)] = result.model_dump(mode="json")
+    phases: dict[str, Any] = {}
+    for pid, result in record.phases.items():
+        phases[str(pid)] = result.model_dump(mode="json")
 
     assets = [a.model_dump(mode="json", exclude_none=True) for a in record.asset_performance]
 
     decisions = [d.model_dump(mode="json") for d in record.decisions]
 
     return {
+        "version": record.version,
         "meta": meta,
         "parameters": record.parameters,
-        "gates": gates,
+        "phases": phases,
         "asset_performance": assets,
         "decisions": decisions,
     }
@@ -188,15 +189,14 @@ def _serialize(record: StrategyRecord) -> dict[str, Any]:
 
 def _deserialize(raw: dict[str, Any]) -> StrategyRecord:
     """YAML dict → StrategyRecord."""
-    raw_meta = raw.get("meta", {})
-    meta = StrategyMeta(**raw_meta)
+    meta = StrategyMeta(**raw.get("meta", {}))
 
-    gates: dict[GateId, GateResult] = {}
-    for gid_str, gdata in raw.get("gates", {}).items():
-        gates[GateId(gid_str)] = GateResult(
-            status=GateVerdict(gdata["status"]),
-            date=gdata["date"],
-            details=gdata.get("details", {}),
+    phases: dict[PhaseId, PhaseResult] = {}
+    for pid_str, pdata in raw.get("phases", {}).items():
+        phases[PhaseId(pid_str)] = PhaseResult(
+            status=PhaseVerdict(pdata["status"]),
+            date=pdata["date"],
+            details=pdata.get("details", {}),
         )
 
     assets = [AssetMetrics(**a) for a in raw.get("asset_performance", [])]
@@ -204,8 +204,8 @@ def _deserialize(raw: dict[str, Any]) -> StrategyRecord:
     decisions = [
         Decision(
             date=d["date"],
-            gate=GateId(d["gate"]),
-            verdict=GateVerdict(d["verdict"]),
+            phase=PhaseId(d["phase"]),
+            verdict=PhaseVerdict(d["verdict"]),
             rationale=d["rationale"],
         )
         for d in raw.get("decisions", [])
@@ -214,7 +214,8 @@ def _deserialize(raw: dict[str, Any]) -> StrategyRecord:
     return StrategyRecord(
         meta=meta,
         parameters=raw.get("parameters", {}),
-        gates=gates,
+        phases=phases,
         asset_performance=assets,
         decisions=decisions,
+        version=2,
     )

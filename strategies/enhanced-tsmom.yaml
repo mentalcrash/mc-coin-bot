@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: enhanced-tsmom
   display_name: Enhanced VW-TSMOM
@@ -8,27 +9,25 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 거래량 증가와 함께하는 가격 움직임은 더 높은 지속성을 가지며, 허위 돌파를 필터링한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 24
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.22
-      mdd: 37.52
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
-      is_sharpe: 1.0618
-      oos_sharpe: 0.643
-      decay: 39.4
+      g1_sharpe: 1.22
+      g1_mdd: 37.52
+      g2_is_sharpe: 1.0618
+      g2_oos_sharpe: 0.643
+      g2_decay: 39.4
 asset_performance:
 - symbol: BTC/USDT
   sharpe: 1.22
@@ -62,14 +61,14 @@ asset_performance:
   profit_factor: 1.81
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: BTC/USDT Sharpe 1.22
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.25, Decay 85.2%

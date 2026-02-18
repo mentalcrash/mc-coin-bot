@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: bb-rsi
   display_name: BB-RSI
@@ -8,36 +9,34 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 볼린저밴드 상/하한에서의 가격 복귀는 과매수/과매도 심리의 회복에 의해 발생한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G1:
-    status: FAIL
-    date: '2026-02-10'
-    details:
-      cagr: 4.6
-  G2:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 0.59
-      oos_sharpe: 0.59
-      decay: 2.2
-  G3:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 4/4 고원 + ±20% 안정
-  G4:
+  P6:
     status: PASS
     date: '2026-02-10'
     details:
       decay: 2.0
+  P4:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      g1_cagr: 4.6
+      g2_sharpe: 0.59
+      g2_oos_sharpe: 0.59
+      g2_decay: 2.2
+  P5:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 4/4 고원 + ±20% 안정
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 0.53
@@ -71,22 +70,22 @@ asset_performance:
   profit_factor: 0.96
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 0.59, Decay 2.2%
 - date: '2026-02-09'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 4/4 파라미터 고원+안정
 - date: '2026-02-09'
-  gate: G4
+  phase: P6
   verdict: PASS
   rationale: WFA Decay 1.6%+OOS 0.82, CPCV OOS 0.52+MC p<0.01
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: CAGR +4.6% < 20% 최소 기준 미달 (기준 변경에 의한 소급 적용)

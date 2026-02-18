@@ -155,8 +155,8 @@ def show(
 
 @app.command(name="failure-patterns")
 def failure_patterns(
-    gate: Annotated[
-        str | None, typer.Option("--gate", "-g", help="Filter by affected gate (e.g., G1)")
+    phase: Annotated[
+        str | None, typer.Option("--phase", "-p", help="Filter by affected phase (e.g., P4)")
     ] = None,
     freq: Annotated[
         str | None, typer.Option("--freq", "-f", help="Filter by frequency (high/medium/low)")
@@ -167,8 +167,8 @@ def failure_patterns(
 
     store = FailurePatternStore()
     try:
-        if gate:
-            patterns = store.filter_by_gate(gate)
+        if phase:
+            patterns = store.filter_by_phase(phase)
         elif freq:
             patterns = store.filter_by_frequency(freq)
         else:
@@ -189,7 +189,7 @@ def failure_patterns(
     table.add_column("ID", style="bold", min_width=12)
     table.add_column("Name", min_width=16)
     table.add_column("Freq", width=8)
-    table.add_column("Gates", width=10)
+    table.add_column("Phases", width=10)
     table.add_column("Examples", width=5, justify="right")
     table.add_column("Prevention", min_width=20)
 
@@ -200,7 +200,7 @@ def failure_patterns(
             p.id,
             p.name,
             f"[{color}]{p.frequency}[/{color}]",
-            ", ".join(p.affected_gates),
+            ", ".join(p.affected_phases),
             str(len(p.examples)),
             p.prevention[0] if p.prevention else "-",
         )
@@ -234,7 +234,7 @@ def failure_pattern_show(
         p.description,
         "",
         f"[bold]Frequency:[/bold] [{color}]{p.frequency}[/{color}]",
-        f"[bold]Affected Gates:[/bold] {', '.join(p.affected_gates)}",
+        f"[bold]Affected Phases:[/bold] {', '.join(p.affected_phases)}",
     ]
 
     if p.detection_rules:

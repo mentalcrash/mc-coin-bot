@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: cascade-mom
   display_name: Cascade Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 연속 동방향 4H 리턴(streak)은 허딩/FOMO 캐스케이드를 반영하며 방향 지속. 스트릭 카운트 × 평균
     body / ATR 정규화로 시그널 생성
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 26
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,23 +32,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 26/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 적용 확인, 벡터화 완전, vol-scalar safe division,
     ShortMode 3분기 완비
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋 CAGR 음수, Best DOGE Sharpe 0.05. 4H behavioral momentum cascade 신호가
     noise에 매몰

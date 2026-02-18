@@ -46,11 +46,11 @@ argument-hint: <strategy-name>
 
 ```bash
 cat strategies/{strategy_name}.yaml
-# meta.status=CANDIDATE, gates.G0A.status=PASS 확인
-# YAML 없으면: "p1-g0a-discover에서 pipeline create를 먼저 실행하세요"
+# meta.status=CANDIDATE, phases.P1.status=PASS 확인
+# YAML 없으면: "p1-research에서 pipeline create를 먼저 실행하세요"
 ```
 
-추출 항목: 전략명, 카테고리, TF, ShortMode, Gate 0 점수, 핵심 가설, 사용 지표, 시그널 로직, 차별화 포인트, 데이터 요구사항.
+추출 항목: 전략명, 카테고리, TF, ShortMode, Phase 1 점수, 핵심 가설, 사용 지표, 시그널 로직, 차별화 포인트, 데이터 요구사항.
 
 ### 0-2. annualization_factor 결정
 
@@ -265,7 +265,7 @@ uv run mcbot pipeline report
   테스트: tests/strategy/{name_snake}/ (4 files)
   Ruff: PASS | Pyright: PASS | Tests: PASS ({N} tests)
   Registry: {registry-key} ({total} strategies)
-  다음: /p3-g0b-verify → /p4-g1g4-gate → 앙상블 편입 검토
+  다음: /p3-audit → /p4-backtest → 앙상블 편입 검토
 ============================================================
 ```
 

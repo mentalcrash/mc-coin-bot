@@ -78,6 +78,107 @@
         { "expr": "rate(mcbot_order_rejected_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "{{symbol}} ({{reason}})", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Row 3: Live Execution",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false
+    },
+    {
+      "title": "Min Notional Skips",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "targets": [
+        { "expr": "rate(mcbot_live_min_notional_skip_total{symbol=~\"$symbol\"}[1h])", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "API Blocked Orders",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "targets": [
+        { "expr": "rate(mcbot_live_api_blocked_total{symbol=~\"$symbol\"}[1h])", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Partial Fills",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "targets": [
+        { "expr": "rate(mcbot_live_partial_fill_total{symbol=~\"$symbol\"}[1h])", "legendFormat": "{{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Fill Parse Failures",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 27 },
+      "targets": [
+        { "expr": "mcbot_live_fill_parse_failure_total", "legendFormat": "Failures", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Consecutive Rejections",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 27 },
+      "targets": [
+        { "expr": "mcbot_execution_consecutive_rejections", "legendFormat": "Rejections", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Execution Fill Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 27 },
+      "targets": [
+        { "expr": "mcbot_execution_fill_rate", "legendFormat": "Fill Rate", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.8 }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,

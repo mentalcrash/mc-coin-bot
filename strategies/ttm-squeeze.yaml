@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: ttm-squeeze
   display_name: TTM Squeeze
@@ -8,22 +9,24 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: BB가 KC 안에 들어가면 변동성 압축, 밖으로 나오면 폭발적 움직임이 시작된다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G2:
+  P4:
     status: PASS
     date: '2026-02-10'
     details:
       sharpe: 0.58
       oos_sharpe: 0.58
       decay: 45.6
-  G3:
+  P5:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -61,14 +64,14 @@ asset_performance:
   profit_factor: 1.23
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 0.58, Decay 45.6%
 - date: '2026-02-09'
-  gate: G3
+  phase: P5
   verdict: FAIL
   rationale: bb_period, kc_mult 고원 부재 — 폐기

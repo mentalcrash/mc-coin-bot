@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: zscore-mr
   display_name: Z-Score MR
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 가격의 통계적 이상값(z-score > 2)은 평균으로의 회귀 압력이 높음을 시사한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -55,10 +58,10 @@ asset_performance:
   profit_factor: 0.46
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: DOGE/USDT Sharpe -0.02

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: anchor-mom
   display_name: Anchor-Mom
@@ -8,6 +9,8 @@ meta:
   created_at: '2026-02-10'
   retired_at: null
   economic_rationale: Rolling high 대비 근접도(nearness)와 모멘텀 방향 결합으로 심리적 앵커링 효과 포착
+  rationale_references: []
+  rationale_category: null
 parameters:
   nearness_lookback: 29
   mom_lookback: 51
@@ -16,58 +19,50 @@ parameters:
   short_nearness: 0.5293061129016696
   vol_window: 12
   atr_period: 22
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: C1-C7 전항목 PASS
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.36
-      cagr: 49.8
-      mdd: 31.0
-  G2:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.29
-      oos_sharpe: 1.29
-      decay: 10.4
-  G3:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 4/4 파라미터 고원 + ±20% 안정
-  G4:
+  P6:
     status: PASS
     date: '2026-02-10'
     details:
       note: 'WFA PASS, PBO 80% (경로 B PASS: 전 fold OOS 양수 + MC p=0.000)'
-  G5:
+  P7:
     status: PASS
     date: '2026-02-10'
     details:
       sharpe: 0.44
       cagr: 8.37
-  G2H:
+  P4:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      g1_sharpe: 1.36
+      g1_cagr: 49.8
+      g1_mdd: 31.0
+      g2_sharpe: 1.29
+      g2_oos_sharpe: 1.29
+      g2_decay: 10.4
+  P5:
     status: PASS
     date: '2026-02-14'
     details:
-      best_sharpe_is: 1.754
-      default_sharpe_is: 1.441
-      improvement_pct: 21.7
-      oos_sharpe: 0.782
-      n_trials: 100
-      n_completed: 100
+      g2h_best_sharpe_is: 1.754
+      g2h_default_sharpe_is: 1.441
+      g2h_improvement_pct: 21.7
+      g2h_oos_sharpe: 0.782
+      g2h_n_trials: 100
+      g2h_n_completed: 100
+      g3_note: 4/4 파라미터 고원 + ±20% 안정
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 1.36
@@ -101,37 +96,37 @@ asset_performance:
   profit_factor: 1.24
 decisions:
 - date: '2026-02-11'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-11'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS
 - date: '2026-02-11'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: DOGE/USDT Sharpe 1.36, CAGR +49.8%, MDD -31.0%, 371 trades. 전 에셋 양수 수익
 - date: '2026-02-11'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 1.29, Decay 10.4%, Overfit Prob 6.3%. G1 대비 95% 유지
 - date: '2026-02-11'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 4/4 파라미터 고원 + ±20% 안정. nearness_lookback 48~90, strong_nearness 0.88~0.99
     전범위 안정
 - date: '2026-02-11'
-  gate: G4
+  phase: P6
   verdict: PASS
   rationale: WFA PASS (OOS 1.16, Decay 21.2%, Consist 67%). PBO 80% 경로 B PASS (전 10
     fold OOS 양수 0.90~1.75 + MC p=0.000, CI [1.13, 1.49])
 - date: '2026-02-12'
-  gate: G5
+  phase: P7
   verdict: PASS
   rationale: EDA Sharpe 0.44 vs VBT 0.42. 수익 부호 일치. CAGR 편차 7.4%. Trades 198 (intrabar
     SL/TS). Live Ready 7/7
 - date: '2026-02-14'
-  gate: G2H
+  phase: P5
   verdict: PASS
   rationale: IS Sharpe 1.44→1.75 (+21.7%), OOS=0.78

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vwap-trend-cross
   display_name: VWAP Trend Crossover
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 단기/장기 rolling VWAP 레벨 교차로 시장 참여자 평균 진입가 이동 감지. 크립토 고래 거래 집중도가
     VWAP shift를 유의미한 추세 시그널로 만듦
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,7 +32,7 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details:
@@ -41,15 +44,15 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 143 tests passed.
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best Asset(DOGE) Sharpe 0.78 < 1.0, CAGR +18.2% < 20%. BTC Sharpe -0.30,
     BTC MDD -56.5%. Rolling VWAP cross가 크립토 4H에서 방향 예측력 부족.

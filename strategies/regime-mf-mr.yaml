@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: regime-mf-mr
   display_name: Regime-Gated Multi-Factor MR
@@ -12,14 +13,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details:
@@ -33,7 +34,7 @@ gates:
       warnings: 1.0
       W5: NOTE(preprocessor에서 vol_scalar 계산하나 signal에서 adaptive_vol_target으로 재계산,
         미사용 컬럼)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
@@ -43,15 +44,15 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. shift(1) 6개 변수 전수 확인. ShortMode 3종 완전 분기. 레짐 게이팅 정상.
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '전 에셋 Sharpe 음수 (BTC:-0.79, ETH:-0.93, BNB:-1.57, SOL:-0.59, DOGE:-0.89).
     MDD 63~92%. 즉시 폐기 기준 #2 해당'

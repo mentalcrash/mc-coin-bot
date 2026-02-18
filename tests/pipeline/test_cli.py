@@ -1,4 +1,4 @@
-"""Tests for src/cli/pipeline.py — create, update-status, record --no-retire, gates-list/show."""
+"""Tests for src/cli/pipeline.py — create, update-status, record --no-retire, phases-list/show."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ import yaml
 from typer.testing import CliRunner
 
 from src.cli.pipeline import app
-from src.pipeline.gate_store import GateCriteriaStore
-from src.pipeline.models import GateId, GateVerdict, StrategyStatus
+from src.pipeline.models import PhaseId, PhaseVerdict, StrategyStatus
+from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 from src.pipeline.store import StrategyStore
 
 runner = CliRunner()
 
-# G0A v2 기준 (criteria.yaml와 동기화)
-_G0A_V2_ITEMS = [
+# P1 v2 기준 (criteria.yaml와 동기화)
+_P1_V2_ITEMS = [
     "경제적 논거 고유성",
     "IC 사전 검증",
     "카테고리 성공률",
@@ -26,8 +26,8 @@ _G0A_V2_ITEMS = [
     "앙상블 기여도",
     "수용 용량",
 ]
-_G0A_V2_PASS_THRESHOLD = 21
-_G0A_V2_MAX_TOTAL = 30
+_P1_V2_PASS_THRESHOLD = 21
+_P1_V2_MAX_TOTAL = 30
 
 
 @pytest.fixture
@@ -40,39 +40,39 @@ def strategies_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def _patch_store(strategies_dir: Path, tmp_path: Path) -> None:
-    """Patch StrategyStore and GateCriteriaStore to use tmp_path."""
+    """Patch StrategyStore and PhaseCriteriaStore to use tmp_path."""
     original_init = StrategyStore.__init__
 
     def patched_init(self: StrategyStore, base_dir: Path = strategies_dir) -> None:
         original_init(self, base_dir=base_dir)
 
-    # G0A v2 criteria YAML for _load_g0a_criteria()
-    gate_path = tmp_path / "g0a_criteria.yaml"
-    gate_yaml = {
-        "gates": [
+    # P1 v2 criteria YAML for _load_p1_criteria()
+    phase_path = tmp_path / "p1_criteria.yaml"
+    phase_yaml = {
+        "phases": [
             {
-                "gate_id": "G0A",
+                "phase_id": "P1",
                 "name": "아이디어 검증",
-                "gate_type": "scoring",
+                "phase_type": "scoring",
                 "scoring": {
-                    "pass_threshold": _G0A_V2_PASS_THRESHOLD,
-                    "max_total": _G0A_V2_MAX_TOTAL,
-                    "items": [{"name": n, "description": "test"} for n in _G0A_V2_ITEMS],
+                    "pass_threshold": _P1_V2_PASS_THRESHOLD,
+                    "max_total": _P1_V2_MAX_TOTAL,
+                    "items": [{"name": n, "description": "test"} for n in _P1_V2_ITEMS],
                 },
             },
         ],
     }
-    gate_path.write_text(
-        yaml.dump(gate_yaml, default_flow_style=False, allow_unicode=True), encoding="utf-8"
+    phase_path.write_text(
+        yaml.dump(phase_yaml, default_flow_style=False, allow_unicode=True), encoding="utf-8"
     )
-    original_gate_init = GateCriteriaStore.__init__
+    original_phase_init = PhaseCriteriaStore.__init__
 
-    def patched_gate_init(self: GateCriteriaStore, path: Path = gate_path) -> None:
-        original_gate_init(self, path=path)
+    def patched_phase_init(self: PhaseCriteriaStore, path: Path = phase_path) -> None:
+        original_phase_init(self, path=path)
 
     with (
         patch.object(StrategyStore, "__init__", patched_init),
-        patch.object(GateCriteriaStore, "__init__", patched_gate_init),
+        patch.object(PhaseCriteriaStore, "__init__", patched_phase_init),
     ):
         yield
 
@@ -96,7 +96,7 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "HEDGE_ONLY",
-                "--g0a-score",
+                "--p1-score",
                 "22",
             ],
         )
@@ -115,9 +115,9 @@ class TestCreateCommand:
         assert record.meta.category == "Trend Following"
         assert record.meta.timeframe == "1D"
         assert record.meta.short_mode == "HEDGE_ONLY"
-        assert GateId.G0A in record.gates
-        assert record.gates[GateId.G0A].status == GateVerdict.PASS
-        assert record.gates[GateId.G0A].details["score"] == 22
+        assert PhaseId.P1 in record.phases
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.PASS
+        assert record.phases[PhaseId.P1].details["score"] == 22
 
     def test_create_with_rationale(self, strategies_dir: Path) -> None:
         result = runner.invoke(
@@ -135,7 +135,7 @@ class TestCreateCommand:
                 "FULL",
                 "--rationale",
                 "Volatility premium harvesting",
-                "--g0a-score",
+                "--p1-score",
                 "25",
             ],
         )
@@ -183,8 +183,8 @@ class TestCreateCommand:
         assert result.exit_code == 1
         assert "Already exists" in result.output
 
-    def test_create_default_g0a_score_fails(self, strategies_dir: Path) -> None:
-        """score=0 (default) → G0A FAIL verdict."""
+    def test_create_default_p1_score_fails(self, strategies_dir: Path) -> None:
+        """score=0 (default) -> P1 FAIL verdict."""
         result = runner.invoke(
             app,
             [
@@ -201,15 +201,15 @@ class TestCreateCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "G0A FAIL" in result.output
+        assert "P1 FAIL" in result.output
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("default-score")
-        assert record.gates[GateId.G0A].details["score"] == 0
-        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
+        assert record.phases[PhaseId.P1].details["score"] == 0
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.FAIL
 
-    def test_create_g0a_below_threshold(self, strategies_dir: Path) -> None:
-        """score=15 < 21 → FAIL verdict, CANDIDATE 유지."""
+    def test_create_p1_below_threshold(self, strategies_dir: Path) -> None:
+        """score=15 < 21 -> FAIL verdict, CANDIDATE 유지."""
         result = runner.invoke(
             app,
             [
@@ -223,21 +223,21 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "15",
             ],
         )
         assert result.exit_code == 0
-        assert "G0A FAIL" in result.output
+        assert "P1 FAIL" in result.output
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("low-score")
-        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.FAIL
         assert record.meta.status == StrategyStatus.CANDIDATE
-        assert record.decisions[0].verdict == GateVerdict.FAIL
+        assert record.decisions[0].verdict == PhaseVerdict.FAIL
 
-    def test_create_g0a_at_threshold(self, strategies_dir: Path) -> None:
-        """score=21 → PASS (v2 threshold)."""
+    def test_create_p1_at_threshold(self, strategies_dir: Path) -> None:
+        """score=21 -> PASS (v2 threshold)."""
         result = runner.invoke(
             app,
             [
@@ -251,19 +251,19 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "21",
             ],
         )
         assert result.exit_code == 0
-        assert "G0A FAIL" not in result.output
+        assert "P1 FAIL" not in result.output
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("threshold-score")
-        assert record.gates[GateId.G0A].status == GateVerdict.PASS
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.PASS
 
-    def test_create_g0a_invalid_range(self) -> None:
-        """score=35 > 30 → exit(1)."""
+    def test_create_p1_invalid_range(self) -> None:
+        """score=35 > 30 -> exit(1)."""
         result = runner.invoke(
             app,
             [
@@ -277,15 +277,15 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "35",
             ],
         )
         assert result.exit_code == 1
-        assert "Invalid G0A score" in result.output
+        assert "Invalid P1 score" in result.output
 
-    def test_create_g0a_negative_range(self) -> None:
-        """score=-5 < 0 → exit(1)."""
+    def test_create_p1_negative_range(self) -> None:
+        """score=-5 < 0 -> exit(1)."""
         result = runner.invoke(
             app,
             [
@@ -299,12 +299,12 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "-5",
             ],
         )
         assert result.exit_code == 1
-        assert "Invalid G0A score" in result.output
+        assert "Invalid P1 score" in result.output
 
     def test_create_with_rationale_category(self, strategies_dir: Path) -> None:
         """--rationale-category 옵션 동작 확인."""
@@ -321,7 +321,7 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "22",
                 "--rationale-category",
                 "momentum",
@@ -333,11 +333,11 @@ class TestCreateCommand:
         record = store.load("cat-strat")
         assert record.meta.rationale_category == "momentum"
 
-    # ─── v2 --g0a-items 테스트 ─────────────────────────────────────
+    # ─── v2 --p1-items 테스트 ─────────────────────────────────────
 
-    def test_create_with_g0a_items(self, strategies_dir: Path) -> None:
-        """--g0a-items JSON → v2 details 저장."""
-        items = dict.fromkeys(_G0A_V2_ITEMS, 4)
+    def test_create_with_p1_items(self, strategies_dir: Path) -> None:
+        """--p1-items JSON -> v2 details 저장."""
+        items = dict.fromkeys(_P1_V2_ITEMS, 4)
         items_json = json.dumps(items, ensure_ascii=False)
         result = runner.invoke(
             app,
@@ -352,7 +352,7 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "FULL",
-                "--g0a-items",
+                "--p1-items",
                 items_json,
             ],
         )
@@ -361,16 +361,16 @@ class TestCreateCommand:
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("v2-strat")
-        details = record.gates[GateId.G0A].details
+        details = record.phases[PhaseId.P1].details
         assert details["version"] == 2
         assert details["score"] == 24  # 6 items x 4
         assert details["max_score"] == 30
         assert details["items"]["IC 사전 검증"] == 4
-        assert record.gates[GateId.G0A].status == GateVerdict.PASS
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.PASS
 
-    def test_create_g0a_items_below_threshold(self, strategies_dir: Path) -> None:
-        """--g0a-items 합계 < 21 → FAIL."""
-        items = dict.fromkeys(_G0A_V2_ITEMS, 2)  # 6 x 2 = 12 < 21
+    def test_create_p1_items_below_threshold(self, strategies_dir: Path) -> None:
+        """--p1-items 합계 < 21 -> FAIL."""
+        items = dict.fromkeys(_P1_V2_ITEMS, 2)  # 6 x 2 = 12 < 21
         items_json = json.dumps(items, ensure_ascii=False)
         result = runner.invoke(
             app,
@@ -385,20 +385,20 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-items",
+                "--p1-items",
                 items_json,
             ],
         )
         assert result.exit_code == 0
-        assert "G0A FAIL" in result.output
+        assert "P1 FAIL" in result.output
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("v2-low")
-        assert record.gates[GateId.G0A].status == GateVerdict.FAIL
-        assert record.gates[GateId.G0A].details["version"] == 2
+        assert record.phases[PhaseId.P1].status == PhaseVerdict.FAIL
+        assert record.phases[PhaseId.P1].details["version"] == 2
 
-    def test_create_g0a_items_invalid_name(self) -> None:
-        """잘못된 항목명 → exit(1)."""
+    def test_create_p1_items_invalid_name(self) -> None:
+        """잘못된 항목명 -> exit(1)."""
         items = {"WRONG_ITEM": 3}
         result = runner.invoke(
             app,
@@ -413,16 +413,16 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-items",
+                "--p1-items",
                 json.dumps(items, ensure_ascii=False),
             ],
         )
         assert result.exit_code == 1
         assert "불일치" in result.output
 
-    def test_create_g0a_items_missing_item(self) -> None:
-        """항목 누락 → exit(1)."""
-        items = dict.fromkeys(_G0A_V2_ITEMS[:4], 3)  # 4 of 6
+    def test_create_p1_items_missing_item(self) -> None:
+        """항목 누락 -> exit(1)."""
+        items = dict.fromkeys(_P1_V2_ITEMS[:4], 3)  # 4 of 6
         result = runner.invoke(
             app,
             [
@@ -436,17 +436,17 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-items",
+                "--p1-items",
                 json.dumps(items, ensure_ascii=False),
             ],
         )
         assert result.exit_code == 1
         assert "누락" in result.output
 
-    def test_create_g0a_items_invalid_range(self) -> None:
-        """점수 범위 초과 → exit(1)."""
-        items = dict.fromkeys(_G0A_V2_ITEMS, 3)
-        items[_G0A_V2_ITEMS[0]] = 6  # > 5
+    def test_create_p1_items_invalid_range(self) -> None:
+        """점수 범위 초과 -> exit(1)."""
+        items = dict.fromkeys(_P1_V2_ITEMS, 3)
+        items[_P1_V2_ITEMS[0]] = 6  # > 5
         result = runner.invoke(
             app,
             [
@@ -460,15 +460,15 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-items",
+                "--p1-items",
                 json.dumps(items, ensure_ascii=False),
             ],
         )
         assert result.exit_code == 1
         assert "Invalid score" in result.output
 
-    def test_create_g0a_items_invalid_json(self) -> None:
-        """잘못된 JSON → exit(1)."""
+    def test_create_p1_items_invalid_json(self) -> None:
+        """잘못된 JSON -> exit(1)."""
         result = runner.invoke(
             app,
             [
@@ -482,7 +482,7 @@ class TestCreateCommand:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-items",
+                "--p1-items",
                 "not-valid-json",
             ],
         )
@@ -580,8 +580,8 @@ class TestRecordNoRetire:
             [
                 "record",
                 "retire-test",
-                "--gate",
-                "G0B",
+                "--phase",
+                "P3",
                 "--verdict",
                 "FAIL",
                 "--rationale",
@@ -602,8 +602,8 @@ class TestRecordNoRetire:
             [
                 "record",
                 "retire-test",
-                "--gate",
-                "G0B",
+                "--phase",
+                "P3",
                 "--verdict",
                 "FAIL",
                 "--no-retire",
@@ -625,8 +625,8 @@ class TestRecordNoRetire:
             [
                 "record",
                 "retire-test",
-                "--gate",
-                "G0B",
+                "--phase",
+                "P3",
                 "--verdict",
                 "PASS",
                 "--no-retire",
@@ -639,18 +639,18 @@ class TestRecordNoRetire:
 
         store = StrategyStore(base_dir=strategies_dir)
         record = store.load("retire-test")
-        # IMPLEMENTED + PASS → TESTING 자동 전환
+        # IMPLEMENTED + PASS -> TESTING 자동 전환
         assert record.meta.status == StrategyStatus.TESTING
 
 
-# ─── gates-list / gates-show commands ────────────────────────────────
+# ─── phases-list / phases-show commands ────────────────────────────────
 
-_SAMPLE_GATES_YAML = {
-    "gates": [
+_SAMPLE_PHASES_YAML = {
+    "phases": [
         {
-            "gate_id": "G0A",
+            "phase_id": "P1",
             "name": "아이디어 검증",
-            "gate_type": "scoring",
+            "phase_type": "scoring",
             "scoring": {
                 "pass_threshold": 18,
                 "max_total": 30,
@@ -660,9 +660,9 @@ _SAMPLE_GATES_YAML = {
             },
         },
         {
-            "gate_id": "G1",
+            "phase_id": "P4",
             "name": "단일에셋 백테스트",
-            "gate_type": "threshold",
+            "phase_type": "threshold",
             "cli_command": "run {config}",
             "threshold": {
                 "pass_metrics": [
@@ -674,44 +674,44 @@ _SAMPLE_GATES_YAML = {
 }
 
 
-class TestGatesCommands:
+class TestPhasesCommands:
     @pytest.fixture(autouse=True)
-    def _patch_gate_store(self, tmp_path: Path) -> None:  # type: ignore[misc]
-        """Patch GateCriteriaStore to use tmp gate yaml."""
-        gate_path = tmp_path / "criteria.yaml"
-        gate_path.write_text(
-            yaml.dump(_SAMPLE_GATES_YAML, default_flow_style=False, allow_unicode=True),
+    def _patch_phase_store(self, tmp_path: Path) -> None:  # type: ignore[misc]
+        """Patch PhaseCriteriaStore to use tmp phase yaml."""
+        phase_path = tmp_path / "criteria.yaml"
+        phase_path.write_text(
+            yaml.dump(_SAMPLE_PHASES_YAML, default_flow_style=False, allow_unicode=True),
             encoding="utf-8",
         )
-        original_init = GateCriteriaStore.__init__
+        original_init = PhaseCriteriaStore.__init__
 
-        def patched_init(self: GateCriteriaStore, path: Path = gate_path) -> None:
+        def patched_init(self: PhaseCriteriaStore, path: Path = phase_path) -> None:
             original_init(self, path=path)
 
-        with patch.object(GateCriteriaStore, "__init__", patched_init):
+        with patch.object(PhaseCriteriaStore, "__init__", patched_init):
             yield
 
-    def test_gates_list(self) -> None:
-        result = runner.invoke(app, ["gates-list"])
+    def test_phases_list(self) -> None:
+        result = runner.invoke(app, ["phases-list"])
         assert result.exit_code == 0
-        assert "G0A" in result.output
-        assert "G1" in result.output
+        assert "P1" in result.output
+        assert "P4" in result.output
         assert "아이디어 검증" in result.output
 
-    def test_gates_show_scoring(self) -> None:
-        result = runner.invoke(app, ["gates-show", "G0A"])
+    def test_phases_show_scoring(self) -> None:
+        result = runner.invoke(app, ["phases-show", "P1"])
         assert result.exit_code == 0
         assert "아이디어 검증" in result.output
         assert "18" in result.output
 
-    def test_gates_show_threshold(self) -> None:
-        result = runner.invoke(app, ["gates-show", "G1"])
+    def test_phases_show_threshold(self) -> None:
+        result = runner.invoke(app, ["phases-show", "P4"])
         assert result.exit_code == 0
         assert "Sharpe" in result.output
         assert "1" in result.output
 
-    def test_gates_show_not_found(self) -> None:
-        result = runner.invoke(app, ["gates-show", "G99"])
+    def test_phases_show_not_found(self) -> None:
+        result = runner.invoke(app, ["phases-show", "P99"])
         assert result.exit_code == 1
         assert "not found" in result.output
 
@@ -725,7 +725,7 @@ class TestRetiredAnalysis:
         self,
         name: str,
         *,
-        g0a_score: int = 22,
+        p1_score: int = 22,
         rationale_category: str | None = None,
     ) -> None:
         args = [
@@ -739,41 +739,40 @@ class TestRetiredAnalysis:
             "1D",
             "--short-mode",
             "DISABLED",
-            "--g0a-score",
-            str(g0a_score),
+            "--p1-score",
+            str(p1_score),
         ]
         if rationale_category:
             args.extend(["--rationale-category", rationale_category])
         runner.invoke(app, args)
 
-    def _retire_with_gate(self, name: str, gate: str) -> None:
+    def _retire_with_phase(self, name: str, phase: str) -> None:
         runner.invoke(
             app,
             ["update-status", name, "--status", "IMPLEMENTED"],
         )
         runner.invoke(
             app,
-            ["record", name, "--gate", gate, "--verdict", "FAIL", "--rationale", "test"],
+            ["record", name, "--phase", phase, "--verdict", "FAIL", "--rationale", "test"],
         )
 
-    def test_retired_analysis_gate_distribution(self, strategies_dir: Path) -> None:
-        """Gate별 FAIL 분포 출력."""
-        # G1 FAIL 2개, G2 FAIL 1개
+    def test_retired_analysis_phase_distribution(self, strategies_dir: Path) -> None:
+        """Phase별 FAIL 분포 출력."""
+        # P4 FAIL 2개, P4 FAIL 1개 (동일 phase)
         for i in range(3):
             self._create_strategy(f"ret-{i}", rationale_category="momentum")
-        self._retire_with_gate("ret-0", "G1")
-        self._retire_with_gate("ret-1", "G1")
-        self._retire_with_gate("ret-2", "G2")
+        self._retire_with_phase("ret-0", "P4")
+        self._retire_with_phase("ret-1", "P4")
+        self._retire_with_phase("ret-2", "P4")
 
         result = runner.invoke(app, ["retired-analysis"])
         assert result.exit_code == 0
-        assert "G1" in result.output
-        assert "G2" in result.output
+        assert "P4" in result.output
 
     def test_retired_analysis_category_stats(self, strategies_dir: Path) -> None:
         """카테고리별 집계 출력."""
         self._create_strategy("cat-a", rationale_category="momentum")
-        self._retire_with_gate("cat-a", "G1")
+        self._retire_with_phase("cat-a", "P4")
 
         result = runner.invoke(app, ["retired-analysis"])
         assert result.exit_code == 0
@@ -788,8 +787,8 @@ class TestRetiredAnalysis:
     def test_create_warns_low_category_success(self, strategies_dir: Path) -> None:
         """동일 category RETIRED 존재 시 경고 출력."""
         # RETIRED 전략 생성
-        self._create_strategy("old-mom", g0a_score=20, rationale_category="vol-premium")
-        self._retire_with_gate("old-mom", "G1")
+        self._create_strategy("old-mom", p1_score=20, rationale_category="vol-premium")
+        self._retire_with_phase("old-mom", "P4")
 
         # 새 전략 생성 — 경고 기대
         result = runner.invoke(
@@ -805,7 +804,7 @@ class TestRetiredAnalysis:
                 "1D",
                 "--short-mode",
                 "DISABLED",
-                "--g0a-score",
+                "--p1-score",
                 "20",
                 "--rationale-category",
                 "vol-premium",

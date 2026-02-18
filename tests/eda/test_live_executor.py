@@ -111,12 +111,12 @@ class TestProtocol:
 
 
 # ---------------------------------------------------------------------------
-# positionSide 매핑
+# reduceOnly 매핑
 # ---------------------------------------------------------------------------
 
 
-class TestPositionSideMapping:
-    """_resolve_position_side() 테스트."""
+class TestReduceOnlyMapping:
+    """_resolve_reduce_only() 테스트."""
 
     def test_long_entry_no_position(self) -> None:
         """포지션 없을 때 LONG entry."""
@@ -125,8 +125,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm())
 
         order = _make_order(target_weight=1.0, side="BUY")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "LONG"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is False
         assert flip is False
 
@@ -137,8 +136,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm())
 
         order = _make_order(target_weight=-1.0, side="SELL")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "SHORT"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is False
         assert flip is False
 
@@ -154,8 +152,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=0, side="SELL")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "LONG"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is False
 
@@ -171,8 +168,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=0, side="BUY")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "SHORT"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is False
 
@@ -188,8 +184,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=0, side="SELL", price=48000.0)
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "LONG"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is False
 
@@ -205,13 +200,12 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=0, side="BUY", price=52000.0)
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "SHORT"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is False
 
     def test_direction_flip_long_to_short(self) -> None:
-        """LONG→SHORT 전환 시 close LONG만."""
+        """LONG→SHORT 전환 시 close만."""
         positions = {
             "BTC/USDT": FakePosition(
                 symbol="BTC/USDT", direction=Direction.LONG, size=0.01, last_price=50000.0
@@ -222,13 +216,12 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=-1.0, side="SELL")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "LONG"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is True
 
     def test_direction_flip_short_to_long(self) -> None:
-        """SHORT→LONG 전환 시 close SHORT만."""
+        """SHORT→LONG 전환 시 close만."""
         positions = {
             "BTC/USDT": FakePosition(
                 symbol="BTC/USDT", direction=Direction.SHORT, size=0.01, last_price=50000.0
@@ -239,8 +232,7 @@ class TestPositionSideMapping:
         executor.set_pm(_make_mock_pm(positions))
 
         order = _make_order(target_weight=1.0, side="BUY")
-        ps, reduce_only, flip = executor._resolve_position_side(order)
-        assert ps == "SHORT"
+        reduce_only, flip = executor._resolve_reduce_only(order)
         assert reduce_only is True
         assert flip is True
 

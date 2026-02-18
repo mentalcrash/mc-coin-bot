@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: trend-quality-mom
   display_name: Trend Quality Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: 가격 선형회귀 R²(추세 품질)를 연속적 포지션 배율로 사용. sign(slope) × R²로 고품질 추세에만
     집중. 크립토 모멘텀 지속성 + R²-weighted momentum 학술 근거
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 26
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,7 +32,7 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details:
@@ -41,15 +44,15 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 26/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 143 tests passed.
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best Asset(DOGE) Sharpe 0.84 < 1.0, CAGR +17.2% < 20%. 전 에셋 Sharpe <
     1.0. R2 trend quality conviction이 크립토 4H에서 알파 부족.

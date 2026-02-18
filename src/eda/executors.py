@@ -8,7 +8,7 @@ Rules Applied:
     - Look-Ahead Bias 방지: next-open deferred execution
     - SL/TS 즉시 체결: PM이 설정한 가격으로 즉시 체결
     - CostModel 재사용: 기존 수수료 모델 적용
-    - Hedge Mode: positionSide 매핑 + direction-flip close-only
+    - One-way Mode: reduceOnly 매핑 + direction-flip close-only
 """
 
 from __future__ import annotations
@@ -183,13 +183,13 @@ class LiveExecutor:
     """Binance Futures 실주문 실행기.
 
     ExecutorPort Protocol 만족. Market order → 즉시 체결 → FillEvent 반환.
-    Hedge Mode positionSide 매핑 + direction-flip 분할 처리.
+    One-way Mode reduceOnly 매핑 + direction-flip 분할 처리.
 
-    positionSide 결정 로직:
-        1. order.price is not None (SL/TS exit) → 현재 포지션 방향으로 reduceOnly close
-        2. order.target_weight == 0 (flat close) → 현재 포지션 방향으로 reduceOnly close
-        3. Direction-flip (LONG→SHORT or SHORT→LONG) → close만 실행, 다음 bar에서 PM이 open 생성
-        4. 같은 방향 entry/increase → 해당 positionSide로 open
+    reduceOnly 결정 로직:
+        1. order.price is not None (SL/TS exit) → reduceOnly=True
+        2. order.target_weight == 0 (flat close) → reduceOnly=True
+        3. Direction-flip (LONG→SHORT or SHORT→LONG) → reduceOnly close만 실행
+        4. 같은 방향 entry/increase → reduceOnly=False
 
     Args:
         futures_client: BinanceFuturesClient 인스턴스
@@ -245,15 +245,14 @@ class LiveExecutor:
         futures_symbol = BinanceFuturesClient.to_futures_symbol(order.symbol)
 
         try:
-            position_side, reduce_only, is_flip_close = self._resolve_position_side(order)
+            reduce_only, is_flip_close = self._resolve_reduce_only(order)
 
             logger.info(
-                "LiveExecutor: {} {} {} notional=${:.2f} positionSide={} reduceOnly={} flip_close={}",
+                "LiveExecutor: {} {} {} notional=${:.2f} reduceOnly={} flip_close={}",
                 order.symbol,
                 order.side,
                 order.client_order_id,
                 order.notional_usd,
-                position_side,
                 reduce_only,
                 is_flip_close,
             )
@@ -261,7 +260,6 @@ class LiveExecutor:
             return await self._execute_single(
                 order=order,
                 futures_symbol=futures_symbol,
-                position_side=position_side,
                 reduce_only=reduce_only,
             )
         except Exception:
@@ -271,45 +269,39 @@ class LiveExecutor:
             )
             return None
 
-    def _resolve_position_side(
+    def _resolve_reduce_only(
         self,
         order: OrderRequestEvent,
-    ) -> tuple[str, bool, bool]:
-        """positionSide / reduceOnly / is_flip_close 결정.
+    ) -> tuple[bool, bool]:
+        """reduceOnly / is_flip_close 결정.
 
         Returns:
-            (position_side, reduce_only, is_flip_close) 튜플
+            (reduce_only, is_flip_close) 튜플
         """
         from src.models.types import Direction
 
         if self._pm is None:
-            msg = "LiveExecutor._resolve_position_side called without PM set"
+            msg = "LiveExecutor._resolve_reduce_only called without PM set"
             raise RuntimeError(msg)
         pos = self._pm.positions.get(order.symbol)
         current_dir = pos.direction if pos and pos.is_open else Direction.NEUTRAL
 
         # 1. SL/TS exit (price 설정)
         if order.price is not None:
-            ps = "LONG" if current_dir == Direction.LONG else "SHORT"
-            return ps, True, False
+            return True, False
 
         # 2. Flat close (target_weight == 0)
         if order.target_weight == 0:
-            ps = "LONG" if current_dir == Direction.LONG else "SHORT"
-            return ps, True, False
+            return True, False
 
-        # 3. LONG 방향 주문
-        if order.target_weight > 0:
-            if current_dir == Direction.SHORT:
-                # Direction-flip: close SHORT만 실행
-                return "SHORT", True, True
-            return "LONG", False, False
+        # 3. Direction-flip: close만 실행
+        if order.target_weight > 0 and current_dir == Direction.SHORT:
+            return True, True
+        if order.target_weight < 0 and current_dir == Direction.LONG:
+            return True, True
 
-        # 4. SHORT 방향 주문
-        if current_dir == Direction.LONG:
-            # Direction-flip: close LONG만 실행
-            return "LONG", True, True
-        return "SHORT", False, False
+        # 4. 같은 방향 entry/increase
+        return False, False
 
     async def _fetch_fresh_price(self, futures_symbol: str) -> float | None:
         """거래소에서 실시간 가격 조회.
@@ -331,7 +323,6 @@ class LiveExecutor:
         self,
         order: OrderRequestEvent,
         futures_symbol: str,
-        position_side: str,
         reduce_only: bool,
     ) -> FillEvent | None:
         """단일 주문 실행 + FillEvent 생성.
@@ -339,7 +330,6 @@ class LiveExecutor:
         Args:
             order: 주문 요청
             futures_symbol: "BTC/USDT:USDT" 형태
-            position_side: "LONG" 또는 "SHORT"
             reduce_only: 청산 전용 여부
 
         Returns:
@@ -387,7 +377,6 @@ class LiveExecutor:
             symbol=futures_symbol,
             side=order.side.lower(),
             amount=amount,
-            position_side=position_side,
             reduce_only=reduce_only,
             client_order_id=order.client_order_id,
         )

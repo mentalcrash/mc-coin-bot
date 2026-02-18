@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: max-min
   display_name: MAX-MIN
@@ -8,31 +9,33 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 신고가 돌파는 추세 지속을, 신저가 매수는 과매도 반등을 포착하여 시장 레짐에 적응한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G2:
+  P6:
+    status: FAIL
+    date: '2026-02-10'
+    details:
+      note: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34
+  P4:
     status: PASS
     date: '2026-02-10'
     details:
       sharpe: 0.8
       oos_sharpe: 0.8
       decay: 6.2
-  G3:
+  P5:
     status: PASS
     date: '2026-02-10'
     details:
       note: 3/3 고원 + ±20% 안정
-  G4:
-    status: FAIL
-    date: '2026-02-10'
-    details:
-      note: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 0.82
@@ -66,18 +69,18 @@ asset_performance:
   profit_factor: 1.36
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 0.80, Decay 6.2%
 - date: '2026-02-09'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 3/3 파라미터 고원+안정
 - date: '2026-02-09'
-  gate: G4
+  phase: P6
   verdict: FAIL
   rationale: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34

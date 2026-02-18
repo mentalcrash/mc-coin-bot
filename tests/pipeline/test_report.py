@@ -8,18 +8,18 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_models import LessonRecord
 from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
     Decision,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
 )
+from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 from src.pipeline.report import ConsoleRenderer, DashboardGenerator, _extract_note, _fail_rationale
 from src.pipeline.store import StrategyStore
 
@@ -45,8 +45,8 @@ class TestDashboardGenerator:
     def test_generate_contains_pipeline(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
-        assert "Gate 0A" in content
-        assert "Gate 5" in content
+        assert "Phase 1" in content
+        assert "Phase 7" in content
 
     def test_generate_contains_active_table(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
@@ -72,23 +72,23 @@ class TestDashboardGenerator:
         assert "활성 1" in content
         assert "폐기 1" in content
 
-    def test_generate_gate_criteria_fallback(self, store_with_data: StrategyStore) -> None:
-        """gate_store=None이면 하드코딩 fallback 사용."""
+    def test_generate_phase_criteria_fallback(self, store_with_data: StrategyStore) -> None:
+        """phase_store=None이면 하드코딩 fallback 사용."""
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "Sharpe > 1.0" in content
         assert "OOS Sharpe >= 0.3" in content
 
-    def test_generate_gate_criteria_dynamic(
+    def test_generate_phase_criteria_dynamic(
         self,
         store_with_data: StrategyStore,
-        gate_yaml_path: Path,
+        phase_yaml_path: Path,
     ) -> None:
-        """gate_store 있으면 동적 테이블 생성."""
-        g_store = GateCriteriaStore(path=gate_yaml_path)
-        gen = DashboardGenerator(store_with_data, gate_store=g_store)
+        """phase_store 있으면 동적 테이블 생성."""
+        p_store = PhaseCriteriaStore(path=phase_yaml_path)
+        gen = DashboardGenerator(store_with_data, phase_store=p_store)
         content = gen.generate()
-        assert "Gate별 통과 기준" in content
+        assert "Phase별 통과 기준" in content
         assert "아이디어 검증" in content
         assert "Sharpe > 1" in content
 
@@ -104,14 +104,14 @@ class TestDashboardGenerator:
         # CTREND should appear in active table with SOL/USDT
         assert "SOL/USDT" in content
 
-    def test_retired_classified_by_gate(
+    def test_retired_classified_by_phase(
         self,
         store_with_data: StrategyStore,
     ) -> None:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
-        # BB-RSI failed at G1 with Sharpe < 1.0 and CAGR > 0
-        assert "Gate 1 실패" in content
+        # BB-RSI failed at P4 with Sharpe < 1.0 and CAGR > 0
+        assert "Phase 4 실패" in content
 
     def test_auto_generated_marker(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
@@ -119,7 +119,7 @@ class TestDashboardGenerator:
         assert "AUTO-GENERATED" in content
         assert "--output" in content
 
-    def test_gate_criteria_skill_name(self, store_with_data: StrategyStore) -> None:
+    def test_phase_criteria_skill_name(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
         assert "/p3-g0b-verify" in content
@@ -128,7 +128,7 @@ class TestDashboardGenerator:
     def test_active_notes_block(self, store_with_data: StrategyStore) -> None:
         gen = DashboardGenerator(store_with_data)
         content = gen.generate()
-        # sample_record has decisions[-1] = G1 PASS "SOL Sharpe 2.05"
+        # sample_record has decisions[-1] = P4 PASS "SOL Sharpe 2.05"
         assert "> **CTREND**: SOL Sharpe 2.05" in content
 
     def test_retired_fail_rationale_from_decisions(
@@ -188,9 +188,9 @@ class TestExtractNote:
                 status=StrategyStatus.ACTIVE,
                 created_at=date(2026, 1, 1),
             ),
-            gates={
-                GateId.G4: GateResult(
-                    status=GateVerdict.PASS,
+            phases={
+                PhaseId.P6: PhaseResult(
+                    status=PhaseVerdict.PASS,
                     date=date(2026, 1, 1),
                     details={"note": long_note},
                 ),
@@ -199,7 +199,7 @@ class TestExtractNote:
         assert _extract_note(record) == long_note
         assert len(_extract_note(record)) == 100
 
-    def test_empty_when_no_g4(self) -> None:
+    def test_empty_when_no_p6(self) -> None:
         record = StrategyRecord(
             meta=StrategyMeta(
                 name="test",
@@ -216,7 +216,7 @@ class TestExtractNote:
 
 class TestFailRationale:
     def test_decisions_rationale_preferred(self) -> None:
-        """decisions.rationale이 gates.details보다 우선."""
+        """decisions.rationale이 phases.details보다 우선."""
         record = StrategyRecord(
             meta=StrategyMeta(
                 name="test",
@@ -227,27 +227,27 @@ class TestFailRationale:
                 status=StrategyStatus.RETIRED,
                 created_at=date(2026, 1, 1),
             ),
-            gates={
-                GateId.G1: GateResult(
-                    status=GateVerdict.FAIL,
+            phases={
+                PhaseId.P4: PhaseResult(
+                    status=PhaseVerdict.FAIL,
                     date=date(2026, 1, 1),
-                    details={"note": "gate details note"},
+                    details={"note": "phase details note"},
                 ),
             },
             decisions=[
                 Decision(
                     date=date(2026, 1, 1),
-                    gate=GateId.G1,
-                    verdict=GateVerdict.FAIL,
+                    phase=PhaseId.P4,
+                    verdict=PhaseVerdict.FAIL,
                     rationale="Rich decision rationale with details",
                 ),
             ],
         )
-        result = _fail_rationale(record, GateId.G1)
+        result = _fail_rationale(record, PhaseId.P4)
         assert result == "Rich decision rationale with details"
 
-    def test_fallback_to_gate_details(self) -> None:
-        """decisions에 해당 gate 없으면 gates.details fallback."""
+    def test_fallback_to_phase_details(self) -> None:
+        """decisions에 해당 phase 없으면 phases.details fallback."""
         record = StrategyRecord(
             meta=StrategyMeta(
                 name="test",
@@ -258,17 +258,17 @@ class TestFailRationale:
                 status=StrategyStatus.RETIRED,
                 created_at=date(2026, 1, 1),
             ),
-            gates={
-                GateId.G1: GateResult(
-                    status=GateVerdict.FAIL,
+            phases={
+                PhaseId.P4: PhaseResult(
+                    status=PhaseVerdict.FAIL,
                     date=date(2026, 1, 1),
-                    details={"note": "gate note fallback"},
+                    details={"note": "phase note fallback"},
                 ),
             },
             decisions=[],
         )
-        result = _fail_rationale(record, GateId.G1)
-        assert result == "gate note fallback"
+        result = _fail_rationale(record, PhaseId.P4)
+        assert result == "phase note fallback"
 
     def test_no_truncation(self) -> None:
         """80자 이상도 절삭 없이 전체 반환."""
@@ -283,9 +283,9 @@ class TestFailRationale:
                 status=StrategyStatus.RETIRED,
                 created_at=date(2026, 1, 1),
             ),
-            gates={
-                GateId.G1: GateResult(
-                    status=GateVerdict.FAIL,
+            phases={
+                PhaseId.P4: PhaseResult(
+                    status=PhaseVerdict.FAIL,
                     date=date(2026, 1, 1),
                     details={"note": "short"},
                 ),
@@ -293,13 +293,13 @@ class TestFailRationale:
             decisions=[
                 Decision(
                     date=date(2026, 1, 1),
-                    gate=GateId.G1,
-                    verdict=GateVerdict.FAIL,
+                    phase=PhaseId.P4,
+                    verdict=PhaseVerdict.FAIL,
                     rationale=long_rationale,
                 ),
             ],
         )
-        result = _fail_rationale(record, GateId.G1)
+        result = _fail_rationale(record, PhaseId.P4)
         assert result == long_rationale
         assert len(result) == 120
 

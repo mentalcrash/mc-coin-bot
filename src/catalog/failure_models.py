@@ -37,7 +37,7 @@ class FailurePattern(BaseModel):
     name: str = Field(description="패턴 이름")
     description: str = Field(description="패턴 설명")
     frequency: Frequency = Field(description="발생 빈도 (high/medium/low)")
-    affected_gates: list[str] = Field(default_factory=list, description="영향받는 Gate")
+    affected_phases: list[str] = Field(default_factory=list, description="영향받는 Phase")
     detection_rules: list[DetectionRule] = Field(default_factory=list, description="탐지 규칙")
     prevention: list[str] = Field(default_factory=list, description="예방 조치")
     related_lessons: list[int] = Field(default_factory=list, description="관련 Lesson ID")

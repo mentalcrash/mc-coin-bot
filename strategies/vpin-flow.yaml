@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vpin-flow
   display_name: VPIN-Flow
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: BVC로 buy/sell volume을 근사하고 VPIN으로 정보거래 확률을 측정. 고독성(high VPIN)
     시 informed trading 방향을 추종하여 대형 가격 변동을 사전 포착.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: Critical 0 (수정완료), High 0, Medium 3
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -30,6 +33,6 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점 — 경제적 논거 4, 참신성 5, 데이터 3, 구현 3, 용량 3, 레짐독립 4

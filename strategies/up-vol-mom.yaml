@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: up-vol-mom
   display_name: Realized Semivariance Momentum
@@ -10,15 +11,17 @@ meta:
   economic_rationale: 일별 수익률을 양/음으로 분리한 MAD 기반 반분산(semivariance) 비율의 모멘텀. 상방 반분산 우위
     시 정보 기반 매수 활동 반영. Barndorff-Nielsen et al. (2010) + Skewness Risk & Crypto Returns
     (2024) 실증. CTREND와 근본적으로 다른 alpha 소스(수익률 분포 비대칭).
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details:
@@ -30,36 +33,32 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
-    status: PASS
-    date: '2026-02-14'
-    details:
-      sharpe: 1.02
-      cagr: 34.4
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
-      is_sharpe: 1.27
-      oos_sharpe: 0.4
-      decay: 68.2
+      g1_sharpe: 1.02
+      g1_cagr: 34.4
+      g2_is_sharpe: 1.27
+      g2_oos_sharpe: 0.4
+      g2_decay: 68.2
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. 52 tests 전수 통과.
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: SOL Sharpe 1.02, CAGR +34.4%, MDD 42.7%(기준 40% 약간 초과). 전 에셋 양의 Sharpe+CAGR,
     Trades 155-179 충분. DOGE Sharpe 0.97 준PASS
 - date: '2026-02-14'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: IS/OOS Decay 68.2% > 50%. IS 1.27 → OOS 0.40 급격 감쇠. Semivariance alpha가
     2020-2021 강세장에 과적합

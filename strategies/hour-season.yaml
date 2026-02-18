@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: hour-season
   display_name: Hour Seasonality
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: 시간대별(0~23h) rolling t-stat으로 유의미한 수익률 패턴 감지, volume confirm
     필터링
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime, W4 Turnover)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,14 +63,14 @@ asset_performance:
   profit_factor: 0.41
 decisions:
 - date: '2026-02-10'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점. Vojtko(2023) hour-of-day anomaly 기반
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 코드 품질 검증 통과
 - date: '2026-02-10'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-1.01 ~ -4.46)'

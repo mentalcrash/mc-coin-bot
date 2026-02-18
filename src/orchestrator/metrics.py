@@ -191,21 +191,29 @@ class OrchestratorMetrics:
         from src.monitoring.metrics import (
             distribution_ks_statistic_gauge,
             distribution_p_value_gauge,
+            gbm_drawdown_depth_gauge,
+            gbm_drawdown_duration_gauge,
+            gbm_severity_gauge,
             ransac_conformal_lower_gauge,
+            ransac_current_cumulative_gauge,
             ransac_decay_detected_gauge,
             ransac_slope_gauge,
         )
+
+        gbm_severity_map = {"NORMAL": 0, "WARNING": 1, "CRITICAL": 2}
 
         for pod in self._orchestrator.pods:
             pid = pod.pod_id
             if not pod.is_active:
                 continue
 
+            # Distribution drift
             dist_result = lifecycle.get_distribution_result(pid)
             if dist_result is not None:
                 distribution_ks_statistic_gauge.labels(strategy=pid).set(dist_result.ks_statistic)
                 distribution_p_value_gauge.labels(strategy=pid).set(dist_result.p_value)
 
+            # RANSAC decay
             ransac_result = lifecycle.get_ransac_result(pid)
             if ransac_result is not None:
                 ransac_slope_gauge.labels(strategy=pid).set(ransac_result.ransac_slope)
@@ -214,6 +222,20 @@ class OrchestratorMetrics:
                 )
                 ransac_decay_detected_gauge.labels(strategy=pid).set(
                     1.0 if (ransac_result.level_breach or not ransac_result.slope_positive) else 0.0
+                )
+                ransac_current_cumulative_gauge.labels(strategy=pid).set(
+                    ransac_result.current_cumulative
+                )
+
+            # GBM drawdown
+            gbm_result = lifecycle.get_gbm_result(pid)
+            if gbm_result is not None:
+                gbm_drawdown_depth_gauge.labels(strategy=pid).set(gbm_result.current_depth)
+                gbm_drawdown_duration_gauge.labels(strategy=pid).set(
+                    gbm_result.current_duration_days
+                )
+                gbm_severity_gauge.labels(strategy=pid).set(
+                    gbm_severity_map.get(gbm_result.severity.value, 0)
                 )
 
     def _update_netting_metrics(self) -> None:

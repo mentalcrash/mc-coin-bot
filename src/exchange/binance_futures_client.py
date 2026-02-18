@@ -1,6 +1,6 @@
 """Binance USDT-M Futures 비동기 클라이언트.
 
-Hedge Mode + Cross Margin + 1x Leverage 기본 설정.
+One-way Mode + Cross Margin + 1x Leverage 기본 설정.
 async context manager 패턴. 주문 실행 전용 (데이터 스트리밍은 BinanceClient 사용).
 
 Rules Applied:
@@ -46,14 +46,14 @@ _BASE_BACKOFF = 1.0  # seconds
 class BinanceFuturesClient:
     """Binance USDT-M Futures 비동기 클라이언트.
 
-    Hedge Mode + Cross Margin + 1x Leverage 기본 설정.
+    One-way Mode + Cross Margin + 1x Leverage 기본 설정.
     async context manager 패턴. 주문 실행 전용 (데이터 스트리밍은 BinanceClient 사용).
 
     Example:
         >>> async with BinanceFuturesClient() as client:
         ...     result = await client.create_order(
         ...         symbol="BTC/USDT:USDT", side="buy", amount=0.001,
-        ...         position_side="LONG",
+        ...         reduce_only=True,
         ...     )
     """
 
@@ -207,7 +207,7 @@ class BinanceFuturesClient:
             self._metrics_callback.on_api_call(endpoint, duration, status)
 
     async def setup_account(self, symbols: list[str], *, leverage: int = 1) -> None:
-        """계정 설정: Hedge Mode + Cross Margin + 지정 Leverage.
+        """계정 설정: One-way Mode + Cross Margin + 지정 Leverage.
 
         이미 설정된 경우 무시합니다 (idempotent).
 
@@ -215,16 +215,16 @@ class BinanceFuturesClient:
             symbols: 거래할 심볼 리스트 (예: ["BTC/USDT:USDT"])
             leverage: 심볼별 레버리지 배수 (기본 1x)
         """
-        # Hedge Mode 설정
+        # One-way Mode 설정
         try:
-            await self.exchange.set_position_mode(hedged=True)  # type: ignore[arg-type]
-            logger.info("Hedge Mode enabled")
+            await self.exchange.set_position_mode(hedged=False)  # type: ignore[arg-type]
+            logger.info("One-way Mode enabled")
         except ccxt.ExchangeError as e:
             if "No need to change" in str(e):
-                logger.debug("Hedge Mode already enabled")
+                logger.debug("One-way Mode already enabled")
             else:
                 raise OrderExecutionError(
-                    "Failed to set Hedge Mode",
+                    "Failed to set One-way Mode",
                     context={"error": str(e)},
                 ) from e
 
@@ -253,7 +253,6 @@ class BinanceFuturesClient:
         symbol: str,
         side: str,
         amount: float,
-        position_side: str,
         *,
         price: float | None = None,
         reduce_only: bool = False,
@@ -265,7 +264,6 @@ class BinanceFuturesClient:
             symbol: 거래 심볼 (예: "BTC/USDT:USDT")
             side: "buy" 또는 "sell"
             amount: 주문 수량
-            position_side: "LONG" 또는 "SHORT"
             price: 지정가 (None이면 시장가)
             reduce_only: 청산 전용 주문 여부
             client_order_id: 멱등성 키
@@ -280,10 +278,7 @@ class BinanceFuturesClient:
         order_type = "limit" if price is not None else "market"
         safe_amount = self.exchange.amount_to_precision(symbol, amount)  # type: ignore[no-untyped-call]
 
-        params: dict[str, Any] = {
-            "positionSide": position_side,
-            "recvWindow": 5000,
-        }
+        params: dict[str, Any] = {"recvWindow": 5000}
         if reduce_only:
             params["reduceOnly"] = True
         if client_order_id:
@@ -478,7 +473,6 @@ class BinanceFuturesClient:
         self,
         symbol: str,
         side: str,
-        position_side: str,
         stop_price: float,
         *,
         client_order_id: str | None = None,
@@ -490,7 +484,6 @@ class BinanceFuturesClient:
         Args:
             symbol: 거래 심볼 (예: "BTC/USDT:USDT")
             side: "sell" (LONG 청산) 또는 "buy" (SHORT 청산)
-            position_side: "LONG" 또는 "SHORT"
             stop_price: 트리거 가격
             client_order_id: 멱등성 키
 
@@ -503,7 +496,6 @@ class BinanceFuturesClient:
         safe_stop_price = self.exchange.price_to_precision(symbol, stop_price)  # type: ignore[no-untyped-call]
 
         params: dict[str, Any] = {
-            "positionSide": position_side,
             "stopPrice": safe_stop_price,
             "closePosition": "true",
             "recvWindow": 5000,

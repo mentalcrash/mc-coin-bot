@@ -7,12 +7,12 @@ from datetime import date
 import pytest
 
 from src.pipeline.models import (
-    GATE_ORDER,
+    PHASE_ORDER,
     AssetMetrics,
     Decision,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     RationaleReference,
     RationaleRefType,
     StrategyMeta,
@@ -27,26 +27,22 @@ class TestEnums:
         assert StrategyStatus.ACTIVE == "ACTIVE"
         assert StrategyStatus.RETIRED == "RETIRED"
 
-    def test_gate_id_values(self) -> None:
-        assert GateId.G0A == "G0A"
-        assert GateId.G5 == "G5"
-        assert GateId.G5 == "G5"
+    def test_phase_id_values(self) -> None:
+        assert PhaseId.P1 == "P1"
+        assert PhaseId.P7 == "P7"
 
-    def test_gate_verdict_values(self) -> None:
-        assert GateVerdict.PASS == "PASS"
-        assert GateVerdict.FAIL == "FAIL"
+    def test_phase_verdict_values(self) -> None:
+        assert PhaseVerdict.PASS == "PASS"
+        assert PhaseVerdict.FAIL == "FAIL"
 
-    def test_gate_order_length(self) -> None:
-        assert len(GATE_ORDER) == 8
-        assert GATE_ORDER[0] == GateId.G0A
-        assert GATE_ORDER[-1] == GateId.G5
+    def test_phase_order_length(self) -> None:
+        assert len(PHASE_ORDER) == 7
+        assert PHASE_ORDER[0] == PhaseId.P1
+        assert PHASE_ORDER[-1] == PhaseId.P7
 
-    def test_gate_order_includes_g2h(self) -> None:
-        assert GateId.G2H in GATE_ORDER
-        idx_g2 = GATE_ORDER.index(GateId.G2)
-        idx_g2h = GATE_ORDER.index(GateId.G2H)
-        idx_g3 = GATE_ORDER.index(GateId.G3)
-        assert idx_g2 < idx_g2h < idx_g3
+    def test_phase_order_sequential(self) -> None:
+        for i, pid in enumerate(PHASE_ORDER):
+            assert pid == f"P{i + 1}"
 
 
 class TestStrategyMeta:
@@ -135,23 +131,23 @@ class TestAssetMetrics:
         assert sol.profit_factor == 1.60
 
 
-class TestGateResult:
+class TestPhaseResult:
     def test_creation(self) -> None:
-        r = GateResult(status=GateVerdict.PASS, date=date(2026, 2, 10), details={"sharpe": 2.05})
-        assert r.status == GateVerdict.PASS
+        r = PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 2, 10), details={"sharpe": 2.05})
+        assert r.status == PhaseVerdict.PASS
         assert r.details["sharpe"] == 2.05
 
     def test_empty_details(self) -> None:
-        r = GateResult(status=GateVerdict.FAIL, date=date(2026, 2, 10))
+        r = PhaseResult(status=PhaseVerdict.FAIL, date=date(2026, 2, 10))
         assert r.details == {}
 
 
 class TestDecision:
     def test_creation(self) -> None:
         d = Decision(
-            date=date(2026, 2, 10), gate=GateId.G1, verdict=GateVerdict.PASS, rationale="Good"
+            date=date(2026, 2, 10), phase=PhaseId.P4, verdict=PhaseVerdict.PASS, rationale="Good"
         )
-        assert d.gate == GateId.G1
+        assert d.phase == PhaseId.P4
 
 
 class TestStrategyRecord:
@@ -172,12 +168,12 @@ class TestStrategyRecord:
         )
         assert record.best_asset is None
 
-    def test_current_gate(self, sample_record: StrategyRecord) -> None:
-        # G0A PASS, G1 PASS, G2 PASS → current = G2
-        assert sample_record.current_gate == "G2"
+    def test_current_phase(self, sample_record: StrategyRecord) -> None:
+        # P1 PASS, P4 PASS → current = P4
+        assert sample_record.current_phase == "P4"
 
-    def test_current_gate_with_gap(self) -> None:
-        """G0A PASS, G0B 없음 → current_gate = G0A (gap에서 중단)."""
+    def test_current_phase_with_gap(self) -> None:
+        """P1 PASS, P2 없음 → current_phase = P1 (gap에서 중단)."""
         record = StrategyRecord(
             meta=StrategyMeta(
                 name="test",
@@ -188,17 +184,17 @@ class TestStrategyRecord:
                 status=StrategyStatus.TESTING,
                 created_at=date(2026, 1, 1),
             ),
-            gates={
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+            phases={
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             },
         )
-        assert record.current_gate == "G0A"
+        assert record.current_phase == "P1"
 
-    def test_fail_gate(self, retired_record: StrategyRecord) -> None:
-        assert retired_record.fail_gate == "G1"
+    def test_fail_phase(self, retired_record: StrategyRecord) -> None:
+        assert retired_record.fail_phase == "P4"
 
-    def test_fail_gate_none(self, sample_record: StrategyRecord) -> None:
-        assert sample_record.fail_gate is None
+    def test_fail_phase_none(self, sample_record: StrategyRecord) -> None:
+        assert sample_record.fail_phase is None
 
     def test_best_sharpe(self, sample_record: StrategyRecord) -> None:
         assert sample_record.best_sharpe == 2.05
@@ -217,11 +213,14 @@ class TestStrategyRecord:
         )
         assert record.best_sharpe is None
 
+    def test_version_default(self, sample_record: StrategyRecord) -> None:
+        assert sample_record.version == 2
+
 
 def _make_record(
-    gates: dict[GateId, GateResult] | None = None,
+    phases: dict[PhaseId, PhaseResult] | None = None,
 ) -> StrategyRecord:
-    """next_gate 테스트용 헬퍼."""
+    """next_phase 테스트용 헬퍼."""
     return StrategyRecord(
         meta=StrategyMeta(
             name="test",
@@ -232,80 +231,80 @@ def _make_record(
             status=StrategyStatus.TESTING,
             created_at=date(2026, 1, 1),
         ),
-        gates=gates or {},
+        phases=phases or {},
     )
 
 
-class TestNextGate:
-    def test_no_gates_returns_g0a(self) -> None:
+class TestNextPhase:
+    def test_no_phases_returns_p1(self) -> None:
         record = _make_record()
-        assert record.next_gate == "G0A"
+        assert record.next_phase == "P1"
 
-    def test_g0a_pass_returns_g0b(self) -> None:
+    def test_p1_pass_returns_p2(self) -> None:
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate == "G0B"
+        assert record.next_phase == "P2"
 
-    def test_g0a_g0b_g1_pass_returns_g2(self) -> None:
+    def test_p1_p2_p3_pass_returns_p4(self) -> None:
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P2: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate == "G2"
+        assert record.next_phase == "P4"
 
-    def test_next_gate_after_g2_is_g2h(self) -> None:
-        """G2 PASS 후 next_gate = G2H."""
+    def test_next_phase_after_p4_is_p5(self) -> None:
+        """P4 PASS 후 next_phase = P5."""
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G2: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P2: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate == "G2H"
+        assert record.next_phase == "P5"
 
-    def test_next_gate_after_g2h_is_g3(self) -> None:
-        """G2H PASS 후 next_gate = G3."""
+    def test_next_phase_after_p5_is_p6(self) -> None:
+        """P5 PASS 후 next_phase = P6."""
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G0B: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G2: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G2H: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P2: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P5: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate == "G3"
+        assert record.next_phase == "P6"
 
     def test_fail_returns_none(self) -> None:
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G1: GateResult(status=GateVerdict.FAIL, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.FAIL, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate is None
+        assert record.next_phase is None
 
     def test_all_pass_returns_none(self) -> None:
         all_pass = {
-            gid: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)) for gid in GATE_ORDER
+            pid: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)) for pid in PHASE_ORDER
         }
         record = _make_record(all_pass)
-        assert record.next_gate is None
+        assert record.next_phase is None
 
-    def test_gap_returns_missing_gate(self) -> None:
-        """G0A PASS, G0B 없음, G1 PASS → G0B (gap 위치)."""
+    def test_gap_returns_missing_phase(self) -> None:
+        """P1 PASS, P2 없음, P3 PASS → P2 (gap 위치)."""
         record = _make_record(
             {
-                GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-                GateId.G1: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
             }
         )
-        assert record.next_gate == "G0B"
+        assert record.next_phase == "P2"

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: liq-momentum
   display_name: Liq-Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: Amihud illiquidity + relative volume으로 유동성 상태를 분류하고, 저유동성 환경에서
     모멘텀 conviction을 확대하여 정보 비대칭 프리미엄을 포착
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       note: G0B 코드검증 [PASS] C1-C7 전항목 PASS (2026-02-12 재검증). Warning 2건 (W3 Regime,
         W4 Turnover)
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -55,11 +58,11 @@ asset_performance:
   profit_factor: 0.71
 decisions:
 - date: '2026-02-10'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 44 tests PASS, shift(1) lookahead 방지, vectorized ops, Pydantic frozen
     config, model_validator
 - date: '2026-02-10'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-3.07~-6.48)'

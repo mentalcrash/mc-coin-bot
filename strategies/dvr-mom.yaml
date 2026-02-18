@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: dvr-mom
   display_name: Vol-Efficiency Momentum
@@ -9,15 +10,17 @@ meta:
   retired_at: '2026-02-13'
   economic_rationale: Parkinson(High-Low) vol과 Close-to-Close vol 비율로 바 내부 효율성 측정.
     비율 낮으면 방향성 바(추세 확인), 높으면 혼조 바(리스크 축소). Vol ratio를 모멘텀 conviction 필터로 사용.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 27
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -29,23 +32,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 27/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 적용 확인, 벡터화 완전, vol-scalar safe division,
     ShortMode 3분기 완비
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best ETH/USDT Sharpe 0.78 < 1.0, CAGR +6.3%, 전 에셋 알파 미달. Vol-Efficiency
     신호가 크립토 1D TF에서 유의미한 edge 미생성

@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: ml-deriv-regime
   display_name: ML Derivatives Regime
@@ -13,14 +14,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-14'
     details:
@@ -32,7 +33,7 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-14'
     details:
@@ -42,20 +43,20 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: FAIL
   rationale: 'C1 FAIL: forward_return 학습 target이 t-1까지 포함하여 미래 close[t+H-1] 누수. y_train
     상한을 t-prediction_horizon으로 수정 완료. 재검증 필요.'
 - date: '2026-02-14'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1 forward_return look-ahead bias 발견→수정 완료(train_end=t-horizon). C1-C7
     전항목 PASS.
 - date: '2026-02-14'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best SOL Sharpe 0.57 < 1.0, CAGR 15.3% < 20%, 전 에셋 MDD > 50%. G1 기준 미달

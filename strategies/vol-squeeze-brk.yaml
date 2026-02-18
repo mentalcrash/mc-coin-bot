@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-squeeze-brk
   display_name: Vol Squeeze Breakout
@@ -12,8 +13,8 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: FAIL
     date: '2026-02-18'
     details:
@@ -30,6 +31,6 @@ gates:
 asset_performance: []
 decisions:
 - date: '2026-02-18'
-  gate: G0A
+  phase: P1
   verdict: FAIL
   rationale: 20/30점 (v2)

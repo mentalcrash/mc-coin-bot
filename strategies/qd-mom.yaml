@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: qd-mom
   display_name: QD-Mom
@@ -9,20 +10,22 @@ meta:
   retired_at: '2026-02-10'
   economic_rationale: 이전 6H session return이 다음 session return을 양(+)으로 예측. Late-informed
     trader의 정보 흡수 지연
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-10'
     details:
       note: C1-C7 전항목 PASS
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -60,14 +63,14 @@ asset_performance:
   profit_factor: 0.77
 decisions:
 - date: '2026-02-11'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-11'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS
 - date: '2026-02-11'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋 Sharpe 음수 (-0.51~-2.10), MDD 82~97%. 6H autocorrelation edge 부재

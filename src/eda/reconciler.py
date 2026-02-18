@@ -185,8 +185,8 @@ class PositionReconciler:
     ) -> dict[str, tuple[float, Direction]]:
         """거래소 포지션을 파싱하여 {symbol: (size, Direction)} 맵 반환.
 
-        Hedge Mode LONG/SHORT를 파싱하여 net position을 계산합니다.
-        LONG과 SHORT 모두 있으면 LONG 우선 (Hedge Mode에서는 보통 한쪽만).
+        One-way Mode에서 CCXT가 반환하는 side(long/short)를 파싱합니다.
+        LONG과 SHORT 모두 있으면 LONG 우선.
 
         Args:
             futures_client: BinanceFuturesClient
@@ -240,7 +240,7 @@ class PositionReconciler:
         futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
         exchange_positions = await futures_client.fetch_positions(futures_symbols)
 
-        # Hedge Mode: 심볼당 LONG/SHORT 분리 매핑
+        # One-way Mode: 심볼당 long/short 사이즈 매핑
         exchange_map: dict[str, dict[str, float]] = {}
         for pos in exchange_positions:
             sym = str(pos.get("symbol", ""))

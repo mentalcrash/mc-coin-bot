@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: asym-vol-resp
   display_name: Asymmetric Volume Response
@@ -13,14 +14,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 24
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-15'
     details:
@@ -32,23 +33,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-15'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 24/30점
 - date: '2026-02-15'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. shift(1) 전수 확인, ShortMode 3-way 완비, vol_scalar min_volatility
     보호.
 - date: '2026-02-15'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋(5/5) trades=0. impact=|return|/volume에서 4H volume 스케일 문제로 impact_asymmetry
     z-score가 threshold 미달. 시그널 미생성

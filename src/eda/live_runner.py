@@ -1681,6 +1681,17 @@ class LiveRunner:
                 ws_detail_callback.update_message_ages()
             if onchain_feed is not None:
                 onchain_feed.update_cache_metrics()
+            # Execution health check — fill rate gauge + alert
+            from src.monitoring.metrics import execution_fill_rate_gauge
+
+            fill_rate_anomaly = exporter.check_execution_health()
+            if fill_rate_anomaly is not None:
+                execution_fill_rate_gauge.set(fill_rate_anomaly.current_value)
+                await exporter.publish_execution_alert(
+                    fill_rate_anomaly.severity, fill_rate_anomaly.message
+                )
+            else:
+                execution_fill_rate_gauge.set(exporter.get_execution_fill_rate())
             # HeartbeatEvent 발행 — MetricsExporter가 heartbeat_timestamp gauge 갱신
             await bus.publish(HeartbeatEvent(component="LiveRunner"))
 

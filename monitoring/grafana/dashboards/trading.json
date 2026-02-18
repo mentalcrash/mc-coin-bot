@@ -166,7 +166,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
       "targets": [
-        { "expr": "mcbot_realized_pnl_usdt_total{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+        { "expr": "mcbot_realized_profit_usdt_total{symbol=~\"$symbol\"} - mcbot_realized_loss_usdt_total{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
     },

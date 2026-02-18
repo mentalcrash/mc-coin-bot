@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: kama
   display_name: KAMA
@@ -8,37 +9,35 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 적응형 이동평균은 추세 시장에서는 빠르게, 횡보 시장에서는 느리게 반응하여 whipsaw를 줄인다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.14
-      mdd: 13.25
-  G2:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      is_sharpe: 0.7059
-      oos_sharpe: -0.0198
-      decay: 102.8
-  G3:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      note: 3/3 고원 + ±20% 안정
-  G4:
+  P6:
     status: FAIL
     date: '2026-02-10'
     details:
       decay: 56.3
+  P4:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      g1_sharpe: 1.14
+      g1_mdd: 13.25
+      g2_is_sharpe: 0.7059
+      g2_oos_sharpe: -0.0198
+      g2_decay: 102.8
+  P5:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: 3/3 고원 + ±20% 안정
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 1.14
@@ -72,22 +71,22 @@ asset_performance:
   profit_factor: 1.35
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: DOGE/USDT Sharpe 1.14
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: PASS
   rationale: OOS Sharpe 1.01, Decay 21.8%
 - date: '2026-02-09'
-  gate: G3
+  phase: P5
   verdict: PASS
   rationale: 3/3 파라미터 고원+안정
 - date: '2026-02-09'
-  gate: G4
+  phase: P6
   verdict: FAIL
   rationale: WFA Decay 56.3%, Fold 2 OOS -0.06, Consistency 50%

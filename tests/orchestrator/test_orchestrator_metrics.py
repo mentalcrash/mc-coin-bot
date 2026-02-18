@@ -257,6 +257,27 @@ class _FakeDecayResult:
     conformal_lower_bound: float
     slope_positive: bool
     level_breach: bool
+    current_cumulative: float = 0.0
+
+
+@dataclass
+class _FakeDrawdownResult:
+    """DrawdownCheckResult 대체."""
+
+    current_depth: float = 0.0
+    current_duration_days: int = 0
+    severity: object = None  # DrawdownSeverity stub
+
+    def __post_init__(self) -> None:
+        if self.severity is None:
+            self.severity = _FakeSeverity("NORMAL")
+
+
+@dataclass
+class _FakeSeverity:
+    """Enum-like severity stub."""
+
+    value: str
 
 
 class TestAnomalyMetrics:
@@ -280,12 +301,26 @@ class TestAnomalyMetrics:
                 conformal_lower_bound=-0.01,
                 slope_positive=True,
                 level_breach=False,
+                current_cumulative=0.05,
             ),
             "pod-b": _FakeDecayResult(
                 ransac_slope=-0.001,
                 conformal_lower_bound=0.005,
                 slope_positive=False,
                 level_breach=True,
+                current_cumulative=-0.02,
+            ),
+        }.get(pid)
+        lifecycle.get_gbm_result.side_effect = lambda pid: {
+            "pod-a": _FakeDrawdownResult(
+                current_depth=0.05,
+                current_duration_days=3,
+                severity=_FakeSeverity("NORMAL"),
+            ),
+            "pod-b": _FakeDrawdownResult(
+                current_depth=0.15,
+                current_duration_days=10,
+                severity=_FakeSeverity("WARNING"),
             ),
         }.get(pid)
         type(orch).lifecycle = PropertyMock(return_value=lifecycle)
@@ -314,6 +349,27 @@ class TestAnomalyMetrics:
         # pod-b: slope_positive=False → decay=1.0
         assert _sample("mcbot_ransac_slope", {"strategy": "pod-b"}) == pytest.approx(-0.001)
         assert _sample("mcbot_ransac_decay_detected", {"strategy": "pod-b"}) == pytest.approx(1.0)
+
+        # RANSAC cumulative
+        assert _sample("mcbot_ransac_current_cumulative", {"strategy": "pod-a"}) == pytest.approx(
+            0.05
+        )
+        assert _sample("mcbot_ransac_current_cumulative", {"strategy": "pod-b"}) == pytest.approx(
+            -0.02
+        )
+
+        # GBM drawdown gauges
+        assert _sample("mcbot_gbm_drawdown_depth", {"strategy": "pod-a"}) == pytest.approx(0.05)
+        assert _sample("mcbot_gbm_drawdown_duration_days", {"strategy": "pod-a"}) == pytest.approx(
+            3.0
+        )
+        assert _sample("mcbot_gbm_severity", {"strategy": "pod-a"}) == pytest.approx(0.0)
+
+        assert _sample("mcbot_gbm_drawdown_depth", {"strategy": "pod-b"}) == pytest.approx(0.15)
+        assert _sample("mcbot_gbm_drawdown_duration_days", {"strategy": "pod-b"}) == pytest.approx(
+            10.0
+        )
+        assert _sample("mcbot_gbm_severity", {"strategy": "pod-b"}) == pytest.approx(1.0)
 
     def test_anomaly_skips_inactive_pods(self) -> None:
         """비활성 Pod는 anomaly gauge 갱신 스킵."""
@@ -349,6 +405,7 @@ class TestAnomalyMetrics:
         lifecycle = MagicMock()
         lifecycle.get_distribution_result.return_value = None
         lifecycle.get_ransac_result.return_value = None
+        lifecycle.get_gbm_result.return_value = None
         type(orch).lifecycle = PropertyMock(return_value=lifecycle)
 
         metrics = OrchestratorMetrics(orch)

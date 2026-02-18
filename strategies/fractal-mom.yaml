@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: fractal-mom
   display_name: Fractal-Filtered Momentum
@@ -13,14 +14,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 27
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-15'
     details:
@@ -32,23 +33,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-15'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 27/30점
 - date: '2026-02-15'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. shift(1) 전수 확인, fractal_dim+ER 레짐 필터, ShortMode 3-way
     완비.
 - date: '2026-02-15'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best Asset SOL Sharpe 0.45(<1.0), CAGR +6.5%(<20%). BNB MDD 54.3%(>50%).
     Fractal filtering이 noise 구간 회피 불충분. 4H TF 구조적 한계

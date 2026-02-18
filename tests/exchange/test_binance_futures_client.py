@@ -156,7 +156,7 @@ class TestSetupAccount:
 
     @pytest.mark.asyncio
     async def test_setup_account_success(self) -> None:
-        """Hedge Mode + Leverage + Margin Mode 설정."""
+        """One-way Mode + Leverage + Margin Mode 설정."""
         settings = _make_settings()
         mock_exchange = _make_mock_exchange()
 
@@ -223,7 +223,6 @@ class TestCreateOrder:
                     symbol="BTC/USDT:USDT",
                     side="buy",
                     amount=0.001,
-                    position_side="LONG",
                     client_order_id="test_001",
                 )
 
@@ -233,6 +232,8 @@ class TestCreateOrder:
         assert call_args[0][0] == "BTC/USDT:USDT"  # symbol
         assert call_args[0][1] == "market"  # type
         assert call_args[0][2] == "buy"  # side
+        params = call_args[0][5]
+        assert "positionSide" not in params
 
     @pytest.mark.asyncio
     async def test_limit_order(self) -> None:
@@ -246,7 +247,6 @@ class TestCreateOrder:
                     symbol="BTC/USDT:USDT",
                     side="sell",
                     amount=0.002,
-                    position_side="SHORT",
                     price=50000.0,
                     reduce_only=True,
                 )
@@ -254,7 +254,8 @@ class TestCreateOrder:
         call_args = mock_exchange.create_order.call_args
         assert call_args[0][1] == "limit"  # type
         params = call_args[0][5]
-        assert params["positionSide"] == "SHORT"
+        assert "positionSide" not in params
+        # One-way Mode: reduceOnly 전송
         assert params["reduceOnly"] is True
 
     @pytest.mark.asyncio
@@ -275,7 +276,6 @@ class TestCreateOrder:
                         symbol="BTC/USDT:USDT",
                         side="buy",
                         amount=100.0,
-                        position_side="LONG",
                     )
 
     @pytest.mark.asyncio
@@ -294,7 +294,6 @@ class TestCreateOrder:
                         symbol="BTC/USDT:USDT",
                         side="buy",
                         amount=0.0001,
-                        position_side="LONG",
                     )
 
     @pytest.mark.asyncio
@@ -309,7 +308,6 @@ class TestCreateOrder:
                     symbol="BTC/USDT:USDT",
                     side="buy",
                     amount=0.0015,
-                    position_side="LONG",
                 )
 
         mock_exchange.amount_to_precision.assert_called_once_with("BTC/USDT:USDT", 0.0015)
@@ -635,7 +633,7 @@ class TestApiCircuitBreaker:
             async with BinanceFuturesClient(settings) as client:
                 client._consecutive_failures = 3
                 await client.create_order(
-                    symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                    symbol="BTC/USDT:USDT", side="buy", amount=0.001
                 )
                 assert client._consecutive_failures == 0
 
@@ -652,7 +650,7 @@ class TestApiCircuitBreaker:
             async with BinanceFuturesClient(settings) as client:
                 with pytest.raises(OrderExecutionError):
                     await client.create_order(
-                        symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                        symbol="BTC/USDT:USDT", side="buy", amount=0.001
                     )
                 assert client._consecutive_failures == 1
 
@@ -678,7 +676,7 @@ class TestApiCircuitBreaker:
                 client._consecutive_failures = 5
                 assert client.is_api_healthy is False
                 await client.create_order(
-                    symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                    symbol="BTC/USDT:USDT", side="buy", amount=0.001
                 )
                 assert client.is_api_healthy is True
                 assert client._consecutive_failures == 0
@@ -699,7 +697,7 @@ class TestApiCircuitBreaker:
             async with BinanceFuturesClient(settings) as client:
                 with pytest.raises(NetworkError):
                     await client.create_order(
-                        symbol="BTC/USDT:USDT", side="buy", amount=0.001, position_side="LONG"
+                        symbol="BTC/USDT:USDT", side="buy", amount=0.001
                     )
                 assert client._consecutive_failures == 1
 
@@ -857,8 +855,8 @@ class TestSetupAccountEdgeCases:
         assert mock_exchange.set_margin_mode.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_hedge_mode_error_non_no_need(self) -> None:
-        """Hedge Mode 설정 실패 시 OrderExecutionError."""
+    async def test_oneway_mode_error_non_no_need(self) -> None:
+        """One-way Mode 설정 실패 시 OrderExecutionError."""
         import ccxt as ccxt_sync
 
         settings = _make_settings()
@@ -869,5 +867,5 @@ class TestSetupAccountEdgeCases:
 
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
-                with pytest.raises(OrderExecutionError, match="Hedge Mode"):
+                with pytest.raises(OrderExecutionError, match="One-way Mode"):
                     await client.setup_account(["BTC/USDT"])

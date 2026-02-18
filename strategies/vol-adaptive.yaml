@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-adaptive
   display_name: Vol-Adaptive
@@ -8,27 +9,25 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 여러 지표의 동시 확인(confluence)은 허위 시그널을 줄이고, ATR 사이징은 변동성에 적응한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 22
       max_score: 30
-  G1:
-    status: PASS
-    date: '2026-02-10'
-    details:
-      sharpe: 1.08
-      mdd: 44.88
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
-      is_sharpe: 1.055
-      oos_sharpe: 0.017
-      decay: 98.4
+      g1_sharpe: 1.08
+      g1_mdd: 44.88
+      g2_is_sharpe: 1.055
+      g2_oos_sharpe: 0.017
+      g2_decay: 98.4
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 1.08
@@ -62,14 +61,14 @@ asset_performance:
   profit_factor: 1.49
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 22/30점
 - date: '2026-02-09'
-  gate: G1
+  phase: P4
   verdict: PASS
   rationale: SOL/USDT Sharpe 1.08
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe -0.97, Decay 155.9%

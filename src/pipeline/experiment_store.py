@@ -3,7 +3,7 @@
 AuditStore와 동일한 YAML CRUD 패턴을 따릅니다.
 
 Directory structure:
-    experiments/{strategy_name}/{gate_id}_{YYYYMMDD_HHMMSS}.yaml
+    experiments/{strategy_name}/{phase_id}_{YYYYMMDD_HHMMSS}.yaml
 
 Rules Applied:
     - AuditStore YAML CRUD 패턴
@@ -38,7 +38,7 @@ class ExperimentStore:
         """ExperimentRecord를 YAML로 저장.
 
         Directory: base_dir/{strategy_name}/
-        Filename: {gate_id}_{YYYYMMDD_HHMMSS}.yaml
+        Filename: {phase_id}_{YYYYMMDD_HHMMSS}.yaml
 
         Returns:
             저장된 파일 경로.
@@ -47,7 +47,7 @@ class ExperimentStore:
         strategy_dir.mkdir(parents=True, exist_ok=True)
 
         ts_str = record.timestamp.strftime("%Y%m%d_%H%M%S")
-        filename = f"{record.gate_id}_{ts_str}.yaml"
+        filename = f"{record.phase_id}_{ts_str}.yaml"
         path = strategy_dir / filename
 
         data = self._serialize(record)
@@ -87,19 +87,19 @@ class ExperimentStore:
         self._cache[strategy_name] = records
         return records
 
-    def get_latest(self, strategy_name: str, gate_id: str | None = None) -> ExperimentRecord | None:
+    def get_latest(self, strategy_name: str, phase_id: str | None = None) -> ExperimentRecord | None:
         """가장 최근 실험 기록 반환.
 
         Args:
             strategy_name: 전략 이름.
-            gate_id: 특정 gate로 필터링 (선택).
+            phase_id: 특정 phase로 필터링 (선택).
 
         Returns:
             가장 최근 ExperimentRecord 또는 None.
         """
         records = self.load_all_for_strategy(strategy_name)
-        if gate_id is not None:
-            records = [r for r in records if r.gate_id == gate_id]
+        if phase_id is not None:
+            records = [r for r in records if r.phase_id == phase_id]
         return records[-1] if records else None
 
     def analyze(self, strategy_name: str) -> ExperimentAnalysis | None:
@@ -119,7 +119,7 @@ class ExperimentStore:
         passed_count = sum(1 for r in records if r.passed)
         pass_rate = passed_count / total
 
-        # Best gate: 에셋별 sharpe 평균이 가장 높은 record의 gate_id
+        # Best phase: 에셋별 sharpe 평균이 가장 높은 record의 phase_id
         best_record = max(records, key=_avg_sharpe)
         best_sharpe = _avg_sharpe(best_record)
 
@@ -131,7 +131,7 @@ class ExperimentStore:
             strategy_name=strategy_name,
             total_experiments=total,
             pass_rate=pass_rate,
-            best_gate=best_record.gate_id,
+            best_phase=best_record.phase_id,
             best_sharpe=best_sharpe,
             avg_mdd=avg_mdd,
         )

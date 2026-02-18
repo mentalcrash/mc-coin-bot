@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: hmm-regime
   display_name: HMM Regime
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-10'
   retired_at: '2026-02-10'
   economic_rationale: 시장은 관찰 불가한 상태(레짐)에 의해 지배되며, HMM이 이를 확률적으로 추정한다.
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-10'
     details:
       score: 23
       max_score: 30
-  G2:
+  P4:
     status: FAIL
     date: '2026-02-10'
     details:
@@ -55,10 +58,10 @@ asset_performance:
   profit_factor: 0.97
 decisions:
 - date: '2026-02-09'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 23/30점
 - date: '2026-02-09'
-  gate: G2
+  phase: P4
   verdict: FAIL
   rationale: OOS Sharpe -0.66, Decay 162.9%

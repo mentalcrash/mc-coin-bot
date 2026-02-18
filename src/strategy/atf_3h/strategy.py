@@ -1,6 +1,6 @@
 """Anchored Trend-Following 3H 전략.
 
-Anchor-Mom(12H G5 PASS)의 3H TF 적응.
+Anchor-Mom(12H P7 PASS)의 3H TF 적응.
 """
 
 from __future__ import annotations

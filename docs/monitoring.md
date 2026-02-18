@@ -7,8 +7,8 @@ Prometheus + Grafana 기반 모니터링 시스템 레퍼런스.
 ```
 mc-bot (:8000/metrics)
     -> Prometheus (scrape 10s)
-        -> Grafana (6 dashboards)
-        -> Alertmanager (alerts.yml, 33 rules)
+        -> Grafana (9 primary + 3 quick-overview dashboards)
+        -> Alertmanager (alerts.yml, 45 rules)
 
 node-exporter (:9100/metrics)
     -> Prometheus (scrape 15s)
@@ -234,6 +234,12 @@ Anomaly Detectors (in-process)
 | `mcbot_ransac_slope` | Gauge | strategy | RANSAC 추정 기울기 |
 | `mcbot_ransac_conformal_lower` | Gauge | strategy | RANSAC conformal 하한 |
 | `mcbot_ransac_decay_detected` | Gauge | strategy | RANSAC 구조적 쇠퇴 감지 (0/1) |
+| `mcbot_ransac_current_cumulative` | Gauge | strategy | RANSAC 현재 누적 수익 |
+| `mcbot_gbm_drawdown_depth` | Gauge | strategy | 현재 drawdown 깊이 (0.0\~1.0) |
+| `mcbot_gbm_drawdown_duration_days` | Gauge | strategy | 현재 drawdown 지속 일수 |
+| `mcbot_gbm_severity` | Gauge | strategy | GBM 심각도 (0=NORMAL, 1=WARNING, 2=CRITICAL) |
+| `mcbot_execution_consecutive_rejections` | Gauge | -- | 연속 거부 횟수 |
+| `mcbot_execution_fill_rate` | Gauge | -- | 1h 윈도우 fill rate (0.0\~1.0) |
 
 **운영 주의사항:**
 
@@ -241,14 +247,44 @@ Anomaly Detectors (in-process)
   실제 detector 결과는 LifecycleManager.\_check\_degradation()에서 일별 수익률 입력 시 갱신되므로,
   실질 변화는 리밸런싱 주기(1D bar)에 종속
 - **strategy 라벨**: pod\_id를 strategy 라벨로 사용. 단일 전략 Pod에서는 전략명과 동일
-- **GBM Drawdown Monitor**: 전용 Prometheus 메트릭 없음. CRITICAL 시 RiskAlertEvent 경유로
-  `mcbot_risk_alerts` counter(level=CRITICAL)에 반영. 상세 결과는 JSONL audit log 확인
-- **Execution Anomaly Detector**: 전용 메트릭 없음. `mcbot_risk_alerts` counter에
-  level=WARNING|CRITICAL로 반영. MetricsExporter.\_on\_fill()에서 실시간 감지
-- **최소 샘플 요구**: Distribution Drift 30개, Conformal-RANSAC 60개 최소 샘플 필요.
-  미달 시 NORMAL 반환하며 gauge는 이전 값 유지
-- **auto\_init\_detectors()**: 백테스트 수익률로 GBM/Distribution/RANSAC 3종을 일괄 초기화.
-  mu/sigma가 0에 가까우면 초기화 스킵
+- **Detector 역할 — 관측 전용(observability-only)**: GBM Drawdown, Distribution Drift,
+  Conformal-RANSAC 3종은 **Pod 상태 전이를 유발하지 않습니다**. 이 detector들은 결과를
+  저장(last\_gbm\_result, last\_dist\_result, last\_ransac\_result)하고 Prometheus gauge로
+  export할 뿐입니다. Pod lifecycle 상태 전이(WARNING → PROBATION → RETIRED)는 오직
+  **PageHinkley detector**만이 트리거합니다 (`lifecycle.py:_check_degradation()` — PH만 return).
+  GBM/Distribution/RANSAC는 운영자의 **수동 판단 보조** 메트릭으로 활용하세요
+- **GBM Drawdown Monitor**: 전용 gauge 3종(`gbm_drawdown_depth`, `gbm_drawdown_duration_days`,
+  `gbm_severity`). CRITICAL 시 RiskAlertEvent도 경유하여 `mcbot_risk_alerts` counter에 반영
+- **Execution Anomaly Detector**: 전용 gauge 2종(`execution_consecutive_rejections`,
+  `execution_fill_rate`). `MetricsExporter._on_fill()`, `_on_order_rejected()`에서 실시간 갱신.
+  fill rate는 `_periodic_metrics_update()` 30초 주기로 gauge 갱신 + 이상 시 RiskAlertEvent 발행
+- **Execution Anomaly 전역 단일 인스턴스**: `MetricsExporter.__init__()`에서 단일
+  `ExecutionAnomalyDetector()` 생성. 모든 심볼의 fill/rejection이 하나의 detector로 집계됨.
+  심볼별 독립 패턴 감지 미지원 (향후 개선 고려)
+- **최소 샘플 요구 (Cold Start)**:
+
+| Detector | 최소 샘플 | 미달 시 동작 |
+|----------|----------|-------------|
+| GBM Drawdown | 30일 (`_MIN_OBSERVATION_DAYS`) | NORMAL 반환, gauge 미갱신 |
+| Distribution Drift | 30개 (`_MIN_RECENT_SAMPLES`) | NORMAL 반환, gauge 이전 값 유지 |
+| Conformal-RANSAC | 60개 (`_DEFAULT_MIN_SAMPLES`) | NORMAL 반환, gauge 이전 값 유지 |
+| Execution Latency | 5 fills (`_LATENCY_COLD_START`) | spike 감지 비활성 |
+
+- **auto\_init\_detectors() 호출 경로**: LiveRunner warmup 완료 후
+  (`live_runner.py:1267-1272`), 각 Pod의 `daily_returns`로
+  `lifecycle.auto_init_detectors(pod_id, returns)`를 호출합니다.
+  Pod에 daily\_returns가 없으면 (신규 Pod) 초기화 스킵.
+  mu/sigma가 0에 가까우면(`sigma < 1e-12`) 초기화 스킵
+- **RANSAC 파라미터 상세**: `ransac_min_samples_ratio = 0.5` (50% inlier 요구),
+  `conformal alpha = 0.05` (95% prediction interval),
+  `auto_init_detectors()`에서 `ransac_alpha=0.05, ransac_window_size=180` 전달
+- **GBM Duration heuristic**: drift-ratio 기반 heuristic 근사이며,
+  Magdon-Ismail closed-form의 정확한 구현이 아님.
+  정밀 Confidence Interval이 필요하면 Monte Carlo 시뮬레이션 검증 권장
+- **State Persistence**: GBM/Distribution/RANSAC는
+  `LifecycleManager.to_dict()/restore_from_dict()`로 직렬화.
+  Execution Anomaly는 타임스탬프 `time.monotonic()` 기반 → 재시작 시 1h 윈도우 리셋.
+  재시작 후 `auto_init_detectors()` warmup 단계에서 자동 재호출
 
 ### Layer 9: On-chain Data
 
@@ -382,23 +418,29 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 |-------|-----------|-----|----------|
 | HighDrawdown | `mcbot_drawdown_pct > 10` | 1m | WARNING |
 | APIUnhealthy | `mcbot_exchange_consecutive_failures >= 5` | 30s | CRITICAL |
-| EventsDropped | `rate(events_dropped[5m]) > 0` | 2m | WARNING |
+| EventsDropped | `rate(mcbot_eventbus_events_dropped_total[5m]) > 0` | 2m | WARNING |
 | WSDisconnected | `mcbot_exchange_ws_connected == 0` | 2m | CRITICAL |
-| HighSlippage | `histogram_quantile(0.95, slippage_bps) > 20` | 5m | WARNING |
+| HighSlippage | `histogram_quantile(0.95, rate(mcbot_slippage_bps_bucket[15m])) > 20` | 5m | WARNING |
 | QueueCongestion | `mcbot_eventbus_queue_depth > 5000` | 1m | WARNING |
 | HighEventLoopLag | `mcbot_event_loop_lag_seconds > 1.0` | 1m | WARNING |
-| HighMemoryUsage | `mcbot_process_memory_rss_bytes > 2GB` | 5m | WARNING |
+| HighMemoryUsage | `mcbot_process_memory_rss_bytes > 2147483648` | 5m | WARNING |
 | HighFDCount | `mcbot_process_open_fds > 1000` | 2m | WARNING |
 | WSFrequentReconnects | `increase(mcbot_ws_reconnects_total[5m]) >= 3` | -- | WARNING |
 | WSNoMessages | `mcbot_ws_last_message_age_seconds > 60` | 1m | CRITICAL |
 | DistributionDrift | `mcbot_distribution_p_value < 0.05` | 1d | WARNING |
-| StructuralDecay | `mcbot_ransac_decay_detected == 1` | 1d | CRITICAL |
+| DistributionDriftCritical | `mcbot_distribution_p_value < 0.01 and mcbot_distribution_p_value > 0` | 1d | CRITICAL |
+| StructuralDecay | `mcbot_ransac_decay_detected == 1` | 1d | WARNING |
+| StructuralDecayCritical | `mcbot_ransac_slope <= 0 AND cumulative < conformal_lower` | 1d | CRITICAL |
+| GBMDrawdownWarning | `mcbot_gbm_severity == 1` | 0s | WARNING |
+| GBMDrawdownCritical | `mcbot_gbm_severity == 2` | 0s | CRITICAL |
+| ExecutionLowFillRate | `mcbot_execution_fill_rate < 0.8 and mcbot_execution_fill_rate > 0` | 5m | WARNING |
+| ExecutionConsecutiveRejections | `mcbot_execution_consecutive_rejections >= 5` | 0s | CRITICAL |
 | OnchainFetchHighFailureRate | `rate(mcbot_onchain_fetch_total{status="failure"}[24h]) / rate(mcbot_onchain_fetch_total[24h]) > 0.5` | 1h | WARNING |
 | OnchainDataStale | `time() - mcbot_onchain_last_success_timestamp > 172800` | 1h | WARNING |
 | OnchainCacheEmpty | `mcbot_onchain_cache_size == 0` | 30m | WARNING |
-| OnchainFetchSlow | `histogram_quantile(0.95, mcbot_onchain_fetch_latency_seconds) > 60` | 5m | INFO |
+| OnchainFetchSlow | `histogram_quantile(0.95, rate(mcbot_onchain_fetch_latency_seconds_bucket[1h])) > 60` | 5m | INFO |
 | APIReadFailures | `rate(mcbot_exchange_api_calls_total{endpoint=~"fetch_.*", status="failure"}[5m]) > 0.1` | 2m | WARNING |
-| APILatencyHigh | `histogram_quantile(0.95, mcbot_exchange_api_latency_seconds) > 5` | 2m | WARNING |
+| APILatencyHigh | `histogram_quantile(0.95, rate(mcbot_exchange_api_latency_seconds_bucket[5m])) > 5` | 2m | WARNING |
 | APIRateLimitApproaching | `sum(rate(mcbot_exchange_api_calls_total[1m])) * 60 > 900` | 1m | WARNING |
 | BotRestarted | `resets(mcbot_uptime_seconds[10m]) > 0` | 0s | WARNING |
 | HeartbeatStale | `time() - mcbot_heartbeat_timestamp > 120` | 1m | CRITICAL |
@@ -413,21 +455,119 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 | NettingLowOffset | `mcbot_netting_offset_ratio < 0.1 and mcbot_netting_gross_exposure > 0` | 1h | WARNING |
 | PodInProbation | `mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="probation"} == 1` | 0s | WARNING |
 | HighGrossExposure | `mcbot_netting_gross_exposure > 3.0` | 5m | WARNING |
+| HighAggregateLeverage | `mcbot_aggregate_leverage > 5` | 1m | CRITICAL |
+| LiveAPIBlocked | `increase(mcbot_live_api_blocked_total[5m]) > 0` | 0s | CRITICAL |
+| HighMarginUtilization | `mcbot_margin_used_usdt / mcbot_equity_usdt > 0.8 and mcbot_equity_usdt > 0` | 2m | WARNING |
+| HighThreadCount | `mcbot_process_thread_count > 50` | 5m | WARNING |
+| LiveFillParseFailure | `increase(mcbot_live_fill_parse_failure_total[5m]) > 0` | 0s | WARNING |
+| LiveFrequentMinNotionalSkip | `increase(mcbot_live_min_notional_skip_total[1h]) >= 3` | 0s | INFO |
+
+---
+
+## Dual-Layer Alerting
+
+MC Coin Bot은 두 가지 독립 경로로 alert를 발행합니다. 한쪽이 실패해도 다른 경로가 동작하여 이중 방어를 구성합니다.
+
+### Architecture
+
+```
+Layer A: Code-level (즉시)
+  MetricsExporter / ProcessMonitor → RiskAlertEvent → Discord 알림
+
+Layer B: Prometheus (지속)
+  alerts.yml → Prometheus evaluate → Alertmanager → notification
+```
+
+### 이중 경로 매핑
+
+| 항목 | Layer A (Code → Discord) | Layer B (Prometheus → Alertmanager) |
+|------|--------------------------|-------------------------------------|
+| Slippage | MetricsExporter: 15bp WARNING, 30bp CRITICAL | `HighSlippage`: P95 > 20bp (5m) |
+| API Latency | MetricsExporter: 5s WARNING, 10s CRITICAL | `APILatencyHigh`: P95 > 5s (2m) |
+| Process Health | ProcessMonitor: loop_lag 1s, RSS 2GB, FD 1000, CPU 80%, tasks 200 | 동일 threshold alert rules |
+| WS Staleness | LiveDataFeed `_staleness_monitor`: 120s WARNING, 180s (1.5x) CRITICAL | `WSNoMessages`: 60s + for 1m |
+| Execution | ExecutionAnomalyDetector: fill_rate < 80% (min 5 orders), rejections >= 3 WARNING / >= 5 CRITICAL, latency > 3x EWMA, slippage 3건 연속 증가 | `ExecutionLowFillRate` < 0.8 (5m), `ExecutionConsecutiveRejections` >= 5 |
+| Drawdown | RiskManager: `system_stop_loss` (config 기반) → CircuitBreaker | `HighDrawdown`: 10% (1m) |
+
+### 운영 주의사항
+
+- **Layer A (Discord)**: 즉시 전달. 프로세스 내부에서 직접 발행하므로 `for` 지속 조건 없음
+- **Layer B (Prometheus)**: `for` 조건으로 일시적 spike 필터링. scrape 주기(10s) + evaluate 주기에 종속
+- **양쪽 모두 미수신**: 프로세스 자체가 다운됨을 의미. 호스트 모니터링(systemd, Docker healthcheck) 필요
+- **Threshold 설계 의도**: Layer A(Code)는 즉시 반응이므로 WARNING + CRITICAL 2단계 에스컬레이션.
+  Layer B(Prometheus)는 `for` 지속 조건으로 일시적 spike를 필터링하므로 단일 threshold로 충분.
+  동일 항목의 Layer A/B 임계값이 다른 것은 의도된 설계 (예: WS 120s vs 60s, Slippage 15/30 vs 20)
+- **`_pending_orders` 타임아웃 부재**: MetricsExporter의 `_pending_orders` dict는
+  OrderRequest 후 Fill/Reject 미수신 시 무한 누적. 장기 운영 시 메모리 증가 및
+  stale latency 계산의 원인. 향후 개선 대상
+
+---
+
+## Reconciliation Monitoring
+
+LiveRunner의 position/balance reconciliation은 거래소 실제 상태와 내부 상태의 drift를 감지합니다.
+
+### 실행 구조
+
+- **독립 asyncio task**: `_periodic_reconciliation()` — `_RECONCILER_INTERVAL = 60.0`초 주기
+- **startup 검증**: `reconciler.initial_check()` — 봇 시작 시 즉시 1회 실행
+- `_periodic_metrics_update()`(30초)와 **별도 task**로 독립 동작
+
+### 임계값 및 행동
+
+| 항목 | 임계값 | 행동 | Severity |
+|------|--------|------|----------|
+| Position drift (수량) | > 2% (`_DRIFT_THRESHOLD`) | Discord 알림 | WARNING |
+| Position drift (방향) | PM LONG ↔ Exchange SHORT | Discord 알림 | WARNING |
+| Position orphan | 한쪽만 포지션 보유 | Discord 알림 | WARNING |
+| Balance drift | >= 2.0% (`_balance_notify_threshold`) | Discord 알림, RM peak sync 스킵 | WARNING |
+| Balance drift | >= 5.0% (`_BALANCE_DRIFT_THRESHOLD`) | 로그 CRITICAL (Discord는 2%에서 이미 발행) | CRITICAL (로그) |
+| Balance drift | < 2.0% | 정상, RM peak equity sync 실행 | -- |
+
+### Auto-Correction 모드
+
+- **기본값**: `auto_correct=False` (safety-first — 경고만 발행, PM 상태 미수정)
+- **활성화 시**: drift > 10% (`_AUTO_CORRECT_THRESHOLD`) 인 포지션의 PM size를 거래소 기준으로 보정
+- **현재 LiveRunner**: `PositionReconciler()` — auto_correct 비활성
+
+### 운영 주의사항
+
+- **RM Peak Sync 경로**: balance drift < 2% 시 `rm.sync_exchange_equity(exchange_equity)` 호출
+  → 내부에서 peak equity 갱신 + `system_stop_loss` 대비 drawdown 재평가 → CircuitBreaker 트리거 가능
+- **실패 시 동작**: `periodic_check()` 내부 exception → catch → `return []` (이전 상태 유지, 무음 계속)
+  → API 일시 장애 시 안전하지만, 지속 실패 시 drift 누적 위험
+- **Race Condition 인지**: OMS fill 처리와 Reconciler가 동시 실행될 수 있음.
+  Fill 전파 중 거래소 조회 시 stale 상태와 비교 → 거짓 drift 감지 가능 (60초 주기로 자연 해소)
+- **Balance drift 2% 초과 시 RM sync 스킵 이유**: 입금/출금으로 equity 급변 시
+  거짓 peak 설정 → 거짓 CircuitBreaker 방지. 단, API 장애로 인한 부정확한 잔고에도 동일 동작
 
 ---
 
 ## Grafana Dashboards
 
-`monitoring/grafana/dashboards/` 에 JSON으로 버전 관리.
+`monitoring/grafana/dashboards/` 에 JSON으로 버전 관리 (9개 primary).
 
 | Dashboard | File | 주요 패널 |
 |-----------|------|----------|
-| **Trading Overview** | `trading.json` | Equity curve, Drawdown, Open positions, Today PnL, Uptime |
-| **Strategy Performance** | `strategy.json` | Per-strategy PnL, Drawdown, Signal frequency, Win rate |
-| **Execution Quality** | `execution.json` | Fill latency, Slippage distribution, Fee accumulation |
+| **Trading Overview** | `trading.json` | Equity curve, Drawdown, PnL (profit-loss), Leverage, Positions, Fills, Slippage, Fees |
+| **Strategy Performance** | `strategy.json` | Per-strategy PnL, Signal Rate, Fill Rate, Fee, Slippage P95, Profit Factor |
+| **Execution Quality** | `execution.json` | Fill latency, Slippage distribution, Fee accumulation, Live execution (min notional, API blocked, partial fills, fill rate) |
 | **Exchange Health** | `exchange.json` | API latency, WS connection, Rate limit, Consecutive failures |
-| **System Health** | `system.json` | Event loop lag, Queue depth, Memory, Active tasks, FD count |
-| **Market Regime** | `regime.json` | Funding rate, OI changes, Regime score |
+| **System Health** | `system.json` | Event loop lag, Queue depth, Memory, Active tasks, FD count, GC collections, Thread count, Peak RSS |
+| **Market Regime** | `regime.json` | Bar age, Stale symbols, Heartbeat, Risk alerts, Circuit breaker, Errors |
+| **Orchestrator** | `orchestrator.json` | Pod equity/drawdown/Sharpe, Lifecycle state, Allocation, PRC, Effective N, Correlation, Netting |
+| **Anomaly Detection** | `anomaly.json` | KS statistic, P-value, RANSAC slope/decay, GBM drawdown depth/duration/severity, Fill rate |
+| **On-chain Data** | `onchain.json` | Fetch rate/latency, Rows per source, Last success age, Cache size/refresh |
+
+### Quick-Overview Dashboards (infra/)
+
+`infra/grafana/dashboards/` 에 경량 quick-overview 대시보드 3개 (간결한 단일 페이지).
+
+| Dashboard | File | 주요 패널 |
+|-----------|------|----------|
+| **Overview** | `overview.json` | Equity, Drawdown, Realized PnL, Open positions, Leverage, Signals vs Fills, Latency |
+| **Strategy** | `strategy.json` | Per-strategy PnL, Rolling Sharpe, Profit Factor, Trade count, Pod Drawdown, Signal/Fill rates |
+| **System** | `system.json` | Event loop lag, Active tasks, RSS memory, CPU%, FDs, WebSocket status, EventBus queue |
 
 ---
 
@@ -512,6 +652,20 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 1. 대량 데이터 로드 여부 점검
 1. GC 강제 실행 검토
 
+### HighFDCount
+
+**원인**: 열린 file descriptor 1000개 초과 (2분 지속).
+**대응**:
+
+1. `/proc/self/fd` (Linux) 또는 `/dev/fd` (macOS)에서 열린 FD 목록 확인
+1. WebSocket 소켓 수 확인 — 심볼당 1개 기준, 비정상 누적 여부
+1. 로그 파일 rotation 정상 동작 확인 (logrotate 설정)
+1. SQLite DB 핸들 누수 여부 점검
+1. FD count 추이 확인 — 단조 증가이면 leak, 주기적이면 burst
+
+**참고**: 컨테이너 환경에서 `/proc/self/fd` 접근 불가 시 0 보고 + warning 로그 발생.
+FD 고갈을 0으로 착각하지 않도록 로그 확인 필요.
+
 ### WSFrequentReconnects
 
 **원인**: 5분 내 3회 이상 WS 재연결.
@@ -546,14 +700,60 @@ for 1분 조건에서 실제 감지까지 60~90초 소요 가능. LiveDataFeed �
 1. 전략 파라미터 재최적화 검토
 1. 1일 이상 지속 시 전략 교체 고려
 
-### StructuralDecay
+### DistributionDriftCritical
+
+**원인**: 라이브 수익률 분포가 백테스트 분포와 **매우** 유의미하게 다름 (KS p < 0.01, 1일 지속).
+**대응**:
+
+1. DistributionDrift WARNING 대응 항목 참조
+1. p < 0.01은 1% 유의수준 이탈 — 시장 구조 변화 가능성 높음
+1. 전략 파라미터 재최적화 또는 전략 교체 적극 검토
+
+### StructuralDecay / StructuralDecayCritical
 
 **원인**: RANSAC 기울기 <= 0 또는 conformal 하한 돌파 (1일 지속).
+
+**2-tier PromQL:**
+
+- **WARNING**: `mcbot_ransac_decay_detected == 1` (slope <= 0 **OR** level breach)
+- **CRITICAL**: `mcbot_ransac_slope <= 0 AND mcbot_ransac_current_cumulative < mcbot_ransac_conformal_lower`
+  (slope <= 0 **AND** level breach 동시 성립)
+
 **대응**:
 
 1. 전략 누적 수익률 추세 확인
 1. GBM drawdown 결과와 교차 검증
-1. 전략 retiring / 교체 검토
+1. WARNING 지속 시 파라미터 재최적화 검토
+1. CRITICAL 도달 시 전략 retiring / 교체 검토
+
+### GBMDrawdownWarning / GBMDrawdownCritical
+
+**원인**: GBM 모형 기반 drawdown 깊이/지속기간이 95% CI를 초과.
+
+- WARNING: depth **OR** duration 초과
+- CRITICAL: depth **AND** duration 동시 초과
+
+**대응**:
+
+1. `mcbot_gbm_drawdown_depth` / `mcbot_gbm_drawdown_duration_days` gauge로 현재 상태 확인
+1. 시장 전체 drawdown인지 단일 전략 문제인지 판단 (다른 Pod과 교차 비교)
+1. DistributionDrift, StructuralDecay alert 동시 발생 여부 확인
+1. CRITICAL 시 전략 파라미터 재최적화 또는 배분 축소 검토
+1. GBM duration은 drift-ratio 기반 heuristic이므로, 극단 시장에서는
+   Monte Carlo로 재검증 고려
+
+### ExecutionLowFillRate / ExecutionConsecutiveRejections
+
+**원인**: 실행 품질 이상 — fill rate 80% 미만 또는 연속 5건 이상 주문 거부.
+**대응**:
+
+1. `mcbot_execution_fill_rate` gauge로 현재 fill rate 확인
+1. `mcbot_execution_consecutive_rejections` gauge로 연속 거부 횟수 확인
+1. API 건강 상태 확인 (`APIUnhealthy` alert 동시 발생?)
+1. 거부 사유 확인 — `mcbot_order_rejected_total` counter의 reason 라벨
+1. MIN\_NOTIONAL 문제, 레버리지 초과, 심볼 상장폐지 등 원인별 대응
+1. 모든 심볼의 fill/rejection이 단일 detector로 집계됨에 주의 —
+   특정 심볼만 문제인지 전체인지 `mcbot_order_rejected_total{symbol=...}` 쿼리로 확인
 
 ### OnchainFetchHighFailureRate
 
@@ -582,6 +782,19 @@ for 1분 조건에서 실제 감지까지 60~90초 소요 가능. LiveDataFeed �
 1. Silver 데이터 존재 여부 확인 (`mcbot ingest onchain info`)
 1. Silver 데이터 미존재 시 batch 수집 실행
 1. LiveOnchainFeed 로그 확인
+
+### OnchainFetchSlow
+
+**원인**: On-chain fetch P95 지연시간 60초 초과 (INFO 수준).
+**대응**:
+
+1. 외부 API 응답 시간 확인 (DeFiLlama, CoinMetrics, Etherscan 등)
+1. Rate limit 초과로 인한 throttle 여부 점검
+1. `source` 라벨로 어떤 소스가 느린지 특정
+1. Polling interval 조정 검토 (현재: DeFiLlama 6h, CoinMetrics 12h)
+1. 네트워크 latency 점검
+
+**참고**: INFO 수준이므로 운영 영향이 없으면 무시 가능. 지속 시 polling 간격 조정 또는 timeout 설정 검토.
 
 ### APIReadFailures
 
@@ -741,6 +954,75 @@ for 1분 조건에서 실제 감지까지 60~90초 소요 가능. LiveDataFeed �
 1. offset\_ratio 교차 확인 — 높은 gross + 높은 offset이면 실질 risk 낮음
 1. 지속 시 allocation 상한 조정 검토
 
+### HighAggregateLeverage
+
+**원인**: 포트폴리오 총 레버리지 5x 초과 (1분 지속). 강제 청산 위험.
+**대응**:
+
+1. `mcbot_aggregate_leverage` gauge로 현재 레버리지 확인
+1. 포지션별 notional 확인 — 어떤 심볼이 과도한지 특정
+1. allocation 축소 또는 포지션 부분 청산 검토
+1. `HighGrossExposure` alert 동시 발생 여부 확인
+1. Binance 유지보수 마진율 확인 — 강제 청산 임계값까지 여유 점검
+
+### LiveAPIBlocked
+
+**원인**: API unhealthy 상태에서 주문이 무음 차단됨.
+**대응**:
+
+1. `APIUnhealthy` alert 동시 발생 확인 — API 연속 실패 5회 이상
+1. 거래소 API 상태 페이지 확인 (Binance status)
+1. 네트워크 연결 상태 점검
+1. 차단된 주문 수 확인 (`mcbot_live_api_blocked_total` counter)
+1. API 복구 시 자동 해제 — 수동 개입 불필요 (consecutive_failures 리셋)
+
+**주의**: 이 alert는 주문이 **무음으로** 차단됨을 의미합니다. 시그널은 정상 생성되지만
+실행되지 않으므로, 복구 후 포지션 상태 확인이 중요합니다.
+
+### HighMarginUtilization
+
+**원인**: 마진 사용률 80% 초과 (2분 지속). Margin call 사전 경고.
+**대응**:
+
+1. `mcbot_margin_used_usdt` / `mcbot_equity_usdt` 비율 확인
+1. 포지션 크기 축소 검토
+1. `mcbot_aggregate_leverage` 교차 확인 — 레버리지와 마진 사용률 상관관계
+1. 추가 마진(자금 이체) 검토
+1. 90% 초과 시 긴급 포지션 축소 권장
+
+### HighThreadCount
+
+**원인**: 활성 스레드 50개 초과 (5분 지속). Thread leak 가능성.
+**대응**:
+
+1. `threading.active_count()` 및 `threading.enumerate()`로 스레드 목록 확인
+1. ThreadPoolExecutor 상태 점검 — worker 미회수 여부
+1. Blocking I/O 호출 점검 (동기 API 호출 등)
+1. 추이 확인: 단조 증가이면 leak, 주기적이면 burst
+1. `HighCPUUsage`, `HighEventLoopLag`와 상관관계 확인
+
+### LiveFillParseFailure
+
+**원인**: 거래소 fill 응답 파싱 실패. 포지션 추적 부정확 위험.
+**대응**:
+
+1. 봇 로그에서 파싱 에러 traceback 확인
+1. 거래소 API 응답 형식 변경 여부 점검 (CCXT 라이브러리 업데이트 필요?)
+1. 실제 포지션과 내부 추적 상태 비교 (reconciliation drift 확인)
+1. 지속 시 CCXT 버전 업데이트 또는 파서 수정 필요
+
+### LiveFrequentMinNotionalSkip
+
+**원인**: MIN\_NOTIONAL 미달로 주문 스킵이 1시간 내 3회 이상 발생.
+**대응**:
+
+1. 해당 심볼 확인 (`mcbot_live_min_notional_skip_total{symbol=...}`)
+1. 심볼별 최소 주문 크기(MIN\_NOTIONAL) 확인
+1. allocation 금액이 최소 주문 크기 대비 충분한지 검토
+1. 소액 포지션 심볼 제거 또는 allocation 상향 검토
+
+**참고**: INFO 수준이므로 즉시 대응 불필요. 빈번 발생 시 자본 효율성 저하 원인.
+
 ---
 
 ## Infrastructure
@@ -760,7 +1042,7 @@ docker-compose.yaml
 ```
 monitoring/
 ├── prometheus.yml                   Scrape 설정 (10s/15s)
-├── alerts.yml                       33개 Alert Rule
+├── alerts.yml                       45개 Alert Rule
 ├── Dockerfile.prometheus
 ├── Dockerfile.grafana
 └── grafana/
@@ -770,7 +1052,10 @@ monitoring/
     │   ├── execution.json           실행 품질
     │   ├── exchange.json            거래소 API 건강
     │   ├── system.json              시스템 건강
-    │   └── regime.json              마켓 레짐
+    │   ├── regime.json              마켓 레짐
+    │   ├── orchestrator.json        Pod/Portfolio 관리
+    │   ├── anomaly.json             이상 탐지 (KS/RANSAC/GBM)
+    │   └── onchain.json             On-chain 데이터 건강
     └── provisioning/
         ├── dashboards/default.yml   대시보드 자동 프로비저닝
         └── datasources/prometheus.yml

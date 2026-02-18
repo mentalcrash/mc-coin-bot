@@ -42,7 +42,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "mcbot_current_drawdown",
+          "expr": "mcbot_drawdown_pct",
           "legendFormat": "Drawdown"
         }
       ],
@@ -68,7 +68,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "mcbot_realized_pnl_usdt_total",
+          "expr": "mcbot_realized_profit_usdt_total - mcbot_realized_loss_usdt_total",
           "legendFormat": "Realized PnL"
         }
       ],

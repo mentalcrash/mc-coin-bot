@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: atf-3h
   display_name: Anchored Trend-Following 3H
@@ -8,15 +9,17 @@ meta:
   created_at: '2026-02-13'
   retired_at: '2026-02-13'
   economic_rationale: Anchor-Mom(12H G5 PASS)의 3H TF 적응 — 심리적 앵커링 효과의 TF 불변성 검증
+  rationale_references: []
+  rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-13'
     details:
       score: 25
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-13'
     details:
@@ -28,23 +31,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 0.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-13'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-13'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 25/30점
 - date: '2026-02-13'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 적용 확인, 벡터화 완전, vol-scalar safe division,
     ShortMode 3분기 완비
 - date: '2026-02-13'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: Best SOL Sharpe 0.86, BTC/ETH/BNB MDD 60-64%. Anchor-Mom 12H->3H TF 축소
     시 앵커링 효과 희석 + 과빈번 거래(1000+건)

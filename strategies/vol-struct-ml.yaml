@@ -1,3 +1,4 @@
+version: 2
 meta:
   name: vol-struct-ml
   display_name: Volatility Structure ML
@@ -13,14 +14,14 @@ meta:
   rationale_references: []
   rationale_category: null
 parameters: {}
-gates:
-  G0A:
+phases:
+  P1:
     status: PASS
     date: '2026-02-14'
     details:
       score: 26
       max_score: 30
-  G0B:
+  P3:
     status: PASS
     date: '2026-02-15'
     details:
@@ -32,23 +33,23 @@ gates:
       C6: PASS
       C7: PASS
       warnings: 2.0
-  G1:
+  P4:
     status: FAIL
     date: '2026-02-15'
     details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-14'
-  gate: G0A
+  phase: P1
   verdict: PASS
   rationale: 26/30점
 - date: '2026-02-15'
-  gate: G0B
+  phase: P3
   verdict: PASS
   rationale: 'C2 Data Leakage 수정 완료 (training cutoff t-h). C1-C7 전항목 PASS. W2: 파라미터
     13개(ML), W4: for loop 불가피(rolling ML).'
 - date: '2026-02-15'
-  gate: G1
+  phase: P4
   verdict: FAIL
   rationale: 전 에셋(5/5) MDD>50%(77~96%). 과도한 레버리지+빈번한 거래(700~880)로 equity 파괴. SOL MDD
     89%, DOGE MDD 96%. ML 분류기 4H 방향예측 실패
