@@ -10,6 +10,7 @@ from src.orchestrator.config import OrchestratorConfig, PodConfig
 from src.orchestrator.models import AllocationMethod, PodPerformance, RiskAlert
 from src.orchestrator.risk_aggregator import (
     RiskAggregator,
+    check_asset_correlation_stress,
     check_correlation_stress,
     compute_effective_n,
     compute_portfolio_drawdown,
@@ -432,3 +433,80 @@ class TestM5SignedCorrelation:
         is_stressed, avg_corr = check_correlation_stress(returns, 0.70)
         assert is_stressed is True
         assert avg_corr > 0.70
+
+
+# ── TestAssetCorrelationStress ──────────────────────────────────
+
+
+class TestAssetCorrelationStress:
+    """Step 5: 에셋 레벨 상관 스트레스 테스트."""
+
+    def test_asset_correlation_stress_high(self) -> None:
+        """상관 높은 에셋 → stressed."""
+        rng = np.random.default_rng(42)
+        base_prices = np.cumsum(rng.normal(0, 1, 100)) + 10000
+        noise = rng.normal(0, 0.1, 100)
+        price_history = {
+            "BTC/USDT": base_prices.tolist(),
+            "ETH/USDT": (base_prices + noise).tolist(),
+        }
+        is_stressed, avg_corr = check_asset_correlation_stress(price_history, 0.70)
+        assert is_stressed is True
+        assert avg_corr > 0.70
+
+    def test_asset_correlation_stress_low(self) -> None:
+        """독립 에셋 → not stressed."""
+        rng = np.random.default_rng(42)
+        price_history = {
+            "BTC/USDT": (np.cumsum(rng.normal(0, 1, 100)) + 10000).tolist(),
+            "ETH/USDT": (np.cumsum(rng.normal(0, 1, 100)) + 3000).tolist(),
+        }
+        is_stressed, _avg_corr = check_asset_correlation_stress(price_history, 0.70)
+        assert is_stressed is False
+
+    def test_asset_correlation_stress_insufficient_data(self) -> None:
+        """데이터 부족 → skip."""
+        price_history = {
+            "BTC/USDT": [50000.0, 51000.0],
+            "ETH/USDT": [3000.0, 3100.0],
+        }
+        is_stressed, avg_corr = check_asset_correlation_stress(price_history, 0.70)
+        assert is_stressed is False
+        assert avg_corr == pytest.approx(0.0)
+
+    def test_asset_correlation_single_asset(self) -> None:
+        """에셋 1개 → skip."""
+        price_history = {"BTC/USDT": [50000.0] * 10}
+        is_stressed, _avg_corr = check_asset_correlation_stress(price_history, 0.70)
+        assert is_stressed is False
+
+    def test_portfolio_limits_2pod_uses_asset_check(self) -> None:
+        """2-pod + asset data → 에셋 체크 발동."""
+        config = _make_config(correlation_stress_threshold=0.70)
+        ra = RiskAggregator(config)
+        rng = np.random.default_rng(42)
+
+        # 2-pod 수익률 (corr check skips with < 3 rows using pod_returns)
+        pod_returns = pd.DataFrame(
+            {
+                "pod-a": rng.normal(0, 0.01, 100),
+                "pod-b": rng.normal(0, 0.01, 100),
+            }
+        )
+
+        # 높은 상관 에셋 가격
+        base = np.cumsum(rng.normal(0, 1, 100)) + 10000
+        asset_price_history = {
+            "BTC/USDT": base.tolist(),
+            "ETH/USDT": (base + rng.normal(0, 0.01, 100)).tolist(),
+        }
+
+        alerts = ra.check_portfolio_limits(
+            net_weights={},
+            pod_performances={},
+            pod_weights={"pod-a": 0.5, "pod-b": 0.5},
+            pod_returns=pod_returns,
+            asset_price_history=asset_price_history,
+        )
+        asset_alerts = [a for a in alerts if a.alert_type == "asset_correlation_stress"]
+        assert len(asset_alerts) >= 1

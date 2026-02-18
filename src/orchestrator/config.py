@@ -372,6 +372,21 @@ class OrchestratorConfig(BaseModel):
         description="스트레스 상관계수 임계값",
     )
 
+    # Rebalance turnover filter
+    min_rebalance_turnover: float = Field(
+        default=0.02,
+        ge=0.0,
+        description="최소 리밸런스 턴오버 (이하 스킵)",
+    )
+
+    # Risk recovery
+    risk_recovery_steps: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Risk defense 해제 후 자본 복원 단계 수",
+    )
+
     # Cost
     cost_bps: float = Field(
         default=4.0,

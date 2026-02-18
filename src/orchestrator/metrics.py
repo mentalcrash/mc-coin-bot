@@ -20,6 +20,7 @@ import pandas as pd
 from loguru import logger
 from prometheus_client import Enum as PromEnum, Gauge
 
+from src.orchestrator.netting import compute_netting_stats
 from src.orchestrator.risk_aggregator import (
     check_correlation_stress,
     compute_effective_n,
@@ -82,6 +83,21 @@ active_pods_gauge = Gauge(
     "Number of active pods",
 )
 
+# ── Netting Gauges ────────────────────────────────────────────────
+
+netting_gross_gauge = Gauge(
+    "mcbot_netting_gross_exposure",
+    "Total gross exposure before netting",
+)
+netting_net_gauge = Gauge(
+    "mcbot_netting_net_exposure",
+    "Total net exposure after netting",
+)
+netting_offset_ratio_gauge = Gauge(
+    "mcbot_netting_offset_ratio",
+    "Netting offset ratio (0=no offset, 1=full offset)",
+)
+
 # ── Constants ────────────────────────────────────────────────────
 
 _MIN_PODS_FOR_PORTFOLIO = 2
@@ -104,10 +120,11 @@ class OrchestratorMetrics:
         self._orchestrator = orchestrator
 
     def update(self) -> None:
-        """모든 Pod + Portfolio 메트릭 갱신."""
+        """모든 Pod + Portfolio + Netting 메트릭 갱신."""
         try:
             self._update_pod_metrics()
             self._update_portfolio_metrics()
+            self._update_netting_metrics()
         except Exception:
             logger.exception("OrchestratorMetrics update failed")
 
@@ -163,3 +180,17 @@ class OrchestratorMetrics:
         # Avg Correlation
         _, avg_corr = check_correlation_stress(pod_returns, _DEFAULT_CORRELATION_THRESHOLD)
         portfolio_avg_correlation_gauge.set(avg_corr)
+
+    def _update_netting_metrics(self) -> None:
+        """Netting 상쇄 메트릭 업데이트."""
+        pod_targets = self._orchestrator.last_pod_targets
+        if not pod_targets:
+            netting_gross_gauge.set(0.0)
+            netting_net_gauge.set(0.0)
+            netting_offset_ratio_gauge.set(0.0)
+            return
+
+        stats = compute_netting_stats(pod_targets)
+        netting_gross_gauge.set(stats.gross_sum)
+        netting_net_gauge.set(stats.net_sum)
+        netting_offset_ratio_gauge.set(stats.offset_ratio)

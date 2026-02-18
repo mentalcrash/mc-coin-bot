@@ -193,3 +193,43 @@ class TestSinglePodEdgeCase:
         assert _sample("mcbot_portfolio_avg_correlation") == pytest.approx(0.0)
         # PRC = 1.0 (균등 배분)
         assert _sample("mcbot_pod_risk_contribution", {"pod_id": "pod-solo"}) == pytest.approx(1.0)
+
+
+class TestNettingGauges:
+    def test_netting_gauges_updated(self) -> None:
+        """Netting 관련 Prometheus Gauge 업데이트 검증."""
+        orch = _make_mock_orchestrator()
+        # Set up last_pod_targets with opposing positions
+        type(orch).last_pod_targets = PropertyMock(
+            return_value={
+                "pod-a": {"BTC/USDT": 0.3, "ETH/USDT": 0.2},
+                "pod-b": {"BTC/USDT": -0.1, "ETH/USDT": 0.1},
+            }
+        )
+        metrics = OrchestratorMetrics(orch)
+        metrics.update()
+
+        gross = _sample("mcbot_netting_gross_exposure")
+        net = _sample("mcbot_netting_net_exposure")
+        offset = _sample("mcbot_netting_offset_ratio")
+
+        assert gross is not None
+        assert net is not None
+        assert offset is not None
+        # gross = 0.3 + 0.2 + 0.1 + 0.1 = 0.7
+        assert gross == pytest.approx(0.7)
+        # net: BTC = 0.2, ETH = 0.3 → |0.2| + |0.3| = 0.5
+        assert net == pytest.approx(0.5)
+        # offset = 1 - 0.5/0.7
+        assert offset == pytest.approx(1.0 - 0.5 / 0.7)
+
+    def test_netting_gauges_empty_targets(self) -> None:
+        """last_pod_targets가 비어 있으면 0으로 설정."""
+        orch = _make_mock_orchestrator()
+        type(orch).last_pod_targets = PropertyMock(return_value={})
+        metrics = OrchestratorMetrics(orch)
+        metrics.update()
+
+        assert _sample("mcbot_netting_gross_exposure") == pytest.approx(0.0)
+        assert _sample("mcbot_netting_net_exposure") == pytest.approx(0.0)
+        assert _sample("mcbot_netting_offset_ratio") == pytest.approx(0.0)

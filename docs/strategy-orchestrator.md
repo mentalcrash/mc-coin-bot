@@ -320,7 +320,13 @@ PROBATION     min_fraction                           최소 고정
 RETIRED       0.0                                    청산
 ```
 
-### 5.4 Intra-Pod Asset Allocation
+### 5.4 Rebalance Turnover Filter
+
+리밸런스 시 총 턴오버(`Σ|new_w - current_w|`)가 `min_rebalance_turnover` (기본 2%)
+미만이면 거래 비용 대비 이점이 부족하므로 리밸런스를 스킵한다.
+`min_rebalance_turnover=0.0`으로 설정하면 필터를 비활성화한다.
+
+### 5.5 Intra-Pod Asset Allocation
 
 Pod 간 배분(Capital Allocator)과 별개로, **Pod 내 에셋 간** 차등 배분을 지원한다.
 Equal Weight에서 SOL(vol ~90%) 같은 고변동 에셋이 포트폴리오 리스크의 ~40%를 차지하는 문제를 해결한다.
@@ -457,6 +463,16 @@ asset_allocation:
 - **λ (lambda)**: 감지 임계값 (50.0)
 - **α (alpha)**: EWMA 평활 계수 (0.99, ~69일 반감기)
 
+### 6.4 Degradation Detector Auto-Initialization
+
+Live 시작 시 `auto_init_detectors(pod_id, backtest_returns)` 메서드가
+백테스트/운용 수익률 데이터에서 GBM, Distribution, RANSAC 검출기를 자동 초기화한다.
+
+- `mu = mean(returns)`, `sigma = std(returns, ddof=1)` 계산
+- 데이터 < 2건 또는 `sigma ≈ 0` → skip + warning
+- `set_gbm_params()`, `set_distribution_reference()`, `set_ransac_params()` 호출
+- `LiveRunner._warmup_orchestrator()` 완료 후 자동 실행
+
 ---
 
 ## 7. Position Netting & Risk
@@ -474,7 +490,25 @@ Pod C: BTC +0.05, ETH -0.10
 Net:   BTC +0.25, ETH +0.10, SOL +0.15  ← 실제 거래소 주문
 ```
 
-### 7.2 Fill Attribution
+### 7.2 Netting Offset Monitoring
+
+Pod 간 포지션 상쇄량을 `NettingStats` frozen dataclass로 추적한다:
+
+- **gross_sum**: `Σ|w|` (모든 Pod의 절대 가중치 합)
+- **net_sum**: `Σ|net_w|` (넷팅 후 심볼별 절대 가중치 합)
+- **offset_ratio**: `1 - net/gross` (0=상쇄 없음, 1=완전 상쇄)
+
+`compute_netting_stats(pod_global_weights)` 순수 함수가 계산하며,
+offset > 50% 시 warning 로깅으로 과도한 상쇄를 경고한다.
+Prometheus 메트릭 3개로 노출:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `mcbot_netting_gross_exposure` | Gauge | Gross exposure 합계 |
+| `mcbot_netting_net_exposure` | Gauge | Net exposure 합계 |
+| `mcbot_netting_offset_ratio` | Gauge | 상쇄 비율 (0~1) |
+
+### 7.3 Fill Attribution
 
 Fill은 각 Pod의 target_weight 비율에 따라 **비례 귀속**된다:
 
@@ -487,7 +521,7 @@ Pod A target = +0.30 (100%)
 → Pod A gets +0.020
 ```
 
-### 7.3 Portfolio Risk 5-Check
+### 7.4 Portfolio Risk 5-Check
 
 | # | 검사 | 기본 임계값 | Severity |
 |---|------|-----------|----------|
@@ -500,7 +534,16 @@ Pod A target = +0.30 (100%)
 - **Warning**: 임계값의 80% 도달
 - **Critical**: 임계값 100% 초과 → `_risk_breached` 활성화 → 모든 weight 0 (방어 모드)
 
-### 7.4 Risk Contribution (PRC)
+**2-Pod Correlation 보완**: Pod 수 < 3이면 Pod 간 상관관계 계산이 통계적으로
+불안정하므로, 에셋 레벨 close price 히스토리에서 상관행렬을 계산하여 보완한다.
+`check_asset_correlation_stress(price_history, threshold)` 순수 함수가 이를 담당한다.
+
+**Risk Defense 점진 복원**: Critical alert 해제 후 즉시 100% 복원 대신
+`risk_recovery_steps` (기본 3)에 걸쳐 점진적으로 자본을 복원한다.
+각 단계에서 `step / total_steps` 비율로 weight를 스케일링한다.
+복원 중 재위기 발생 시 즉시 리셋하여 방어 모드로 전환한다.
+
+### 7.5 Risk Contribution (PRC)
 
 ```
 PRC_i = w_i × (Σw)_i / σ²_p
@@ -531,7 +574,10 @@ Effective N = 1 / Σ(PRC_i²)    ← HHI 역수
 │    ✅ Pod: daily_returns (별도 key, 270일 trim)       │
 │    ✅ Lifecycle: PH detector, state_entered_at,      │
 │                 consecutive_loss_months               │
-│    ✅ Orchestrator: rebalance_ts, pod_targets        │
+│    ✅ Orchestrator: rebalance_ts, pod_targets,       │
+│           risk_breached, risk_recovery_step           │
+│    ✅ Histories: allocation(500), lifecycle(100),     │
+│           risk_contributions(500)                     │
 │    ── Stateless (영속 불필요) ──                      │
 │    ○  CapitalAllocator (입력 기반 계산)               │
 │    ○  RiskAggregator (입력 기반 계산)                 │
@@ -547,7 +593,8 @@ SQLite (bot_state key-value table)
 ├── "rm_state"                     ← RM peak_equity
 ├── "oms_processed_orders"         ← OMS 멱등성 set
 ├── "orchestrator_state"           ← Pod/Lifecycle/Orchestrator 전체
-└── "orchestrator_daily_returns"   ← Pod별 수익률 이력 (270일)
+├── "orchestrator_daily_returns"   ← Pod별 수익률 이력 (270일)
+└── "orchestrator_histories"       ← allocation/lifecycle/risk 이력 (각 500/100/500건 trim)
 ```
 
 ### 8.3 Recovery Flow
@@ -651,6 +698,9 @@ G1 이후 검증은 견고하나, **발굴 초기 필터링이 느슨**하여 �
 | `mcbot_portfolio_effective_n` | Gauge | 유효 분산 수 (1/HHI) |
 | `mcbot_portfolio_avg_correlation` | Gauge | 평균 전략 간 상관 |
 | `mcbot_active_pods` | Gauge | 활성 Pod 수 |
+| `mcbot_netting_gross_exposure` | Gauge | Gross exposure 합계 |
+| `mcbot_netting_net_exposure` | Gauge | Net exposure 합계 |
+| `mcbot_netting_offset_ratio` | Gauge | 상쇄 비율 (0~1) |
 
 ### 10.2 Discord Alerts
 
@@ -675,10 +725,13 @@ orchestrator:
   kelly_fraction: 0.25              # Fractional Kelly 계수
   kelly_confidence_ramp: 180        # Kelly 신뢰도 ramp-up (일)
 
+  risk_recovery_steps: 3            # Risk defense 해제 후 점진 복원 단계 수 (1=즉시)
+
   rebalance:
     trigger: hybrid                 # calendar | threshold | hybrid
     calendar_days: 7                # Calendar 주기 (일)
     drift_threshold: 0.10           # Threshold: PRC drift 10% 초과 시
+    min_rebalance_turnover: 0.02    # 최소 턴오버 (이하 스킵, 0.0=비활성)
 
   risk:
     max_portfolio_volatility: 0.20  # 20% ann. vol

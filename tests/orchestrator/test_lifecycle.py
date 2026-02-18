@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
+import pytest
 
 from src.orchestrator.config import GraduationCriteria, PodConfig, RetirementCriteria
 from src.orchestrator.lifecycle import LifecycleManager
@@ -625,3 +626,74 @@ class TestConformalRANSAC:
 
         state = mgr.to_dict()
         assert "ransac_detector" in state[pod.pod_id]
+
+
+# ── TestAutoInitDetectors ─────────────────────────────────────
+
+
+class TestAutoInitDetectors:
+    """Step 6: Degradation 검출기 자동 초기화 테스트."""
+
+    def test_auto_init_detectors_sets_all_three(self) -> None:
+        """3개 검출기 모두 non-None."""
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        returns = rng.normal(0.001, 0.02, 100).tolist()
+
+        mgr = _make_manager()
+        mgr.auto_init_detectors("pod-a", returns)
+
+        pls = mgr._pod_states["pod-a"]
+        assert pls.gbm_monitor is not None
+        assert pls.dist_detector is not None
+        assert pls.ransac_detector is not None
+
+    def test_auto_init_detectors_correct_params(self) -> None:
+        """mu/sigma 값 검증."""
+        import numpy as np
+
+        returns = [0.01, 0.02, -0.01, 0.005, 0.015]
+        expected_mu = float(np.mean(returns))
+        expected_sigma = float(np.std(returns, ddof=1))
+
+        mgr = _make_manager()
+        mgr.auto_init_detectors("pod-a", returns)
+
+        pls = mgr._pod_states["pod-a"]
+        assert pls.gbm_monitor is not None
+        assert pls.gbm_monitor._mu == pytest.approx(expected_mu)
+        assert pls.gbm_monitor._sigma == pytest.approx(expected_sigma)
+
+    def test_auto_init_detectors_insufficient_data(self) -> None:
+        """returns < 2 → skip."""
+        mgr = _make_manager()
+        mgr.auto_init_detectors("pod-a", [0.01])
+
+        # Pod state should not have detectors
+        pls = mgr._pod_states.get("pod-a")
+        if pls is not None:
+            assert pls.gbm_monitor is None
+
+    def test_auto_init_detectors_zero_volatility(self) -> None:
+        """동일 값 → skip (sigma ≈ 0)."""
+        mgr = _make_manager()
+        mgr.auto_init_detectors("pod-a", [0.01, 0.01, 0.01, 0.01])
+
+        pls = mgr._pod_states.get("pod-a")
+        if pls is not None:
+            assert pls.gbm_monitor is None
+
+    def test_auto_init_detectors_idempotent(self) -> None:
+        """2회 호출 → 에러 없음."""
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        returns = rng.normal(0.001, 0.02, 50).tolist()
+
+        mgr = _make_manager()
+        mgr.auto_init_detectors("pod-a", returns)
+        mgr.auto_init_detectors("pod-a", returns)
+
+        pls = mgr._pod_states["pod-a"]
+        assert pls.gbm_monitor is not None

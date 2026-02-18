@@ -1018,7 +1018,8 @@ class LiveRunner:
         return regime_service, feature_store, strategy_engine
 
     def _create_regime_service(
-        self, derivatives_provider: object | None = None,
+        self,
+        derivatives_provider: object | None = None,
     ) -> RegimeService | None:
         """RegimeService 생성 (regime_config가 None이면 None).
 
@@ -1235,6 +1236,12 @@ class LiveRunner:
         # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
         if self._orchestrator is not None:
             await self._warmup_orchestrator(self._orchestrator)
+            # 검출기 자동 초기화 (warmup 완료 후)
+            lifecycle = self._orchestrator.lifecycle
+            if lifecycle is not None:
+                for pod in self._orchestrator.pods:
+                    if pod.daily_returns:
+                        lifecycle.auto_init_detectors(pod.pod_id, list(pod.daily_returns))
         elif strategy_engine is not None:
             await self._warmup_strategy(
                 strategy_engine, regime_service=regime_service, feature_store=feature_store
@@ -1596,8 +1603,14 @@ class LiveRunner:
         trading_mode_enum.state(self._mode.value)
 
         # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
+        # + LiveExecutor에 PrometheusLiveExecutorMetrics 주입
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
+
+        if isinstance(self._executor, LiveExecutor):
+            from src.monitoring.metrics import PrometheusLiveExecutorMetrics
+
+            self._executor.set_metrics(PrometheusLiveExecutorMetrics())
 
         # LiveDataFeed에 WS 상태 콜백 주입 (상세 메트릭 포함)
         ws_detail_cb = PrometheusWsDetailCallback()
