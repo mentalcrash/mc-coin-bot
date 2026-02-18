@@ -57,13 +57,13 @@ orchestrator:
 
   # ── Lifecycle: Graduation ───────────────────────────────────
   graduation:
-    min_live_days: 90
-    min_sharpe: 0.8                     # 라이브 초기 Sharpe 기준 완화
+    min_live_days: 30
+    min_sharpe: 0.5
     max_drawdown: 0.20
-    min_trade_count: 20
-    min_calmar: 0.6
-    max_backtest_live_gap: 0.40
-    max_portfolio_correlation: 0.60
+    min_trade_count: 5
+    min_calmar: 0.3
+    max_backtest_live_gap: 0.30
+    max_portfolio_correlation: 0.65
 
   # ── Lifecycle: Retirement ───────────────────────────────────
   retirement:

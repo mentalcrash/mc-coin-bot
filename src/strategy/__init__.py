@@ -57,6 +57,7 @@ import src.strategy.entropy_switch  # 전략 등록 side effect
 import src.strategy.flow_imbalance  # 전략 등록 side effect
 import src.strategy.fr_carry_vol  # 전략 등록 side effect
 import src.strategy.fr_cond_mom  # 전략 등록 side effect
+import src.strategy.fr_stab_conf  # 전략 등록 side effect
 import src.strategy.fractal_mom  # 전략 등록 side effect
 import src.strategy.fund_div_mom  # 전략 등록 side effect
 import src.strategy.funding_carry  # 전략 등록 side effect
@@ -90,6 +91,7 @@ import src.strategy.rv_jump_cont  # 전략 등록 side effect
 import src.strategy.scaled_mom  # 전략 등록 side effect
 import src.strategy.session_breakout  # 전략 등록 side effect
 import src.strategy.skew_mom  # 전략 등록 side effect
+import src.strategy.stab_mom_trend  # 전략 등록 side effect
 import src.strategy.stoch_mom  # 전략 등록 side effect
 import src.strategy.trend_quality_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
