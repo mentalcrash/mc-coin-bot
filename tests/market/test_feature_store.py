@@ -454,3 +454,52 @@ class TestColumnNames:
         )
         store = FeatureStore(config)
         assert store.column_names == ["my_rsi", "atr_20"]
+
+
+# ---------------------------------------------------------------------------
+# register_specs
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterSpecs:
+    """register_specs() 동적 확장 테스트."""
+
+    def test_register_specs_adds_new(self) -> None:
+        """새 spec이 정상 등록되는지 확인."""
+        store = FeatureStore(FeatureStoreConfig(specs=(IndicatorSpec("rsi", {"period": 14}),)))
+        assert len(store.column_names) == 1
+
+        store.register_specs([IndicatorSpec("atr", {"period": 14})])
+        assert len(store.column_names) == 2
+        assert "atr_14" in store.column_names
+
+    def test_register_specs_dedup(self) -> None:
+        """중복 name 등록 시 무시."""
+        store = FeatureStore(FeatureStoreConfig(specs=(IndicatorSpec("rsi", {"period": 14}),)))
+        store.register_specs(
+            [
+                IndicatorSpec("rsi", {"period": 7}),  # 같은 name → 무시
+                IndicatorSpec("atr", {"period": 14}),
+            ]
+        )
+        assert len(store.column_names) == 2
+        # 기존 rsi_14 유지 (rsi_7 아님)
+        assert "rsi_14" in store.column_names
+
+    def test_register_specs_empty(self) -> None:
+        """빈 리스트 등록 시 변경 없음."""
+        store = FeatureStore()
+        original_count = len(store.column_names)
+        store.register_specs([])
+        assert len(store.column_names) == original_count
+
+    def test_precompute_with_extra_specs(self, sample_ohlcv: pd.DataFrame) -> None:
+        """추가 spec이 precompute 캐시에 포함되는지 확인."""
+        store = FeatureStore(FeatureStoreConfig(specs=(IndicatorSpec("rsi", {"period": 14}),)))
+        store.register_specs([IndicatorSpec("momentum", {"period": 10})])
+
+        store.precompute("BTC/USDT", sample_ohlcv)
+        enriched = store.enrich_dataframe(sample_ohlcv.copy(), "BTC/USDT")
+
+        assert "rsi_14" in enriched.columns
+        assert "momentum_10" in enriched.columns

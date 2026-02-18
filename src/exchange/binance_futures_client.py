@@ -168,7 +168,7 @@ class BinanceFuturesClient:
             )
         self._consecutive_failures = 0
 
-    def _record_failure(self) -> None:
+    def _record_failure(self, exc: Exception | None = None) -> None:
         """API 호출 실패 → 실패 카운터 증가."""
         self._consecutive_failures += 1
         if self._consecutive_failures >= self._MAX_CONSECUTIVE_FAILURES:
@@ -176,6 +176,16 @@ class BinanceFuturesClient:
                 "API CIRCUIT BREAKER: {} consecutive failures — orders will be blocked",
                 self._consecutive_failures,
             )
+        # Prometheus errors_counter (lazy import)
+        if exc is not None:
+            try:
+                from src.monitoring.metrics import errors_counter
+
+                errors_counter.labels(
+                    component="Exchange", error_type=type(exc).__name__
+                ).inc()
+            except Exception:  # noqa: S110
+                pass
 
     def set_metrics_callback(self, callback: ApiMetricsCallback) -> None:
         """API 메트릭 콜백 설정.
@@ -191,7 +201,7 @@ class BinanceFuturesClient:
         Args:
             endpoint: API endpoint 이름
             duration: 호출 소요 시간 (초)
-            status: "success" | "retry" | "failure"
+            status: "success" | "failure"
         """
         if self._metrics_callback is not None:
             self._metrics_callback.on_api_call(endpoint, duration, status)
@@ -298,7 +308,7 @@ class BinanceFuturesClient:
         try:
             result = await self._retry_with_backoff(_do_create)
         except ccxt.InsufficientFunds as e:
-            self._record_failure()
+            self._record_failure(e)
             self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise InsufficientFundsError(
                 "Insufficient funds for order",
@@ -312,14 +322,14 @@ class BinanceFuturesClient:
                 context={"symbol": symbol, "side": side, "amount": amount, "error": str(e)},
             ) from e
         except ccxt.ExchangeError as e:
-            self._record_failure()
+            self._record_failure(e)
             self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise OrderExecutionError(
                 "Order execution failed",
                 context={"symbol": symbol, "side": side, "error": str(e)},
             ) from e
-        except (NetworkError, RateLimitError):
-            self._record_failure()
+        except (NetworkError, RateLimitError) as e:
+            self._record_failure(e)
             self._report_metric("create_order", time.monotonic() - t0, "failure")
             raise
         else:
@@ -530,14 +540,14 @@ class BinanceFuturesClient:
                 },
             ) from e
         except ccxt.ExchangeError as e:
-            self._record_failure()
+            self._record_failure(e)
             self._report_metric("create_stop_market", time.monotonic() - t0, "failure")
             raise OrderExecutionError(
                 "STOP_MARKET order execution failed",
                 context={"symbol": symbol, "side": side, "error": str(e)},
             ) from e
-        except (NetworkError, RateLimitError):
-            self._record_failure()
+        except (NetworkError, RateLimitError) as e:
+            self._record_failure(e)
             self._report_metric("create_stop_market", time.monotonic() - t0, "failure")
             raise
         else:
@@ -738,6 +748,78 @@ class BinanceFuturesClient:
             result: list[dict[str, Any]] = await self.exchange.fapidata_get_takerlongshortratio(
                 params
             )  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_top_long_short_account_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Top Trader Long/Short Account Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            Top Trader Account Ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[
+                dict[str, Any]
+            ] = await self.exchange.fapidata_get_toplongshortaccountratio(params)  # type: ignore[assignment,attr-defined]
+            return result
+
+        return await self._retry_with_backoff(_do_fetch)
+
+    async def fetch_top_long_short_position_ratio(
+        self,
+        symbol: str,
+        *,
+        period: str = "1h",
+        since: int | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Top Trader Long/Short Position Ratio 조회 (Binance-specific).
+
+        Args:
+            symbol: Spot 심볼 (예: "BTC/USDT")
+            period: 기간
+            since: 시작 시각 (Unix ms)
+            limit: 최대 건수
+
+        Returns:
+            Top Trader Position Ratio 레코드 리스트
+        """
+        bare_symbol = symbol.replace("/", "").replace(":USDT", "")
+
+        async def _do_fetch() -> list[dict[str, Any]]:
+            params: dict[str, Any] = {
+                "symbol": bare_symbol,
+                "period": period,
+                "limit": limit,
+            }
+            if since is not None:
+                params["startTime"] = since
+            result: list[
+                dict[str, Any]
+            ] = await self.exchange.fapidata_get_toplongshortpositionratio(params)  # type: ignore[assignment,attr-defined]
             return result
 
         return await self._retry_with_backoff(_do_fetch)

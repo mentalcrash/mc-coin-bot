@@ -70,11 +70,11 @@ class LiveDataFeed:
         client: BinanceClient,
         staleness_timeout: float = _DEFAULT_STALENESS_TIMEOUT,
         ws_status_callback: WsStatusCallback | None = None,
+        target_timeframes: set[str] | None = None,
     ) -> None:
         self._symbols = symbols
         self._target_tf = target_timeframe
         self._client = client
-        self._aggregator = CandleAggregator(target_timeframe)
         self._bars_emitted: int = 0
         self._shutdown_event = asyncio.Event()
         # Staleness detection
@@ -85,6 +85,16 @@ class LiveDataFeed:
         self._ws_callback = ws_status_callback
         # EventBus 참조 (stale alert 발행용, start() 시 설정)
         self._bus: EventBus | None = None
+
+        # Multi-TF aggregator
+        from src.eda.candle_aggregator import MultiTimeframeCandleAggregator
+
+        self._multi_aggregator: MultiTimeframeCandleAggregator | None = None
+        if target_timeframes and len(target_timeframes) > 1:
+            self._multi_aggregator = MultiTimeframeCandleAggregator(target_timeframes)
+            self._aggregator: CandleAggregator | None = None
+        else:
+            self._aggregator = CandleAggregator(target_timeframe)
 
     async def start(self, bus: EventBus) -> None:
         """심볼별 WebSocket 스트림 시작. stop() 호출까지 실행."""
@@ -118,9 +128,14 @@ class LiveDataFeed:
             shutdown_task.cancel()
             staleness_task.cancel()
             # 미완성 캔들 flush
-            for completed in self._aggregator.flush_all():
-                await bus.publish(completed)
-                self._bars_emitted += 1
+            if self._multi_aggregator is not None:
+                for completed in self._multi_aggregator.flush_all():
+                    await bus.publish(completed)
+                    self._bars_emitted += 1
+            elif self._aggregator is not None:
+                for completed in self._aggregator.flush_all():
+                    await bus.publish(completed)
+                    self._bars_emitted += 1
 
     async def stop(self) -> None:
         """데이터 피드 중지."""
@@ -320,8 +335,16 @@ class LiveDataFeed:
         self._bars_emitted += 1
 
         # CandleAggregator 집계
-        completed = self._aggregator.on_1m_bar(bar_1m)
-        if completed is not None:
-            await bus.publish(completed)
-            self._bars_emitted += 1
-            await bus.flush()  # TF bar 완성 시 이벤트 체인 보장
+        if self._multi_aggregator is not None:
+            completed_list = self._multi_aggregator.on_1m_bar(bar_1m)
+            for completed in completed_list:
+                await bus.publish(completed)
+                self._bars_emitted += 1
+            if completed_list:
+                await bus.flush()
+        elif self._aggregator is not None:
+            completed = self._aggregator.on_1m_bar(bar_1m)
+            if completed is not None:
+                await bus.publish(completed)
+                self._bars_emitted += 1
+                await bus.flush()  # TF bar 완성 시 이벤트 체인 보장

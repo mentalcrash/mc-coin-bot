@@ -1,6 +1,6 @@
 """Gate 1 / Gate 3 runner logic for CLI integration.
 
-Gate 1: 5-coin x 6-year single-asset backtest
+Gate 1: 5-coin x 6-year single-asset backtest (심볼 간 병렬 지원)
 Gate 3: Parameter stability validation (plateau + +/-20%)
 """
 
@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -216,6 +217,28 @@ def _create_portfolio(strategy_name: str, capital: Decimal) -> Any:
 # Gate 1 Logic
 # =============================================================================
 
+_MAX_WORKERS = 4
+
+
+def _gate1_worker(
+    strategy_name: str,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    capital: Decimal,
+) -> dict[str, Any] | None:
+    """프로세스 풀 워커 — 단일 전략+심볼 백테스트 (pickling 가능).
+
+    프로세스별 새로운 Engine/Service 인스턴스 생성.
+    """
+    from src.backtest.engine import BacktestEngine
+    from src.data.service import MarketDataService
+
+    engine = BacktestEngine()
+    service = MarketDataService()
+    return _run_gate1_single(engine, service, strategy_name, symbol, timeframe, start, end, capital)
+
 
 def _run_gate1_single(
     engine: BacktestEngine,
@@ -331,6 +354,63 @@ def _update_yaml_g1(strategy_name: str, results: list[dict[str, Any]]) -> None:
     logger.info(f"  YAML updated: {strategy_name} G1 {verdict}")
 
 
+def _run_symbols_parallel(
+    sname: str,
+    symbols: list[str],
+    tf: str,
+    start: datetime,
+    end: datetime,
+    capital_dec: Decimal,
+    console: Console,
+) -> list[dict[str, Any]]:
+    """심볼 간 병렬 실행 (ProcessPoolExecutor)."""
+    results: list[dict[str, Any]] = []
+    n_workers = min(_MAX_WORKERS, len(symbols))
+    console.print(f"  [dim]Parallel mode: {n_workers} workers[/dim]")
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = {
+            pool.submit(_gate1_worker, sname, sym, tf, start, end, capital_dec): sym
+            for sym in symbols
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                entry = future.result()
+            except Exception:
+                logger.exception(f"  Worker failed: {sname} / {sym}")
+                continue
+            if entry:
+                results.append(entry)
+                msg = f"    {sym}: Sharpe={entry['sharpe_ratio']:.2f} CAGR={entry['cagr']:.1f}% MDD={entry['max_drawdown']:.1f}% Trades={entry['total_trades']}"
+                logger.info(msg)
+    return results
+
+
+def _run_symbols_sequential(
+    sname: str,
+    symbols: list[str],
+    tf: str,
+    start: datetime,
+    end: datetime,
+    capital_dec: Decimal,
+) -> list[dict[str, Any]]:
+    """심볼 간 순차 실행 (fallback)."""
+    from src.backtest.engine import BacktestEngine
+    from src.data.service import MarketDataService
+
+    results: list[dict[str, Any]] = []
+    engine = BacktestEngine()
+    service = MarketDataService()
+    for sym in symbols:
+        logger.info(f"  {sname} / {sym}")
+        entry = _run_gate1_single(engine, service, sname, sym, tf, start, end, capital_dec)
+        if entry:
+            results.append(entry)
+            msg = f"    Sharpe={entry['sharpe_ratio']:.2f} CAGR={entry['cagr']:.1f}% MDD={entry['max_drawdown']:.1f}% Trades={entry['total_trades']}"
+            logger.info(msg)
+    return results
+
+
 def run_gate1(
     strategies: list[str],
     symbols: list[str],
@@ -339,15 +419,16 @@ def run_gate1(
     capital: int,
     save_json: bool,
     console: Console,
+    *,
+    parallel: bool = True,
 ) -> None:
-    """Gate 1 전체 실행: 전략별 x 심볼별 백테스트 + Rich 출력 + YAML 업데이트."""
-    from src.backtest.engine import BacktestEngine
-    from src.data.service import MarketDataService
+    """Gate 1 전체 실행: 전략별 x 심볼별 백테스트 + Rich 출력 + YAML 업데이트.
 
+    Args:
+        parallel: True이면 심볼 간 ProcessPoolExecutor 병렬 실행.
+    """
     _RESULTS_DIR.mkdir(exist_ok=True)
 
-    engine = BacktestEngine()
-    service = MarketDataService()
     capital_dec = Decimal(capital)
     t0 = time.perf_counter()
     all_results: dict[str, list[dict[str, Any]]] = {}
@@ -355,14 +436,14 @@ def run_gate1(
     for sname in strategies:
         tf = resolve_timeframe(sname)
         console.rule(f"[bold]{sname}[/] (TF={tf})")
-        results: list[dict[str, Any]] = []
-        for sym in symbols:
-            logger.info(f"  {sname} / {sym}")
-            entry = _run_gate1_single(engine, service, sname, sym, tf, start, end, capital_dec)
-            if entry:
-                results.append(entry)
-                msg = f"    Sharpe={entry['sharpe_ratio']:.2f} CAGR={entry['cagr']:.1f}% MDD={entry['max_drawdown']:.1f}% Trades={entry['total_trades']}"
-                logger.info(msg)
+
+        if parallel and len(symbols) > 1:
+            results = _run_symbols_parallel(
+                sname, symbols, tf, start, end, capital_dec, console
+            )
+        else:
+            results = _run_symbols_sequential(sname, symbols, tf, start, end, capital_dec)
+
         all_results[sname] = results
 
     elapsed = time.perf_counter() - t0

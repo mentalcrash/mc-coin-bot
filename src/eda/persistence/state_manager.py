@@ -66,6 +66,7 @@ class StateManager:
             "order_counter": pm.order_counter,
             "last_target_weights": pm.last_target_weights,
             "last_executed_targets": pm.last_executed_targets,
+            "peak_equity": pm.peak_equity,
         }
         await self._save_key(_KEY_PM_STATE, json.dumps(state))
 

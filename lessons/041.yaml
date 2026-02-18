@@ -1,0 +1,20 @@
+id: 41
+title: On-chain (Stablecoin supply) 4H 전략의 구조적 한계 — daily resolution 데이터의 4H TF 시그널
+  과민
+body: Stablecoin 유통량(일 해상도)을 4H TF에 forward-fill 후 z-score/pct_change → 4H 빈도 시그널
+  전환은 구조적 과매매(300-440 trades). daily 데이터의 실질적 변화는 일 단위인데 4H bar마다 포지션 조정하면 거래비용이 edge를
+  잠식한다. FR+Stablecoin 결합(fr-stab-conf)도 Best Sharpe 0.42, Stablecoin 모멘텀(stab-mom-trend)도
+  Best Sharpe 0.55로 G1 기준(1.0) 크게 미달. on-chain 데이터를 활용하려면 1D 이상 TF + 앙상블 내 보조 시그널로
+  편입을 권장한다.
+category: strategy-design
+tags:
+- on-chain
+- stablecoin
+- 4H
+- daily-resolution
+strategies:
+- fr-stab-conf
+- stab-mom-trend
+timeframes:
+- 4H
+added_at: '2026-02-18'

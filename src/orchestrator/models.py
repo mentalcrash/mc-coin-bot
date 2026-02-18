@@ -48,6 +48,22 @@ class AllocationMethod(StrEnum):
     INVERSE_VOLATILITY = "inverse_volatility"
 
 
+class AssetAllocationMethod(StrEnum):
+    """Pod 내 에셋 배분 방법.
+
+    Attributes:
+        EQUAL_WEIGHT: 동일 비중 배분
+        INVERSE_VOLATILITY: 변동성 역비례 배분
+        RISK_PARITY: 리스크 기여도 균등 배분
+        SIGNAL_WEIGHTED: 신호 강도에 비례 배분
+    """
+
+    EQUAL_WEIGHT = "equal_weight"
+    INVERSE_VOLATILITY = "inverse_volatility"
+    RISK_PARITY = "risk_parity"
+    SIGNAL_WEIGHTED = "signal_weighted"
+
+
 class RebalanceTrigger(StrEnum):
     """리밸런싱 트리거 유형.
 

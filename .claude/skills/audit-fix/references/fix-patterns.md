@@ -9,11 +9,13 @@
 Production 코드에서 `assert`는 `-O` 플래그로 비활성화되어 crash risk.
 
 **Before**:
+
 ```python
 assert position.size > 0, "Position size must be positive"
 ```
 
 **After**:
+
 ```python
 if position.size <= 0:
     msg = f"Position size must be positive, got {position.size}"
@@ -25,6 +27,7 @@ if position.size <= 0:
 음수 잔고 방지.
 
 **Pattern**:
+
 ```python
 if self._cash < order_cost:
     msg = f"Insufficient cash: {self._cash} < {order_cost}"
@@ -36,6 +39,7 @@ if self._cash < order_cost:
 OMS/CB 상태가 메모리에만 존재하면 재시작 시 유실.
 
 **Pattern**: SQLite 또는 YAML 파일에 상태 저장.
+
 ```python
 def _persist_state(self) -> None:
     """Persist critical state to disk."""
@@ -54,11 +58,13 @@ def _persist_state(self) -> None:
 금융 계산에서 float 대신 Decimal 사용.
 
 **Before**:
+
 ```python
 fee = price * quantity * 0.001
 ```
 
 **After**:
+
 ```python
 from decimal import Decimal
 fee = Decimal(str(price)) * Decimal(str(quantity)) * Decimal("0.001")
@@ -69,6 +75,7 @@ fee = Decimal(str(price)) * Decimal(str(quantity)) * Decimal("0.001")
 API 호출 빈도 제한.
 
 **Pattern**:
+
 ```python
 async def _retry_with_backoff(self, coro, max_retries: int = 3):
     for attempt in range(max_retries):
@@ -96,6 +103,7 @@ async def _retry_with_backoff(self, coro, max_retries: int = 3):
 하위 레이어가 상위 레이어를 import하면 위반.
 
 **수정**: Protocol/Port 패턴으로 의존성 역전.
+
 ```python
 # core/ports.py
 class DataFeedPort(Protocol):
@@ -111,9 +119,10 @@ def __init__(self, data_feed: DataFeedPort): ...
 순환 import 해소.
 
 **수정 방법**:
+
 1. TYPE_CHECKING 블록으로 이동 (타입 힌트 전용)
-2. 공통 모듈 추출 (양쪽이 사용하는 것을 별도 모듈로)
-3. Protocol 패턴 (인터페이스 분리)
+1. 공통 모듈 추출 (양쪽이 사용하는 것을 별도 모듈로)
+1. Protocol 패턴 (인터페이스 분리)
 
 ---
 
@@ -124,19 +133,22 @@ def __init__(self, data_feed: DataFeedPort): ...
 `# noqa` 주석을 제거하고 근본 원인 수정.
 
 **단계**:
+
 1. noqa가 억제하는 규칙 확인
-2. 해당 규칙 위반의 근본 원인 파악
-3. 코드 수정으로 해결 (noqa 없이도 통과하도록)
+1. 해당 규칙 위반의 근본 원인 파악
+1. 코드 수정으로 해결 (noqa 없이도 통과하도록)
 
 ### CQ-2: Magic Number → Named Constant
 
 **Before**:
+
 ```python
 if drawdown > 0.05:
     self._trigger_circuit_breaker()
 ```
 
 **After**:
+
 ```python
 _SYSTEM_STOP_LOSS_PCT = 0.05
 
@@ -147,6 +159,7 @@ if drawdown > _SYSTEM_STOP_LOSS_PCT:
 ### CQ-3: Bare Except → Specific Exception
 
 **Before**:
+
 ```python
 try:
     result = await exchange.create_order(...)
@@ -155,6 +168,7 @@ except:
 ```
 
 **After**:
+
 ```python
 try:
     result = await exchange.create_order(...)
@@ -168,6 +182,7 @@ except (ccxt.NetworkError, ccxt.ExchangeError) as e:
 `# type: ignore` 제거하고 올바른 타입 힌트 추가.
 
 **패턴**:
+
 - pandas `100 * Series` → `pd.Series` annotation + 필요시 정당 사유 유지
 - Union type 미지원 → `|` 연산자 사용 (Python 3.10+)
 
@@ -180,6 +195,7 @@ except (ccxt.NetworkError, ccxt.ExchangeError) as e:
 데이터 갭 탐지 + 보간.
 
 **Pattern**:
+
 ```python
 def detect_gaps(df: pd.DataFrame, freq: str = "1min") -> pd.DatetimeIndex:
     expected = pd.date_range(df.index[0], df.index[-1], freq=freq)
@@ -191,6 +207,7 @@ def detect_gaps(df: pd.DataFrame, freq: str = "1min") -> pd.DatetimeIndex:
 모든 timestamp를 UTC로 통일.
 
 **Pattern**:
+
 ```python
 df.index = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_convert("UTC")
 ```
@@ -204,6 +221,7 @@ df.index = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_c
 누락된 테스트 추가.
 
 **원칙**:
+
 - 기존 테스트 파일에 추가 (새 파일 최소화)
 - 기존 fixture 재사용
 - AAA 패턴 (Arrange-Act-Assert)
@@ -214,9 +232,10 @@ df.index = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_c
 커버리지 부족 모듈에 테스트 추가.
 
 **단계**:
+
 1. `pytest --cov=src/{module} --cov-report=term-missing` 실행
-2. Missing lines 확인
-3. 해당 브랜치/경로를 커버하는 테스트 작성
+1. Missing lines 확인
+1. 해당 브랜치/경로를 커버하는 테스트 작성
 
 ---
 
@@ -227,6 +246,7 @@ df.index = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_c
 for 루프를 벡터화 연산으로 변환.
 
 **Before**:
+
 ```python
 for i in range(len(df)):
     if df.iloc[i]["rsi"] > 70:
@@ -234,6 +254,7 @@ for i in range(len(df)):
 ```
 
 **After**:
+
 ```python
 signals = np.where(df["rsi"] > 70, -1, 0)
 ```
@@ -241,12 +262,14 @@ signals = np.where(df["rsi"] > 70, -1, 0)
 ### PERF-2: iterrows → Vectorized
 
 **Before**:
+
 ```python
 for idx, row in df.iterrows():
     result.append(row["close"] * row["weight"])
 ```
 
 **After**:
+
 ```python
 result = df["close"] * df["weight"]
 ```

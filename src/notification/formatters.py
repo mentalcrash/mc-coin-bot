@@ -251,6 +251,7 @@ def format_daily_report_embed(
             {"name": "Open Positions", "value": str(open_positions), "inline": True},
             {"name": "Sharpe Ratio", "value": f"{metrics.sharpe_ratio:.2f}", "inline": True},
         ],
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
 
@@ -284,6 +285,7 @@ def format_weekly_report_embed(
             {"name": "Best Trade", "value": f"${best:+,.2f}", "inline": True},
             {"name": "Worst Trade", "value": f"${worst:+,.2f}", "inline": True},
         ],
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
 

@@ -35,6 +35,7 @@ from rich.progress import (
 from rich.table import Table
 
 from src.config.settings import get_settings
+from src.config.universe import ALL_SYMBOLS, TIER1_SYMBOLS, TIER2_SYMBOLS
 from src.core.logger import setup_logger
 from src.data.derivatives_fetcher import DerivativesFetcher
 from src.data.derivatives_storage import DerivativesBronzeStorage, DerivativesSilverProcessor
@@ -50,7 +51,7 @@ app = typer.Typer(
 )
 
 
-async def _fetch_bronze_deriv(symbol: str, years: list[int]) -> None:
+async def _fetch_bronze_deriv(symbol: str, years: list[int], *, fr_only: bool = False) -> None:
     """Bronze 파생상품 데이터 수집."""
     settings = get_settings()
     settings.ensure_directories()
@@ -60,8 +61,11 @@ async def _fetch_bronze_deriv(symbol: str, years: list[int]) -> None:
         bronze = DerivativesBronzeStorage(settings)
 
         for year in years:
-            console.print(f"\n[bold blue]Fetching derivatives {symbol} {year}...[/bold blue]")
-            batch = await fetcher.fetch_year(symbol, year)
+            mode_label = " (FR only)" if fr_only else ""
+            console.print(
+                f"\n[bold blue]Fetching derivatives {symbol} {year}{mode_label}...[/bold blue]"
+            )
+            batch = await fetcher.fetch_year(symbol, year, fr_only=fr_only)
 
             if batch.is_empty:
                 console.print(f"[yellow]No derivatives data for {symbol} {year}[/yellow]")
@@ -280,6 +284,8 @@ async def _batch_download(
     years: list[int],
     skip_existing: bool,
     progress: Progress,
+    *,
+    fr_only: bool = False,
 ) -> _BatchResult:
     """멀티 심볼/연도 derivatives 배치 다운로드.
 
@@ -320,7 +326,7 @@ async def _batch_download(
                         task_id,
                         description=f"[blue]Fetching[/blue] {symbol} {year}",
                     )
-                    batch = await fetcher.fetch_year(symbol, year)
+                    batch = await fetcher.fetch_year(symbol, year, fr_only=fr_only)
 
                     if batch.is_empty:
                         result.skipped.append(task_key)
@@ -398,6 +404,21 @@ def _display_batch_result(result: _BatchResult) -> None:
         console.print(fail_table)
 
 
+_TIER_1 = 1
+_TIER_2 = 2
+
+
+def _resolve_symbols(tier: int, symbols_override: str) -> list[str]:
+    """tier 옵션과 symbols 오버라이드로 최종 심볼 목록 결정."""
+    if symbols_override:
+        return [s.strip() for s in symbols_override.split(",") if s.strip()]
+    if tier == _TIER_1:
+        return list(TIER1_SYMBOLS)
+    if tier == _TIER_2:
+        return list(TIER2_SYMBOLS)
+    return list(ALL_SYMBOLS)
+
+
 @app.command()
 def batch(
     symbols: Annotated[
@@ -405,13 +426,28 @@ def batch(
         typer.Option(
             "--symbols",
             "-s",
-            help="Comma-separated symbols (e.g., BTC/USDT,ETH/USDT)",
+            help="Comma-separated symbols (overrides --tier)",
         ),
-    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT,LINK/USDT,ADA/USDT,AVAX/USDT",
+    ] = "",
+    tier: Annotated[
+        int,
+        typer.Option(
+            "--tier",
+            "-t",
+            help="Asset tier (0=all 16, 1=Tier1 8, 2=Tier2 8)",
+        ),
+    ] = 0,
+    fr_only: Annotated[
+        bool,
+        typer.Option(
+            "--fr-only",
+            help="Fetch Funding Rate only (skip OI/LS/Taker — for Tier 2)",
+        ),
+    ] = False,
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s) to fetch (can specify multiple)"),
-    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    ] = [2020, 2021, 2022, 2023, 2024, 2025, 2026],  # noqa: B006
     skip_existing: Annotated[
         bool,
         typer.Option(
@@ -431,11 +467,17 @@ def batch(
     """Batch download derivatives data for multiple symbols and years.
 
     Runs full Bronze -> Silver pipeline for each symbol/year combination.
-    Default symbols: 8 Tier-1/2 assets. Default years: 2020-2025.
+    Default: 16 assets (Tier1+2). Default years: 2020-2026.
 
     Example:
-        # Download all 8 assets for 2020-2025 (skip existing)
+        # Download all 16 assets for 2020-2026 (skip existing)
         uv run mcbot ingest derivatives batch
+
+        # Tier 1 only — full 6-type derivatives, 2026
+        uv run mcbot ingest derivatives batch --tier 1 -y 2026
+
+        # Tier 2 only — Funding Rate only
+        uv run mcbot ingest derivatives batch --tier 2 --fr-only
 
         # Specific symbols and years
         uv run mcbot ingest derivatives batch -s BTC/USDT,ETH/USDT -y 2024 -y 2025
@@ -449,13 +491,20 @@ def batch(
     settings = get_settings()
     setup_logger(log_dir=settings.log_dir, console_level="DEBUG" if verbose else "INFO")
 
-    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    symbol_list = _resolve_symbols(tier, symbols)
     total_tasks = len(symbol_list) * len(year)
 
     # Header
+    tier_label = f"Tier {tier}" if tier > 0 else "All"
+    fr_label = " (FR only)" if fr_only else ""
     sym_str = ", ".join(symbol_list)
     yr_str = ", ".join(map(str, year))
-    header_body = f"[bold]Derivatives Batch Download[/bold]\nSymbols: {sym_str} ({len(symbol_list)})\nYears: {yr_str}\nTotal tasks: {total_tasks}\nSkip existing: {skip_existing}"
+    header_body = (
+        f"[bold]Derivatives Batch Download[/bold]\n"
+        f"Tier: {tier_label}{fr_label}\n"
+        f"Symbols: {sym_str} ({len(symbol_list)})\n"
+        f"Years: {yr_str}\nTotal tasks: {total_tasks}\nSkip existing: {skip_existing}"
+    )
     console.print(
         Panel.fit(
             header_body,
@@ -506,6 +555,7 @@ def batch(
                 years=year,
                 skip_existing=skip_existing,
                 progress=progress,
+                fr_only=fr_only,
             )
         )
 

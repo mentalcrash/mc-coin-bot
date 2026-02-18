@@ -28,8 +28,12 @@ if TYPE_CHECKING:
 
 _KEY_STATE = "orchestrator_state"
 _KEY_DAILY_RETURNS = "orchestrator_daily_returns"
+_KEY_HISTORIES = "orchestrator_histories"
 _STATE_VERSION = 1
 _MAX_DAILY_RETURNS = 270
+_MAX_ALLOCATION_HISTORY = 500
+_MAX_LIFECYCLE_EVENTS = 100
+_MAX_RISK_HISTORY = 500
 
 
 class OrchestratorStatePersistence:
@@ -76,14 +80,40 @@ class OrchestratorStatePersistence:
             "lifecycle": lifecycle_data,
         }
 
+        # 3. Histories (allocation, lifecycle, risk contributions)
+        histories_payload = self._build_histories_payload(orchestrator)
+
         await self._save_keys_atomic(
             [
                 (_KEY_STATE, json.dumps(state_payload)),
                 (_KEY_DAILY_RETURNS, json.dumps(daily_returns_data)),
+                (_KEY_HISTORIES, json.dumps(histories_payload, default=str)),
             ]
         )
 
         logger.debug("Orchestrator state saved: {} pods", len(pods_data))
+
+    def _build_histories_payload(
+        self, orchestrator: StrategyOrchestrator
+    ) -> dict[str, list[dict[str, object]]]:
+        """Build trimmed histories payload for persistence."""
+        alloc = list(orchestrator.allocation_history)
+        if len(alloc) > _MAX_ALLOCATION_HISTORY:
+            alloc = alloc[-_MAX_ALLOCATION_HISTORY:]
+
+        lifecycle = list(orchestrator.lifecycle_events)
+        if len(lifecycle) > _MAX_LIFECYCLE_EVENTS:
+            lifecycle = lifecycle[-_MAX_LIFECYCLE_EVENTS:]
+
+        risk = list(orchestrator.risk_contributions_history)
+        if len(risk) > _MAX_RISK_HISTORY:
+            risk = risk[-_MAX_RISK_HISTORY:]
+
+        return {
+            "allocation_history": alloc,
+            "lifecycle_events": lifecycle,
+            "risk_contributions_history": risk,
+        }
 
     # ── Restore ───────────────────────────────────────────────────
 
@@ -115,6 +145,9 @@ class OrchestratorStatePersistence:
 
         # Restore daily_returns
         await self._restore_daily_returns(orchestrator)
+
+        # Restore histories
+        await self._restore_histories(orchestrator)
 
         logger.info("Orchestrator state restored successfully")
         return True
@@ -213,6 +246,34 @@ class OrchestratorStatePersistence:
                 pod_returns = pod_returns[-_MAX_DAILY_RETURNS:]
 
             pod.restore_daily_returns([float(r) for r in pod_returns])
+
+    async def _restore_histories(
+        self,
+        orchestrator: StrategyOrchestrator,
+    ) -> None:
+        """Restore allocation/lifecycle/risk histories from separate key."""
+        raw = await self._load_key(_KEY_HISTORIES)
+        if raw is None:
+            return
+
+        try:
+            data: Any = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Orchestrator histories: corrupted JSON — skipped")
+            return
+
+        if not isinstance(data, dict):
+            return
+
+        alloc = data.get("allocation_history")
+        lifecycle = data.get("lifecycle_events")
+        risk = data.get("risk_contributions_history")
+
+        orchestrator.restore_histories(
+            allocation_history=alloc if isinstance(alloc, list) else [],
+            lifecycle_events=lifecycle if isinstance(lifecycle, list) else [],
+            risk_contributions_history=risk if isinstance(risk, list) else [],
+        )
 
     # ── Internal ─────────────────────────────────────────────────
 

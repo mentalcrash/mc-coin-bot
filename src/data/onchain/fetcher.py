@@ -4,7 +4,7 @@ Fetches:
 - DeFiLlama stablecoin supply: total, chain, individual
 - DeFiLlama TVL: total, per-chain historical
 - DeFiLlama DEX volume: daily aggregate
-- Coin Metrics Community API: MVRV, RealCap, NVTAdj90 등
+- Coin Metrics Community API: MVRV, MarketCap, Exchange Flows 등 (12 metrics)
 
 Rules Applied:
     - #23 Exception Handling: Domain-driven hierarchy
@@ -32,16 +32,33 @@ FEAR_GREED_URL = "https://api.alternative.me/fng/"
 # Coin Metrics Community API
 COINMETRICS_BASE_URL = "https://community-api.coinmetrics.io/v4"
 CM_METRICS = [
-    "MVRV",
-    "RealCap",
     "AdrActCnt",
-    "TxTfrValAdjUSD",
-    "TxTfrValMeanUSD",
-    "TxTfrValMedUSD",
     "TxCnt",
-    "NVTAdj90",
-    "VtyRet30d",
+    "CapMVRVCur",
+    "CapMrktCurUSD",
+    "FlowInExUSD",
+    "FlowOutExUSD",
+    "TxTfrCnt",
+    "ROI30d",
+    "HashRate",
+    "SplyCur",
+    "IssTotUSD",
+    "BlkCnt",
 ]
+
+# API column → clean oc_* name mapping (for columns that need renaming)
+CM_RENAME_MAP: dict[str, str] = {
+    "CapMVRVCur": "oc_mvrv",
+    "CapMrktCurUSD": "oc_mktcap_usd",
+    "FlowInExUSD": "oc_flow_in_ex_usd",
+    "FlowOutExUSD": "oc_flow_out_ex_usd",
+    "TxTfrCnt": "oc_txtfrcnt",
+    "ROI30d": "oc_roi_30d",
+    "HashRate": "oc_cm_hashrate",
+    "SplyCur": "oc_supply",
+    "IssTotUSD": "oc_issuance_usd",
+    "BlkCnt": "oc_blkcnt",
+}
 CM_ASSETS = ["btc", "eth"]
 CM_PAGE_SIZE = 10000
 
@@ -50,7 +67,7 @@ BLOCKCHAIN_API_URL = "https://api.blockchain.info/charts"
 BC_CHARTS = ["hash-rate", "miners-revenue", "transaction-fees-usd"]
 
 # Etherscan API
-ETHERSCAN_API_URL = "https://api.etherscan.io/api"
+ETHERSCAN_API_URL = "https://api.etherscan.io/v2/api"
 WEI_PER_ETH = Decimal(1000000000000000000)
 
 # mempool.space API
@@ -249,7 +266,7 @@ class OnchainFetcher:
             end: 종료 날짜 (ISO 8601, 빈 문자열이면 생략)
 
         Returns:
-            DataFrame [time, asset, MVRV, RealCap, ...] — flat 구조
+            DataFrame [time, asset, CapMVRVCur, CapMrktCurUSD, ...] — flat 구조
         """
         if metrics is None:
             metrics = CM_METRICS
@@ -496,7 +513,7 @@ class OnchainFetcher:
             return pd.DataFrame(columns=columns)
 
         url = ETHERSCAN_API_URL
-        params = {"module": "stats", "action": "ethsupply2", "apikey": api_key}
+        params = {"chainid": "1", "module": "stats", "action": "ethsupply2", "apikey": api_key}
         logger.info(f"Fetching ETH supply from {url}")
 
         response = await self._client.get(url, params=params)

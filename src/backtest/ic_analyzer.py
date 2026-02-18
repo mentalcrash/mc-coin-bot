@@ -49,6 +49,26 @@ class ICResult:
     verdict: ICVerdict
 
 
+@dataclass(frozen=True)
+class ICBatchEntry:
+    """IC batch 개별 결과."""
+
+    indicator_name: str
+    result: ICResult | None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class ICBatchResult:
+    """IC batch 전체 결과."""
+
+    entries: list[ICBatchEntry]
+    total: int
+    passed: int
+    failed: int
+    skipped: int
+
+
 class ICAnalyzer:
     """Information Coefficient 분석기.
 

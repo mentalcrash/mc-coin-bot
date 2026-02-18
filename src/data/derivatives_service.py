@@ -27,6 +27,8 @@ DEFAULT_DERIV_COLUMNS = [
     "open_interest",
     "ls_ratio",
     "taker_ratio",
+    "top_acct_ls_ratio",
+    "top_pos_ls_ratio",
 ]
 
 

@@ -804,3 +804,200 @@ class TestMediumFixes:
         assert round(3.5) == 4  # int(3.5) == 3
         assert round(2.3) == 2
         assert round(2.7) == 3
+
+
+# ── TestRiskDefenseGradualRecovery ─────────────────────────────
+
+
+class TestRiskDefenseGradualRecovery:
+    """Step 2: Risk Defense 점진 복구 테스트."""
+
+    def _make_orch_with_risk(
+        self,
+        recovery_steps: int = 3,
+    ) -> StrategyOrchestrator:
+        """RiskAggregator 포함 orchestrator (매우 느슨한 한도)."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            rebalance_calendar_days=1,
+            risk_recovery_steps=recovery_steps,
+            max_gross_leverage=20.0,
+            max_single_pod_risk_pct=0.99,
+            max_portfolio_drawdown=0.99,
+            daily_loss_limit=0.99,
+        )
+        allocator = CapitalAllocator(config)
+        ra = RiskAggregator(config)
+        return StrategyOrchestrator(config, [pod_a, pod_b], allocator, risk_aggregator=ra)
+
+    def test_risk_defense_gradual_recovery_3_steps(self) -> None:
+        """위기 해제 후 3단계 점진 복원 (1/3 → 2/3 → 3/3)."""
+        orch = self._make_orch_with_risk(recovery_steps=3)
+
+        import pandas as pd
+
+        pod_returns = pd.DataFrame(
+            {"pod-a": [0.001] * 60, "pod-b": [0.001] * 60},
+        )
+
+        # 위기 상태 설정
+        orch._risk_breached = True
+        orch._risk_recovery_step = 0
+
+        # 위기 해제 → step 1 시작 (no critical alerts from safe returns)
+        orch._check_risk_limits(pod_returns)
+        assert not orch._risk_breached
+        assert orch._risk_recovery_step == 1
+
+        # step 2
+        orch._check_risk_limits(pod_returns)
+        assert orch._risk_recovery_step == 2
+
+        # step 3
+        orch._check_risk_limits(pod_returns)
+        assert orch._risk_recovery_step == 3
+
+        # step 4 → 완료 (0으로 리셋)
+        orch._check_risk_limits(pod_returns)
+        assert orch._risk_recovery_step == 0
+
+    def test_risk_recovery_interrupted_by_new_breach(self) -> None:
+        """복원 중 재위기 → 리셋."""
+        from src.orchestrator.models import RiskAlert
+
+        orch = self._make_orch_with_risk(recovery_steps=3)  # aggregator doesn't matter here
+
+        # 복원 중 상태
+        orch._risk_breached = False
+        orch._risk_recovery_step = 2
+
+        # 재위기 강제 발동
+        alerts = [
+            RiskAlert(
+                alert_type="gross_leverage",
+                severity="critical",
+                message="test",
+                current_value=10.0,
+                threshold=3.0,
+            )
+        ]
+        orch._apply_risk_defense(alerts)
+        assert orch._risk_breached is True
+        assert orch._risk_recovery_step == 0  # 리셋됨
+
+    def test_risk_recovery_step_persisted(self) -> None:
+        """to_dict/restore_from_dict 왕복 보존."""
+        orch = self._make_orch_with_risk()
+        orch._risk_breached = True
+        orch._risk_recovery_step = 2
+
+        data = orch.to_dict()
+        orch2 = self._make_orch_with_risk()
+        orch2.restore_from_dict(data)
+
+        assert orch2._risk_breached is True
+        assert orch2._risk_recovery_step == 2
+
+    def test_risk_recovery_steps_1_instant_restore(self) -> None:
+        """recovery_steps=1 → 즉시 복원 (하위 호환)."""
+        orch = self._make_orch_with_risk(recovery_steps=1)
+        orch._risk_breached = True
+
+        import pandas as pd
+
+        pod_returns = pd.DataFrame(
+            {"pod-a": [0.001] * 60, "pod-b": [0.001] * 60},
+        )
+
+        # 위기 해제 → step 1
+        orch._check_risk_limits(pod_returns)
+        assert orch._risk_recovery_step == 1
+
+        # step 2 → 1 > 1 → 즉시 완료
+        orch._check_risk_limits(pod_returns)
+        assert orch._risk_recovery_step == 0
+
+
+# ── TestRebalanceTurnoverFilter ────────────────────────────────
+
+
+class TestRebalanceTurnoverFilter:
+    """Step 3: Rebalance 최소 턴오버 필터 테스트."""
+
+    def test_rebalance_skipped_low_turnover(self) -> None:
+        """drift < min_rebalance_turnover → 스킵."""
+        # PRODUCTION + max_fraction=0.40 → EW 0.5/0.5 → clamp 0.40/0.40
+        # capital_fraction=0.40 이면 turnover = 0 < 0.10 → 스킵
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.40, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.40, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            min_rebalance_turnover=0.10,  # 높은 임계값
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        # 충분한 수익률 기록 (EW → 0.5/0.5 → clamp 0.40/0.40 → 현재와 동일)
+        for _ in range(10):
+            pod_a.record_daily_return(0.01)
+            pod_b.record_daily_return(0.01)
+
+        original_a = pod_a.capital_fraction
+        original_b = pod_b.capital_fraction
+
+        orch._execute_rebalance()
+
+        # turnover = 0 < 0.10 → 스킵됨 → fraction 변경 없음
+        assert pod_a.capital_fraction == pytest.approx(original_a)
+        assert pod_b.capital_fraction == pytest.approx(original_b)
+
+    def test_rebalance_proceeds_high_turnover(self) -> None:
+        """drift > min_rebalance_turnover → 실행."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.8, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.2, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            min_rebalance_turnover=0.02,  # 낮은 임계값
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        for _ in range(5):
+            pod_a.record_daily_return(0.01)
+            pod_b.record_daily_return(0.01)
+
+        orch._execute_rebalance()
+
+        # EW → 0.5/0.5 → PRODUCTION clamp → 0.40/0.40
+        # turnover = |0.8-0.4| + |0.2-0.4| = 0.6 > 0.02 → 실행
+        total = pod_a.capital_fraction + pod_b.capital_fraction
+        assert total <= 1.0 + 1e-6
+
+    def test_rebalance_turnover_zero_disables(self) -> None:
+        """min_rebalance_turnover=0.0 → 항상 실행."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            min_rebalance_turnover=0.0,
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        pod_a.record_daily_return(0.01)
+        pod_b.record_daily_return(0.01)
+
+        # min_rebalance_turnover=0.0 → 턴오버가 0이상이면 항상 실행
+        orch._execute_rebalance()
+        assert len(orch._allocation_history) == 1

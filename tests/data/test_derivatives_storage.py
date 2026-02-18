@@ -19,6 +19,8 @@ from src.models.derivatives import (
     LongShortRatioRecord,
     OpenInterestRecord,
     TakerRatioRecord,
+    TopTraderAccountRatioRecord,
+    TopTraderPositionRatioRecord,
 )
 
 
@@ -66,6 +68,24 @@ def _make_batch(symbol: str = "BTC/USDT") -> DerivativesBatch:
                 buy_vol=Decimal(1000),
                 sell_vol=Decimal(800),
                 buy_sell_ratio=Decimal("1.25"),
+            ),
+        ),
+        top_acct_ratios=(
+            TopTraderAccountRatioRecord(
+                symbol=symbol,
+                timestamp=ts1,
+                long_account=Decimal("0.60"),
+                short_account=Decimal("0.40"),
+                long_short_ratio=Decimal("1.50"),
+            ),
+        ),
+        top_pos_ratios=(
+            TopTraderPositionRatioRecord(
+                symbol=symbol,
+                timestamp=ts1,
+                long_account=Decimal("0.65"),
+                short_account=Decimal("0.35"),
+                long_short_ratio=Decimal("1.86"),
             ),
         ),
     )
@@ -217,6 +237,29 @@ class TestDerivativesSilverProcessor:
         # forward-fill 적용 후 첫 행 이후에는 funding_rate NaN이 줄어야 함
         # (첫 행은 bfill 미적용이므로 NaN 가능)
         assert df is not None
+
+    def test_backward_compat_missing_top_trader_cols(self, tmp_path) -> None:
+        """기존 parquet 로드 시 새 top trader 컬럼은 NaN (하위호환)."""
+        settings = IngestionSettings(bronze_dir=tmp_path / "bronze", silver_dir=tmp_path / "silver")
+        bronze = DerivativesBronzeStorage(settings)
+
+        # top trader 없는 구 버전 배치
+        old_batch = DerivativesBatch(
+            symbol="BTC/USDT",
+            funding_rates=(
+                FundingRateRecord(
+                    symbol="BTC/USDT",
+                    timestamp=datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC),
+                    funding_rate=Decimal("0.0001"),
+                    mark_price=Decimal(42000),
+                ),
+            ),
+        )
+        bronze.save(old_batch, 2024)
+        df = bronze.load("BTC/USDT", 2024)
+        # 새 컬럼이 NaN으로 존재
+        assert "top_acct_ls_ratio" in df.columns
+        assert df["top_acct_ls_ratio"].isna().all()
 
     def test_load_missing_raises(self, tmp_path) -> None:
         settings = IngestionSettings(bronze_dir=tmp_path / "bronze", silver_dir=tmp_path / "silver")

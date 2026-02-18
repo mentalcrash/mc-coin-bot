@@ -33,6 +33,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | 근본적 아키텍처 결함. 레이어 붕괴. 모듈 재설계 필요 |
 
 **체크리스트**:
+
 - [ ] 의존성 방향 위반 검사 (`from src.cli` import in `src/eda` 등)
 - [ ] EventBus 이벤트 타입 결합도
 - [ ] Port/Protocol 패턴 준수 (ExecutorPort, DataFeedPort)
@@ -49,6 +50,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | 자금 손실 직접 위험. 방어 코드 부재. 즉시 수정 필수 |
 
 **체크리스트**:
+
 - [ ] `assert` 사용 in production code (src/eda, src/exchange)
 - [ ] OMS idempotency 보장 (restart 시 pending order 유실?)
 - [ ] Cash negative guard (음수 잔고 방지)
@@ -69,6 +71,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | lint/type 에러 다수. coverage 50% 미만. 코드 가독성 낮음 |
 
 **체크리스트**:
+
 - [ ] `ruff check .` — 0 errors
 - [ ] `pyright src/` — 0 errors
 - [ ] Coverage >= 80%
@@ -89,6 +92,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | 데이터 파이프라인 불안정. 잘못된 데이터로 백테스트 위험 |
 
 **체크리스트**:
+
 - [ ] Bronze -> Silver 파이프라인 동작
 - [ ] Gap detection/filling
 - [ ] Timezone 일관성 (UTC)
@@ -107,6 +111,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | 테스트 부실. CI 없음 또는 비활성 |
 
 **체크리스트**:
+
 - [ ] pytest 전체 통과
 - [ ] Coverage 수치
 - [ ] CI/CD 설정 존재 (GitHub Actions 등)
@@ -125,6 +130,7 @@ score -> grade 역변환: 가장 가까운 등급 선택.
 | D     | 성능 병목 다수. iterrows(). 대용량 처리 불가 |
 
 **체크리스트**:
+
 - [ ] `iterrows()` 사용 여부
 - [ ] `for i in range(len(df))` 사용 여부
 - [ ] Numba `@njit` 활용 여부

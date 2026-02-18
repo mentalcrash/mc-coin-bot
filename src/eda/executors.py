@@ -30,6 +30,7 @@ from src.logging.tracing import component_span_with_context
 
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager
+    from src.monitoring.metrics import LiveExecutorMetrics
     from src.portfolio.cost_model import CostModel
 
 
@@ -194,13 +195,22 @@ class LiveExecutor:
         futures_client: BinanceFuturesClient 인스턴스
     """
 
-    def __init__(self, futures_client: BinanceFuturesClient) -> None:
+    def __init__(
+        self,
+        futures_client: BinanceFuturesClient,
+        metrics: LiveExecutorMetrics | None = None,
+    ) -> None:
         self._client = futures_client
         self._pm: EDAPortfolioManager | None = None
+        self._metrics = metrics
 
     def set_pm(self, pm: EDAPortfolioManager) -> None:
         """PortfolioManager 참조 설정 (LiveRunner에서 호출)."""
         self._pm = pm
+
+    def set_metrics(self, metrics: LiveExecutorMetrics) -> None:
+        """메트릭 콜백 설정 (LiveRunner에서 호출)."""
+        self._metrics = metrics
 
     async def execute(self, order: OrderRequestEvent) -> FillEvent | None:
         """주문 실행.
@@ -228,6 +238,8 @@ class LiveExecutor:
                 self._client.consecutive_failures,
                 order.client_order_id,
             )
+            if self._metrics is not None:
+                self._metrics.on_api_blocked(order.symbol)
             return None
 
         futures_symbol = BinanceFuturesClient.to_futures_symbol(order.symbol)
@@ -363,6 +375,8 @@ class LiveExecutor:
                     min_notional,
                     order.symbol,
                 )
+                if self._metrics is not None:
+                    self._metrics.on_min_notional_skip(order.symbol)
                 return None
 
         if amount <= 0 or not math.isfinite(amount):
@@ -381,7 +395,7 @@ class LiveExecutor:
         # 주문 확인: status != "closed"면 fetch_order로 재확인
         result = await self._confirm_order(result, futures_symbol)
 
-        return self._parse_fill(order, result, amount)
+        return self._parse_fill(order, result, amount, metrics=self._metrics)
 
     async def _confirm_order(self, result: dict[str, Any], futures_symbol: str) -> dict[str, Any]:
         """주문 상태 확인 — closed가 아니면 0.5s 후 재확인."""
@@ -413,6 +427,7 @@ class LiveExecutor:
         order: OrderRequestEvent,
         result: dict[str, Any],
         requested_amount: float = 0.0,
+        metrics: LiveExecutorMetrics | None = None,
     ) -> FillEvent | None:
         """CCXT 응답에서 FillEvent 생성.
 
@@ -420,6 +435,7 @@ class LiveExecutor:
             order: 원본 주문 요청
             result: CCXT create_order 응답
             requested_amount: 요청한 수량 (partial fill 감지용)
+            metrics: LiveExecutor 메트릭 콜백 (선택)
 
         Returns:
             FillEvent 또는 파싱 실패 시 None
@@ -433,6 +449,8 @@ class LiveExecutor:
                 avg_price,
                 filled_qty,
             )
+            if metrics is not None:
+                metrics.on_fill_parse_failure(order.symbol)
             return None
 
         # Partial fill 감지
@@ -444,6 +462,8 @@ class LiveExecutor:
                 filled_qty,
                 filled_qty / requested_amount,
             )
+            if metrics is not None:
+                metrics.on_partial_fill(order.symbol)
 
         # 수수료 추출
         fee_info = result.get("fee")

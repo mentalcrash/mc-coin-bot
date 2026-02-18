@@ -89,6 +89,46 @@ class IngestionSettings(BaseSettings):
         default=SecretStr(""),
         description="Etherscan API Key (ETH supply 수집용, 무료 tier)",
     )
+    macro_bronze_dir: Path = Field(
+        default=Path("data/bronze/macro"),
+        description="Macro Bronze 데이터 저장 경로",
+    )
+    macro_silver_dir: Path = Field(
+        default=Path("data/silver/macro"),
+        description="Macro Silver 데이터 저장 경로",
+    )
+    fred_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="FRED API Key (Federal Reserve Economic Data)",
+    )
+    options_bronze_dir: Path = Field(
+        default=Path("data/bronze/options"),
+        description="Options Bronze 데이터 저장 경로",
+    )
+    options_silver_dir: Path = Field(
+        default=Path("data/silver/options"),
+        description="Options Silver 데이터 저장 경로",
+    )
+    deriv_ext_bronze_dir: Path = Field(
+        default=Path("data/bronze/deriv_ext"),
+        description="Extended Derivatives Bronze 데이터 저장 경로",
+    )
+    deriv_ext_silver_dir: Path = Field(
+        default=Path("data/silver/deriv_ext"),
+        description="Extended Derivatives Silver 데이터 저장 경로",
+    )
+    coinalyze_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="Coinalyze API Key (Extended Derivatives)",
+    )
+    coingecko_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="CoinGecko Demo API Key",
+    )
+    dune_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="Dune Analytics API Key (research only)",
+    )
 
     # ==========================================================================
     # API Rate Limiting
@@ -148,6 +188,12 @@ class IngestionSettings(BaseSettings):
         "log_dir",
         "onchain_bronze_dir",
         "onchain_silver_dir",
+        "macro_bronze_dir",
+        "macro_silver_dir",
+        "options_bronze_dir",
+        "options_silver_dir",
+        "deriv_ext_bronze_dir",
+        "deriv_ext_silver_dir",
         mode="before",
     )
     @classmethod
@@ -265,10 +311,92 @@ class IngestionSettings(BaseSettings):
         """
         return self.onchain_silver_dir / source / f"{name}.parquet"
 
+    def get_macro_bronze_path(self, source: str, name: str) -> Path:
+        """Macro Bronze Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (예: "fred")
+            name: 데이터 이름 (예: "dxy")
+
+        Returns:
+            Bronze Parquet 파일 경로
+
+        Example:
+            >>> settings.get_macro_bronze_path("fred", "dxy")
+            PosixPath('data/bronze/macro/fred/dxy.parquet')
+        """
+        return self.macro_bronze_dir / source / f"{name}.parquet"
+
+    def get_macro_silver_path(self, source: str, name: str) -> Path:
+        """Macro Silver Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (예: "fred")
+            name: 데이터 이름 (예: "dxy")
+
+        Returns:
+            Silver Parquet 파일 경로
+
+        Example:
+            >>> settings.get_macro_silver_path("fred", "dxy")
+            PosixPath('data/silver/macro/fred/dxy.parquet')
+        """
+        return self.macro_silver_dir / source / f"{name}.parquet"
+
+    def get_options_bronze_path(self, source: str, name: str) -> Path:
+        """Options Bronze Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (e.g., "deribit")
+            name: 데이터 이름 (e.g., "btc_dvol")
+
+        Returns:
+            Bronze Parquet 파일 경로
+
+        Example:
+            >>> settings.get_options_bronze_path("deribit", "btc_dvol")
+            PosixPath('data/bronze/options/deribit/btc_dvol.parquet')
+        """
+        return self.options_bronze_dir / source / f"{name}.parquet"
+
+    def get_options_silver_path(self, source: str, name: str) -> Path:
+        """Options Silver Parquet 파일 경로 생성.
+
+        Args:
+            source: 데이터 소스 (e.g., "deribit")
+            name: 데이터 이름 (e.g., "btc_dvol")
+
+        Returns:
+            Silver Parquet 파일 경로
+
+        Example:
+            >>> settings.get_options_silver_path("deribit", "btc_dvol")
+            PosixPath('data/silver/options/deribit/btc_dvol.parquet')
+        """
+        return self.options_silver_dir / source / f"{name}.parquet"
+
+    def get_deriv_ext_bronze_path(self, source: str, name: str) -> Path:
+        """Extended Derivatives Bronze Parquet 파일 경로 생성.
+
+        Example:
+            >>> settings.get_deriv_ext_bronze_path("coinalyze", "btc_agg_oi")
+            PosixPath('data/bronze/deriv_ext/coinalyze/btc_agg_oi.parquet')
+        """
+        return self.deriv_ext_bronze_dir / source / f"{name}.parquet"
+
+    def get_deriv_ext_silver_path(self, source: str, name: str) -> Path:
+        """Extended Derivatives Silver Parquet 파일 경로 생성.
+
+        Example:
+            >>> settings.get_deriv_ext_silver_path("coinalyze", "btc_agg_oi")
+            PosixPath('data/silver/deriv_ext/coinalyze/btc_agg_oi.parquet')
+        """
+        return self.deriv_ext_silver_dir / source / f"{name}.parquet"
+
     def ensure_directories(self) -> None:
         """필요한 디렉토리들을 생성.
 
-        Bronze, Silver, Log, On-chain 디렉토리를 생성합니다.
+        Bronze, Silver, Log, On-chain, Macro 디렉토리를 생성합니다.
         이미 존재하면 무시합니다.
         """
         self.bronze_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +404,12 @@ class IngestionSettings(BaseSettings):
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.onchain_bronze_dir.mkdir(parents=True, exist_ok=True)
         self.onchain_silver_dir.mkdir(parents=True, exist_ok=True)
+        self.macro_bronze_dir.mkdir(parents=True, exist_ok=True)
+        self.macro_silver_dir.mkdir(parents=True, exist_ok=True)
+        self.options_bronze_dir.mkdir(parents=True, exist_ok=True)
+        self.options_silver_dir.mkdir(parents=True, exist_ok=True)
+        self.deriv_ext_bronze_dir.mkdir(parents=True, exist_ok=True)
+        self.deriv_ext_silver_dir.mkdir(parents=True, exist_ok=True)
 
     def has_api_credentials(self) -> bool:
         """API 자격 증명이 설정되어 있는지 확인.

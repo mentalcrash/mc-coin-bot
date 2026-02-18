@@ -207,3 +207,76 @@ class TestVolIncremental:
 
         assert "BTC/USDT" in detector._buffers
         assert "ETH/USDT" in detector._buffers
+
+
+# ── Vectorized ↔ Incremental Parity ──
+
+
+class TestVectorizedIncrementalParity:
+    """classify_series() vs update() 결과 일치 검증."""
+
+    def test_probability_parity_trending(self) -> None:
+        """상승 추세에서 마지막 bar 확률 일치."""
+        cfg = VolStructureDetectorConfig()
+        vec_det = VolStructureDetector(cfg)
+        inc_det = VolStructureDetector(cfg)
+
+        closes = _make_trending_series(150)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det._buffers["TEST"].last_state
+        last_valid = vec_df.dropna(subset=["p_trending"])
+        if len(last_valid) > 0 and state is not None:
+            last_row = last_valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=1e-6
+            )
+            np.testing.assert_allclose(
+                state.probabilities["ranging"], last_row["p_ranging"], atol=1e-6
+            )
+            np.testing.assert_allclose(
+                state.probabilities["volatile"], last_row["p_volatile"], atol=1e-6
+            )
+
+    def test_probability_parity_ranging(self) -> None:
+        """횡보에서 마지막 bar 확률 일치."""
+        cfg = VolStructureDetectorConfig()
+        vec_det = VolStructureDetector(cfg)
+        inc_det = VolStructureDetector(cfg)
+
+        closes = _make_ranging_series(150)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det._buffers["TEST"].last_state
+        last_valid = vec_df.dropna(subset=["p_trending"])
+        if len(last_valid) > 0 and state is not None:
+            last_row = last_valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=1e-6
+            )
+
+    def test_probability_parity_volatile(self) -> None:
+        """고변동에서 마지막 bar 확률 일치."""
+        cfg = VolStructureDetectorConfig()
+        vec_det = VolStructureDetector(cfg)
+        inc_det = VolStructureDetector(cfg)
+
+        closes = _make_volatile_series(150)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det._buffers["TEST"].last_state
+        last_valid = vec_df.dropna(subset=["p_trending"])
+        if len(last_valid) > 0 and state is not None:
+            last_row = last_valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["volatile"], last_row["p_volatile"], atol=1e-6
+            )

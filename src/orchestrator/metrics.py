@@ -20,6 +20,7 @@ import pandas as pd
 from loguru import logger
 from prometheus_client import Enum as PromEnum, Gauge
 
+from src.orchestrator.netting import compute_netting_stats
 from src.orchestrator.risk_aggregator import (
     check_correlation_stress,
     compute_effective_n,
@@ -82,6 +83,21 @@ active_pods_gauge = Gauge(
     "Number of active pods",
 )
 
+# ── Netting Gauges ────────────────────────────────────────────────
+
+netting_gross_gauge = Gauge(
+    "mcbot_netting_gross_exposure",
+    "Total gross exposure before netting",
+)
+netting_net_gauge = Gauge(
+    "mcbot_netting_net_exposure",
+    "Total net exposure after netting",
+)
+netting_offset_ratio_gauge = Gauge(
+    "mcbot_netting_offset_ratio",
+    "Netting offset ratio (0=no offset, 1=full offset)",
+)
+
 # ── Constants ────────────────────────────────────────────────────
 
 _MIN_PODS_FOR_PORTFOLIO = 2
@@ -104,10 +120,12 @@ class OrchestratorMetrics:
         self._orchestrator = orchestrator
 
     def update(self) -> None:
-        """모든 Pod + Portfolio 메트릭 갱신."""
+        """모든 Pod + Portfolio + Netting + Anomaly 메트릭 갱신."""
         try:
             self._update_pod_metrics()
             self._update_portfolio_metrics()
+            self._update_netting_metrics()
+            self._update_anomaly_metrics()
         except Exception:
             logger.exception("OrchestratorMetrics update failed")
 
@@ -163,3 +181,51 @@ class OrchestratorMetrics:
         # Avg Correlation
         _, avg_corr = check_correlation_stress(pod_returns, _DEFAULT_CORRELATION_THRESHOLD)
         portfolio_avg_correlation_gauge.set(avg_corr)
+
+    def _update_anomaly_metrics(self) -> None:
+        """Anomaly detection 결과를 Prometheus gauge로 export."""
+        lifecycle = self._orchestrator.lifecycle
+        if lifecycle is None:
+            return
+
+        from src.monitoring.metrics import (
+            distribution_ks_statistic_gauge,
+            distribution_p_value_gauge,
+            ransac_conformal_lower_gauge,
+            ransac_decay_detected_gauge,
+            ransac_slope_gauge,
+        )
+
+        for pod in self._orchestrator.pods:
+            pid = pod.pod_id
+            if not pod.is_active:
+                continue
+
+            dist_result = lifecycle.get_distribution_result(pid)
+            if dist_result is not None:
+                distribution_ks_statistic_gauge.labels(strategy=pid).set(dist_result.ks_statistic)
+                distribution_p_value_gauge.labels(strategy=pid).set(dist_result.p_value)
+
+            ransac_result = lifecycle.get_ransac_result(pid)
+            if ransac_result is not None:
+                ransac_slope_gauge.labels(strategy=pid).set(ransac_result.ransac_slope)
+                ransac_conformal_lower_gauge.labels(strategy=pid).set(
+                    ransac_result.conformal_lower_bound
+                )
+                ransac_decay_detected_gauge.labels(strategy=pid).set(
+                    1.0 if (ransac_result.level_breach or not ransac_result.slope_positive) else 0.0
+                )
+
+    def _update_netting_metrics(self) -> None:
+        """Netting 상쇄 메트릭 업데이트."""
+        pod_targets = self._orchestrator.last_pod_targets
+        if not pod_targets:
+            netting_gross_gauge.set(0.0)
+            netting_net_gauge.set(0.0)
+            netting_offset_ratio_gauge.set(0.0)
+            return
+
+        stats = compute_netting_stats(pod_targets)
+        netting_gross_gauge.set(stats.gross_sum)
+        netting_net_gauge.set(stats.net_sum)
+        netting_offset_ratio_gauge.set(stats.offset_ratio)

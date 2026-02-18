@@ -91,6 +91,9 @@ class HMMDetector:
         self._buffers: dict[str, deque[float]] = {}
         self._models: dict[str, Any] = {}  # last trained GaussianHMM
         self._bar_counts: dict[str, int] = {}
+        # Convergence tracking
+        self._fit_attempts: int = 0
+        self._fit_failures: int = 0
 
     @property
     def config(self) -> HMMDetectorConfig:
@@ -101,6 +104,13 @@ class HMMDetector:
     def warmup_periods(self) -> int:
         """필요한 워밍업 기간."""
         return self._config.warmup_periods
+
+    @property
+    def convergence_rate(self) -> float:
+        """학습 수렴률 (0~1). 1.0이면 모든 학습 시도 성공."""
+        if self._fit_attempts == 0:
+            return 1.0
+        return 1.0 - (self._fit_failures / self._fit_attempts)
 
     # ── Vectorized API ──
 
@@ -158,6 +168,7 @@ class HMMDetector:
                     indices = rng.choice(n_samples, size=n_samples, p=prob)
                     features_clean = features_clean[indices]
 
+                self._fit_attempts += 1
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     try:
@@ -170,6 +181,7 @@ class HMMDetector:
                         model.fit(features_clean)
                         last_model = model
                     except Exception:
+                        self._fit_failures += 1
                         logger.debug("HMM training failed at bar %d", i)
                         continue
 
@@ -248,6 +260,7 @@ class HMMDetector:
             indices = rng.choice(n_samples, size=n_samples, p=prob)
             features_clean = features_clean[indices]
 
+        self._fit_attempts += 1
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             try:
@@ -260,6 +273,7 @@ class HMMDetector:
                 model.fit(features_clean)
                 self._models[symbol] = model
             except Exception:
+                self._fit_failures += 1
                 logger.debug("HMM training failed for %s", symbol)
 
     def update(self, symbol: str, close: float) -> RegimeState | None:

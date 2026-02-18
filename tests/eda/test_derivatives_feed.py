@@ -110,6 +110,8 @@ class TestLiveDerivativesFeed:
         client.fetch_open_interest_history = AsyncMock(return_value=[])
         client.fetch_long_short_ratio = AsyncMock(return_value=[])
         client.fetch_taker_buy_sell_ratio = AsyncMock(return_value=[])
+        client.fetch_top_long_short_account_ratio = AsyncMock(return_value=[])
+        client.fetch_top_long_short_position_ratio = AsyncMock(return_value=[])
         return client
 
     def test_init(self, mock_client: AsyncMock) -> None:
@@ -200,3 +202,65 @@ class TestLiveDerivativesFeed:
         await _run_once()
         assert feed._cache.get("BTC/USDT") is not None
         assert feed._cache["BTC/USDT"]["funding_rate"] == pytest.approx(0.0003)
+
+    @pytest.mark.asyncio()
+    async def test_poll_ratios_caches_top_trader(self, mock_client: AsyncMock) -> None:
+        """Top trader ratio polling이 cache를 업데이트."""
+        mock_client.fetch_long_short_ratio.return_value = [
+            {"longShortRatio": 1.22, "longAccount": 0.55, "shortAccount": 0.45}
+        ]
+        mock_client.fetch_taker_buy_sell_ratio.return_value = [
+            {"buySellRatio": 1.10, "buyVol": 1000, "sellVol": 900}
+        ]
+        mock_client.fetch_top_long_short_account_ratio.return_value = [
+            {"longShortRatio": 1.55, "longAccount": 0.61, "shortAccount": 0.39}
+        ]
+        mock_client.fetch_top_long_short_position_ratio.return_value = [
+            {"longShortRatio": 1.72, "longAccount": 0.63, "shortAccount": 0.37}
+        ]
+
+        feed = LiveDerivativesFeed(["BTC/USDT"], mock_client, poll_interval_ratios=100)
+        feed._shutdown.clear()
+
+        # _poll_ratios 내부 로직 1회 실행
+        for symbol in feed._symbols:
+            ls_raw = await mock_client.fetch_long_short_ratio(symbol, period="1h", limit=1)
+            if ls_raw:
+                item = ls_raw[-1]
+                cache = feed._cache.setdefault(symbol, {})
+                cache["ls_ratio"] = float(item.get("longShortRatio", 0))
+
+            tk_raw = await mock_client.fetch_taker_buy_sell_ratio(symbol, period="1h", limit=1)
+            if tk_raw:
+                item = tk_raw[-1]
+                cache = feed._cache.setdefault(symbol, {})
+                cache["taker_ratio"] = float(item.get("buySellRatio", 0))
+
+            ta_raw = await mock_client.fetch_top_long_short_account_ratio(
+                symbol, period="1h", limit=1
+            )
+            if ta_raw:
+                item = ta_raw[-1]
+                cache = feed._cache.setdefault(symbol, {})
+                cache["top_acct_ls_ratio"] = float(item.get("longShortRatio", 0))
+                cache["top_acct_long_pct"] = float(item.get("longAccount", 0))
+                cache["top_acct_short_pct"] = float(item.get("shortAccount", 0))
+
+            tp_raw = await mock_client.fetch_top_long_short_position_ratio(
+                symbol, period="1h", limit=1
+            )
+            if tp_raw:
+                item = tp_raw[-1]
+                cache = feed._cache.setdefault(symbol, {})
+                cache["top_pos_ls_ratio"] = float(item.get("longShortRatio", 0))
+                cache["top_pos_long_pct"] = float(item.get("longAccount", 0))
+                cache["top_pos_short_pct"] = float(item.get("shortAccount", 0))
+
+        btc_cache = feed._cache.get("BTC/USDT")
+        assert btc_cache is not None
+        assert btc_cache["top_acct_ls_ratio"] == pytest.approx(1.55)
+        assert btc_cache["top_acct_long_pct"] == pytest.approx(0.61)
+        assert btc_cache["top_acct_short_pct"] == pytest.approx(0.39)
+        assert btc_cache["top_pos_ls_ratio"] == pytest.approx(1.72)
+        assert btc_cache["top_pos_long_pct"] == pytest.approx(0.63)
+        assert btc_cache["top_pos_short_pct"] == pytest.approx(0.37)

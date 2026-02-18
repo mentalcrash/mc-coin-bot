@@ -13,6 +13,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
 
 
@@ -118,6 +119,12 @@ class PodConfig(BaseModel):
         description="리밸런스 이탈 임계값",
     )
 
+    # Asset allocation
+    asset_allocation: AssetAllocationConfig | None = Field(
+        default=None,
+        description="Pod 내 에셋 배분 설정 (None=균등분배)",
+    )
+
     @model_validator(mode="after")
     def validate_fractions_and_drawdown(self) -> Self:
         """자본 비중 및 낙폭 일관성 검증.
@@ -200,6 +207,11 @@ class GraduationCriteria(BaseModel):
         ge=0.0,
         le=1.0,
         description="기존 포트폴리오와의 최대 상관계수",
+    )
+    max_incubation_days: int = Field(
+        default=90,
+        ge=1,
+        description="INCUBATION 최대 유지 기간 (일). 초과 시 RETIRED",
     )
 
 
@@ -365,6 +377,21 @@ class OrchestratorConfig(BaseModel):
         description="스트레스 상관계수 임계값",
     )
 
+    # Rebalance turnover filter
+    min_rebalance_turnover: float = Field(
+        default=0.02,
+        ge=0.0,
+        description="최소 리밸런스 턴오버 (이하 스킵)",
+    )
+
+    # Risk recovery
+    risk_recovery_steps: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Risk defense 해제 후 자본 복원 단계 수",
+    )
+
     # Cost
     cost_bps: float = Field(
         default=4.0,
@@ -408,6 +435,17 @@ class OrchestratorConfig(BaseModel):
                 if symbol not in seen:
                     seen.add(symbol)
                     result.append(symbol)
+        return tuple(result)
+
+    @property
+    def all_timeframes(self) -> tuple[str, ...]:
+        """모든 Pod의 고유 TF 목록 (순서 보존)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for pod in self.pods:
+            if pod.timeframe not in seen:
+                seen.add(pod.timeframe)
+                result.append(pod.timeframe)
         return tuple(result)
 
     @property

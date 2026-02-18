@@ -33,7 +33,7 @@ class TestEventType:
     """EventType StrEnum 테스트."""
 
     def test_all_event_types_defined(self) -> None:
-        assert len(EventType) == 11
+        assert len(EventType) == 12
 
     def test_event_type_values(self) -> None:
         assert EventType.BAR == "bar"

@@ -27,6 +27,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("all")
 
@@ -42,6 +43,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("stablecoin")
 
@@ -56,6 +58,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("tvl")
 
@@ -68,6 +71,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("coinmetrics")
 
@@ -81,6 +85,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("sentiment")
 
@@ -92,6 +97,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("blockchain")
 
@@ -105,6 +111,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         result = service.get_batch_definitions("etherscan")
 
@@ -116,6 +123,7 @@ class TestGetBatchDefinitions:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._silver = MagicMock()
+        service._catalog = None
 
         with pytest.raises(ValueError, match="Unknown batch type"):
             service.get_batch_definitions("nonexistent")

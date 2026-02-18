@@ -998,6 +998,9 @@ def gate1_run(
     end: Annotated[str, typer.Option("--end", help="종료일 (YYYY-MM-DD)")] = "2025-12-31",
     capital: Annotated[int, typer.Option("--capital", help="초기 자본")] = 100_000,
     save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
+    parallel: Annotated[
+        bool, typer.Option("--parallel/--no-parallel", help="심볼 간 병렬 실행")
+    ] = True,
 ) -> None:
     """Gate 1: 5-coin x 6-year 단일에셋 백테스트 + YAML 자동 갱신."""
     from datetime import UTC, datetime
@@ -1016,6 +1019,7 @@ def gate1_run(
         capital=capital,
         save_json=save_json,
         console=console,
+        parallel=parallel,
     )
 
 

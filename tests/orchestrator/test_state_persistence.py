@@ -26,7 +26,9 @@ from src.orchestrator.orchestrator import StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod
 from src.orchestrator.state_persistence import (
     _KEY_DAILY_RETURNS,
+    _KEY_HISTORIES,
     _KEY_STATE,
+    _MAX_ALLOCATION_HISTORY,
     _MAX_DAILY_RETURNS,
     OrchestratorStatePersistence,
 )
@@ -631,3 +633,87 @@ class TestE2EPersistence:
         assert result is True
         assert orch2.pods[0].state == LifecycleState.PRODUCTION
         assert len(orch2.pods[0].daily_returns) == 0  # daily_returns not restored
+
+
+# ══════════════════════════════════════════════════════════════════
+# 6. Histories Persistence (Step 1)
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestHistoriesPersistence:
+    @pytest.mark.asyncio
+    async def test_histories_save_restore_round_trip(
+        self, persistence: OrchestratorStatePersistence
+    ) -> None:
+        """allocation/lifecycle/risk histories 왕복 저장."""
+        orch = _make_orchestrator()
+        orch._allocation_history.append({"timestamp": "2026-02-01", "pod-a": 0.5})
+        orch._lifecycle_events.append(
+            {"pod_id": "pod-a", "from_state": "incubation", "to_state": "production"}
+        )
+        orch._risk_contributions_history.append({"timestamp": "2026-02-01", "pod-a": 0.5})
+
+        await persistence.save(orch)
+
+        orch2 = _make_orchestrator()
+        await persistence.restore(orch2)
+
+        assert len(orch2.allocation_history) == 1
+        assert orch2.allocation_history[0]["pod-a"] == 0.5
+        assert len(orch2.lifecycle_events) == 1
+        assert orch2.lifecycle_events[0]["pod_id"] == "pod-a"
+        assert len(orch2.risk_contributions_history) == 1
+
+    @pytest.mark.asyncio
+    async def test_histories_trim_on_save(self, persistence: OrchestratorStatePersistence) -> None:
+        """500건 초과 → 최근 500건만 저장."""
+        orch = _make_orchestrator()
+        for i in range(600):
+            orch._allocation_history.append({"timestamp": f"day-{i}", "value": i})
+
+        await persistence.save(orch)
+
+        orch2 = _make_orchestrator()
+        await persistence.restore(orch2)
+
+        assert len(orch2.allocation_history) == _MAX_ALLOCATION_HISTORY
+        # 마지막 500건 (100~599)
+        assert orch2.allocation_history[0]["value"] == 100
+
+    @pytest.mark.asyncio
+    async def test_histories_missing_key_noop(
+        self, persistence: OrchestratorStatePersistence
+    ) -> None:
+        """키 없으면 빈 리스트 유지."""
+        # Save without histories key (only state + daily_returns)
+        orch = _make_orchestrator()
+        await persistence.save(orch)
+
+        # Delete histories key
+        conn = persistence._db.connection
+        await conn.execute("DELETE FROM bot_state WHERE key = ?", (_KEY_HISTORIES,))
+        await conn.commit()
+
+        orch2 = _make_orchestrator()
+        await persistence.restore(orch2)
+
+        assert len(orch2.allocation_history) == 0
+        assert len(orch2.lifecycle_events) == 0
+        assert len(orch2.risk_contributions_history) == 0
+
+    @pytest.mark.asyncio
+    async def test_histories_corrupted_json_skipped(
+        self, persistence: OrchestratorStatePersistence
+    ) -> None:
+        """파싱 실패 → 경고 + 빈 리스트."""
+        orch = _make_orchestrator()
+        orch._allocation_history.append({"test": True})
+        await persistence.save(orch)
+
+        # Corrupt histories key
+        await persistence._save_key(_KEY_HISTORIES, "invalid json{{{")
+
+        orch2 = _make_orchestrator()
+        result = await persistence.restore(orch2)
+        assert result is True
+        assert len(orch2.allocation_history) == 0

@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from src.core.event_bus import EventBus
-from src.core.events import AnyEvent, BarEvent, EventType
+from src.core.events import AnyEvent, BarEvent, EventType, HeartbeatEvent
 from src.eda.analytics import AnalyticsEngine
 from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
@@ -148,6 +148,9 @@ class LiveRunner:
         self._symbols: list[str] = []
         self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
         self._onchain_feed: Any = None  # LiveOnchainFeed | None
+        self._macro_feed: Any = None  # LiveMacroFeed | None
+        self._options_feed: Any = None  # LiveOptionsFeed | None
+        self._deriv_ext_feed: Any = None  # LiveDerivExtFeed | None
         self._orchestrator: StrategyOrchestrator | None = None
         self._start_time = time.monotonic()
 
@@ -188,6 +191,9 @@ class LiveRunner:
         runner._client = client
         runner._symbols = symbols
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -227,6 +233,9 @@ class LiveRunner:
         runner._client = client
         runner._symbols = symbols
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -278,6 +287,9 @@ class LiveRunner:
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
         runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -314,8 +326,15 @@ class LiveRunner:
         from src.strategy.tsmom.strategy import TSMOMStrategy
 
         symbols = list(orchestrator_config.all_symbols)
+        all_tfs = set(orchestrator_config.all_timeframes)
+        multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(symbols, target_timeframe, client)
+        feed = LiveDataFeed(
+            symbols,
+            target_timeframe,
+            client,
+            target_timeframes=all_tfs if multi_tf else None,
+        )
         executor = BacktestExecutor(cost_model=pm_config.cost_model)
 
         # Dummy strategy (LiveRunner 생성자 필수)
@@ -352,7 +371,7 @@ class LiveRunner:
             allocator=allocator,
             lifecycle_manager=lifecycle_mgr,
             risk_aggregator=risk_aggregator,
-            target_timeframe=target_timeframe,
+            target_timeframe=None if multi_tf else target_timeframe,
         )
 
         return runner
@@ -393,8 +412,15 @@ class LiveRunner:
         from src.strategy.tsmom.strategy import TSMOMStrategy
 
         symbols = list(orchestrator_config.all_symbols)
+        all_tfs = set(orchestrator_config.all_timeframes)
+        multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(symbols, target_timeframe, client)
+        feed = LiveDataFeed(
+            symbols,
+            target_timeframe,
+            client,
+            target_timeframes=all_tfs if multi_tf else None,
+        )
         executor = LiveExecutor(futures_client)
 
         # Dummy strategy
@@ -432,7 +458,7 @@ class LiveRunner:
             allocator=allocator,
             lifecycle_manager=lifecycle_mgr,
             risk_aggregator=risk_aggregator,
-            target_timeframe=target_timeframe,
+            target_timeframe=None if multi_tf else target_timeframe,
         )
 
         # Live 모드에서 DerivativesFeed 자동 생성
@@ -470,6 +496,7 @@ class LiveRunner:
         capital, db = await self._init_capital_and_db()
 
         discord_tasks: _DiscordTasks | None = None
+        pm: EDAPortfolioManager | None = None
         try:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
@@ -638,7 +665,16 @@ class LiveRunner:
                 exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
-            await self._send_lifecycle_crash(discord_tasks, exc)
+            # Prometheus errors_counter (lazy import)
+            try:
+                from src.monitoring.metrics import errors_counter
+
+                errors_counter.labels(
+                    component="LiveRunner", error_type=type(exc).__name__
+                ).inc()
+            except Exception:  # noqa: S110
+                pass
+            await self._send_lifecycle_crash(discord_tasks, exc, pm=pm)
             raise
         finally:
             if db:
@@ -676,9 +712,12 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await feed_task
 
-        # DerivativesFeed / OnchainFeed 종료
+        # DerivativesFeed / OnchainFeed / Macro / Options / DerivExt 종료
         await self._stop_derivatives_feed()
         await self._stop_onchain_feed()
+        await self._stop_macro_feed()
+        await self._stop_options_feed()
+        await self._stop_deriv_ext_feed()
 
         if self._orchestrator is not None:
             await self._orchestrator.flush_pending_signals()
@@ -964,10 +1003,13 @@ class LiveRunner:
         Returns:
             (regime_service, feature_store, strategy_engine) 튜플
         """
-        regime_service = self._create_regime_service()
         derivatives_provider = await self._start_derivatives_feed()
+        regime_service = self._create_regime_service(derivatives_provider)
         onchain_provider = await self._start_onchain_feed()
         feature_store = self._create_feature_store()
+        macro_provider = await self._start_macro_feed()
+        options_provider = await self._start_options_feed()
+        deriv_ext_provider = await self._start_deriv_ext_feed()
 
         strategy_engine: StrategyEngine | None = None
         if self._orchestrator is None:
@@ -978,17 +1020,27 @@ class LiveRunner:
                 derivatives_provider=derivatives_provider,
                 feature_store=feature_store,
                 onchain_provider=onchain_provider,
+                macro_provider=macro_provider,
+                options_provider=options_provider,
+                deriv_ext_provider=deriv_ext_provider,
             )
         return regime_service, feature_store, strategy_engine
 
-    def _create_regime_service(self) -> RegimeService | None:
-        """RegimeService 생성 (regime_config가 None이면 None)."""
+    def _create_regime_service(
+        self,
+        derivatives_provider: object | None = None,
+    ) -> RegimeService | None:
+        """RegimeService 생성 (regime_config가 None이면 None).
+
+        Args:
+            derivatives_provider: 파생상품 데이터 프로바이더 (있으면 DerivativesDetector 활성화)
+        """
         if self._regime_config is None:
             return None
 
         from src.regime.service import RegimeService
 
-        return RegimeService(self._regime_config)
+        return RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
 
     def _create_feature_store(self) -> FeatureStore | None:
         """FeatureStore 생성 (feature_store_config가 None이면 None)."""
@@ -1060,7 +1112,7 @@ class LiveRunner:
             for symbol in pod.symbols:
                 try:
                     bars, timestamps = await self._fetch_warmup_bars(
-                        symbol, self._target_timeframe, warmup_needed
+                        symbol, pod.timeframe, warmup_needed
                     )
                     if bars:
                         pod.inject_warmup(symbol, bars, timestamps)
@@ -1193,6 +1245,12 @@ class LiveRunner:
         # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
         if self._orchestrator is not None:
             await self._warmup_orchestrator(self._orchestrator)
+            # 검출기 자동 초기화 (warmup 완료 후)
+            lifecycle = self._orchestrator.lifecycle
+            if lifecycle is not None:
+                for pod in self._orchestrator.pods:
+                    if pod.daily_returns:
+                        lifecycle.auto_init_detectors(pod.pod_id, list(pod.daily_returns))
         elif strategy_engine is not None:
             await self._warmup_strategy(
                 strategy_engine, regime_service=regime_service, feature_store=feature_store
@@ -1313,6 +1371,84 @@ class LiveRunner:
         """OnchainFeed 종료 (설정된 경우)."""
         if self._onchain_feed is not None:
             await self._onchain_feed.stop()
+
+    def _init_macro_feed(self) -> None:
+        """LiveMacroFeed 인스턴스 생성."""
+        from src.eda.macro_feed import LiveMacroFeed
+
+        self._macro_feed = LiveMacroFeed()
+
+    async def _start_macro_feed(self) -> Any:
+        """MacroFeed 시작 (설정된 경우).
+
+        Returns:
+            MacroProvider 또는 None
+        """
+        if self._macro_feed is None:
+            return None
+        await self._macro_feed.start()
+        if not self._macro_feed._cache:
+            await self._macro_feed.stop()
+            self._macro_feed = None
+            return None
+        return self._macro_feed
+
+    async def _stop_macro_feed(self) -> None:
+        """MacroFeed 종료 (설정된 경우)."""
+        if self._macro_feed is not None:
+            await self._macro_feed.stop()
+
+    def _init_options_feed(self) -> None:
+        """LiveOptionsFeed 인스턴스 생성."""
+        from src.eda.options_feed import LiveOptionsFeed
+
+        self._options_feed = LiveOptionsFeed()
+
+    async def _start_options_feed(self) -> Any:
+        """OptionsFeed 시작 (설정된 경우).
+
+        Returns:
+            OptionsProvider 또는 None
+        """
+        if self._options_feed is None:
+            return None
+        await self._options_feed.start()
+        if not self._options_feed._cache:
+            await self._options_feed.stop()
+            self._options_feed = None
+            return None
+        return self._options_feed
+
+    async def _stop_options_feed(self) -> None:
+        """OptionsFeed 종료 (설정된 경우)."""
+        if self._options_feed is not None:
+            await self._options_feed.stop()
+
+    def _init_deriv_ext_feed(self, symbols: list[str]) -> None:
+        """LiveDerivExtFeed 인스턴스 생성."""
+        from src.eda.deriv_ext_feed import LiveDerivExtFeed
+
+        self._deriv_ext_feed = LiveDerivExtFeed(symbols)
+
+    async def _start_deriv_ext_feed(self) -> Any:
+        """DerivExtFeed 시작 (설정된 경우).
+
+        Returns:
+            DerivExtProvider 또는 None
+        """
+        if self._deriv_ext_feed is None:
+            return None
+        await self._deriv_ext_feed.start()
+        if not self._deriv_ext_feed._cache:
+            await self._deriv_ext_feed.stop()
+            self._deriv_ext_feed = None
+            return None
+        return self._deriv_ext_feed
+
+    async def _stop_deriv_ext_feed(self) -> None:
+        """DerivExtFeed 종료 (설정된 경우)."""
+        if self._deriv_ext_feed is not None:
+            await self._deriv_ext_feed.stop()
 
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.
@@ -1476,8 +1612,14 @@ class LiveRunner:
         trading_mode_enum.state(self._mode.value)
 
         # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
+        # + LiveExecutor에 PrometheusLiveExecutorMetrics 주입
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
+
+        if isinstance(self._executor, LiveExecutor):
+            from src.monitoring.metrics import PrometheusLiveExecutorMetrics
+
+            self._executor.set_metrics(PrometheusLiveExecutorMetrics())
 
         # LiveDataFeed에 WS 상태 콜백 주입 (상세 메트릭 포함)
         ws_detail_cb = PrometheusWsDetailCallback()
@@ -1520,6 +1662,8 @@ class LiveRunner:
                 ws_detail_callback.update_message_ages()
             if onchain_feed is not None:
                 onchain_feed.update_cache_metrics()
+            # HeartbeatEvent 발행 — MetricsExporter가 heartbeat_timestamp gauge 갱신
+            await bus.publish(HeartbeatEvent(component="LiveRunner"))
 
     @staticmethod
     async def _periodic_reconciliation(
@@ -1617,12 +1761,16 @@ class LiveRunner:
             if self._orchestrator is not None
             else self._strategy.name
         )
+        pod_summaries = (
+            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
+        )
         embed = format_startup_embed(
             mode=self._mode.value,
             strategy_name=strategy_label,
             symbols=self._symbols,
             capital=capital,
             timeframe=self._target_timeframe,
+            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.INFO,
@@ -1646,18 +1794,25 @@ class LiveRunner:
         uptime = time.monotonic() - self._start_time
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         trades = analytics.closed_trades
-        today_pnl = sum(
+        realized_pnl = sum(
             float(t.pnl)
             for t in trades
             if t.exit_time and t.exit_time >= today_start and t.pnl is not None
+        )
+        unrealized_pnl = sum(p.unrealized_pnl for p in pm.positions.values() if p.is_open)
+        pod_summaries = (
+            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
         )
 
         embed = format_shutdown_embed(
             reason="Graceful shutdown",
             uptime_seconds=uptime,
             final_equity=pm.total_equity,
-            today_pnl=today_pnl,
+            initial_capital=pm.initial_capital,
+            realized_pnl=realized_pnl,
+            unrealized_pnl=unrealized_pnl,
             open_positions=pm.open_position_count,
+            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.WARNING,
@@ -1670,6 +1825,7 @@ class LiveRunner:
         self,
         discord_tasks: _DiscordTasks | None,
         exc: Exception,
+        pm: EDAPortfolioManager | None = None,
     ) -> None:
         """봇 비정상 종료 알림을 Discord ALERTS 채널에 전송."""
         if discord_tasks is None:
@@ -1678,10 +1834,25 @@ class LiveRunner:
         from src.notification.lifecycle import format_crash_embed
 
         uptime = time.monotonic() - self._start_time
+
+        final_equity: float | None = None
+        open_positions: int | None = None
+        unrealized_pnl: float | None = None
+        if pm is not None:
+            try:
+                final_equity = pm.total_equity
+                open_positions = pm.open_position_count
+                unrealized_pnl = sum(p.unrealized_pnl for p in pm.positions.values() if p.is_open)
+            except Exception:
+                logger.debug("Could not collect PM state for crash embed")
+
         embed = format_crash_embed(
             error_type=type(exc).__name__,
             error_message=str(exc),
             uptime_seconds=uptime,
+            final_equity=final_equity,
+            open_positions=open_positions,
+            unrealized_pnl=unrealized_pnl,
         )
         item = NotificationItem(
             severity=Severity.CRITICAL,

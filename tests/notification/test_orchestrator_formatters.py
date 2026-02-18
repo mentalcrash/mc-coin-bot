@@ -123,6 +123,18 @@ class TestPortfolioRiskAlertEmbed:
         field_names = [f["name"] for f in embed["fields"]]
         assert "Pod" in field_names
 
+    def test_has_timestamp(self) -> None:
+        """timestamp가 비어있지 않은 ISO 문자열."""
+        embed = format_portfolio_risk_alert_embed(
+            alert_type="test",
+            severity="warning",
+            message="test",
+            current_value=0.5,
+            threshold=1.0,
+        )
+        assert "timestamp" in embed
+        assert len(embed["timestamp"]) > 0
+
 
 class TestDailyOrchestratorReportEmbed:
     def test_daily_orchestrator_report_embed_table(self) -> None:
@@ -146,6 +158,19 @@ class TestDailyOrchestratorReportEmbed:
         assert "Total Equity" in field_names
         assert "Effective N" in field_names
         assert "Avg Correlation" in field_names
+
+    def test_has_timestamp(self) -> None:
+        """timestamp가 비어있지 않은 ISO 문자열."""
+        embed = format_daily_orchestrator_report_embed(
+            pod_summaries=[],
+            total_equity=100000.0,
+            effective_n=1.0,
+            avg_correlation=0.0,
+            portfolio_dd=0.01,
+            gross_leverage=1.0,
+        )
+        assert "timestamp" in embed
+        assert len(embed["timestamp"]) > 0
 
     def test_high_drawdown_red_color(self) -> None:
         """DD > 10%이면 RED."""

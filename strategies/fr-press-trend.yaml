@@ -1,0 +1,35 @@
+meta:
+  name: fr-press-trend
+  display_name: Funding Pressure Trend
+  category: Derivatives-Enhanced Trend
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-18'
+  retired_at: '2026-02-18'
+  economic_rationale: 가격 추세(SMA cross)가 primary alpha, FR z-score는 포지셔닝 압력/군중 밀집도
+    리스크 필터로만 사용. 과도 레버리지 청산 캐스케이드 회피.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: FAIL
+    date: '2026-02-18'
+    details:
+      version: 2
+      score: 17
+      max_score: 30
+      items:
+        경제적 논거 고유성: 3
+        IC 사전 검증: 2
+        카테고리 성공률: 1
+        레짐 독립성: 3
+        앙상블 기여도: 4
+        수용 용량: 4
+asset_performance: []
+decisions:
+- date: '2026-02-18'
+  gate: G0A
+  verdict: FAIL
+  rationale: 17/30점 (v2)

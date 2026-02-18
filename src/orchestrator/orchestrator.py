@@ -30,7 +30,11 @@ from src.core.events import (
     SignalEvent,
 )
 from src.models.types import Direction
-from src.orchestrator.netting import attribute_fill, scale_weights_to_leverage
+from src.orchestrator.netting import (
+    attribute_fill,
+    compute_netting_stats,
+    scale_weights_to_leverage,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -88,6 +92,12 @@ class StrategyOrchestrator:
         self._notification: OrchestratorNotificationEngine | None = notification
         self._bus: EventBus | None = None
 
+        # Per-pod TF routing: accepted TF set
+        if target_timeframe is not None:
+            self._accepted_timeframes: set[str] = {target_timeframe}
+        else:
+            self._accepted_timeframes = {pod.config.timeframe for pod in pods}
+
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
         self._symbol_pod_map: dict[str, list[int]] = {}
         self._build_routing_table()
@@ -111,11 +121,15 @@ class StrategyOrchestrator:
 
         # Risk defense
         self._risk_breached: bool = False
+        self._risk_recovery_step: int = 0  # 0=정상, 1~N=복원 중
 
         # Daily return MTM 추적
         self._initial_capital: float = 0.0
         self._last_day_date: date | None = None
         self._last_close_prices: dict[str, float] = {}
+
+        # Asset close price history for correlation (Pod < 3 보완)
+        self._close_price_history: dict[str, list[float]] = {}
 
         # History 추적
         self._allocation_history: list[dict[str, object]] = []
@@ -147,8 +161,8 @@ class StrategyOrchestrator:
         assert isinstance(event, BarEvent)
         bar = event
 
-        # TF 필터: target_timeframe이 설정된 경우, 해당 TF bar만 처리
-        if self._target_timeframe is not None and bar.timeframe != self._target_timeframe:
+        # TF 필터: accepted TF만 처리
+        if bar.timeframe not in self._accepted_timeframes:
             return
 
         symbol = bar.symbol
@@ -161,6 +175,14 @@ class StrategyOrchestrator:
 
         # Close price 저장 (day boundary 체크 이후)
         self._last_close_prices[symbol] = bar.close
+
+        # Close price history for asset-level correlation
+        if symbol not in self._close_price_history:
+            self._close_price_history[symbol] = []
+        self._close_price_history[symbol].append(bar.close)
+        lookback = self._config.correlation_lookback
+        if len(self._close_price_history[symbol]) > lookback:
+            self._close_price_history[symbol] = self._close_price_history[symbol][-lookback:]
 
         # 1. 새 bar_timestamp → 이전 배치 flush
         if self._pending_bar_ts is not None and bar.bar_timestamp != self._pending_bar_ts:
@@ -185,6 +207,8 @@ class StrategyOrchestrator:
         for idx in pod_indices:
             pod = self._pods[idx]
             if not pod.is_active:
+                continue
+            if pod.config.timeframe != bar.timeframe:
                 continue
 
             result = pod.compute_signal(symbol, bar_data, bar.bar_timestamp)
@@ -247,22 +271,53 @@ class StrategyOrchestrator:
     # ── Signal Emission ──────────────────────────────────────────
 
     async def _flush_net_signals(self) -> None:
-        """누적된 net weight → SignalEvent 발행."""
+        """누적된 net weight → SignalEvent 발행.
+
+        Multi-TF 모드: _last_pod_targets에서 전체 net weight를 재계산하되,
+        이번 배치에서 변경된 심볼만 emit하여 불필요한 주문을 방지합니다.
+        """
         bus = self._bus
         if bus is None or self._pending_bar_ts is None:
             return
 
+        # 이번 배치에서 변경된 심볼
+        changed_symbols = set(self._pending_net_weights.keys())
+
+        # Multi-TF: _last_pod_targets에서 전체 net weight 재계산
+        # 단일 TF: _pending_net_weights == full net (기존과 동일)
+        if len(self._accepted_timeframes) > 1:
+            full_net = self._compute_current_net_weights()
+        else:
+            full_net = dict(self._pending_net_weights)
+
         # Risk breached → 모든 weight 0으로 억제
         if self._risk_breached:
-            self._pending_net_weights = dict.fromkeys(self._pending_net_weights, 0.0)
+            full_net = dict.fromkeys(full_net, 0.0)
+        elif self._risk_recovery_step > 0:
+            # 점진 복구: step/total_steps 비율로 weight 스케일링
+            fraction = self._risk_recovery_step / self._config.risk_recovery_steps
+            full_net = {sym: w * fraction for sym, w in full_net.items()}
+
+        # Netting 상쇄 모니터링
+        _offset_warning_threshold = 0.5
+        if self._last_pod_targets:
+            netting_stats = compute_netting_stats(self._last_pod_targets)
+            if netting_stats.offset_ratio > _offset_warning_threshold:
+                logger.warning(
+                    "High netting offset: {:.1%} (gross={:.4f}, net={:.4f})",
+                    netting_stats.offset_ratio,
+                    netting_stats.gross_sum,
+                    netting_stats.net_sum,
+                )
 
         # 레버리지 한도 적용
         scaled = scale_weights_to_leverage(
-            self._pending_net_weights,
+            full_net,
             self._config.max_gross_leverage,
         )
 
-        for symbol, net_weight in scaled.items():
+        for symbol in changed_symbols:
+            net_weight = scaled.get(symbol, 0.0)
             abs_weight = abs(net_weight)
             if abs_weight < _MIN_NET_WEIGHT:
                 direction = Direction.NEUTRAL
@@ -362,6 +417,20 @@ class StrategyOrchestrator:
             lookback=self._config.correlation_lookback,
             pod_live_days=pod_live_days,
         )
+
+        # Turnover filter: skip if total turnover is below threshold
+        total_turnover = sum(
+            abs(new_weights.get(pod.pod_id, 0.0) - pod.capital_fraction)
+            for pod in self._pods
+            if pod.is_active
+        )
+        if total_turnover < self._config.min_rebalance_turnover:
+            logger.debug(
+                "Rebalance skipped: turnover {:.4f} < min {:.4f}",
+                total_turnover,
+                self._config.min_rebalance_turnover,
+            )
+            return
 
         for pod in self._pods:
             if pod.pod_id in new_weights:
@@ -503,6 +572,7 @@ class StrategyOrchestrator:
             pod_weights=pod_weights_map,
             pod_returns=pod_returns,
             daily_pnl_pct=daily_pnl,
+            asset_price_history=self._close_price_history if self._close_price_history else None,
         )
         for alert in alerts:
             logger.warning("RiskAlert [{}]: {}", alert.severity, alert.message)
@@ -520,14 +590,32 @@ class StrategyOrchestrator:
         if critical_alerts:
             self._apply_risk_defense(critical_alerts)
         elif self._risk_breached:
+            # 위기 해제 → 점진 복원 시작
             self._risk_breached = False
-            logger.info("Risk defense deactivated — no critical alerts")
+            self._risk_recovery_step = 1
+            logger.info(
+                "Risk defense deactivated — gradual recovery started (step 1/{})",
+                self._config.risk_recovery_steps,
+            )
+        elif self._risk_recovery_step > 0:
+            # 복원 진행 중
+            self._risk_recovery_step += 1
+            if self._risk_recovery_step > self._config.risk_recovery_steps:
+                self._risk_recovery_step = 0
+                logger.info("Risk recovery complete — full capital restored")
+            else:
+                logger.info(
+                    "Risk recovery step {}/{}",
+                    self._risk_recovery_step,
+                    self._config.risk_recovery_steps,
+                )
 
         return alerts
 
     def _apply_risk_defense(self, alerts: list[RiskAlert]) -> None:
         """CRITICAL alert 시 활성 Pod의 capital_fraction을 축소."""
         self._risk_breached = True
+        self._risk_recovery_step = 0  # 복원 중 재위기 → 리셋
         for pod in self._pods:
             if pod.is_active:
                 pod.capital_fraction *= _RISK_DEFENSE_SCALE
@@ -616,13 +704,28 @@ class StrategyOrchestrator:
         """리스크 기여도 이력."""
         return self._risk_contributions_history
 
+    @property
+    def last_pod_targets(self) -> dict[str, dict[str, float]]:
+        """Pod별 마지막 타겟 가중치 (읽기 전용)."""
+        return dict(self._last_pod_targets)
+
     # ── Serialization ──────────────────────────────────────────────
+
+    def restore_histories(
+        self,
+        allocation_history: list[dict[str, object]],
+        lifecycle_events: list[dict[str, object]],
+        risk_contributions_history: list[dict[str, object]],
+    ) -> None:
+        """Restore in-memory histories from persistence layer."""
+        self._allocation_history = allocation_history
+        self._lifecycle_events = lifecycle_events
+        self._risk_contributions_history = risk_contributions_history
 
     def to_dict(self) -> dict[str, object]:
         """Serialize orchestrator-level state for persistence.
 
-        Excludes in-memory histories (_allocation_history, _lifecycle_events,
-        _risk_contributions_history) — deferred to Phase 11.
+        Histories are persisted separately via OrchestratorStatePersistence.
         """
         return {
             "last_rebalance_ts": (
@@ -636,6 +739,11 @@ class StrategyOrchestrator:
             if self._last_day_date is not None
             else None,
             "last_close_prices": dict(self._last_close_prices),
+            "risk_breached": self._risk_breached,
+            "risk_recovery_step": self._risk_recovery_step,
+            "close_price_history": {
+                sym: list(prices) for sym, prices in self._close_price_history.items()
+            },
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -668,6 +776,22 @@ class StrategyOrchestrator:
         prices_val = data.get("last_close_prices")
         if isinstance(prices_val, dict):
             self._last_close_prices = {str(sym): float(p) for sym, p in prices_val.items()}
+
+        risk_breached_val = data.get("risk_breached")
+        if isinstance(risk_breached_val, bool):
+            self._risk_breached = risk_breached_val
+
+        recovery_val = data.get("risk_recovery_step")
+        if isinstance(recovery_val, int | float):
+            self._risk_recovery_step = int(recovery_val)
+
+        price_hist_val = data.get("close_price_history")
+        if isinstance(price_hist_val, dict):
+            self._close_price_history = {
+                str(sym): [float(p) for p in prices]
+                for sym, prices in price_hist_val.items()
+                if isinstance(prices, list)
+            }
 
     # ── Private ──────────────────────────────────────────────────
 

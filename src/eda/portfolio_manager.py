@@ -114,6 +114,9 @@ class EDAPortfolioManager:
         self._current_bar_ts: datetime | None = None
         self._target_timeframe = target_timeframe
 
+        # HWM (High Water Mark) 추적 — drawdown 계산용
+        self._peak_equity: float = initial_capital
+
         # Batch processing (멀티에셋 전용)
         self._batch_mode = len(self._asset_weights) > 1
         self._pending_signals: dict[str, float] = {}  # symbol → target_weight
@@ -173,9 +176,19 @@ class EDAPortfolioManager:
         return total_abs_notional / equity
 
     @property
+    def initial_capital(self) -> float:
+        """초기 자본."""
+        return self._initial_capital
+
+    @property
     def open_position_count(self) -> int:
         """오픈 포지션 수."""
         return sum(1 for p in self._positions.values() if p.is_open)
+
+    @property
+    def peak_equity(self) -> float:
+        """HWM (High Water Mark) — drawdown 계산 기준."""
+        return self._peak_equity
 
     @property
     def order_counter(self) -> int:
@@ -235,6 +248,10 @@ class EDAPortfolioManager:
         let = state.get("last_executed_targets", {})
         assert isinstance(let, dict)
         self._last_executed_targets = {k: float(v) for k, v in let.items()}
+
+        # HWM 복원
+        if "peak_equity" in state:
+            self._peak_equity = float(state["peak_equity"])  # type: ignore[arg-type]
 
     def reconcile_with_exchange(
         self,
@@ -569,6 +586,9 @@ class EDAPortfolioManager:
         fill_notional = fill.fill_price * fill.fill_qty
         is_buy = fill.side == "BUY"
 
+        # delta 계산: fill 전 realized_pnl 스냅샷
+        prev_realized = pos.realized_pnl
+
         # 포지션 업데이트 (로직 분리)
         self._apply_fill_to_position(pos, fill, fill_notional, is_buy=is_buy)
 
@@ -588,7 +608,8 @@ class EDAPortfolioManager:
             direction_sign = 1.0 if pos.direction == Direction.LONG else -1.0
             pos.current_weight = direction_sign * pos.notional / equity if pos.is_open else 0.0
 
-        # PositionUpdateEvent 발행
+        # PositionUpdateEvent 발행 (delta 기반 + MTM 가격)
+        realized_delta = pos.realized_pnl - prev_realized
         pos_event = PositionUpdateEvent(
             symbol=symbol,
             direction=pos.direction,
@@ -596,6 +617,8 @@ class EDAPortfolioManager:
             avg_entry_price=pos.avg_entry_price,
             unrealized_pnl=pos.unrealized_pnl,
             realized_pnl=pos.realized_pnl,
+            realized_pnl_delta=realized_delta,
+            last_price=pos.last_price,
             correlation_id=fill.correlation_id,
             source="PortfolioManager",
         )
@@ -969,10 +992,18 @@ class EDAPortfolioManager:
         assert bus is not None
 
         margin_used = sum(p.notional for p in self._positions.values() if p.is_open)
+        equity = self.total_equity
+        self._peak_equity = max(self._peak_equity, equity)
+        drawdown_pct = (
+            max(0.0, 1.0 - equity / self._peak_equity) if self._peak_equity > 0 else 0.0
+        )
         kwargs: dict[str, object] = {
-            "total_equity": self.total_equity,
+            "total_equity": equity,
             "available_cash": self._cash,
             "total_margin_used": margin_used,
+            "drawdown_pct": drawdown_pct,
+            "open_position_count": self.open_position_count,
+            "aggregate_leverage": self.aggregate_leverage,
             "correlation_id": correlation_id,
             "source": "PortfolioManager",
         }

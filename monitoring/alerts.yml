@@ -129,3 +129,201 @@ groups:
         annotations:
           summary: "Structural decay detected for {{ $labels.strategy }}"
           description: "Conformal-RANSAC detector indicates structural performance decay (slope <= 0 or conformal bound breach)."
+
+      # 14. On-chain fetch 실패율 50% 초과 — 24시간 기준, 1시간 유지
+      - alert: OnchainFetchHighFailureRate
+        expr: rate(mcbot_onchain_fetch_total{status="failure"}[24h]) / rate(mcbot_onchain_fetch_total[24h]) > 0.5
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain fetch failure rate > 50% ({{ $value | printf \"%.0f\" }}%)"
+          description: "On-chain data fetch failure rate exceeds 50% over the last 24 hours. External API may be down."
+
+      # 15. On-chain 데이터 48시간 이상 미갱신
+      - alert: OnchainDataStale
+        expr: time() - mcbot_onchain_last_success_timestamp > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain data stale for {{ $labels.source }} (> 48h)"
+          description: "Source {{ $labels.source }} has not been updated for over 48 hours. Manual ingestion may be needed."
+
+      # 16. Live 캐시에 on-chain 컬럼 0개 — 30분 유지
+      - alert: OnchainCacheEmpty
+        expr: mcbot_onchain_cache_size == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain cache empty for {{ $labels.symbol }}"
+          description: "Live on-chain cache has 0 columns for {{ $labels.symbol }} for over 30 minutes. Check silver data and LiveOnchainFeed."
+
+      # 17. On-chain fetch P95 지연시간 60초 초과
+      - alert: OnchainFetchSlow
+        expr: histogram_quantile(0.95, rate(mcbot_onchain_fetch_latency_seconds_bucket[1h])) > 60
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "On-chain fetch slow (P95: {{ $value | printf \"%.1f\" }}s)"
+          description: "On-chain data fetch P95 latency exceeds 60 seconds. Network or API performance degradation."
+
+      # 18. 읽기 API 실패율 — 5분간 0.1/s 초과, 2분 유지
+      - alert: APIReadFailures
+        expr: rate(mcbot_exchange_api_calls_total{endpoint=~"fetch_.*", status="failure"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Read API failures detected ({{ $value | printf \"%.2f\" }}/s)"
+          description: "Exchange read API (fetch_positions, fetch_balance, etc.) failure rate exceeds 0.1/s for over 2 minutes. Data freshness may be degraded."
+
+      # 19. API 지연시간 P95 > 5초 — 2분 유지
+      - alert: APILatencyHigh
+        expr: histogram_quantile(0.95, rate(mcbot_exchange_api_latency_seconds_bucket[5m])) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API latency high (P95: {{ $value | printf \"%.1f\" }}s)"
+          description: "Exchange API P95 latency exceeds 5 seconds. Order execution quality may be degraded. Includes retry backoff time."
+
+      # 20. Rate limit 75% 접근 — 1분 유지
+      - alert: APIRateLimitApproaching
+        expr: sum(rate(mcbot_exchange_api_calls_total[1m])) * 60 > 900
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API rate limit approaching ({{ $value | printf \"%.0f\" }} req/min)"
+          description: "Exchange API call rate exceeds 900 req/min (75% of Binance 1200 req/min limit). Reduce API call frequency to avoid IP ban."
+
+      # 21. 봇 재시작 감지 (uptime 리셋)
+      - alert: BotRestarted
+        expr: resets(mcbot_uptime_seconds[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bot restarted (uptime reset detected)"
+          description: "mcbot_uptime_seconds gauge was reset in the last 10 minutes. Possible OOM kill, crash, or manual restart."
+
+      # 22. Heartbeat 120초 이상 미갱신 — event loop hung 감지
+      - alert: HeartbeatStale
+        expr: time() - mcbot_heartbeat_timestamp > 120
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Heartbeat stale ({{ $value | printf \"%.0f\" }}s since last)"
+          description: "No heartbeat received for over 120 seconds. Event loop may be hung or bot process unresponsive."
+
+      # 23. Handler 에러율 — 5분간 0.01/s 초과, 2분 유지
+      - alert: HandlerErrorsHigh
+        expr: rate(mcbot_eventbus_handler_errors_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Handler errors elevated ({{ $value | printf \"%.3f\" }}/s)"
+          description: "EventBus handler error rate exceeds 0.01/s for over 2 minutes. Event chain may be disrupted."
+
+      # 24. Circuit Breaker 발동 — 즉시 알림
+      - alert: CircuitBreakerTriggered
+        expr: increase(mcbot_circuit_breaker_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker triggered!"
+          description: "System stop-loss circuit breaker fired. All positions are being liquidated. Immediate attention required."
+
+      # 25. EventBus 큐 80% 초과 — CRITICAL 에스컬레이션
+      - alert: QueueCongestionCritical
+        expr: mcbot_eventbus_queue_depth > 8000
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "EventBus queue critically congested ({{ $value }} events pending)"
+          description: "EventBus queue depth exceeds 8000 (80% of default 10000). Imminent event drops. Investigate handler bottleneck immediately."
+
+      # 26. 전략별 누적 realized PnL -$500 이하 — 1시간 유지
+      - alert: StrategyPnlNegative
+        expr: mcbot_strategy_pnl_usdt < -500
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Strategy {{ $labels.strategy }} realized PnL below -$500 ({{ $value | printf \"%.2f\" }})"
+          description: "전략별 누적 realized PnL이 -$500 이하로 1시간 지속"
+
+      # 27. 전략 시그널 24시간 미발생
+      - alert: StrategySignalSilent
+        expr: rate(mcbot_strategy_signals_total[6h]) == 0
+        for: 1d
+        labels:
+          severity: warning
+        annotations:
+          summary: "Strategy {{ $labels.strategy }} emitted no signals for 1 day"
+          description: "전략이 24시간 시그널 미발생. 데이터 피드 문제 또는 전략 로직 확인 필요"
+
+      # 28. CPU 사용률 80% 초과 — 2분 유지
+      - alert: HighCPUUsage
+        expr: mcbot_process_cpu_percent > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage ({{ $value | printf \"%.1f\" }}%)"
+          description: "Process CPU usage exceeds 80% for over 2 minutes. Possible compute-bound handler or blocking I/O."
+
+      # 29. Active asyncio tasks 200개 초과 — 5분 유지
+      - alert: HighTaskCount
+        expr: mcbot_active_tasks > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High active task count ({{ $value | printf \"%.0f\" }})"
+          description: "Number of active asyncio tasks exceeds 200 for over 5 minutes. Possible task leak."
+
+      # 30. GC Gen2 수집 빈도 — 5분간 rate > 0.1
+      - alert: HighGCPressure
+        expr: rate(mcbot_process_gc_collections_total{generation="2"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GC pressure (gen2 rate: {{ $value | printf \"%.3f\" }}/s)"
+          description: "Generation 2 GC collection rate exceeds 0.1/s for over 5 minutes. Large object churn may cause event loop lag spikes."
+
+      # 31. Netting 상쇄 비율 급락
+      - alert: NettingLowOffset
+        expr: mcbot_netting_offset_ratio < 0.1 and mcbot_netting_gross_exposure > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low netting offset ratio ({{ $value | printf \"%.2f\" }})"
+          description: "Pod간 포지션 상쇄 비율이 10% 미만. 방향성 편중 위험."
+
+      # 32. Pod Probation 진입
+      - alert: PodInProbation
+        expr: mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="probation"} == 1
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod_id }} entered probation"
+          description: "Pod가 probation 상태에 진입. 유예 기간 내 미회복 시 RETIRED 전환."
+
+      # 33. Gross exposure 과다
+      - alert: HighGrossExposure
+        expr: mcbot_netting_gross_exposure > 3.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gross exposure ({{ $value | printf \"%.2f\" }})"
+          description: "Pod간 총 gross exposure 3.0 초과. 레버리지 과다 위험."

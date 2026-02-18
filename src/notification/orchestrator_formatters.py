@@ -12,6 +12,7 @@ Rules Applied:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 # ── Color Constants ──────────────────────────────────────────────
@@ -167,7 +168,7 @@ def format_portfolio_risk_alert_embed(
         "color": color,
         "description": message,
         "fields": fields,
-        "timestamp": "",
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
 
@@ -226,5 +227,6 @@ def format_daily_orchestrator_report_embed(
             {"name": "Gross Leverage", "value": f"{gross_leverage:.2f}x", "inline": True},
             {"name": "Active Pods", "value": str(len(pod_summaries)), "inline": True},
         ],
+        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

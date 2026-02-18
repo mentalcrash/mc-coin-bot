@@ -300,6 +300,7 @@ class TestOrchestratorDayBoundary:
         pod = _make_pod(pod_id="pod-a", symbols=("BTC/USDT",))
         orch = _make_orchestrator(config=config, pods=[pod])
         orch._target_timeframe = "4h"
+        orch._accepted_timeframes = {"4h"}
         orch.set_initial_capital(100000.0)
 
         bus = EventBus(queue_size=100)

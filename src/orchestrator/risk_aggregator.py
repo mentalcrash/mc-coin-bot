@@ -141,6 +141,63 @@ def check_correlation_stress(
     return (avg_corr >= threshold, avg_corr)
 
 
+def check_asset_correlation_stress(
+    price_history: dict[str, list[float]],
+    threshold: float,
+) -> tuple[bool, float]:
+    """에셋 레벨 가격 수익률 상관 스트레스를 검사합니다.
+
+    Pod 수 < 3일 때 에셋 수준으로 상관관계를 보완합니다.
+
+    Args:
+        price_history: {symbol: [close_prices]} 매핑
+        threshold: 상관 스트레스 임계값
+
+    Returns:
+        (is_stressed, avg_correlation) 튜플.
+        에셋 < 2개 또는 데이터 < 3행이면 (False, 0.0).
+    """
+    # 에셋 필터: 최소 2개 + 데이터 최소 3행
+    symbols = [s for s, prices in price_history.items() if len(prices) >= _MIN_COV_ROWS]
+    if len(symbols) < _MIN_PODS_FOR_CORRELATION:
+        return (False, 0.0)
+
+    # 가격 → 수익률 변환
+    min_len = min(len(price_history[s]) for s in symbols)
+    if min_len < _MIN_COV_ROWS:
+        return (False, 0.0)
+
+    returns_data: dict[str, list[float]] = {}
+    for symbol in symbols:
+        prices = price_history[symbol][-min_len:]
+        returns_data[symbol] = [
+            (prices[i] - prices[i - 1]) / prices[i - 1] if prices[i - 1] != 0 else 0.0
+            for i in range(1, len(prices))
+        ]
+
+    if not returns_data or len(next(iter(returns_data.values()))) < _MIN_COV_ROWS - 1:
+        return (False, 0.0)
+
+    # 상관행렬 계산
+    n = len(symbols)
+    returns_matrix = np.array([returns_data[s] for s in symbols])
+    corr_matrix = np.corrcoef(returns_matrix)
+
+    if not np.all(np.isfinite(corr_matrix)):
+        return (False, 0.0)
+
+    # 상삼각 off-diagonal 평균
+    mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+    off_diag = corr_matrix[mask]
+    off_diag = off_diag[np.isfinite(off_diag)]
+
+    if len(off_diag) == 0:
+        return (False, 0.0)
+
+    avg_corr = float(np.mean(off_diag))
+    return (avg_corr >= threshold, avg_corr)
+
+
 def compute_portfolio_drawdown(
     pod_performances: dict[str, PodPerformance],
     weights: dict[str, float],
@@ -191,6 +248,7 @@ class RiskAggregator:
         pod_weights: dict[str, float],
         pod_returns: pd.DataFrame | None = None,
         daily_pnl_pct: float = 0.0,
+        asset_price_history: dict[str, list[float]] | None = None,
     ) -> list[RiskAlert]:
         """5가지 포트폴리오 리스크 한도를 검사합니다.
 
@@ -200,6 +258,7 @@ class RiskAggregator:
             pod_weights: {pod_id: capital_fraction}
             pod_returns: Pod별 일별 수익률 DataFrame (PRC/상관 계산용)
             daily_pnl_pct: 오늘 실현+미실현 PnL 비율
+            asset_price_history: {symbol: [close_prices]} — Pod < 3일 때 에셋 상관 보완
 
         Returns:
             RiskAlert 리스트 (경고 없으면 빈 리스트)
@@ -213,6 +272,11 @@ class RiskAggregator:
         if pod_returns is not None and not pod_returns.empty:
             self._check_single_pod_risk(pod_returns, pod_weights, alerts)
             self._check_correlation_stress(pod_returns, alerts)
+
+            # Pod < 3 AND asset_price_history → 에셋 레벨 상관 보완
+            n_pods = pod_returns.shape[1]
+            if n_pods < _MIN_COV_ROWS and asset_price_history:
+                self._check_asset_correlation_stress(asset_price_history, alerts)
 
         return alerts
 
@@ -323,6 +387,35 @@ class RiskAggregator:
                     alert_type="correlation_stress",
                     severity="warning",
                     message=f"Avg correlation {avg_corr:.2%} approaching threshold {threshold:.1%}",
+                    current_value=avg_corr,
+                    threshold=threshold,
+                )
+            )
+
+    def _check_asset_correlation_stress(
+        self,
+        asset_price_history: dict[str, list[float]],
+        alerts: list[RiskAlert],
+    ) -> None:
+        threshold = self._config.correlation_stress_threshold
+        is_stressed, avg_corr = check_asset_correlation_stress(asset_price_history, threshold)
+
+        if is_stressed:
+            alerts.append(
+                RiskAlert(
+                    alert_type="asset_correlation_stress",
+                    severity="critical",
+                    message=f"Asset avg correlation {avg_corr:.2%} vs threshold {threshold:.1%}",
+                    current_value=avg_corr,
+                    threshold=threshold,
+                )
+            )
+        elif avg_corr >= threshold * _WARNING_RATIO:
+            alerts.append(
+                RiskAlert(
+                    alert_type="asset_correlation_stress",
+                    severity="warning",
+                    message=f"Asset avg correlation {avg_corr:.2%} approaching threshold {threshold:.1%}",
                     current_value=avg_corr,
                     threshold=threshold,
                 )

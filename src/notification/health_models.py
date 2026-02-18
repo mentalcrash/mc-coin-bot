@@ -75,6 +75,8 @@ class SymbolDerivativesSnapshot(BaseModel):
         open_interest: 미결제약정 (USDT)
         ls_ratio: Long/Short 계정 비율
         taker_ratio: Taker Buy/Sell 비율
+        top_acct_ls_ratio: Top Trader Account L/S 비율
+        top_pos_ls_ratio: Top Trader Position L/S 비율
     """
 
     model_config = ConfigDict(frozen=True)
@@ -86,6 +88,8 @@ class SymbolDerivativesSnapshot(BaseModel):
     open_interest: float
     ls_ratio: float
     taker_ratio: float
+    top_acct_ls_ratio: float = 1.0
+    top_pos_ls_ratio: float = 1.0
 
 
 class MarketRegimeReport(BaseModel):

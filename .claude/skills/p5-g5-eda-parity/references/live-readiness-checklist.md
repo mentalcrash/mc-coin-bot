@@ -212,10 +212,10 @@ grep -n "flush_all\|flush.*partial" src/eda/live_data_feed.py src/eda/candle_agg
 ### PASS 조건
 
 1. SIGTERM/SIGINT signal handler 등록
-2. `_shutdown_event.set()` → stream tasks cancel
-3. `asyncio.gather(return_exceptions=True)` 로 task 정리
-4. LiveDataFeed `flush_all()` 호출 (partial candle flush)
-5. 로그에 shutdown 상태 기록
+1. `_shutdown_event.set()` → stream tasks cancel
+1. `asyncio.gather(return_exceptions=True)` 로 task 정리
+1. LiveDataFeed `flush_all()` 호출 (partial candle flush)
+1. 로그에 shutdown 상태 기록
 
 ### 일반적 패턴
 

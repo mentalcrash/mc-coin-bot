@@ -153,6 +153,7 @@ async def test_bar_to_fill_flow(event_bus):
 ```
 
 **핵심 규칙:**
+
 - `flush()` 호출 필수 — bar-by-bar 동기 처리 보장
 - 이벤트 순서 검증: `BAR → SIGNAL → ORDER → FILL`
 - BacktestExecutor: 일반 주문은 다음 bar open에 체결, SL/TS는 즉시 체결

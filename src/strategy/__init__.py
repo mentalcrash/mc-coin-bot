@@ -26,6 +26,7 @@ Example:
 import src.strategy.ac_regime  # 전략 등록 side effect
 import src.strategy.accel_conv  # 전략 등록 side effect
 import src.strategy.accel_skew  # 전략 등록 side effect
+import src.strategy.adaptive_fr_carry  # 전략 등록 side effect
 import src.strategy.adx_regime  # 전략 등록 side effect
 import src.strategy.anchor_mom  # 전략 등록 side effect
 import src.strategy.aroc_mom  # 전략 등록 side effect
@@ -54,9 +55,12 @@ import src.strategy.enhanced_tsmom  # 전략 등록 side effect
 import src.strategy.ens_regime_dual  # 전략 등록 side effect
 import src.strategy.ensemble  # 전략 등록 side effect
 import src.strategy.entropy_switch  # 전략 등록 side effect
+import src.strategy.fear_divergence  # 전략 등록 side effect
 import src.strategy.flow_imbalance  # 전략 등록 side effect
 import src.strategy.fr_carry_vol  # 전략 등록 side effect
 import src.strategy.fr_cond_mom  # 전략 등록 side effect
+import src.strategy.fr_press_trend  # 전략 등록 side effect
+import src.strategy.fr_stab_conf  # 전략 등록 side effect
 import src.strategy.fractal_mom  # 전략 등록 side effect
 import src.strategy.fund_div_mom  # 전략 등록 side effect
 import src.strategy.funding_carry  # 전략 등록 side effect
@@ -64,11 +68,13 @@ import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hd_mom_rev  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
+import src.strategy.hurst_adaptive  # 전략 등록 side effect
 import src.strategy.hour_season  # 전략 등록 side effect
 import src.strategy.jump_drift_mom  # 전략 등록 side effect
 import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.kelt_eff_trend  # 전략 등록 side effect
+import src.strategy.liq_cascade_rev  # 전략 등록 side effect
 import src.strategy.liq_momentum  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mcr_mom  # 전략 등록 side effect
@@ -77,8 +83,12 @@ import src.strategy.ml_deriv_regime  # 전략 등록 side effect
 import src.strategy.mom_mr_blend  # 전략 등록 side effect
 import src.strategy.ms_vol_ratio  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
+import src.strategy.multi_domain_score  # 전략 등록 side effect
 import src.strategy.multi_factor  # 전략 등록 side effect
 import src.strategy.obv_accel  # 전략 등록 side effect
+import src.strategy.oi_diverge  # 전략 등록 side effect
+import src.strategy.onchain_accum  # 전략 등록 side effect
+import src.strategy.onchain_bias_4h  # 전략 등록 side effect
 import src.strategy.ou_meanrev  # 전략 등록 side effect
 import src.strategy.perm_entropy_mom  # 전략 등록 side effect
 import src.strategy.qd_mom  # 전략 등록 side effect
@@ -90,7 +100,9 @@ import src.strategy.rv_jump_cont  # 전략 등록 side effect
 import src.strategy.scaled_mom  # 전략 등록 side effect
 import src.strategy.session_breakout  # 전략 등록 side effect
 import src.strategy.skew_mom  # 전략 등록 side effect
+import src.strategy.stab_mom_trend  # 전략 등록 side effect
 import src.strategy.stoch_mom  # 전략 등록 side effect
+import src.strategy.trend_eff_score  # 전략 등록 side effect
 import src.strategy.trend_quality_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect
@@ -105,6 +117,8 @@ import src.strategy.vol_compress_brk  # 전략 등록 side effect
 import src.strategy.vol_confirm_mom  # 전략 등록 side effect
 import src.strategy.vol_impulse_mom  # 전략 등록 side effect
 import src.strategy.vol_regime  # 전략 등록 side effect
+import src.strategy.vol_squeeze_brk  # 전략 등록 side effect
+import src.strategy.vol_squeeze_deriv  # 전략 등록 side effect
 import src.strategy.vol_struct_ml  # 전략 등록 side effect
 import src.strategy.vol_structure  # 전략 등록 side effect
 import src.strategy.vov_mom  # 전략 등록 side effect

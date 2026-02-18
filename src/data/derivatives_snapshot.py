@@ -112,6 +112,12 @@ class DerivativesSnapshotFetcher:
         taker_history = await self._futures_client.fetch_taker_buy_sell_ratio(symbol, limit=1)
         taker_ratio = float(taker_history[0].get("buySellRatio", 1.0)) if taker_history else 1.0
 
+        top_acct = await self._futures_client.fetch_top_long_short_account_ratio(symbol, limit=1)
+        top_acct_ls = float(top_acct[0].get("longShortRatio", 1.0)) if top_acct else 1.0
+
+        top_pos = await self._futures_client.fetch_top_long_short_position_ratio(symbol, limit=1)
+        top_pos_ls = float(top_pos[0].get("longShortRatio", 1.0)) if top_pos else 1.0
+
         return SymbolDerivativesSnapshot(
             symbol=symbol,
             price=price,
@@ -120,6 +126,8 @@ class DerivativesSnapshotFetcher:
             open_interest=oi_value,
             ls_ratio=ls_ratio,
             taker_ratio=taker_ratio,
+            top_acct_ls_ratio=top_acct_ls,
+            top_pos_ls_ratio=top_pos_ls,
         )
 
     async def _fetch_via_own_exchange(self, symbol: str) -> SymbolDerivativesSnapshot | None:
@@ -164,6 +172,22 @@ class DerivativesSnapshotFetcher:
         )
         taker_ratio = float(taker_data[0].get("buySellRatio", 1.0)) if taker_data else 1.0
 
+        # 6. Top Trader Account ratio
+        top_acct_data: list[
+            dict[str, Any]
+        ] = await exchange.fapipublic_get_futures_data_toplongshortaccountratio(  # type: ignore[assignment,attr-defined]
+            {"symbol": bare_symbol, "period": "1h", "limit": 1}
+        )
+        top_acct_ls = float(top_acct_data[0].get("longShortRatio", 1.0)) if top_acct_data else 1.0
+
+        # 7. Top Trader Position ratio
+        top_pos_data: list[
+            dict[str, Any]
+        ] = await exchange.fapipublic_get_futures_data_toplongshortpositionratio(  # type: ignore[assignment,attr-defined]
+            {"symbol": bare_symbol, "period": "1h", "limit": 1}
+        )
+        top_pos_ls = float(top_pos_data[0].get("longShortRatio", 1.0)) if top_pos_data else 1.0
+
         return SymbolDerivativesSnapshot(
             symbol=symbol,
             price=price,
@@ -172,4 +196,6 @@ class DerivativesSnapshotFetcher:
             open_interest=oi_value,
             ls_ratio=ls_ratio,
             taker_ratio=taker_ratio,
+            top_acct_ls_ratio=top_acct_ls,
+            top_pos_ls_ratio=top_pos_ls,
         )

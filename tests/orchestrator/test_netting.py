@@ -9,6 +9,7 @@ from src.orchestrator.netting import (
     compute_deltas,
     compute_gross_leverage,
     compute_net_weights,
+    compute_netting_stats,
     scale_weights_to_leverage,
 )
 
@@ -199,3 +200,52 @@ class TestScaleWeightsToLeverage:
         original = {"BTC/USDT": 5.0}
         _ = scale_weights_to_leverage(original, 3.0)
         assert original["BTC/USDT"] == 5.0
+
+
+# ── TestComputeNettingStats ──────────────────────────────────────
+
+
+class TestComputeNettingStats:
+    def test_netting_stats_no_offset(self) -> None:
+        """상쇄 없음: 모든 Pod 같은 방향."""
+        stats = compute_netting_stats(
+            {
+                "pod-a": {"BTC/USDT": 0.3},
+                "pod-b": {"BTC/USDT": 0.2},
+            }
+        )
+        assert stats.gross_sum == pytest.approx(0.5)
+        assert stats.net_sum == pytest.approx(0.5)
+        assert stats.offset_ratio == pytest.approx(0.0)
+
+    def test_netting_stats_full_offset(self) -> None:
+        """완전 상쇄: 반대 방향 동일 크기."""
+        stats = compute_netting_stats(
+            {
+                "pod-a": {"BTC/USDT": 0.3},
+                "pod-b": {"BTC/USDT": -0.3},
+            }
+        )
+        assert stats.gross_sum == pytest.approx(0.6)
+        assert stats.net_sum == pytest.approx(0.0)
+        assert stats.offset_ratio == pytest.approx(1.0)
+
+    def test_netting_stats_partial(self) -> None:
+        """부분 상쇄."""
+        stats = compute_netting_stats(
+            {
+                "pod-a": {"BTC/USDT": 0.4},
+                "pod-b": {"BTC/USDT": -0.2},
+            }
+        )
+        assert stats.gross_sum == pytest.approx(0.6)
+        assert stats.net_sum == pytest.approx(0.2)
+        # offset_ratio = 1 - 0.2/0.6 = 2/3
+        assert stats.offset_ratio == pytest.approx(2.0 / 3.0)
+
+    def test_netting_stats_empty(self) -> None:
+        """빈 입력."""
+        stats = compute_netting_stats({})
+        assert stats.gross_sum == pytest.approx(0.0)
+        assert stats.net_sum == pytest.approx(0.0)
+        assert stats.offset_ratio == pytest.approx(0.0)

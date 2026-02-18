@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -65,7 +66,7 @@ class RegimeServiceConfig(BaseModel):
 
 @dataclass
 class EnrichedRegimeState:
-    """방향 정보가 추가된 레짐 상태.
+    """방향 + 신뢰도 + 전환확률 + cascade 정보가 추가된 레짐 상태.
 
     Attributes:
         label: 현재 레짐 라벨 (TRENDING/RANGING/VOLATILE)
@@ -74,6 +75,9 @@ class EnrichedRegimeState:
         raw_indicators: 원시 지표 값
         trend_direction: 추세 방향 (+1=상승, -1=하락, 0=중립)
         trend_strength: 추세 강도 (0.0~1.0)
+        confidence: detector agreement (0~1)
+        transition_prob: 다음 bar 레짐 전환 확률 (0~1)
+        cascade_risk: derivatives 기반 급락 위험도 (0~1)
     """
 
     label: RegimeLabel
@@ -82,6 +86,40 @@ class EnrichedRegimeState:
     raw_indicators: dict[str, float] = field(default_factory=dict)
     trend_direction: int = 0
     trend_strength: float = 0.0
+    confidence: float = 0.0
+    transition_prob: float = 0.0
+    cascade_risk: float = 0.0
+
+
+@dataclass(frozen=True)
+class RegimeContext:
+    """전략 소비용 regime 정보 패키지.
+
+    Attributes:
+        label: 현재 레짐 라벨
+        p_trending: trending 확률
+        p_ranging: ranging 확률
+        p_volatile: volatile 확률
+        confidence: detector agreement (0~1)
+        transition_prob: 다음 bar 전환 확률 (0~1)
+        cascade_risk: derivatives 기반 급락 위험도 (0~1)
+        trend_direction: 추세 방향 (+1/-1/0)
+        trend_strength: 추세 강도 (0~1)
+        bars_in_regime: 현재 레짐 유지 bar 수
+        suggested_vol_scalar: regime 기반 vol 스케일러 (0.1~1.0)
+    """
+
+    label: RegimeLabel
+    p_trending: float
+    p_ranging: float
+    p_volatile: float
+    confidence: float
+    transition_prob: float
+    cascade_risk: float
+    trend_direction: int
+    trend_strength: float
+    bars_in_regime: int
+    suggested_vol_scalar: float
 
 
 # DataFrame에 추가되는 regime 컬럼 목록
@@ -92,6 +130,9 @@ REGIME_COLUMNS = (
     "p_volatile",
     "trend_direction",
     "trend_strength",
+    "regime_confidence",
+    "regime_transition_prob",
+    "cascade_risk",
 )
 
 # 방향 계산에 필요한 최소 close 수
@@ -108,11 +149,17 @@ class RegimeService:
 
     Args:
         config: RegimeServiceConfig
+        derivatives_provider: derivatives 데이터 제공자 (None이면 비활성)
     """
 
-    def __init__(self, config: RegimeServiceConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RegimeServiceConfig | None = None,
+        derivatives_provider: object | None = None,
+    ) -> None:
         self._config = config or RegimeServiceConfig()
         self._detector = EnsembleRegimeDetector(self._config.ensemble)
+        self._derivatives_provider = derivatives_provider
 
         # 심볼별 최신 enriched regime state (live용)
         self._states: dict[str, EnrichedRegimeState] = {}
@@ -123,10 +170,76 @@ class RegimeService:
         # backtest 사전 계산 캐시 {symbol: DataFrame with regime columns}
         self._precomputed: dict[str, pd.DataFrame] = {}
 
+        # Transition matrix per symbol: 3x3 (trending/ranging/volatile)
+        self._transition_matrices: dict[str, npt.NDArray[np.float64]] = {}
+        self._transition_counts: dict[str, npt.NDArray[np.float64]] = {}
+
+        # EventBus 참조 (register 시 설정)
+        self._bus: EventBus | None = None
+
     @property
     def config(self) -> RegimeServiceConfig:
         """현재 설정."""
         return self._config
+
+    # ── Transition Matrix ──
+
+    _IDX_MAP: dict[str, int] = {"trending": 0, "ranging": 1, "volatile": 2}
+
+    def _estimate_transition_matrix(self, labels: pd.Series) -> npt.NDArray[np.float64]:
+        """Label 시퀀스에서 3x3 전환 행렬 추정 (Laplace smoothing).
+
+        Args:
+            labels: regime label 시퀀스
+
+        Returns:
+            3x3 row-normalized transition matrix
+        """
+        matrix = np.ones((3, 3))  # Laplace smoothing
+        prev: str | None = None
+        for label in labels.dropna():
+            lbl = str(label)
+            if prev is not None and lbl in self._IDX_MAP and prev in self._IDX_MAP:
+                matrix[self._IDX_MAP[prev], self._IDX_MAP[lbl]] += 1
+            prev = lbl
+        row_sums = matrix.sum(axis=1, keepdims=True)
+        return matrix / row_sums
+
+    def _get_transition_prob(self, symbol: str, current_label: RegimeLabel) -> float:
+        """현재 label에서 다른 label로 전환될 확률.
+
+        Args:
+            symbol: 거래 심볼
+            current_label: 현재 레짐 라벨
+
+        Returns:
+            전환 확률 (0~1). matrix 없으면 0.0
+        """
+        mat = self._transition_matrices.get(symbol)
+        if mat is None:
+            return 0.0
+        idx = self._IDX_MAP.get(current_label.value, 0)
+        return 1.0 - float(mat[idx, idx])
+
+    def _update_transition_counts(self, symbol: str, prev_label: str, new_label: str) -> None:
+        """Incremental transition count 업데이트 + matrix 재계산.
+
+        Args:
+            symbol: 거래 심볼
+            prev_label: 이전 레짐 라벨
+            new_label: 현재 레짐 라벨
+        """
+        if symbol not in self._transition_counts:
+            self._transition_counts[symbol] = np.ones((3, 3))  # Laplace
+
+        if prev_label in self._IDX_MAP and new_label in self._IDX_MAP:
+            self._transition_counts[symbol][
+                self._IDX_MAP[prev_label], self._IDX_MAP[new_label]
+            ] += 1
+
+        counts = self._transition_counts[symbol]
+        row_sums = counts.sum(axis=1, keepdims=True)
+        self._transition_matrices[symbol] = counts / row_sums
 
     # ── EDA Registration ──
 
@@ -152,10 +265,26 @@ class RegimeService:
         symbol = bar.symbol
         close = bar.close
 
+        # Derivatives 데이터 조회 (provider가 있으면)
+        derivatives: dict[str, float] | None = None
+        cascade_risk = 0.0
+        if self._derivatives_provider is not None:
+            derivatives = self._get_derivatives_for_bar(symbol)
+
         # 앙상블 detector incremental 업데이트
-        state = self._detector.update(symbol, close)
+        state = self._detector.update(symbol, close, derivatives=derivatives)
         if state is None:
             return  # warmup 중
+
+        # Cascade risk 조회 (derivatives detector가 있을 때)
+        if self._detector.has_derivatives_detector:
+            cascade_risk = self._detector.get_cascade_risk(symbol)
+
+        # Transition probability
+        prev_state = self._states.get(symbol)
+        if prev_state is not None:
+            self._update_transition_counts(symbol, prev_state.label.value, state.label.value)
+        transition_prob = self._get_transition_prob(symbol, state.label)
 
         # 방향 계산
         direction, strength = self._update_direction(symbol, close)
@@ -167,8 +296,62 @@ class RegimeService:
             raw_indicators=dict(state.raw_indicators),
             trend_direction=direction,
             trend_strength=strength,
+            confidence=state.confidence,
+            transition_prob=transition_prob,
+            cascade_risk=cascade_risk,
         )
+
+        # REGIME_CHANGE 이벤트 발행
+        if prev_state is not None and enriched.label != prev_state.label:
+            await self._publish_regime_change(symbol, prev_state, enriched)
+
         self._states[symbol] = enriched
+
+    def _get_derivatives_for_bar(self, symbol: str) -> dict[str, float] | None:
+        """derivatives_provider에서 현재 bar의 derivatives 데이터 조회.
+
+        Returns:
+            derivatives dict 또는 None
+        """
+        provider = self._derivatives_provider
+        if provider is None:
+            return None
+
+        # BacktestDerivativesProvider.get_derivatives_columns(symbol) 호출
+        get_fn = getattr(provider, "get_derivatives_columns", None)
+        if get_fn is not None and callable(get_fn):
+            result = get_fn(symbol)
+            if isinstance(result, dict):
+                return {k: float(v) for k, v in result.items() if isinstance(v, (int, float))}
+        return None
+
+    async def _publish_regime_change(
+        self,
+        symbol: str,
+        prev_state: EnrichedRegimeState,
+        new_state: EnrichedRegimeState,
+    ) -> None:
+        """REGIME_CHANGE 이벤트 발행.
+
+        Args:
+            symbol: 거래 심볼
+            prev_state: 이전 레짐 상태
+            new_state: 새 레짐 상태
+        """
+        if self._bus is None:
+            return
+
+        from src.core.events import RegimeChangeEvent
+
+        event = RegimeChangeEvent(
+            symbol=symbol,
+            prev_label=prev_state.label.value,
+            new_label=new_state.label.value,
+            confidence=new_state.confidence,
+            cascade_risk=new_state.cascade_risk,
+            transition_prob=new_state.transition_prob,
+        )
+        await self._bus.publish(event)
 
     # ── Query API ──
 
@@ -203,25 +386,103 @@ class RegimeService:
             "p_volatile": state.probabilities.get("volatile", 0.0),
             "trend_direction": state.trend_direction,
             "trend_strength": state.trend_strength,
+            "regime_confidence": state.confidence,
+            "regime_transition_prob": state.transition_prob,
+            "cascade_risk": state.cascade_risk,
         }
+
+    def get_regime_context(self, symbol: str) -> RegimeContext | None:
+        """전략 소비용 rich regime 정보 패키지 반환.
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            RegimeContext 또는 미등록/warmup 시 None
+        """
+        state = self._states.get(symbol)
+        if state is None:
+            return None
+
+        # suggested_vol_scalar 계산
+        base = (
+            state.probabilities.get("trending", 0.0) * 1.0
+            + state.probabilities.get("ranging", 0.0) * 0.4
+            + state.probabilities.get("volatile", 0.0) * 0.2
+        )
+
+        deriv_cfg = self._config.ensemble.derivatives
+        cascade_threshold = deriv_cfg.cascade_risk_threshold if deriv_cfg is not None else 0.7
+        if state.cascade_risk > cascade_threshold:
+            vol_scalar = 0.1
+        else:
+            vol_scalar = round(base * (0.5 + 0.5 * state.confidence), 2)
+
+        return RegimeContext(
+            label=state.label,
+            p_trending=state.probabilities.get("trending", 0.0),
+            p_ranging=state.probabilities.get("ranging", 0.0),
+            p_volatile=state.probabilities.get("volatile", 0.0),
+            confidence=state.confidence,
+            transition_prob=state.transition_prob,
+            cascade_risk=state.cascade_risk,
+            trend_direction=state.trend_direction,
+            trend_strength=state.trend_strength,
+            bars_in_regime=state.bars_held,
+            suggested_vol_scalar=vol_scalar,
+        )
 
     # ── Backtest: Vectorized Precomputation ──
 
-    def precompute(self, symbol: str, closes: pd.Series) -> pd.DataFrame:
+    def precompute(
+        self,
+        symbol: str,
+        closes: pd.Series,
+        deriv_df: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
         """전체 데이터에서 regime을 vectorized 사전 계산.
 
         Args:
             symbol: 거래 심볼
             closes: 전체 종가 시리즈 (DatetimeIndex)
+            deriv_df: derivatives DataFrame (DerivativesDetector용)
 
         Returns:
             DataFrame with regime columns (same index as closes)
         """
-        # 앙상블 감지기로 regime 분류
-        regime_df = self._detector.classify_series(closes)
+        # 앙상블 감지기로 regime 분류 (derivatives 포함)
+        regime_df = self._detector.classify_series(closes, deriv_df=deriv_df)
 
         # 방향/강도 vectorized 계산
         direction_df = self._compute_direction_vectorized(closes)
+
+        # Transition matrix 추정
+        # NOTE: Backtest에서는 전체 label 시퀀스로 matrix를 추정합니다 (look-ahead).
+        # Live에서는 expanding window로 _update_transition_counts()가 누적합니다.
+        # 정보용(transition_prob)이므로 전략 시그널에 영향을 주지 않습니다.
+        regime_labels: pd.Series = regime_df["regime_label"]  # type: ignore[assignment]
+        self._transition_matrices[symbol] = self._estimate_transition_matrix(regime_labels)
+        logger.debug(
+            "Transition matrix estimated from full label sequence ({} bars, look-ahead)",
+            len(regime_labels.dropna()),
+        )
+
+        # Transition probability per bar
+        transition_prob = self._compute_transition_prob_vectorized(symbol, regime_labels)
+
+        # Confidence (ensemble에서 이미 계산됨)
+        confidence = regime_df.get("confidence", pd.Series(0.0, index=closes.index))
+
+        # Cascade risk (derivatives detector가 있으면)
+        cascade_risk_col: pd.Series
+        if self._detector.has_derivatives_detector and deriv_df is not None:
+            cascade_risk_col = self._detector.get_cascade_risk_series(deriv_df)
+        else:
+            cascade_risk_col = pd.Series(0.0, index=closes.index)
+            if self._detector.has_derivatives_detector and deriv_df is None:
+                logger.warning(
+                    "DerivativesDetector active but deriv_df=None — cascade_risk will be 0.0"
+                )
 
         # 결합
         result = pd.DataFrame(
@@ -232,6 +493,9 @@ class RegimeService:
                 "p_volatile": regime_df["p_volatile"],
                 "trend_direction": direction_df["trend_direction"],
                 "trend_strength": direction_df["trend_strength"],
+                "regime_confidence": confidence,
+                "regime_transition_prob": transition_prob,
+                "cascade_risk": cascade_risk_col,
             },
             index=closes.index,
         )
@@ -244,6 +508,55 @@ class RegimeService:
             int(result["regime_label"].isna().sum()),
         )
         return result
+
+    def _compute_transition_prob_expanding(self, labels: pd.Series) -> pd.Series:
+        """Expanding-window transition probability 계산.
+
+        각 bar까지의 label 시퀀스로 transition matrix를 누적 추정하여
+        look-ahead bias를 제거합니다.
+
+        Args:
+            labels: regime label 시리즈
+
+        Returns:
+            transition_prob 시리즈 (0~1)
+        """
+        result = pd.Series(0.0, index=labels.index, dtype=float)
+        counts = np.ones((3, 3))  # Laplace smoothing
+        prev_label: str | None = None
+
+        for i, label in enumerate(labels):
+            if pd.isna(label):
+                prev_label = None
+                continue
+
+            lbl = str(label)
+            if prev_label is not None and lbl in self._IDX_MAP and prev_label in self._IDX_MAP:
+                counts[self._IDX_MAP[prev_label], self._IDX_MAP[lbl]] += 1
+
+            # Current matrix
+            row_sums = counts.sum(axis=1, keepdims=True)
+            mat = counts / row_sums
+
+            if lbl in self._IDX_MAP:
+                idx = self._IDX_MAP[lbl]
+                result.iloc[i] = 1.0 - float(mat[idx, idx])
+
+            prev_label = lbl
+
+        return result
+
+    def _compute_transition_prob_vectorized(self, symbol: str, labels: pd.Series) -> pd.Series:
+        """Expanding-window transition probability 계산 (look-ahead 제거).
+
+        Args:
+            symbol: 거래 심볼
+            labels: regime label 시리즈
+
+        Returns:
+            transition_prob 시리즈
+        """
+        return self._compute_transition_prob_expanding(labels)
 
     def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """사전 계산된 regime 컬럼을 df에 join.
@@ -287,9 +600,19 @@ class RegimeService:
             symbol: 거래 심볼
             closes: 과거 종가 리스트 (시간 순)
         """
+        # Build label sequence for transition matrix
+        label_sequence: list[str] = []
+
         for close in closes:
-            self._detector.update(symbol, close)
+            state = self._detector.update(symbol, close)
             self._update_direction(symbol, close)
+            if state is not None:
+                label_sequence.append(state.label.value)
+
+        # Build transition matrix from warmup labels
+        if len(label_sequence) >= _MIN_DIRECTION_BUFFER:
+            labels_series = pd.Series(label_sequence)
+            self._transition_matrices[symbol] = self._estimate_transition_matrix(labels_series)
 
         # 마지막 상태를 _states에 저장
         base_state = self._detector.get_regime(symbol)
@@ -300,6 +623,8 @@ class RegimeService:
             else:
                 direction, strength = 0, 0.0
 
+            transition_prob = self._get_transition_prob(symbol, base_state.label)
+
             self._states[symbol] = EnrichedRegimeState(
                 label=base_state.label,
                 probabilities=dict(base_state.probabilities),
@@ -307,6 +632,8 @@ class RegimeService:
                 raw_indicators=dict(base_state.raw_indicators),
                 trend_direction=direction,
                 trend_strength=strength,
+                confidence=base_state.confidence,
+                transition_prob=transition_prob,
             )
 
         logger.info(

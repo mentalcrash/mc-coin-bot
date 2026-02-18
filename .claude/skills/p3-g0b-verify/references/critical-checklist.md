@@ -83,10 +83,10 @@ df["position"] = df["signal"].shift(1)  # 다음 봉에 적용
 ### 이 프로젝트 검증 방법
 
 1. `signal.py`의 `generate_signals()` 함수 열기
-2. 시그널 계산에 사용되는 **모든 변수**를 나열
-3. 각 변수가 `shift(1)` 이상 적용되었는지 **한 줄씩** 확인
-4. `preprocessor.py`에서 계산된 중간 지표도 추적 — `preprocess()` 단계에서 shift 없이 계산 후 `signal.py`에서 shift하는 것은 **허용** (이 프로젝트의 패턴)
-5. 단, `signal.py`에서 `df["close"]`, `df["high"]`, `df["low"]`, `df["volume"]` 원본 컬럼을 shift 없이 직접 사용하면 **FAIL**
+1. 시그널 계산에 사용되는 **모든 변수**를 나열
+1. 각 변수가 `shift(1)` 이상 적용되었는지 **한 줄씩** 확인
+1. `preprocessor.py`에서 계산된 중간 지표도 추적 — `preprocess()` 단계에서 shift 없이 계산 후 `signal.py`에서 shift하는 것은 **허용** (이 프로젝트의 패턴)
+1. 단, `signal.py`에서 `df["close"]`, `df["high"]`, `df["low"]`, `df["volume"]` 원본 컬럼을 shift 없이 직접 사용하면 **FAIL**
 
 ---
 
@@ -133,9 +133,9 @@ df["feature"] = df["close"].rolling(20).mean()
 ### 이 프로젝트 검증 방법
 
 1. `preprocessor.py`에서 `rolling()`, `expanding()`, `ewm()` 호출 확인
-2. 윈도우 크기가 `config.py`의 파라미터로 제어되는지 확인
-3. ML 기반 전략(HMM 등)은 `fit()` 호출 시점이 expanding window인지 확인
-4. `signal.py`에서 전체 DataFrame 통계(`df.mean()`, `df.quantile()` 등) 미사용 확인
+1. 윈도우 크기가 `config.py`의 파라미터로 제어되는지 확인
+1. ML 기반 전략(HMM 등)은 `fit()` 호출 시점이 expanding window인지 확인
+1. `signal.py`에서 전체 DataFrame 통계(`df.mean()`, `df.quantile()` 등) 미사용 확인
 
 ---
 
@@ -148,8 +148,8 @@ df["feature"] = df["close"].rolling(20).mean()
 ### 이 프로젝트 검증 방법
 
 1. 전략이 에셋 리스트를 하드코딩하는지 확인
-2. 백테스트 기간(2020-01 ~ 2025-12) 동안 에셋이 상장되어 있었는지 확인
-3. SOL/USDT(2020-08 상장) 등 중간 상장 에셋의 NaN 처리 확인
+1. 백테스트 기간(2020-01 ~ 2025-12) 동안 에셋이 상장되어 있었는지 확인
+1. SOL/USDT(2020-08 상장) 등 중간 상장 에셋의 NaN 처리 확인
 
 | 에셋 | 상장일 | 백테스트 시작 가능 |
 |------|--------|-------------------|
@@ -223,9 +223,9 @@ df["strength"] = df["direction"] * df["vol_scalar"].fillna(0)
 ### 이 프로젝트 검증 방법
 
 1. `preprocessor.py`와 `signal.py`에서 `for` 루프 사용 여부 확인
-2. `fillna()` 호출마다 채우는 값의 **경제적 의미** 검증
-3. `np.where()` 조건에서 NaN 동작 확인 (NaN 비교는 항상 False)
-4. Series 간 연산에서 인덱스 정렬 문제 없는지 확인
+1. `fillna()` 호출마다 채우는 값의 **경제적 의미** 검증
+1. `np.where()` 조건에서 NaN 동작 확인 (NaN 비교는 항상 False)
+1. Series 간 연산에서 인덱스 정렬 문제 없는지 확인
 
 ---
 
@@ -282,10 +282,10 @@ strength = direction * vol_scalar  # -0.8 — 명시적 부호
 ### 이 프로젝트 검증 방법
 
 1. `preprocessor.py`에서 `vol_scalar` 계산 과정 추적
-2. `realized_vol` 계산에 `min_volatility` 하한 적용 확인
-3. `vol_scalar` clip 여부 (max_leverage_cap) 확인 — PM에서 처리할 수도 있음
-4. `signal.py`에서 `strength = direction * vol_scalar` 패턴 확인
-5. `config.py`의 `annualization_factor` 기본값 확인 (365여야 함)
+1. `realized_vol` 계산에 `min_volatility` 하한 적용 확인
+1. `vol_scalar` clip 여부 (max_leverage_cap) 확인 — PM에서 처리할 수도 있음
+1. `signal.py`에서 `strength = direction * vol_scalar` 패턴 확인
+1. `config.py`의 `annualization_factor` 기본값 확인 (365여야 함)
 
 ---
 
@@ -324,8 +324,8 @@ pnl = position * price_change  # 비용 없음
 ### 이 프로젝트 검증 방법
 
 1. `strategy.py`의 `recommended_config()`에서 비용 관련 설정이 0이 아닌지 확인
-2. 전략 코드 내부에서 자체 PnL/equity 계산이 있는지 확인 (있으면 FAIL — 전략은 시그널만)
-3. `config.py`에 비용 관련 파라미터가 있으면 기본값 확인
+1. 전략 코드 내부에서 자체 PnL/equity 계산이 있는지 확인 (있으면 FAIL — 전략은 시그널만)
+1. `config.py`에 비용 관련 파라미터가 있으면 기본값 확인
 
 ---
 
@@ -416,8 +416,8 @@ entries = entries & valid
 ### 이 프로젝트 검증 방법
 
 1. `signal.py`에서 `entries`, `exits`, `direction`, `strength` 생성 로직 추적
-2. 동시 entries+exits 발생 가능성 확인
-3. ShortMode 3종(DISABLED, HEDGE_ONLY, FULL) 각각의 분기 존재 확인
-4. direction 값이 `{-1, 0, 1}` 정수인지 확인
-5. strength NaN 구간에서 entries=False인지 확인
-6. `StrategySignals` 반환 전 최종 정합성 확인
+1. 동시 entries+exits 발생 가능성 확인
+1. ShortMode 3종(DISABLED, HEDGE_ONLY, FULL) 각각의 분기 존재 확인
+1. direction 값이 `{-1, 0, 1}` 정수인지 확인
+1. strength NaN 구간에서 entries=False인지 확인
+1. `StrategySignals` 반환 전 최종 정합성 확인

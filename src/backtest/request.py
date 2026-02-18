@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from src.backtest.analyzer import PerformanceAnalyzer
 from src.data.market_data import MarketDataSet, MultiSymbolData
+from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.portfolio.portfolio import Portfolio
 from src.strategy.base import BaseStrategy
 
@@ -87,7 +88,14 @@ class MultiAssetBacktestRequest:
     strategy: BaseStrategy
     portfolio: Portfolio
     weights: dict[str, float] | None = None
+    asset_allocation: AssetAllocationConfig | None = None
     analyzer: PerformanceAnalyzer | None = None
+
+    def __post_init__(self) -> None:
+        """weights와 asset_allocation 상호 배타 검증."""
+        if self.weights is not None and self.asset_allocation is not None:
+            msg = "weights and asset_allocation are mutually exclusive"
+            raise ValueError(msg)
 
     @property
     def asset_weights(self) -> dict[str, float]:

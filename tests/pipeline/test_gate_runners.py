@@ -416,6 +416,7 @@ class TestCLICommands:
         assert "--start" in result.output
         assert "--end" in result.output
         assert "--capital" in result.output
+        assert "--parallel" in result.output
 
     def test_gate3_run_help(self) -> None:
         """gate3-run --help 동작 확인."""
@@ -452,3 +453,99 @@ class TestConstants:
             baseline = config["baseline"]
             for param in config["sweeps"]:
                 assert param in baseline, f"{name}: sweep param '{param}' not in baseline"
+
+
+# =============================================================================
+# Parallel execution tests
+# =============================================================================
+
+
+class TestParallelGate1:
+    def test_max_workers_constant(self) -> None:
+        """_MAX_WORKERS 상수가 적절한 범위."""
+        from src.cli._gate_runners import _MAX_WORKERS
+
+        assert 1 <= _MAX_WORKERS <= 8
+
+    def test_gate1_worker_is_module_level(self) -> None:
+        """_gate1_worker가 모듈 레벨 함수 (pickling 가능)."""
+        from src.cli._gate_runners import _gate1_worker
+
+        assert callable(_gate1_worker)
+
+    def test_run_gate1_accepts_parallel_kwarg(self) -> None:
+        """run_gate1이 parallel kwarg를 받는지 확인."""
+        import inspect
+
+        from src.cli._gate_runners import run_gate1
+
+        sig = inspect.signature(run_gate1)
+        assert "parallel" in sig.parameters
+        # default is True
+        assert sig.parameters["parallel"].default is True
+
+    def test_run_gate1_sequential_with_mock(self, tmp_path: Path) -> None:
+        """parallel=False 시 순차 실행 (_run_symbols_sequential 호출)."""
+        from unittest.mock import MagicMock
+
+        from rich.console import Console as RichConsole
+
+        mock_console = MagicMock(spec=RichConsole)
+
+        with (
+            patch(
+                "src.cli._gate_runners._run_symbols_sequential", return_value=[]
+            ) as mock_seq,
+            patch("src.cli._gate_runners.resolve_timeframe", return_value="1D"),
+            patch("src.cli._gate_runners._update_yaml_g1"),
+            patch("src.cli._gate_runners._RESULTS_DIR", tmp_path),
+        ):
+            from datetime import UTC, datetime
+
+            from src.cli._gate_runners import run_gate1
+
+            run_gate1(
+                strategies=["test-strat"],
+                symbols=["BTC/USDT", "ETH/USDT"],
+                start=datetime(2020, 1, 1, tzinfo=UTC),
+                end=datetime(2025, 12, 31, tzinfo=UTC),
+                capital=100_000,
+                save_json=False,
+                console=mock_console,
+                parallel=False,
+            )
+
+            mock_seq.assert_called_once()
+
+    def test_run_gate1_parallel_with_mock(self, tmp_path: Path) -> None:
+        """parallel=True 시 _run_symbols_parallel 호출."""
+        from unittest.mock import MagicMock
+
+        from rich.console import Console as RichConsole
+
+        mock_console = MagicMock(spec=RichConsole)
+
+        with (
+            patch("src.cli._gate_runners.resolve_timeframe", return_value="1D"),
+            patch("src.cli._gate_runners._update_yaml_g1"),
+            patch("src.cli._gate_runners._RESULTS_DIR", tmp_path),
+            patch(
+                "src.cli._gate_runners._run_symbols_parallel", return_value=[]
+            ) as mock_par,
+        ):
+            from datetime import UTC, datetime
+
+            from src.cli._gate_runners import run_gate1
+
+            run_gate1(
+                strategies=["test-strat"],
+                symbols=["BTC/USDT", "ETH/USDT"],
+                start=datetime(2020, 1, 1, tzinfo=UTC),
+                end=datetime(2025, 12, 31, tzinfo=UTC),
+                capital=100_000,
+                save_json=False,
+                console=mock_console,
+                parallel=True,
+            )
+
+            mock_par.assert_called_once()

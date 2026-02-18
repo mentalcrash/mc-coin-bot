@@ -68,6 +68,7 @@ uv run pytest --cov=src --cov-report=term-missing --tb=no -q 2>&1 | tail -30
 ```
 
 결과를 `MetricsSnapshot` 구조로 정리:
+
 - `test_count`, `test_pass_rate`, `lint_errors`, `type_errors`, `coverage_pct`
 
 ### Step 2: 모듈 건강도
@@ -86,8 +87,9 @@ uv run pytest --cov=src --cov-report=term-missing --tb=no -q 2>&1 | tail -30
 | src/models | Pydantic 모델 |
 
 각 모듈별:
+
 1. 커버리지 확인 (pytest --cov 결과에서 추출)
-2. 코드 리뷰 항목 확인 ([module-checklist.md](references/module-checklist.md) 참조):
+1. 코드 리뷰 항목 확인 ([module-checklist.md](references/module-checklist.md) 참조):
    - `assert` 문이 프로덕션 코드에서 crash 위험
    - bare `except:` 사용
    - `# noqa`, `# type: ignore` 남용
@@ -95,6 +97,7 @@ uv run pytest --cov=src --cov-report=term-missing --tb=no -q 2>&1 | tail -30
    - 순환 import
 
 건강도 판정:
+
 - **GREEN**: 커버리지 80%+, 코드 리뷰 이슈 없음
 - **YELLOW**: 커버리지 70-80% 또는 경미한 이슈
 - **RED**: 커버리지 70% 미만 또는 심각한 이슈
@@ -112,6 +115,7 @@ uv run mcbot pipeline status
 [grading-rubric.md](references/grading-rubric.md) 기준으로 6카테고리 A~F 등급 채점.
 
 Overall = 6등급 가중 평균:
+
 - risk-safety: **2배** 가중
 - 나머지 5개: 1배 가중
 
@@ -122,6 +126,7 @@ Overall = 6등급 가중 평균:
 코드 리뷰 결과에서 새 Finding을 식별한다.
 
 **중복 검사**:
+
 ```bash
 # 기존 Finding 목록 확인
 uv run mcbot audit findings
@@ -130,6 +135,7 @@ uv run mcbot audit findings
 기존 Finding과 `location` + `title`이 동일하면 스킵.
 
 각 Finding에 대해:
+
 - severity: critical / high / medium / low
 - category: 6카테고리 중 하나
 - location: 파일경로:라인번호
@@ -139,6 +145,7 @@ uv run mcbot audit findings
 ### Step 6: Action 제안
 
 Finding별 ActionItem 생성:
+
 - priority: P0 (critical) / P1 (high) / P2 (medium) / P3 (low)
 - phase: A (즉시) / B (단기) / C (장기)
 - verification: 해결 확인 방법
@@ -147,6 +154,7 @@ Finding별 ActionItem 생성:
 ### Step 7: YAML 저장
 
 **Finding 저장**:
+
 ```bash
 uv run mcbot audit add-finding \
   --title "제목" \
@@ -161,6 +169,7 @@ uv run mcbot audit add-finding \
 ```
 
 **Action 저장**:
+
 ```bash
 uv run mcbot audit add-action \
   --title "제목" \
@@ -174,13 +183,16 @@ uv run mcbot audit add-action \
 ```
 
 **Snapshot 저장**:
+
 1. 임시 YAML 파일 생성 (Write tool로 /tmp/audit_YYYY-MM-DD.yaml)
-2. CLI로 저장:
+1. CLI로 저장:
+
 ```bash
 uv run mcbot audit create-snapshot --from-yaml /tmp/audit_YYYY-MM-DD.yaml
 ```
 
 스냅샷 YAML 형식:
+
 ```yaml
 date: "YYYY-MM-DD"
 git_sha: "<short sha>"

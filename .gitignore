@@ -224,6 +224,7 @@ Thumbs.db
 .env.local
 .env.*.local
 *.env
+!.env.example
 secrets.yaml
 secrets.yml
 credentials.json

@@ -198,6 +198,28 @@ class LiveDerivativesFeed:
                         cache["taker_ratio"] = float(item.get("buySellRatio", 0))
                         cache["taker_buy_vol"] = float(item.get("buyVol", 0))
                         cache["taker_sell_vol"] = float(item.get("sellVol", 0))
+
+                    # Top Trader Account Ratio
+                    ta_raw = await self._client.fetch_top_long_short_account_ratio(
+                        symbol, period="1h", limit=1
+                    )
+                    if ta_raw:
+                        item = ta_raw[-1]
+                        cache = self._cache.setdefault(symbol, {})
+                        cache["top_acct_ls_ratio"] = float(item.get("longShortRatio", 0))
+                        cache["top_acct_long_pct"] = float(item.get("longAccount", 0))
+                        cache["top_acct_short_pct"] = float(item.get("shortAccount", 0))
+
+                    # Top Trader Position Ratio
+                    tp_raw = await self._client.fetch_top_long_short_position_ratio(
+                        symbol, period="1h", limit=1
+                    )
+                    if tp_raw:
+                        item = tp_raw[-1]
+                        cache = self._cache.setdefault(symbol, {})
+                        cache["top_pos_ls_ratio"] = float(item.get("longShortRatio", 0))
+                        cache["top_pos_long_pct"] = float(item.get("longAccount", 0))
+                        cache["top_pos_short_pct"] = float(item.get("shortAccount", 0))
                 except Exception as e:
                     logger.warning("Ratio polling error for {}: {}", symbol, e)
             try:

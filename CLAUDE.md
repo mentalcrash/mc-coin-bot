@@ -9,6 +9,7 @@
 **MC Coin Bot**은 이벤트 기반 아키텍처(EDA)로 구축된 암호화폐 퀀트 트레이딩 시스템입니다.
 
 **핵심 철학:**
+
 - **이벤트 기반 아키텍처:** 모든 컴포넌트는 EventBus를 통해 이벤트로 통신
 - **무상태 전략 / 유상태 실행:** 전략은 시그널만 생성, 실행 시스템이 포지션·리스크·주문 관리
 - **안전 우선 (PM/RM/OMS):** Portfolio Manager → Risk Manager → OMS 3단계 방어
@@ -49,6 +50,7 @@
 ---
 
 ## Critical Rules
+
 - NEVER use pip install; 항상 `uv add` 또는 `uv pip install` 사용
 - 모든 금융 계산은 반드시 known sources와 교차 검증 필요
 - Type hints 모든 함수에 필수
@@ -66,6 +68,14 @@ uv run pytest --cov=src
 ```
 
 > `# noqa`, `# type: ignore` 사용 금지 (정당한 사유 없이)
+
+## Markdown Lint Policy
+
+모든 Markdown 문서는 markdownlint 검사를 통과해야 합니다.
+
+```bash
+markdownlint-cli2 --fix "**/*.md"
+```
 
 ---
 
@@ -99,11 +109,11 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 
 | File | Scope | Description |
 |------|-------|-------------|
-| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit) |
+| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit/catalog) |
 | [lint.md](.claude/rules/lint.md) | `src/**`, `tests/**` | Ruff/Pyright 규칙 + 빈출 위반 해결법 |
 | [strategy.md](.claude/rules/strategy.md) | `src/strategy/**` | BaseStrategy API, Registry, Gotchas |
 | [exchange.md](.claude/rules/exchange.md) | `src/exchange/**` | CCXT + BinanceFuturesClient + 예외 계층 |
-| [data.md](.claude/rules/data.md) | `src/data/**` | 메달리온 (OHLCV + Derivatives) |
+| [data.md](.claude/rules/data.md) | `src/data/**`, `src/catalog/**` | 메달리온 (OHLCV + Derivatives + Catalog) |
 | [models.md](.claude/rules/models.md) | `src/models/**` | Pydantic V2 규칙 |
 | [backtest.md](.claude/rules/backtest.md) | `src/backtest/**` | VBT + TieredValidator + Advisor |
 | [testing.md](.claude/rules/testing.md) | `tests/**` | pytest + EDA 이벤트 테스트 패턴 |
@@ -113,24 +123,30 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 ## Quick Reference
 
 ### 이벤트 흐름
+
 ```
 [Backtest] 1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
 [Live]     WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
+[Multi-TF] 1m → MultiTimeframeCandleAggregator → BAR(4h,1D,...) → Orchestrator(per-pod TF routing) → SIGNAL → PM
 ```
 
 ### 의존성 흐름 (단방향)
+
 ```
 CLI → EDA, Backtest, Pipeline → Strategy, Market, Regime → Data, Exchange, Portfolio
   → Notification, Monitoring → Models, Core → Config
+Catalog → (standalone, Data/EDA에서 선택적 참조)
 ```
 
 ### 핵심 금지 사항
+
 - `float` for prices/amounts → use `Decimal`
 - `iterrows()`, loops on DataFrame → use vectorized ops
 - `inplace=True` → use immutable operations
 - `except:` → use specific exceptions
 
 ## Gotchas
+
 - Binance API rate limit: 1200 req/min (초과 시 IP 밴)
 - 소수점 정밀도: Decimal 모듈 사용 필수, float 금지
 - `ccxt.RateLimitExceeded`는 `NetworkError` 서브클래스 → except 순서 주의

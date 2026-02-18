@@ -32,12 +32,14 @@ class RegimeState:
         probabilities: 각 레짐의 확률 (합 = 1.0)
         bars_held: 현재 레짐 유지 bar 수
         raw_indicators: 원시 지표 값
+        confidence: detector agreement (0~1, 단일 detector이면 1.0)
     """
 
     label: RegimeLabel
     probabilities: dict[str, float]
     bars_held: int
     raw_indicators: dict[str, float]
+    confidence: float = 1.0
 
 
 def _sigmoid(

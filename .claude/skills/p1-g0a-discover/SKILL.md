@@ -39,19 +39,24 @@ allowed-tools:
    - **유동성 프리미엄**: 비유동성 보상, 거래소 간 스프레드, 시간대별 유동성 편차
    - **리스크 프리미엄**: 변동성 리스크 프리미엄, 캐리, 보험 판매자 역할
 
-2. **약한 알파의 포트폴리오 결합 (Weak Alpha Portfolio)**:
+1. **약한 알파의 포트폴리오 결합 (Weak Alpha Portfolio)**:
    하나의 "성배" 전략을 찾지 않는다. Sharpe 0.3~0.5인 약한 시그널이라도
    상관관계가 낮으면 포트폴리오로 결합 시 전체 Sharpe가 크게 상승한다.
    `Sharpe_portfolio ≈ sqrt(N) * avg(Sharpe) * sqrt(1 - avg(rho))`
    → 단독 Sharpe 1.0+ 추구보다, 상관 < 0.3인 Sharpe 0.5 전략 3개가 낫다.
 
-3. **대안 데이터 차별화 (Alternative Data Edge)**:
+1. **대안 데이터 차별화 (Alternative Data Edge)**:
    가격/거래량 데이터만으로는 이미 너무 많은 참여자가 같은 것을 본다.
    온체인 데이터(whale wallet, DEX 유동성, 거래소 간 자금 흐름),
    Derivatives(펀딩레이트, OI), 소셜 센티먼트 등 차별화된 데이터를 우선한다.
    — 현재 인프라: DerivativesDataService (FR/OI/LS Ratio/Taker Ratio)
+   — On-chain: OnchainDataService (22 datasets + 12 CoinMetrics, oc_*auto-enrich in EDA)
+   — 주요 oc_* 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
+     oc_stablecoin_total_circulating_usd, oc_tvl_usd, oc_fear_greed,
+     oc_adractcnt, oc_txcnt, oc_mktcap_usd, oc_supply 등
+   — Sentiment: Fear & Greed Index (oc_fear_greed, 2018~)
 
-4. **거래 비용의 극사실적 모델링 (Realistic Cost Modeling)**:
+1. **거래 비용의 극사실적 모델링 (Realistic Cost Modeling)**:
    백테스트에서 연 50% 수익이 나와도 실제 거래 비용, 슬리피지,
    마켓 임팩트를 반영하면 마이너스가 되는 전략이 허다하다.
    특히 크립토는 스프레드가 넓고 유동성이 불안정하다.
@@ -61,14 +66,17 @@ allowed-tools:
 
 ### B. 운영 원칙 (Operational Principles)
 
-5. **참신성 추구**: 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
-6. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
-7. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
-8. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode 검토
-9. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
-10. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
-11. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
-12. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
+1. **참신성 추구**: 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
+1. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
+1. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
+1. **Long/Short 다양성**: DISABLED/HEDGE_ONLY/FULL 모든 ShortMode 검토
+1. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
+1. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
+1. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
+1. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
+1. **On-chain 데이터 우선 탐색**: OHLCV-only 전략보다 edge 감쇠 느림 (수월~수분기).
+    22개 데이터셋 + 12개 CoinMetrics 인프라 완비, 전략 0개 사용 중 → 최우선 탐색 영역.
+    idea-sources.md § 6.5에 구체적 전략 후보 (Stablecoin Flow, MVRV, Exchange Flow 등)
 
 ## 워크플로우 (7단계)
 
@@ -102,6 +110,13 @@ allowed-tools:
    uv run mcbot pipeline list --status RETIRED   # YAML 기반 동적 조회
    references/discarded-strategies.md의 "실패 패턴 요약" 섹션 참조
    동일 접근법 재시도 금지
+
+6. On-chain/Sentiment 데이터 활용 검토 (권장 — 미탐색 블루오션)
+   uv run mcbot ingest onchain info              # 22개 데이터셋 인벤토리
+   # → 전략 아이디어에 on-chain 데이터를 포함할 수 있는지 우선 검토
+   # → idea-sources.md § 6.5 참조: Stablecoin Flow, MVRV, Exchange Flow,
+   #   Fear&Greed, Network Activity 등 구체적 전략 후보 목록
+   # → 현재 전략 0개 사용 중 — OHLCV-only 전략보다 edge 감쇠 느림
 ```
 
 #### 0-Z. 탐색 모드 선택
@@ -113,6 +128,7 @@ allowed-tools:
 | **S→E (Hybrid)** | 새 전략 발굴 후 앙상블 편입 | Step 1 → Step 5.5E |
 
 판단 기준:
+
 - 활성/후보 전략 2개+ → E 모드 검토 권장
 - "앙상블"/"조합"/"포트폴리오" 키워드 → E 모드
 - 신규 아이디어 탐색 → S 모드 (기본값)
@@ -148,8 +164,8 @@ allowed-tools:
 | 3 | 변동성 구조 | Realized vs implied vol, VoV, term structure |
 | 4 | 정보 이론 | Transfer entropy, mutual information, approximate entropy |
 | 5 | 행동 재무학 | Disposition effect, anchoring, herding |
-| 6 | 대안 데이터 | On-chain whale flow, social sentiment |
-| 7 | Derivatives | Funding Rate(백테스팅 O), OI/LS Ratio(Live 전용, 30일 제한) |
+| 6 | 대안 데이터 | ✅ On-chain 22개 (stablecoin flow, TVL, DEX vol, fear&greed 등) |
+| 7 | Derivatives | ✅ FR(백테스팅 O), OI/LS/Taker(30일 제한), EDA auto-enrich |
 
 상세: [references/idea-sources.md](references/idea-sources.md)
 
@@ -198,7 +214,8 @@ allowed-tools:
       1=동일지표, 3=새조합, 5=새카테고리
 
   [3] 데이터 확보 (Data Availability)          : _/5
-      1=외부API필수, 3=파생계산, 4=Derivatives(Silver), 5=OHLCV직접
+      1=외부API필수(미구축), 2=유료API필요, 3=파생계산,
+      4=Derivatives/On-chain(Silver 구축완료), 5=OHLCV직접
 
   [4] 구현 복잡도 (Implementation Complexity)  : _/5
       1=인프라변경필요, 3=중간, 5=직관적
@@ -264,6 +281,7 @@ allowed-tools:
 | C. 방향 가중 | trend_direction/strength로 시그널 가중 | 추세 방향 활용 시 |
 
 **올바른 vs 잘못된 사용:**
+
 - OK: 기존 alpha에 레짐을 오버레이/필터로 적용 (사이징/강도 조절)
 - OK: `regime_service=None` 시 기본 동작 유지 (backward compatible)
 - NG: 레짐 전환 자체를 매매 시그널로 사용 (7개 전략 전멸)
@@ -313,8 +331,12 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 11. 예상 Sharpe 범위          12. CTREND 상관 예측: 낮음/중간/높음
 13. 비용 추정: 연간 거래비용 / 예상 총수익 비율 (< 30% 필수)
 14. 레짐 활용: 없음/패턴A/B/C (활용 시 컬럼+파라미터 명시)
-15. 데이터 요구사항: OHLCV only / Derivatives / Alternative
+15. 데이터 요구사항: OHLCV only / Derivatives / On-chain / Sentiment
+    (On-chain 주요 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
+     oc_stablecoin_total_circulating_usd, oc_tvl_usd, oc_fear_greed,
+     oc_adractcnt, oc_txcnt, oc_mktcap_usd — 전체 목록: docs/data-collection.md)
 16. 백테스팅 데이터 가용성: 전 기간/30일 제한/미확보
+    (On-chain: 2018~2020+ 소스별 상이, publication lag T+1 자동 적용)
 17. 앙상블 활용: 단독/서브 전략 후보/앙상블 전용
 ```
 
@@ -426,6 +448,7 @@ uv run mcbot pipeline create {strategy-name} \
 | AP8 | 백테스트 기간 불일치 | 최신 전략 데이터 < 3년 → 검증 불충분 |
 
 기존 앙상블 시도 확인:
+
 ```
 uv run mcbot pipeline lessons-list -t ensemble
 # Donchian Ensemble G1 FAIL 등 기존 실패 사례 반드시 참조
@@ -631,7 +654,7 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 | 11 | 과적합 전략 세탁 | G2 FAIL 전략을 앙상블로 구제 → 앙상블도 과적합 |
 | 12 | 비효율 원천 불명 | "왜 돈을 버는지" 설명 불가 → 과적합. 비효율 원천 5가지 중 미해당 |
 | 13 | 비용 비율 > 30% | edge가 거래 비용에 잠식됨. 빈도 감소 또는 TF 상향 필요 |
-| 14 | OHLCV만으로 알파 기대 | 가격/거래량은 가장 빠르게 감쇠. Derivatives/대안 데이터 우선 |
+| 14 | OHLCV만으로 알파 기대 | 가격/거래량은 가장 빠르게 감쇠. Derivatives/On-chain/Sentiment 우선 (✅ 인프라 구축 완료) |
 
 전체 목록: [references/discarded-strategies.md](references/discarded-strategies.md) + `uv run mcbot pipeline lessons-list`
 
@@ -648,6 +671,7 @@ Gate 0 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Step
 - [ ] 지표 `src/market/indicators/`에서 선택
 - [ ] 설계 문서 17개 항목 작성됨
 - [ ] Derivatives 필요 시 Silver _deriv 가용성 확인
+- [ ] On-chain/Sentiment 데이터 활용 여부 검토 (22개 데이터셋 가용)
 - [ ] 앙상블 기여도 평가됨 (약한 alpha + 낮은 상관 → 편입 후보 판정)
 - [ ] `pipeline create` → YAML 생성됨
 - [ ] `pipeline report` → dashboard 갱신됨

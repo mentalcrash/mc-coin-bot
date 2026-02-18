@@ -53,11 +53,13 @@
 | MVRV, NVT, SOPR | 기본 on-chain valuation | 중 | Coin Metrics Community로 MVRV 대체 가능 |
 
 **Glassnode 대비 장점:**
+
 - 1/8 가격 ($99 vs $799)으로 핵심 Exchange Flow 데이터 커버
 - Derivatives 데이터 통합 (Estimated Leverage Ratio 등)
 - 분 단위 granularity (Glassnode Professional과 동등)
 
 **Glassnode에서만 가능한 것:**
+
 - Entity-adjusted metrics (내부 전송 제거)
 - Realized Cap HODL Waves
 - Long/Short-Term Holder 분류
@@ -113,6 +115,7 @@ resp = httpx.get(
 | **Entity-Adjusted CDD** | 실제 경제적 의미의 Coin Days Destroyed | **중** |
 
 **Advanced ($29/mo) 한계:**
+
 - Historical 1개월만 제공 → **백테스트 불가능**
 - API 미포함
 - 결론: Advanced는 사실상 무용. Professional 아니면 Free로 충분
@@ -158,6 +161,7 @@ resp = httpx.get(
 | Enterprise | $2,000+/mo | 전체 | 전용 |
 
 **MC Coin Bot 맥락 평가:**
+
 - BTC/ETH CEX futures 전략에는 **직접적 alpha 낮음**
 - DeFi token flow, altcoin whale tracking이 핵심 use case
 - Smart Money wallet 대량 이동은 시장 전환점 시그널로 가치 있으나, 빈도 낮음
@@ -317,6 +321,7 @@ resp = httpx.get(
 | **Gamma Exposure (GEX)** | 딜러 감마 노출 → 변동성 예측 | **상** |
 
 **왜 Forward-Looking인가:**
+
 - 가격/on-chain/sentiment 데이터는 모두 **과거 기반 (backward-looking)**
 - Options IV/Skew는 시장 참여자들의 **미래 기대치를 직접 반영**
 - 25-delta skew 급등 → 하방 hedging 수요 증가 → 시장 불안 선행 지표
@@ -370,6 +375,7 @@ resp = httpx.get(
 | **Options Chains** | Deribit 옵션 전체 데이터 | **상** |
 
 **학술 근거 (Order Flow Alpha):**
+
 - Anastasopoulos & Gradojevic (2025): Order flow conditioning으로 **Sharpe 1.44 → 3.19** (2.2배 향상)
 - Order book imbalance, trade flow imbalance → 단기 가격 방향 예측
 - LOB microstructure 기반 ML 모델이 현재 학술적으로 가장 강력한 alpha 영역
@@ -446,6 +452,7 @@ datasets.download(
 - **유료**: Plus $399/mo, Premium $999/mo
 
 **활용 예시:**
+
 ```sql
 -- DEX volume by protocol (last 7 days)
 SELECT project, SUM(amount_usd) as volume
@@ -492,9 +499,9 @@ GROUP BY project ORDER BY volume DESC;
 ### 구조적 변화 (주의 사항)
 
 1. **ETF 시대의 On-Chain 한계**: 기관 자금은 custody를 통해 흐름 → on-chain에 미반영. ETF flow 데이터가 이를 보완
-2. **Signal Decay 가속**: 널리 알려진 on-chain 지표(MVRV, SOPR)는 자기규제 메커니즘으로 alpha 감소 추세
-3. **Options 시장 성숙**: 2024-25 BTC/ETH options 유동성 급증 → vol surface 신뢰도 상승. 과거에는 thin market으로 노이즈가 많았으나 현재는 실용 수준
-4. **Micro-structure Alpha 부상**: 전통 금융의 order flow 연구가 crypto에 본격 적용. LOB data 기반 ML이 차세대 alpha 영역
+1. **Signal Decay 가속**: 널리 알려진 on-chain 지표(MVRV, SOPR)는 자기규제 메커니즘으로 alpha 감소 추세
+1. **Options 시장 성숙**: 2024-25 BTC/ETH options 유동성 급증 → vol surface 신뢰도 상승. 과거에는 thin market으로 노이즈가 많았으나 현재는 실용 수준
+1. **Micro-structure Alpha 부상**: 전통 금융의 order flow 연구가 crypto에 본격 적용. LOB data 기반 ML이 차세대 alpha 영역
 
 ---
 

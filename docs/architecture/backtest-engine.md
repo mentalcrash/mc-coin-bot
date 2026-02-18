@@ -345,10 +345,10 @@ result, validation = engine.run_multi_validated(request, level="quick")
 **내부 처리 흐름:**
 
 1. 심볼별 독립 전략 실행 (`strategy.run(df)`)
-2. 자산 배분 비중 적용 (`strength × asset_weight`)
-3. PM 규칙 적용 (stop-loss, trailing-stop, rebalance)
-4. VectorBT `from_orders(cash_sharing=True, group_by=True)` 실행
-5. 포트폴리오 + 심볼별 성과 분석
+1. 자산 배분 비중 적용 (`strength × asset_weight`)
+1. PM 규칙 적용 (stop-loss, trailing-stop, rebalance)
+1. VectorBT `from_orders(cash_sharing=True, group_by=True)` 실행
+1. 포트폴리오 + 심볼별 성과 분석
 
 **파일 위치:**
 
@@ -422,9 +422,9 @@ await engine.run(request)
 ### 4.3 새 전략 추가
 
 1. `src/strategy/` 디렉토리에 새 모듈 생성
-2. `BaseStrategy` 상속
-3. `preprocess()`, `generate_signals()` 구현
-4. `BacktestRequest`에 전달
+1. `BaseStrategy` 상속
+1. `preprocess()`, `generate_signals()` 구현
+1. `BacktestRequest`에 전달
 
 ```python
 class MyStrategy(BaseStrategy):

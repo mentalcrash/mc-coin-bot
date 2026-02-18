@@ -11,6 +11,7 @@ from src.data.onchain.fetcher import (
     CM_ASSETS,
     CM_METRICS,
     CM_PAGE_SIZE,
+    CM_RENAME_MAP,
     COINMETRICS_BASE_URL,
     OnchainFetcher,
 )
@@ -33,10 +34,10 @@ class TestCoinMetricsConstants:
         assert COINMETRICS_BASE_URL == "https://community-api.coinmetrics.io/v4"
 
     def test_metrics_list(self) -> None:
-        assert "MVRV" in CM_METRICS
-        assert "RealCap" in CM_METRICS
-        assert "NVTAdj90" in CM_METRICS
-        assert len(CM_METRICS) == 9
+        assert "CapMVRVCur" in CM_METRICS
+        assert "CapMrktCurUSD" in CM_METRICS
+        assert "AdrActCnt" in CM_METRICS
+        assert len(CM_METRICS) == 12
 
     def test_assets(self) -> None:
         assert "btc" in CM_ASSETS
@@ -58,28 +59,28 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-01T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.3",
-                    "RealCap": "400000000000",
+                    "CapMVRVCur": "2.3",
+                    "CapMrktCurUSD": "400000000000",
                 },
                 {
                     "time": "2024-01-02T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.4",
-                    "RealCap": "410000000000",
+                    "CapMVRVCur": "2.4",
+                    "CapMrktCurUSD": "410000000000",
                 },
             ],
         }
         mock_client.get.return_value = mock_response
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur", "CapMrktCurUSD"])
 
         assert len(df) == 2
         assert "time" in df.columns
         assert "asset" in df.columns
-        assert "MVRV" in df.columns
-        assert "RealCap" in df.columns
+        assert "CapMVRVCur" in df.columns
+        assert "CapMrktCurUSD" in df.columns
         assert df["asset"].iloc[0] == "btc"
-        assert df["MVRV"].iloc[0] == Decimal("2.3")
+        assert df["CapMVRVCur"].iloc[0] == Decimal("2.3")
 
     @pytest.mark.asyncio()
     async def test_decimal_precision(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
@@ -89,15 +90,15 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-01T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.345678901234",
+                    "CapMVRVCur": "2.345678901234",
                 },
             ],
         }
         mock_client.get.return_value = mock_response
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur"])
 
-        val = df["MVRV"].iloc[0]
+        val = df["CapMVRVCur"].iloc[0]
         assert isinstance(val, Decimal)
         assert val == Decimal("2.345678901234")
 
@@ -107,10 +108,10 @@ class TestFetchCoinMetrics:
         mock_response.json.return_value = {"data": []}
         mock_client.get.return_value = mock_response
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur", "CapMrktCurUSD"])
 
         assert df.empty
-        assert list(df.columns) == ["time", "asset", "MVRV", "RealCap"]
+        assert list(df.columns) == ["time", "asset", "CapMVRVCur", "CapMrktCurUSD"]
 
     @pytest.mark.asyncio()
     async def test_missing_metric_value(
@@ -122,17 +123,17 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-01T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.3",
-                    # RealCap missing entirely
+                    "CapMVRVCur": "2.3",
+                    # CapMrktCurUSD missing entirely
                 },
             ],
         }
         mock_client.get.return_value = mock_response
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV", "RealCap"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur", "CapMrktCurUSD"])
 
-        assert df["MVRV"].iloc[0] == Decimal("2.3")
-        assert df["RealCap"].iloc[0] is None
+        assert df["CapMVRVCur"].iloc[0] == Decimal("2.3")
+        assert df["CapMrktCurUSD"].iloc[0] is None
 
     @pytest.mark.asyncio()
     async def test_empty_string_metric(
@@ -144,15 +145,15 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-01T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "",
+                    "CapMVRVCur": "",
                 },
             ],
         }
         mock_client.get.return_value = mock_response
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur"])
 
-        assert df["MVRV"].iloc[0] is None
+        assert df["CapMVRVCur"].iloc[0] is None
 
     @pytest.mark.asyncio()
     async def test_pagination(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
@@ -162,7 +163,7 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-01T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.3",
+                    "CapMVRVCur": "2.3",
                 },
             ],
             "next_page_url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?next_page_token=abc",
@@ -174,14 +175,14 @@ class TestFetchCoinMetrics:
                 {
                     "time": "2024-01-02T00:00:00.000000000Z",
                     "asset": "btc",
-                    "MVRV": "2.4",
+                    "CapMVRVCur": "2.4",
                 },
             ],
         }
 
         mock_client.get.side_effect = [page1_response, page2_response]
 
-        df = await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+        df = await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur"])
 
         assert len(df) == 2
         assert mock_client.get.call_count == 2
@@ -196,7 +197,7 @@ class TestFetchCoinMetrics:
         mock_client.get.return_value = mock_response
 
         await fetcher.fetch_coinmetrics(
-            "btc", metrics=["MVRV"], start="2024-01-01", end="2024-12-31"
+            "btc", metrics=["CapMVRVCur"], start="2024-01-01", end="2024-12-31"
         )
 
         called_url = mock_client.get.call_args[0][0]
@@ -204,7 +205,7 @@ class TestFetchCoinMetrics:
 
         called_params = mock_client.get.call_args[1]["params"]
         assert called_params["assets"] == "btc"
-        assert called_params["metrics"] == "MVRV"
+        assert called_params["metrics"] == "CapMVRVCur"
         assert called_params["frequency"] == "1d"
         assert called_params["start_time"] == "2024-01-01"
         assert called_params["end_time"] == "2024-12-31"
@@ -229,7 +230,18 @@ class TestFetchCoinMetrics:
         mock_response.json.return_value = {"data": []}
         mock_client.get.return_value = mock_response
 
-        await fetcher.fetch_coinmetrics("btc", metrics=["MVRV"])
+        await fetcher.fetch_coinmetrics("btc", metrics=["CapMVRVCur"])
 
         called_params = mock_client.get.call_args[1]["params"]
         assert "end_time" not in called_params
+
+    def test_rename_map(self) -> None:
+        """CM_RENAME_MAP contains all metrics that need renaming."""
+        assert CM_RENAME_MAP["CapMVRVCur"] == "oc_mvrv"
+        assert CM_RENAME_MAP["CapMrktCurUSD"] == "oc_mktcap_usd"
+        assert CM_RENAME_MAP["FlowInExUSD"] == "oc_flow_in_ex_usd"
+        assert CM_RENAME_MAP["FlowOutExUSD"] == "oc_flow_out_ex_usd"
+        assert len(CM_RENAME_MAP) == 10
+        # All keys should be in CM_METRICS
+        for key in CM_RENAME_MAP:
+            assert key in CM_METRICS, f"{key} in CM_RENAME_MAP but not in CM_METRICS"

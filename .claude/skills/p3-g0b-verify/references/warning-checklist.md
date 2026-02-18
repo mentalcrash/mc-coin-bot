@@ -15,8 +15,8 @@
 ### 검증 방법
 
 1. `config.py`의 `warmup_periods()` 메서드 확인
-2. `preprocessor.py`에서 사용하는 **모든** rolling/expanding/ewm 윈도우 나열
-3. 최대 윈도우 + 1 <= `warmup_periods()` 반환값인지 확인
+1. `preprocessor.py`에서 사용하는 **모든** rolling/expanding/ewm 윈도우 나열
+1. 최대 윈도우 + 1 <= `warmup_periods()` 반환값인지 확인
 
 ### 예시
 
@@ -58,8 +58,8 @@ Rule of thumb: **Trades / Params > 10**
 ### 검증 방법
 
 1. `config.py`에서 전략 로직에 영향을 주는 파라미터 수 세기
-2. 공통 파라미터(vol_target, min_volatility 등)는 **제외** (PM에서 관리)
-3. 전략 고유 파라미터만 카운트
+1. 공통 파라미터(vol_target, min_volatility 등)는 **제외** (PM에서 관리)
+1. 전략 고유 파라미터만 카운트
 
 ### 파라미터 분류
 
@@ -95,8 +95,8 @@ Rule of thumb: **Trades / Params > 10**
 ### 검증 방법 (코드 수준)
 
 1. **Long-only 편향**: ShortMode.DISABLED + 추세추종 = 하락장에서 손실 집중
-2. **변동성 의존**: 급변동 시장에서만 시그널 발생하는 구조 (NR7 squeeze 등)
-3. **레짐 필터 없음**: 모든 시장 환경에서 동일 로직 적용
+1. **변동성 의존**: 급변동 시장에서만 시그널 발생하는 구조 (NR7 squeeze 등)
+1. **레짐 필터 없음**: 모든 시장 환경에서 동일 로직 적용
 
 ### 체크리스트
 
@@ -118,8 +118,8 @@ Rule of thumb: **Trades / Params > 10**
 ### 검증 방법 (코드 수준)
 
 1. `signal.py`에서 entry 조건의 빈도 추정
-2. `rebalance_threshold` 사용 여부 확인 (PM에서 필터링)
-3. 매 bar entry 가능한 구조인지 확인
+1. `rebalance_threshold` 사용 여부 확인 (PM에서 필터링)
+1. 매 bar entry 가능한 구조인지 확인
 
 ### 판정
 

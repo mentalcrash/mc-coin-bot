@@ -198,3 +198,34 @@ class TestMSARIncremental:
 
         assert "BTC/USDT" in detector._buffers
         assert "ETH/USDT" in detector._buffers
+
+
+# ── Convergence Tracking Tests ──
+
+
+@pytest.mark.skipif(not MSAR_AVAILABLE, reason="statsmodels not installed")
+class TestConvergenceTracking:
+    """MSARDetector convergence tracking 검증."""
+
+    def test_convergence_rate_initial(self) -> None:
+        """학습 전 convergence_rate = 1.0."""
+        cfg = MSARDetectorConfig(
+            k_regimes=2, order=1, min_train_window=120,
+            sliding_window=0, switching_ar=False,
+        )
+        detector = MSARDetector(cfg)
+        assert detector.convergence_rate == 1.0
+        assert detector._fit_attempts == 0
+
+    def test_convergence_rate_after_training(self) -> None:
+        """학습 후 convergence_rate가 0~1 범위."""
+        cfg = MSARDetectorConfig(
+            k_regimes=2, order=1, min_train_window=120,
+            retrain_interval=50, sliding_window=0, switching_ar=False,
+        )
+        detector = MSARDetector(cfg)
+        closes = _make_trending_series(300)
+        detector.classify_series(closes)
+
+        assert detector._fit_attempts > 0
+        assert 0.0 <= detector.convergence_rate <= 1.0

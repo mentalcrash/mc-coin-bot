@@ -198,3 +198,65 @@ class TestAnalyze:
         result = ICAnalyzer.analyze(indicator, forward_returns)
         assert not np.isnan(result.rank_ic)
         assert not np.isnan(result.hit_rate)
+
+
+class TestICBatchResult:
+    """ICBatchResult / ICBatchEntry 테스트."""
+
+    def test_batch_result_creation(self) -> None:
+        """ICBatchResult 생성 + 집계."""
+        from src.backtest.ic_analyzer import ICBatchEntry, ICBatchResult
+
+        rng = np.random.default_rng(42)
+        n = 500
+
+        # 강한 지표 → PASS
+        base = rng.standard_normal(n)
+        strong_ind = pd.Series(base)
+        strong_ret = pd.Series(base + rng.standard_normal(n) * 0.3)
+        strong_result = ICAnalyzer.analyze(strong_ind, strong_ret)
+
+        # 랜덤 지표 → FAIL
+        weak_ind = pd.Series(rng.standard_normal(n))
+        weak_ret = pd.Series(rng.standard_normal(n))
+        weak_result = ICAnalyzer.analyze(weak_ind, weak_ret)
+
+        entries = [
+            ICBatchEntry(indicator_name="strong", result=strong_result),
+            ICBatchEntry(indicator_name="weak", result=weak_result),
+            ICBatchEntry(indicator_name="error", result=None, error="Test error"),
+        ]
+
+        batch = ICBatchResult(
+            entries=entries,
+            total=3,
+            passed=1,
+            failed=1,
+            skipped=1,
+        )
+
+        assert batch.total == 3
+        assert batch.passed == 1
+        assert batch.failed == 1
+        assert batch.skipped == 1
+        assert len(batch.entries) == 3
+
+    def test_batch_entry_with_error(self) -> None:
+        from src.backtest.ic_analyzer import ICBatchEntry
+
+        entry = ICBatchEntry(indicator_name="broken", result=None, error="missing data")
+        assert entry.result is None
+        assert entry.error == "missing data"
+
+    def test_batch_entry_with_result(self) -> None:
+        from src.backtest.ic_analyzer import ICBatchEntry
+
+        rng = np.random.default_rng(42)
+        n = 300
+        ind = pd.Series(rng.standard_normal(n))
+        ret = pd.Series(rng.standard_normal(n))
+        result = ICAnalyzer.analyze(ind, ret)
+
+        entry = ICBatchEntry(indicator_name="test", result=result)
+        assert entry.result is not None
+        assert entry.error is None

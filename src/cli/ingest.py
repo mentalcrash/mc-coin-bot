@@ -34,8 +34,11 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from src.cli.ingest_deriv_ext import app as deriv_ext_app
 from src.cli.ingest_derivatives import app as derivatives_app
+from src.cli.ingest_macro import app as macro_app
 from src.cli.ingest_onchain import app as onchain_app
+from src.cli.ingest_options import app as options_app
 from src.config.settings import get_settings
 from src.core.logger import setup_logger
 from src.data.bronze import BronzeStorage
@@ -56,6 +59,9 @@ app = typer.Typer(
 # Sub-command 등록
 app.add_typer(derivatives_app, name="derivatives")
 app.add_typer(onchain_app, name="onchain")
+app.add_typer(macro_app, name="macro")
+app.add_typer(options_app, name="options")
+app.add_typer(deriv_ext_app, name="deriv-ext")
 
 
 def _display_settings() -> None:
@@ -613,7 +619,7 @@ def bulk_download(
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s) to fetch (can specify multiple)"),
-    ] = [2023, 2024, 2025],  # noqa: B006
+    ] = [2020, 2021, 2022, 2023, 2024, 2025, 2026],  # noqa: B006
     quote: Annotated[
         str,
         typer.Option("--quote", "-q", help="Quote currency for filtering symbols"),

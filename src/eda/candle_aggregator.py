@@ -52,6 +52,11 @@ def _timeframe_to_seconds(tf: str) -> int:
     raise ValueError(msg)
 
 
+def timeframe_to_seconds(tf: str) -> int:
+    """타임프레임 문자열 → 초 단위 (public API)."""
+    return _timeframe_to_seconds(tf)
+
+
 @dataclass
 class PartialCandle:
     """집계 중인 미완성 캔들.
@@ -216,3 +221,39 @@ class CandleAggregator:
             correlation_id=uuid4(),
             source="CandleAggregator",
         )
+
+
+class MultiTimeframeCandleAggregator:
+    """여러 TF의 CandleAggregator를 합성하여 1m bar에서 복수 TF bar를 생성.
+
+    짧은 TF 먼저 emit (인과 순서 보장).
+
+    Args:
+        target_timeframes: 집계 목표 TF 집합
+    """
+
+    def __init__(self, target_timeframes: set[str]) -> None:
+        sorted_tfs = sorted(target_timeframes, key=_timeframe_to_seconds)
+        self._aggregators = {tf: CandleAggregator(tf) for tf in sorted_tfs}
+        self._sorted_tfs = sorted_tfs
+
+    @property
+    def timeframes(self) -> list[str]:
+        """정렬된 TF 목록."""
+        return list(self._sorted_tfs)
+
+    def on_1m_bar(self, bar: BarEvent) -> list[BarEvent]:
+        """1m bar → 완성된 TF bar 리스트 (짧은 TF 먼저, 0~N개)."""
+        completed: list[BarEvent] = []
+        for tf in self._sorted_tfs:
+            result = self._aggregators[tf].on_1m_bar(bar)
+            if result is not None:
+                completed.append(result)
+        return completed
+
+    def flush_all(self) -> list[BarEvent]:
+        """모든 TF의 미완성 캔들을 강제 완성."""
+        results: list[BarEvent] = []
+        for tf in self._sorted_tfs:
+            results.extend(self._aggregators[tf].flush_all())
+        return results

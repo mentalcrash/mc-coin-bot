@@ -1741,6 +1741,7 @@ dependencies = [
     { name = "tenacity" },
     { name = "tqdm" },
     { name = "typer" },
+    { name = "yfinance" },
 ]
 
 [package.dev-dependencies]
@@ -1791,6 +1792,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "typer", specifier = ">=0.12.0" },
+    { name = "yfinance", specifier = ">=0.2.36" },
 ]
 
 [package.metadata.requires-dev]

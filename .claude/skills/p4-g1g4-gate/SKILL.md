@@ -21,6 +21,7 @@ argument-hint: <strategy-name> [--from g1|g2|g2h|g3|g4]
 **시니어 퀀트 리서처 겸 검증 엔지니어**로서 행동한다.
 
 핵심 원칙:
+
 - 단순 threshold 비교가 아닌 **경제적 의미 해석** — 숫자 뒤의 이유를 찾는다
 - FAIL 시 **구체적 사유 + 수정 방향** 제시 (단순 "FAIL" 판정 금지)
 - Gate 간 **결과 일관성 추적** — G1 Sharpe -> G2 OOS Sharpe -> G4 WFA OOS 흐름 확인
@@ -81,7 +82,7 @@ ls data/silver/BTC_USDT_1D.parquet data/silver/ETH_USDT_1D.parquet \
 Gate 3 스윕 범위는 두 소스 중 하나에서 제공:
 
 1. **G2H 자동 생성 (권장)**: `results/gate2h_{strategy}.json`의 `g3_sweeps`
-2. **수동 등록 (fallback)**: `src/cli/_gate_runners.py`의 `GATE3_STRATEGIES` dict
+1. **수동 등록 (fallback)**: `src/cli/_gate_runners.py`의 `GATE3_STRATEGIES` dict
 
 G2H를 실행하면 수동 등록 불필요. G2H 건너뛴 경우에만 수동 등록 (사용자 승인).
 
@@ -115,10 +116,11 @@ Sharpe/Sortino/Calmar, CAGR, MDD, Trades, Win Rate, Profit Factor, Alpha/Beta(vs
 **PASS 조건** (Best Asset 기준): Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50
 
 **즉시 폐기** (전 에셋 해당 시):
+
 1. MDD > 50% — 전 에셋
-2. Sharpe < 0 — 전 에셋
-3. Trades < 20 + 수익 음수
-4. 80%+ 단일 거래 의존
+1. Sharpe < 0 — 전 에셋
+1. Trades < 20 + 수익 음수
+1. 80%+ 단일 거래 의존
 
 ### 비용 민감도
 
@@ -198,8 +200,8 @@ uv run mcbot backtest validate \
 ### 목적
 
 1. 기본 파라미터 대비 Optuna TPE 최적화로 개선 가능성 확인
-2. 최적 파라미터 중심으로 G3 sweep 범위 자동 생성 (수동 등록 불필요)
-3. IS/OOS 분할 검증으로 과적합 경향 사전 파악
+1. 최적 파라미터 중심으로 G3 sweep 범위 자동 생성 (수동 등록 불필요)
+1. IS/OOS 분할 검증으로 과적합 경향 사전 파악
 
 ### 실행
 
@@ -229,6 +231,7 @@ uv run mcbot pipeline gate2h-run {strategy_name} --n-trials 100 --seed 42 --json
 | > 30% | IS 과적합 가능성. OOS Sharpe 확인 필수 |
 
 OOS Sharpe 확인:
+
 - OOS > 0, IS 대비 Decay < 50%: 양호
 - OOS <= 0: IS 과적합 의심 — G3/G4에서 추가 검증 (G2H 자체는 PASS)
 

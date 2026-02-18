@@ -74,7 +74,7 @@
 | N1 | SpamGuard | 5분 cooldown |
 | N2 | Retry logic | 3회 exponential backoff |
 | N3 | Queue bounded | asyncio.Queue(500) |
-| N4 | TYPE_CHECKING imports | discord.py 런타임 분리 |
+| N4 | TYPE_CHECKING imports | Discord.py 런타임 분리 |
 
 ### src/core (핵심 모듈)
 

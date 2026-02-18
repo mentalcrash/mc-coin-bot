@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/main/schema/markdownlint-cli2-config-schema.json",
+  "gitignore": true,
+  "ignores": [
+    "node_modules/**",
+    ".venv/**",
+    "data/**"
+  ],
+  "config": {
+    "default": true,
+
+    // ── Headings ──
+    "heading-style": { "style": "atx" },              // # ATX style 통일
+    "no-duplicate-heading": { "siblings_only": true }, // 같은 레벨 내에서만 중복 금지
+
+    // ── Line length ──
+    // CJK double-width 미지원 (markdownlint#564) → 비활성화
+    "line-length": false,
+
+    // ── Lists ──
+    "ul-style": { "style": "dash" },   // - dash 통일
+    "ol-prefix": { "style": "one" },   // 1. 1. 1. (auto-increment는 렌더러가 처리)
+
+    // ── Code blocks ──
+    "fenced-code-language": false,                   // pseudo-code, 출력 예시 허용
+    "code-block-style": { "style": "fenced" },       // ``` fenced 통일
+    "code-fence-style": { "style": "backtick" },     // backtick 통일
+
+    // ── Inline HTML ──
+    "no-inline-html": {
+      "allowed_elements": ["details", "summary", "kbd", "br", "sub", "sup", "img"]
+    },
+
+    // ── Tables (v0.35+ 신규) ──
+    "blanks-around-tables": true,                    // MD058: table 앞뒤 빈 줄
+    "table-column-count": false,                     // MD056: backtick 내 | 오탐 방지
+    "table-column-style": false,                     // MD060: 잦은 편집으로 정렬 유지 비용 높음
+
+    // ── Links (v0.38+ 신규) ──
+    "descriptive-link-text": {                       // MD059: 접근성 — generic link text 금지
+      "prohibited_texts": [
+        "click here", "here", "link", "more",
+        "여기", "클릭", "링크", "더보기"
+      ]
+    },
+
+    // ── Emphasis ──
+    "emphasis-style": { "style": "asterisk" },       // *italic* 통일
+    "strong-style": { "style": "asterisk" },         // **bold** 통일
+
+    // ── Proper names ──
+    "proper-names": {
+      "names": [
+        "Python", "Binance", "Discord", "GitHub",
+        "Pydantic", "VectorBT", "CCXT", "EventBus",
+        "Docker", "Kubernetes", "Parquet"
+      ],
+      "code_blocks": false
+    },
+
+    // ── Blockquote ──
+    "no-blanks-blockquote": false,                   // MD028: multi-paragraph blockquote 허용
+
+    // ── Trailing ──
+    "no-trailing-punctuation": { "punctuation": ".,;:!" },
+    "single-trailing-newline": true,
+
+    // ── 비활성화 ──
+    "no-emphasis-as-heading": false,   // MD036: bold text를 의도적 사용 허용
+    "first-line-heading": false        // MD041: front matter, fragment 파일 허용
+  }
+}

@@ -44,6 +44,7 @@ dependencies = [
     "scipy>=1.12.0",
     "prometheus-client>=0.24.1",
     "matplotlib>=3.10.8",
+    "yfinance>=0.2.36",
 ]
 
 [project.scripts]
@@ -177,12 +178,24 @@ unfixable = []
 "src/models/derivatives.py" = ["TC003"]
 # Onchain models: Decimal/datetime은 Pydantic field annotation 런타임 필요
 "src/data/onchain/models.py" = ["TC003"]
+# Macro models: Decimal은 Pydantic field annotation 런타임 필요
+"src/data/macro/models.py" = ["TC003"]
+# Options models: Decimal은 Pydantic field annotation 런타임 필요
+"src/data/options/models.py" = ["TC003"]
+# DerivExt models: Decimal은 Pydantic field annotation 런타임 필요
+"src/data/deriv_ext/models.py" = ["TC003"]
 # Pipeline report: StrategyStore 런타임 필요
 "src/pipeline/report.py" = ["TC001"]
 # Orchestrator loader: OrchestratorConfig는 Pydantic field annotation 런타임 필요
 "src/config/orchestrator_loader.py" = ["TC001"]
+# Orchestrator config: AssetAllocationConfig는 Pydantic field annotation 런타임 필요
+"src/orchestrator/config.py" = ["TC001"]
 # Health models: datetime은 Pydantic field annotation 런타임 필요
 "src/notification/health_models.py" = ["TC003"]
+# Experiment models: datetime은 Pydantic field annotation 런타임 필요
+"src/pipeline/experiment_models.py" = ["TC003"]
+# Risk monitor models: datetime은 Pydantic field annotation 런타임 필요
+"src/portfolio/risk_monitor_models.py" = ["TC003"]
 # 스크립트는 로거 설정 후 import, 매직넘버, print 허용
 "scripts/**/*" = ["E402", "PLR2004", "RUF001", "RUF002", "RUF003", "TRY300", "T201"]
 
@@ -265,6 +278,10 @@ addopts = [
     "-q",            # 간결한 출력
     "--strict-markers",  # 미등록 마커 사용 시 에러
     "--tb=short",    # 짧은 트레이스백
+]
+markers = [
+    "slow: 느린 테스트 (회귀 테스트, 백테스트 등)",
+    "chaos: 장애 주입 테스트 (edge case, fault injection)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

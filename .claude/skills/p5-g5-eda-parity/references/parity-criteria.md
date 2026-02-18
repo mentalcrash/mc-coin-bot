@@ -149,8 +149,8 @@ winrate_deviation = eda_winrate - vbt_winrate
 ### 판정 근거
 
 1. **수익 부호 일치**: 양쪽 모두 강한 양수 (97.8% vs 173.8%)
-2. **편차 > 20%**: 있으나, PM/RM 구조적 차이로 설명 가능
-3. **거래 수 0.25x**: 기준(0.5x) 미달이나, PM threshold의 구조적 필터링으로 예외 허용
+1. **편차 > 20%**: 있으나, PM/RM 구조적 차이로 설명 가능
+1. **거래 수 0.25x**: 기준(0.5x) 미달이나, PM threshold의 구조적 필터링으로 예외 허용
 
 ### 시사점
 
@@ -197,7 +197,7 @@ Gate 5는 **단일에셋** 검증이 기본이지만, 멀티에셋 EDA 검증도
 | 항목 | 확인 |
 |------|------|
 | asset_weights 동일 | VBT와 EDA에서 동일 EW 비율 사용 |
-| batch mode 활성화 | len(asset_weights) > 1 → _batch_mode=True 자동 |
+| batch mode 활성화 | len(asset_weights) > 1 →_batch_mode=True 자동 |
 | flush_pending_signals | Runner에서 호출 확인 |
 | common_index | 심볼 간 데이터 교집합 처리 |
 

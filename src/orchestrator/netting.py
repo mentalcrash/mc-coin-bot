@@ -12,9 +12,29 @@ Rules Applied:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 # ── Constants ─────────────────────────────────────────────────────
 
 _MIN_WEIGHT = 1e-8
+
+
+# ── Data Classes ─────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class NettingStats:
+    """Pod 간 포지션 상쇄 통계.
+
+    Attributes:
+        gross_sum: 전체 gross exposure (sum of abs weights across all pods)
+        net_sum: 넷팅 후 net exposure (sum of abs netted weights)
+        offset_ratio: 상쇄 비율 (0=상쇄 없음, 1=완전 상쇄)
+    """
+
+    gross_sum: float
+    net_sum: float
+    offset_ratio: float
 
 
 # ── Pure Functions ────────────────────────────────────────────────
@@ -36,6 +56,34 @@ def compute_net_weights(
         for symbol, weight in symbol_weights.items():
             net[symbol] = net.get(symbol, 0.0) + weight
     return net
+
+
+def compute_netting_stats(
+    pod_global_weights: dict[str, dict[str, float]],
+) -> NettingStats:
+    """Pod별 글로벌 가중치에서 넷팅 상쇄 통계를 계산합니다.
+
+    Args:
+        pod_global_weights: {pod_id: {symbol: weight}} 매핑
+
+    Returns:
+        NettingStats (gross_sum, net_sum, offset_ratio)
+    """
+    # Gross: sum of abs(weight) across all pods
+    gross = 0.0
+    for symbol_weights in pod_global_weights.values():
+        for weight in symbol_weights.values():
+            gross += abs(weight)
+
+    # Net: sum of abs(netted weight per symbol)
+    net_weights = compute_net_weights(pod_global_weights)
+    net = sum(abs(w) for w in net_weights.values())
+
+    if gross < _MIN_WEIGHT:
+        return NettingStats(gross_sum=0.0, net_sum=0.0, offset_ratio=0.0)
+
+    offset_ratio = 1.0 - net / gross
+    return NettingStats(gross_sum=gross, net_sum=net, offset_ratio=offset_ratio)
 
 
 def compute_deltas(

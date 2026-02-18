@@ -103,21 +103,21 @@
 > 최신 교훈은 `pipeline lessons-list`로 확인.
 
 1. **앙상블 > 단일지표**: ML 앙상블(CTREND)의 낮은 Decay(33.7%)가 단일 팩터 전략 대비 일반화 우수
-2. **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐
-3. **SOL/USDT = Best Asset**: 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리
-4. **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 조기 제거
-5. **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증 합리적
-6. **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블
-7. **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수
-8. **G0A 이론 ≠ G1 실전**: G0A 고득점이 G1 성과를 보장하지 않음. 46개 중 G5 도달 1개(2.2%)
-9. **통계적 검정 전략의 한계**: significance threshold가 거래 빈도를 극단 제한 (BTC 6년간 2건)
-10. **밈코인 FULL Short = 구조적 자살**: DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적
-11. **칼만 필터 ≠ 알파**: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음
-12. **레짐 필터의 양면성**: 레짐 필터만으로는 alpha 생성 메커니즘 부재
-13. **FX Session Edge ≠ Crypto Edge**: 크립토 24/7 시장에서 session 분리 구조적으로 약함
-14. **Amihud Illiquidity ≠ Crypto Alpha**: 1H Amihud conviction 확대가 whipsaw 증폭
-15. **BVC 근사의 TF 불변 한계**: OHLCV BVC는 1D→1H 해상도 올려도 flow 방향 예측 불가. L2 data 필수
-16. **Intraday 계절성 비정상성**: hour-of-day t-stat은 noise를 과적합. 4종 1H 전략 전멸
+1. **IS Sharpe ≠ 실전 성과**: Gate 1 PASS 전략 24개 중 Gate 4까지 도달한 전략은 4개뿐
+1. **SOL/USDT = Best Asset**: 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리
+1. **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 조기 제거
+1. **PBO FAIL ≠ 즉시 폐기**: 전 fold OOS 양수 + MC p=0.000이면 실시간 검증 합리적
+1. **다양성이 알파**: 단일코인 < 멀티에셋, 단일지표 < 앙상블
+1. **데이터 해상도 = 전략 해상도**: 마이크로스트럭처 전략(VPIN)은 tick/volume bar 데이터 필수
+1. **G0A 이론 ≠ G1 실전**: G0A 고득점이 G1 성과를 보장하지 않음. 46개 중 G5 도달 1개(2.2%)
+1. **통계적 검정 전략의 한계**: significance threshold가 거래 빈도를 극단 제한 (BTC 6년간 2건)
+1. **밈코인 FULL Short = 구조적 자살**: DOGE MDD -622%. ShortMode.FULL + 밈코인 급등 = 치명적
+1. **칼만 필터 ≠ 알파**: 학술적 최적 노이즈 분리가 크립토 1D에서 MA 대비 우위 없음
+1. **레짐 필터의 양면성**: 레짐 필터만으로는 alpha 생성 메커니즘 부재
+1. **FX Session Edge ≠ Crypto Edge**: 크립토 24/7 시장에서 session 분리 구조적으로 약함
+1. **Amihud Illiquidity ≠ Crypto Alpha**: 1H Amihud conviction 확대가 whipsaw 증폭
+1. **BVC 근사의 TF 불변 한계**: OHLCV BVC는 1D→1H 해상도 올려도 flow 방향 예측 불가. L2 data 필수
+1. **Intraday 계절성 비정상성**: hour-of-day t-stat은 noise를 과적합. 4종 1H 전략 전멸
 
 ### 실패 패턴 요약 (빠른 참조)
 

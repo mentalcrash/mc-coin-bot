@@ -1,0 +1,153 @@
+# Failure Pattern Catalog — RETIRED 전략의 반복 실패 패턴
+# 전략 발굴 시 사전 필터링 + 구조적 교훈 참조용
+
+patterns:
+  - id: cost_erosion
+    name: "거래비용 잠식"
+    description: "4H 이하 TF에서 빈번한 시그널 전환으로 round-trip 비용이 edge를 잠식"
+    frequency: high
+    affected_gates: [G1, G2]
+    detection_rules:
+      - metric: total_trades
+        operator: ">"
+        threshold: 500
+      - metric: timeframe
+        operator: "<="
+        threshold: "4H"
+    prevention:
+      - "1D TF 우선 (비용 대비 edge 유지)"
+      - "Round-trip cost 기준 최소 edge 확인 (taker 0.04% x 2 = 0.08%)"
+      - "연간 거래 횟수 200회 이하 목표"
+    related_lessons: [3, 15]
+    examples:
+      - rsi-regime-4h
+      - bb-momentum-4h
+      - cmf-persist-4h
+      - macd-cross-4h
+
+  - id: oos_collapse
+    name: "IS/OOS 붕괴"
+    description: "In-Sample에서 양호하나 Out-of-Sample에서 성과 급락 (과적합)"
+    frequency: high
+    affected_gates: [G2]
+    detection_rules:
+      - metric: oos_sharpe_ratio
+        operator: "<"
+        threshold: 0.3
+      - metric: is_oos_sharpe_ratio
+        operator: ">"
+        threshold: 2.0
+    prevention:
+      - "IS/OOS Sharpe ratio 비율 2:1 이내 확인"
+      - "파라미터 수 최소화 (3개 이하)"
+      - "다중 OOS fold 검증 (Walk-Forward 5-fold)"
+    related_lessons: [5, 20]
+    examples:
+      - kama-1d
+      - max-min-1d
+      - ttm-squeeze-1d
+
+  - id: single_asset_bias
+    name: "단일 에셋 편향 (DOGE 과적합)"
+    description: "특정 에셋(주로 DOGE)에서만 양호한 성과, 다른 에셋 적용 시 음수 Sharpe"
+    frequency: high
+    affected_gates: [G1]
+    detection_rules:
+      - metric: best_asset_sharpe_ratio
+        operator: ">"
+        threshold: 1.5
+      - metric: worst_asset_sharpe_ratio
+        operator: "<"
+        threshold: 0.0
+    prevention:
+      - "최소 3개 에셋에서 양수 Sharpe 확인"
+      - "BTC/ETH 포함 필수 검증"
+      - "Best asset 제외 평균 Sharpe > 0.5 확인"
+    related_lessons: [22, 25]
+    examples:
+      - rsi-regime-4h
+      - max-min-1d
+      - bb-rsi-1d
+
+  - id: single_indicator
+    name: "단일 지표 의존"
+    description: "하나의 기술적 지표에만 의존하여 시장 상태 변화에 취약"
+    frequency: high
+    affected_gates: [G1, G4]
+    detection_rules:
+      - metric: indicator_count
+        operator: "=="
+        threshold: 1
+    prevention:
+      - "최소 2개 이상 지표 조합 (추세 + 모멘텀/변동성)"
+      - "앙상블 전략 우선 (CTREND 패턴)"
+      - "레짐 필터 추가로 적응성 확보"
+    related_lessons: [8, 12]
+    examples:
+      - rsi-simple-1d
+      - momentum-simple-4h
+      - cci-basic-4h
+
+  - id: low_trade_count
+    name: "극저빈도 거래"
+    description: "직렬 조건 확률 곱셈으로 6년간 4~15건만 발생, 통계적 유의성 부족"
+    frequency: medium
+    affected_gates: [G1]
+    detection_rules:
+      - metric: total_trades
+        operator: "<"
+        threshold: 50
+      - metric: trades_per_year
+        operator: "<"
+        threshold: 10
+    prevention:
+      - "최소 연간 10건 이상 거래 발생 확인"
+      - "직렬 조건 3단계 이하로 제한"
+      - "Multi-state FSM 회피 (직렬 phase 확률 곱셈 문제)"
+    related_lessons: [28, 30]
+    examples:
+      - squeeze-breakout-1d
+      - triple-confirm-4h
+
+  - id: regime_fragility
+    name: "레짐 취약성"
+    description: "특정 시장 레짐(추세/횡보)에서만 작동하고 레짐 전환 시 대규모 손실"
+    frequency: medium
+    affected_gates: [G2, G4]
+    detection_rules:
+      - metric: max_drawdown
+        operator: ">"
+        threshold: 40.0
+      - metric: calmar_ratio
+        operator: "<"
+        threshold: 0.5
+    prevention:
+      - "추세/횡보 레짐 별도 성과 검증"
+      - "레짐 전환 구간 포함 OOS 테스트"
+      - "Trailing Stop으로 레짐 전환 시 방어"
+    related_lessons: [18]
+    examples:
+      - trend-follow-pure-1d
+      - mean-revert-pure-4h
+
+  - id: btc_eth_negative
+    name: "BTC/ETH 음수 Sharpe"
+    description: "대형 자산(BTC/ETH)에서 음수 Sharpe — 시장 주도 자산에서 alpha 부재"
+    frequency: medium
+    affected_gates: [G1]
+    detection_rules:
+      - metric: btc_sharpe_ratio
+        operator: "<"
+        threshold: 0.0
+      - metric: eth_sharpe_ratio
+        operator: "<"
+        threshold: 0.0
+    prevention:
+      - "BTC/ETH 개별 Sharpe > 0 필수 검증"
+      - "대형 자산 성과가 소형 대비 현저히 열위 시 전략 재검토"
+      - "시가총액 가중 고려"
+    related_lessons: [22, 25]
+    examples:
+      - rsi-regime-4h
+      - bb-momentum-4h
+      - donchian-ensemble-4h

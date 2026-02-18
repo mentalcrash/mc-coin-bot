@@ -7,6 +7,9 @@ Ports:
     - DataFeedPort: 데이터 피드 인터페이스 (HistoricalDataFeed, LiveDataFeed)
     - ExecutorPort: 주문 실행기 인터페이스 (BacktestExecutor, ShadowExecutor, LiveExecutor)
     - DerivativesProviderPort: 파생상품 데이터 제공 인터페이스
+    - MacroProviderPort: 매크로 경제 데이터 제공 인터페이스
+    - OptionsProviderPort: 옵션 데이터 제공 인터페이스
+    - DerivExtProviderPort: 확장 파생상품 데이터 제공 인터페이스
 """
 
 from __future__ import annotations
@@ -114,6 +117,102 @@ class OnchainProviderPort(Protocol):
 
     def get_onchain_columns(self, symbol: str) -> dict[str, float] | None:
         """최신 캐시된 on-chain 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
+        """
+        ...
+
+
+@runtime_checkable
+class MacroProviderPort(Protocol):
+    """매크로 경제 데이터 제공 인터페이스.
+
+    Backtest: MacroDataService 기반 precomputed 데이터
+    Live: LiveMacroFeed 기반 Silver 캐시 데이터
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """DataFrame에 macro 컬럼 추가 (precomputed merge_asof).
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            macro 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_macro_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 macro 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
+        """
+        ...
+
+
+@runtime_checkable
+class OptionsProviderPort(Protocol):
+    """옵션 데이터 제공 인터페이스.
+
+    Backtest: OptionsDataService 기반 precomputed 데이터
+    Live: LiveOptionsFeed 기반 Silver 캐시 데이터
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """DataFrame에 options 컬럼 추가 (precomputed merge_asof).
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            options 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_options_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 options 값 반환 (live fallback).
+
+        Args:
+            symbol: 거래 심볼
+
+        Returns:
+            {column_name: value} 또는 None (데이터 없음)
+        """
+        ...
+
+
+@runtime_checkable
+class DerivExtProviderPort(Protocol):
+    """확장 파생상품 데이터 제공 인터페이스.
+
+    Backtest: DerivExtDataService 기반 precomputed 데이터
+    Live: LiveDerivExtFeed 기반 Silver 캐시 데이터
+    """
+
+    def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """DataFrame에 deriv_ext 컬럼 추가 (precomputed merge_asof).
+
+        Args:
+            df: OHLCV DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            deriv_ext 컬럼이 추가된 DataFrame
+        """
+        ...
+
+    def get_deriv_ext_columns(self, symbol: str) -> dict[str, float] | None:
+        """최신 캐시된 deriv_ext 값 반환 (live fallback).
 
         Args:
             symbol: 거래 심볼

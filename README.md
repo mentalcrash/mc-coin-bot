@@ -67,7 +67,7 @@ VBT 백테스트와 EDA 백테스트에서 동일한 설정을 공유합니다.
 ```yaml
 # config/my_strategy.yaml
 backtest:
-  symbols: [BTC/USDT, ETH/USDT]   # 1개: 단일에셋, 2개+: 멀티에셋 (Equal Weight)
+  symbols: [BTC/USDT, ETH/USDT]   # 1개: 단일에셋, 2개+: 멀티에셋 (기본 Equal Weight, 동적 배분 가능)
   timeframe: "1D"                   # 1D, 4h, 1h 등
   start: "2020-01-01"
   end: "2025-12-31"
@@ -103,9 +103,9 @@ portfolio:
 ### 새 전략 설정 작성법
 
 1. `config/` 디렉토리에 YAML 파일 생성
-2. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
-3. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
-4. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
+1. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
+1. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
+1. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
 
 ### 앙상블 전략 설정
 
@@ -153,15 +153,33 @@ pods:
   - pod_id: pod-tsmom-major
     strategy: tsmom
     params: { lookback: 30, vol_target: 0.35 }
-    symbols: [BTC/USDT, ETH/USDT]
+    symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
     initial_fraction: 0.15
     max_fraction: 0.40
+
+    # Pod 내 에셋 배분 (생략 시 equal_weight)
+    asset_allocation:
+      method: inverse_volatility
+      vol_lookback: 60
+      rebalance_bars: 5
+      min_weight: 0.10
+      max_weight: 0.50
 
   - pod_id: pod-donchian-alt
     strategy: donchian-ensemble
     symbols: [SOL/USDT, BNB/USDT]
     initial_fraction: 0.10
+    # asset_allocation 생략 → equal_weight (1/N)
 ```
+
+**Pod 내 에셋 배분 방법:**
+
+| 방법 | 설명 | 적합 상황 |
+|------|------|----------|
+| `equal_weight` | 1/N 균등 (기본값) | 에셋 수 적거나 변동성 유사 |
+| `inverse_volatility` | 저변동 에셋에 높은 비중 | BTC vs SOL 등 변동성 차이 큰 경우 |
+| `risk_parity` | 리스크 기여 균등화 | 상관관계까지 반영한 정밀 배분 |
+| `signal_weighted` | 시그널 강도 비례 | 전략의 확신도 차이 반영 |
 
 > 상세 설정 및 아키텍처: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
 
@@ -234,25 +252,47 @@ uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
 
 ## 데이터 수집
 
-### OHLCV (1분봉)
+14개 소스, 75개 데이터셋을 Medallion Architecture(Bronze→Silver)로 수집·정제합니다. 완전 무료($0/mo).
 
 ```bash
-uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025   # Bronze → Silver
-uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
-uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
-uv run mcbot ingest info                                          # 데이터 상태
+# OHLCV (1분봉)
+uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
+
+# 파생상품 — Binance Futures (16 자산: Tier1 전체 + Tier2 FR only)
+uv run mcbot ingest derivatives batch                      # 전체 16 에셋
+uv run mcbot ingest derivatives batch --tier 1             # Tier 1 (8) — 6종 전체
+uv run mcbot ingest derivatives batch --tier 2 --fr-only   # Tier 2 (8) — FR만
+
+# On-chain — DeFiLlama, Coin Metrics, F&G 등 (22 데이터셋)
+uv run mcbot ingest onchain batch --type all
+
+# Macro — FRED(DXY/VIX/Gold/Yields/M2) + yfinance(SPY/QQQ/GLD/TLT) + CoinGecko
+uv run mcbot ingest macro batch --type all
+
+# Options — Deribit (DVOL, Put/Call Ratio, Historical Vol, Term Structure, Max Pain)
+uv run mcbot ingest options batch
+
+# Extended Derivatives — Coinalyze(멀티거래소 OI/Funding/Liq/CVD) + Hyperliquid
+uv run mcbot ingest deriv-ext batch --type all
+
+# 데이터 상태
+uv run mcbot ingest info
 ```
 
-### 파생상품 데이터
+> 상세 (저장 구조, Rate Limit, Publication Lag, 데이터 품질 등): [`docs/data-collection.md`](docs/data-collection.md)
 
-Funding Rate, Open Interest, Long/Short Ratio, Taker Buy/Sell Ratio를 수집합니다.
+### 데이터 카탈로그
+
+14개 소스, 75개 데이터셋의 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다. 전략 발굴 시 어떤 데이터가 있고, 어떤 컬럼이 나오고, publication lag은 며칠인지 빠르게 탐색할 수 있습니다.
 
 ```bash
-uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest derivatives batch                # 8 Tier-1/2 자산 일괄 수집
-uv run mcbot ingest derivatives batch --dry-run      # 대상 목록 미리보기
-uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
+uv run mcbot catalog list                      # 전체 75개 데이터셋 목록
+uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
+uv run mcbot catalog list --group macro_rates  # 그룹 필터
+uv run mcbot catalog show btc_metrics          # 상세 (컬럼, enrichment 설정, 전략 힌트)
 ```
+
+각 데이터셋에는 `strategy_hints`(전략 활용 아이디어)와 `enrichment`(OHLCV 병합 설정, scope: global/per_asset)가 포함되어 있어, 새 전략 발굴 시 데이터 탐색 → 아이디어 도출 흐름을 지원합니다.
 
 ---
 
@@ -288,6 +328,45 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 - **System Heartbeat** (1시간): equity, drawdown, 레버리지, CB 상태
 - **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio → Regime Score
 - **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지
+
+---
+
+## 전략 철학: 1D Timeframe 집중
+
+### 왜 1D인가
+
+87개 전략을 6년간 검증한 결과, **1D(일봉) 앙상블이 개인 퀀트에게 최적**이라는 결론에 도달했습니다.
+
+| 근거 | 설명 |
+|------|------|
+| **실증 결과** | 4H 단일지표 전략은 전량 RETIRED. 1D 앙상블만 G5 도달 (CTREND Sharpe 2.05) |
+| **거래비용** | 4H는 6배 잦은 리밸런싱 → 수수료·슬리피지가 edge 잠식 |
+| **노이즈** | 4H intraday noise가 높아 단일지표로 신호 추출 곤란. 1D에서도 앙상블 필수 |
+| **OOS 안정성** | 4H 파라미터는 IS→OOS 붕괴 빈번 (G2 실패 패턴). 1D 모멘텀은 구조적으로 강건 |
+| **운영 효율** | 데이터 관리 간편, Rate Limit 여유, 본업 병행 가능 |
+
+### "느리지 않은가?" — SL/TS가 해결
+
+시그널은 1D로 판단하지만, 리스크 관리는 실시간입니다.
+
+```
+시그널 생성:  1D bar close 시 (하루 1회, 노이즈 없는 판단)
+리스크 방어:  1m bar마다 SL/TS 체크 (급락 시 수 분 내 청산)
+```
+
+- Trailing Stop (3.0x ATR): 1분마다 체크 → MDD 방어의 핵심
+- System Stop-Loss (5~10%): 포트폴리오 레벨 circuit breaker
+- Deferred Execution: 다음 bar open 체결 → look-ahead bias 차단
+
+### 성장 로드맵
+
+현재 시스템은 이미 멀티 전략(Orchestrator) + 멀티 에셋(Pod) 구조를 갖추고 있습니다.
+1D 프레임워크 안에서 다음 축으로 확장합니다.
+
+1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
+1. **자산 다각화**: ✅ 8종 → 16종 확장 완료 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
+1. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([Asset Allocation 설계](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
+1. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
 
 ---
 
@@ -327,7 +406,7 @@ uv run mcbot backtest diagnose BTC/USDT -s tsmom
 
 ### 교훈 관리
 
-74개 전략 평가 과정에서 축적된 30개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+87개 전략 평가 과정에서 축적된 44개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
 
 ```bash
 uv run mcbot pipeline lessons-list                      # 전체 교훈 목록
@@ -352,6 +431,7 @@ uv run mcbot audit trend                                # 지표 추이
 
 | 문서 | 설명 |
 |------|------|
+| [`docs/data-collection.md`](docs/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |
 | [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
 | [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md) | **멀티 전략 오케스트레이터** (Pod, 배분, 생애주기, 넷팅) |

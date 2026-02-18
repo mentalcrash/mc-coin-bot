@@ -163,9 +163,22 @@ class LifecycleManager:
         *,
         now: datetime,
     ) -> None:
-        """INCUBATION → PRODUCTION 졸업 평가."""
+        """INCUBATION → PRODUCTION 졸업 또는 → RETIRED timeout 평가."""
+        # 졸업 기준 충족 → PRODUCTION
         if self._check_graduation(pod, portfolio_returns):
             self._transition(pod, pod_ls, LifecycleState.PRODUCTION, now=now)
+            return
+
+        # 최대 INCUBATION 기간 초과 → RETIRED
+        days_in_incubation = (now - pod_ls.state_entered_at).days
+        if days_in_incubation >= self._graduation.max_incubation_days:
+            logger.warning(
+                "Pod {}: INCUBATION timeout ({} days >= {}) → RETIRED",
+                pod.pod_id,
+                days_in_incubation,
+                self._graduation.max_incubation_days,
+            )
+            self._transition(pod, pod_ls, LifecycleState.RETIRED, now=now)
 
     def _evaluate_production(
         self,
@@ -520,6 +533,54 @@ class LifecycleManager:
         if pls is None:
             return None
         return pls.last_ransac_result
+
+    # ── Auto-Init Detectors ──────────────────────────────────────
+
+    def auto_init_detectors(
+        self,
+        pod_id: str,
+        backtest_returns: list[float],
+        *,
+        gbm_confidence: float = 0.95,
+        dist_window_size: int = 60,
+        ransac_window_size: int = 180,
+        ransac_alpha: float = 0.05,
+    ) -> None:
+        """백테스트/운용 수익률로 GBM/Distribution/RANSAC 검출기를 자동 초기화합니다.
+
+        Args:
+            pod_id: Pod 식별자
+            backtest_returns: 일별 수익률 리스트
+            gbm_confidence: GBM 신뢰 수준
+            dist_window_size: Distribution drift 윈도우 크기
+            ransac_window_size: RANSAC 윈도우 크기
+            ransac_alpha: RANSAC 유의 수준
+        """
+        import numpy as np
+
+        returns = [float(r) for r in backtest_returns]
+        if len(returns) < _MIN_CORRELATION_SAMPLES:
+            logger.warning(
+                "Pod {}: auto_init_detectors skipped — insufficient data ({})", pod_id, len(returns)
+            )
+            return
+
+        arr = np.array(returns)
+        mu = float(np.mean(arr))
+        sigma = float(np.std(arr, ddof=1))
+
+        _min_sigma = 1e-12
+        if sigma < _min_sigma:
+            logger.warning("Pod {}: auto_init_detectors skipped — zero volatility", pod_id)
+            return
+
+        self.set_gbm_params(pod_id, mu=mu, sigma=sigma, confidence=gbm_confidence)
+        self.set_distribution_reference(pod_id, returns, window_size=dist_window_size)
+        self.set_ransac_params(pod_id, window_size=ransac_window_size, alpha=ransac_alpha)
+
+        logger.info(
+            "Pod {}: detectors auto-initialized (mu={:.6f}, sigma={:.6f})", pod_id, mu, sigma
+        )
 
     # ── Serialization ──────────────────────────────────────────────
 

@@ -1,0 +1,54 @@
+meta:
+  name: stab-mom-trend
+  display_name: Stablecoin Momentum Trend
+  category: On-chain Macro Trend
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-18'
+  retired_at: '2026-02-18'
+  economic_rationale: Stablecoin 공급 성장률은 크립토 시장 유동성의 leading indicator. 정보 비대칭(on-chain
+    분석 참여자 소수)을 활용. BIS WP 1270 실증.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+gates:
+  G0A:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      score: 23
+      max_score: 30
+  G0B:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+  G1:
+    status: FAIL
+    date: '2026-02-18'
+    details:
+      best_sharpe: 0.55
+      best_cagr: 8.1%
+      best_asset: SOL
+asset_performance: []
+decisions:
+- date: '2026-02-18'
+  gate: G0A
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-18'
+  gate: G0B
+  verdict: PASS
+  rationale: C1-C7 전항 통과. shift(1) 적용, 벡터화 연산, vol_scalar 방어, 48 tests 통과
+- date: '2026-02-18'
+  gate: G1
+  verdict: FAIL
+  rationale: Best Asset SOL Sharpe 0.55 (< 1.0), CAGR +8.1% (< 20%). 전 에셋 Sharpe <
+    1.0, MDD 27~39%

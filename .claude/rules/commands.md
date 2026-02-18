@@ -65,9 +65,43 @@ uv run mcbot ingest info
 
 # Derivatives (Funding Rate, OI, LS Ratio, Taker Ratio)
 uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest derivatives batch            # 8 Tier-1/2 assets
-uv run mcbot ingest derivatives batch --dry-run  # Preview targets
+uv run mcbot ingest derivatives batch                        # All 16 assets (2020-2026)
+uv run mcbot ingest derivatives batch --tier 1 -y 2026       # Tier 1 (8) — full 6-type
+uv run mcbot ingest derivatives batch --tier 2 --fr-only     # Tier 2 (8) — FR only
+uv run mcbot ingest derivatives batch --dry-run              # Preview targets
 uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
+
+# On-chain (DeFiLlama, Coin Metrics, Fear & Greed, Blockchain.com, Etherscan, mempool)
+uv run mcbot ingest onchain pipeline defillama stablecoin_total       # Single dataset
+uv run mcbot ingest onchain pipeline coinmetrics btc_metrics
+uv run mcbot ingest onchain batch --type all                          # All 22 datasets
+uv run mcbot ingest onchain batch --type stablecoin                   # By category
+uv run mcbot ingest onchain batch --type coinmetrics
+uv run mcbot ingest onchain batch --dry-run                           # Preview targets
+uv run mcbot ingest onchain info                                      # Data inventory
+uv run mcbot ingest onchain info --type sentiment                     # By category
+
+# Macro (FRED, yfinance, CoinGecko — 15 datasets, GLOBAL scope)
+uv run mcbot ingest macro pipeline fred dxy                           # FRED single series
+uv run mcbot ingest macro pipeline yfinance spy                       # yfinance single ticker
+uv run mcbot ingest macro pipeline coingecko global_metrics           # CoinGecko
+uv run mcbot ingest macro batch --type fred                           # FRED all (7)
+uv run mcbot ingest macro batch --type yfinance                       # yfinance all (6)
+uv run mcbot ingest macro batch --type all                            # All (15)
+uv run mcbot ingest macro info                                        # Data inventory
+
+# Options (Deribit — 6 datasets, GLOBAL scope)
+uv run mcbot ingest options pipeline deribit btc_dvol                 # Single dataset
+uv run mcbot ingest options batch                                     # All (6)
+uv run mcbot ingest options info                                      # Data inventory
+
+# Extended Derivatives (Coinalyze + Hyperliquid — 10 datasets, PER-ASSET scope)
+uv run mcbot ingest deriv-ext pipeline coinalyze btc_agg_oi           # Single dataset
+uv run mcbot ingest deriv-ext pipeline hyperliquid hl_asset_contexts
+uv run mcbot ingest deriv-ext batch --type coinalyze                  # Coinalyze (8)
+uv run mcbot ingest deriv-ext batch --type hyperliquid                # Hyperliquid (2)
+uv run mcbot ingest deriv-ext batch --type all                        # All (10)
+uv run mcbot ingest deriv-ext info                                    # Data inventory
 ```
 
 ## Backtest (VBT — Vectorized)
@@ -149,6 +183,19 @@ uv run mcbot pipeline lessons-list -s ctrend            # Strategy filter
 uv run mcbot pipeline lessons-list --tf 1H              # Timeframe filter
 uv run mcbot pipeline lessons-show 1                    # Lesson details
 uv run mcbot pipeline lessons-add --title "제목" --body "설명" -c strategy-design -t tag1
+```
+
+## Data Catalog
+
+```bash
+# Dataset 목록
+uv run mcbot catalog list                      # 전체 목록 (75 datasets)
+uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
+uv run mcbot catalog list --group macro_rates  # 그룹 필터 (stablecoin, tvl, macro_rates, macro_volatility, ...)
+
+# Dataset 상세
+uv run mcbot catalog show btc_metrics          # 상세 (columns, enrichment, strategy_hints)
+uv run mcbot catalog show fear_greed
 ```
 
 ## Audit

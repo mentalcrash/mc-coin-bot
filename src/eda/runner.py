@@ -198,34 +198,12 @@ class EDARunner:
         feed = self._feed
         executor = self._executor
 
-        # RegimeService 생성 + 사전계산 (regime_config가 있을 때만)
-        regime_service = self._create_regime_service()
+        # 모든 enrichment provider + StrategyEngine 생성
+        strategy_engine_kwargs = self._build_strategy_engine_kwargs()
 
-        # Derivatives provider (선택적)
-        derivatives_provider = self._create_derivatives_provider()
-
-        # On-chain provider (선택적 — Silver 데이터 auto-detect)
-        onchain_provider = self._create_onchain_provider()
-
-        # FeatureStore (선택적)
-        feature_store = self._create_feature_store()
-
-        # fast_mode: signal pre-computation (전체 데이터로 한번에 시그널 계산)
-        strategy_engine_kwargs: dict[str, object] = {
-            "target_timeframe": self._target_timeframe,
-        }
-        if self._fast_mode:
-            precomputed = self._precompute_signals()
-            if precomputed:
-                strategy_engine_kwargs["precomputed_signals"] = precomputed
-        if regime_service is not None:
-            strategy_engine_kwargs["regime_service"] = regime_service
-        if derivatives_provider is not None:
-            strategy_engine_kwargs["derivatives_provider"] = derivatives_provider
-        if onchain_provider is not None:
-            strategy_engine_kwargs["onchain_provider"] = onchain_provider
-        if feature_store is not None:
-            strategy_engine_kwargs["feature_store"] = feature_store
+        # register(bus) 호출이 필요한 컴포넌트를 별도 참조 (run() 메서드에서 사용)
+        regime_service: RegimeService | None = strategy_engine_kwargs.get("regime_service")  # type: ignore[assignment]
+        feature_store: FeatureStore | None = strategy_engine_kwargs.get("feature_store")  # type: ignore[assignment]
 
         strategy_engine = StrategyEngine(self._strategy, **strategy_engine_kwargs)  # type: ignore[arg-type]
         pm = EDAPortfolioManager(
@@ -310,10 +288,44 @@ class EDARunner:
 
         return metrics
 
-    def _create_regime_service(self) -> RegimeService | None:
+    def _build_strategy_engine_kwargs(self) -> dict[str, object]:
+        """StrategyEngine kwargs 구성 — 모든 enrichment provider 생성.
+
+        Returns:
+            StrategyEngine 생성자에 전달할 kwargs dict
+        """
+        kwargs: dict[str, object] = {
+            "target_timeframe": self._target_timeframe,
+        }
+        if self._fast_mode:
+            precomputed = self._precompute_signals()
+            if precomputed:
+                kwargs["precomputed_signals"] = precomputed
+
+        # 각 provider를 생성하고 None이 아니면 추가
+        deriv_provider = self._create_derivatives_provider()
+        providers: dict[str, object | None] = {
+            "regime_service": self._create_regime_service(deriv_provider),
+            "derivatives_provider": deriv_provider,
+            "onchain_provider": self._create_onchain_provider(),
+            "feature_store": self._create_feature_store(),
+            "macro_provider": self._create_macro_provider(),
+            "options_provider": self._create_options_provider(),
+            "deriv_ext_provider": self._create_deriv_ext_provider(),
+        }
+        kwargs.update({k: v for k, v in providers.items() if v is not None})
+
+        return kwargs
+
+    def _create_regime_service(
+        self, derivatives_provider: object | None = None,
+    ) -> RegimeService | None:
         """RegimeService 생성 + 전체 데이터 사전 계산.
 
         regime_config가 None이면 None을 반환합니다.
+
+        Args:
+            derivatives_provider: 파생상품 데이터 프로바이더 (있으면 DerivativesDetector 활성화)
 
         Returns:
             RegimeService 또는 None
@@ -325,7 +337,7 @@ class EDARunner:
         from src.eda.analytics import tf_to_pandas_freq
         from src.regime.service import RegimeService
 
-        regime_service = RegimeService(self._regime_config)
+        regime_service = RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
 
         feed = self._feed
         if not isinstance(feed, HistoricalDataFeed):
@@ -334,14 +346,23 @@ class EDARunner:
         data = feed.data
         freq = tf_to_pandas_freq(self._target_timeframe)
 
+        # derivatives_provider에서 symbol별 deriv_df 추출
+        deriv_map: dict[str, pd.DataFrame] = {}
+        if derivatives_provider is not None and hasattr(derivatives_provider, "_precomputed"):
+            deriv_map = derivatives_provider._precomputed  # type: ignore[union-attr]
+
         if isinstance(data, MarketDataSet):
             df_tf = resample_1m_to_tf(data.ohlcv, freq)
-            regime_service.precompute(data.symbol, df_tf["close"])  # type: ignore[arg-type]
+            regime_service.precompute(
+                data.symbol, df_tf["close"], deriv_df=deriv_map.get(data.symbol),  # type: ignore[arg-type]
+            )
         else:
             assert isinstance(data, MultiSymbolData)
             for sym in data.symbols:
                 df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
-                regime_service.precompute(sym, df_tf["close"])  # type: ignore[arg-type]
+                regime_service.precompute(
+                    sym, df_tf["close"], deriv_df=deriv_map.get(sym),  # type: ignore[arg-type]
+                )
 
         return regime_service
 
@@ -475,6 +496,130 @@ class EDARunner:
                 store.precompute(sym, df_tf)
 
         return store
+
+    def _create_macro_provider(self) -> object | None:
+        """BacktestMacroProvider 생성 (Silver macro 있을 때만).
+
+        GLOBAL scope: 아무 심볼의 resampled index 사용.
+
+        Returns:
+            BacktestMacroProvider 또는 None
+        """
+        from src.data.macro.service import MacroDataService
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.eda.macro_feed import BacktestMacroProvider
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+
+        # GLOBAL이므로 아무 심볼의 index 사용
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            ohlcv_index = df_tf.index
+        else:
+            assert isinstance(data, MultiSymbolData)
+            first_sym = data.symbols[0]
+            df_tf = resample_1m_to_tf(data.ohlcv[first_sym], freq)
+            ohlcv_index = df_tf.index
+
+        service = MacroDataService()
+        macro = service.precompute(ohlcv_index)
+
+        if macro.empty or macro.columns.empty or macro.dropna(how="all").empty:
+            return None
+
+        logger.info("Macro provider created ({} columns)", len(macro.columns))
+        return BacktestMacroProvider(macro)
+
+    def _create_options_provider(self) -> object | None:
+        """BacktestOptionsProvider 생성 (Silver options 있을 때만).
+
+        GLOBAL scope: 아무 심볼의 resampled index 사용.
+
+        Returns:
+            BacktestOptionsProvider 또는 None
+        """
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.data.options.service import OptionsDataService
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.eda.options_feed import BacktestOptionsProvider
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+
+        # GLOBAL이므로 아무 심볼의 index 사용
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            ohlcv_index = df_tf.index
+        else:
+            assert isinstance(data, MultiSymbolData)
+            first_sym = data.symbols[0]
+            df_tf = resample_1m_to_tf(data.ohlcv[first_sym], freq)
+            ohlcv_index = df_tf.index
+
+        service = OptionsDataService()
+        options = service.precompute(ohlcv_index)
+
+        if options.empty or options.columns.empty or options.dropna(how="all").empty:
+            return None
+
+        logger.info("Options provider created ({} columns)", len(options.columns))
+        return BacktestOptionsProvider(options)
+
+    def _create_deriv_ext_provider(self) -> object | None:
+        """BacktestDerivExtProvider 생성 (Silver deriv_ext 있을 때만).
+
+        PER-ASSET scope: symbol별 독립 precompute.
+
+        Returns:
+            BacktestDerivExtProvider 또는 None
+        """
+        from src.data.deriv_ext.service import DerivExtDataService
+        from src.data.market_data import MarketDataSet, MultiSymbolData
+        from src.eda.analytics import tf_to_pandas_freq
+        from src.eda.deriv_ext_feed import BacktestDerivExtProvider
+
+        feed = self._feed
+        if not isinstance(feed, HistoricalDataFeed):
+            return None
+
+        data = feed.data
+        freq = tf_to_pandas_freq(self._target_timeframe)
+        service = DerivExtDataService()
+        precomputed: dict[str, pd.DataFrame] = {}
+
+        if isinstance(data, MarketDataSet):
+            df_tf = resample_1m_to_tf(data.ohlcv, freq)
+            asset = data.symbol.split("/")[0].upper()
+            dext = service.precompute(df_tf.index, asset=asset)
+            if not dext.empty and not dext.dropna(how="all").empty:
+                precomputed[data.symbol] = dext
+        else:
+            assert isinstance(data, MultiSymbolData)
+            for sym in data.symbols:
+                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
+                asset = sym.split("/")[0].upper()
+                dext = service.precompute(df_tf.index, asset=asset)
+                if not dext.empty and not dext.dropna(how="all").empty:
+                    precomputed[sym] = dext
+
+        if not precomputed:
+            return None
+
+        logger.info(
+            "DerivExt provider created for {} symbols",
+            len(precomputed),
+        )
+        return BacktestDerivExtProvider(precomputed)
 
     def _precompute_signals(self) -> dict[str, object] | None:
         """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.
