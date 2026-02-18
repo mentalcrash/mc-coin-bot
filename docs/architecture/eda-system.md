@@ -66,10 +66,10 @@ DataFeed ─→ BarEvent ─→ StrategyEngine ─→ SignalEvent ─→ Portfol
 ### 2.3 핵심 설계 원칙
 
 1. **Stateless Strategy / Stateful Execution** — 전략은 시그널만 생성, PM/RM/OMS가 상태 관리
-2. **correlation_id** — MarketData → Signal → Order → Fill 인과 관계 추적
-3. **멱등성** — `client_order_id`로 중복 주문 방지
-4. **Fail-Safe** — PM → RM → OMS 3단계 방어, Kill Switch
-5. **Look-Ahead Bias 차단** — Signal at Close → Execute at Next Open
+1. **correlation_id** — MarketData → Signal → Order → Fill 인과 관계 추적
+1. **멱등성** — `client_order_id`로 중복 주문 방지
+1. **Fail-Safe** — PM → RM → OMS 3단계 방어, Kill Switch
+1. **Look-Ahead Bias 차단** — Signal at Close → Execute at Next Open
 
 ---
 

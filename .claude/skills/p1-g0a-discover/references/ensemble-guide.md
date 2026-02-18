@@ -90,9 +90,10 @@ def aggregator(
 ```
 
 **대응:**
+
 1. 서브전략의 vol_target을 비활성화하고 앙상블에서만 적용 (권장)
-2. 또는 앙상블 vol_target을 1.0으로 설정하여 raw signal 합산 후 PM에서 관리
-3. 서브전략 `params`에서 vol_target 관련 파라미터를 명시적으로 조정
+1. 또는 앙상블 vol_target을 1.0으로 설정하여 raw signal 합산 후 PM에서 관리
+1. 서브전략 `params`에서 vol_target 관련 파라미터를 명시적으로 조정
 
 **점검 방법**: 앙상블 combined_strength의 범위가 [-1, 1] 이내인지 확인. 과도하게 작으면 이중 scaling 의심.
 
@@ -112,11 +113,13 @@ warmup = agg_lookback + vol_window + 1
 ```
 
 **전체 앙상블 warmup**:
+
 ```
 total_warmup = max(sub_strategy_warmup for each sub) + ensemble_config.warmup_periods()
 ```
 
 서브전략 warmup이 200이고 `strategy_momentum(lookback=126, vol_window=30)` 사용 시:
+
 ```
 total = 200 + 126 + 30 + 1 = 357 bars
 ```

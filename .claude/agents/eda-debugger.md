@@ -16,11 +16,13 @@ EventBus를 통한 이벤트 흐름에서 누락, 순서 오류, 상태 불일�
 ## EDA 아키텍처 개요
 
 ### 이벤트 흐름
+
 ```
 MarketDataEvent → StrategyEngine → SignalEvent → PortfolioManager → OrderEvent → RiskManager → ValidatedOrderEvent → OMS → FillEvent → PM(BalanceUpdate) → AnalyticsEngine
 ```
 
 ### 핵심 파일
+
 | 파일 | 역할 |
 |------|------|
 | `src/core/events.py` | 이벤트 모델 정의 (Flat Pydantic, AnyEvent union) |
@@ -40,6 +42,7 @@ MarketDataEvent → StrategyEngine → SignalEvent → PortfolioManager → Orde
 사용자가 EDA 관련 문제를 보고하면, 아래 절차를 따른다.
 
 ### Phase 1: 증상 파악
+
 1. 사용자가 보고한 증상을 분류:
    - **시그널 미생성**: StrategyEngine 또는 target_timeframe 필터 문제
    - **주문 미체결**: PM → RM → OMS 체인 중 차단
@@ -48,13 +51,16 @@ MarketDataEvent → StrategyEngine → SignalEvent → PortfolioManager → Orde
    - **상태 불일치**: Position 업데이트 순서, ATR 계산 타이밍
 
 ### Phase 2: 이벤트 체인 추적
-2. 관련 소스 파일을 읽고 이벤트 핸들러 등록 상태 확인
-3. `bus.subscribe()` 호출과 핸들러 시그니처 매칭 확인
-4. `bus.flush()` 호출 위치와 타이밍 확인
+
+1. 관련 소스 파일을 읽고 이벤트 핸들러 등록 상태 확인
+1. `bus.subscribe()` 호출과 핸들러 시그니처 매칭 확인
+1. `bus.flush()` 호출 위치와 타이밍 확인
 
 ### Phase 3: 근본 원인 분석
-5. 관련 테스트 파일 확인 (`tests/eda/`)
-6. 필요시 간단한 재현 테스트 실행:
+
+1. 관련 테스트 파일 확인 (`tests/eda/`)
+1. 필요시 간단한 재현 테스트 실행:
+
    ```bash
    uv run pytest tests/eda/ -k "관련_키워드" -v 2>&1
    ```
@@ -66,12 +72,12 @@ MarketDataEvent → StrategyEngine → SignalEvent → PortfolioManager → Orde
 디버깅 시 아래 패턴을 우선 확인:
 
 1. **flush 누락**: DataFeed가 `await bus.flush()` 없이 bar를 연속 발행 → 모든 이벤트가 마지막 bar 가격으로 체결
-2. **Equity 이중 계산**: `cash + notional + unrealized`는 틀림. 정답: `cash + long_notional - short_notional`
-3. **ATR 업데이트 순서**: `_update_atr()`는 `pos.last_price` 변경 **전에** 호출해야 함
-4. **_stopped_this_bar**: SL/TS 발동 후 같은 bar에서 재진입 방지 guard
-5. **Batch mode**: `asset_weights` 2개 이상 → batch mode 활성화 → `flush_pending_signals()` 필요
-6. **target_timeframe 필터**: 1m bar는 intrabar 처리만 (SL/TS), target TF bar만 signal 생성
-7. **Signal dedup 없음**: 매 bar SignalEvent 발행, PM의 `should_rebalance()`가 필터링
+1. **Equity 이중 계산**: `cash + notional + unrealized`는 틀림. 정답: `cash + long_notional - short_notional`
+1. **ATR 업데이트 순서**: `_update_atr()`는 `pos.last_price` 변경 **전에** 호출해야 함
+1. **_stopped_this_bar**: SL/TS 발동 후 같은 bar에서 재진입 방지 guard
+1. **Batch mode**: `asset_weights` 2개 이상 → batch mode 활성화 → `flush_pending_signals()` 필요
+1. **target_timeframe 필터**: 1m bar는 intrabar 처리만 (SL/TS), target TF bar만 signal 생성
+1. **Signal dedup 없음**: 매 bar SignalEvent 발행, PM의 `should_rebalance()`가 필터링
 
 ## 출력 형식
 

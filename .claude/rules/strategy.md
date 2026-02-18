@@ -64,6 +64,7 @@ signals = np.where(df['close'] > df['sma_20'], 1, 0)
 ```
 
 **금지 목록:**
+
 - `for` 루프로 DataFrame 순회
 - `iterrows()`, `itertuples()`
 - `apply(axis=1)` (가능하면 벡터화)
@@ -103,6 +104,7 @@ class MyStrategy(BaseStrategy):
 ```
 
 CLI에서 자동 조회:
+
 ```bash
 uv run mcbot backtest strategies
 ```

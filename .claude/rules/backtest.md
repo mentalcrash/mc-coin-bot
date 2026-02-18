@@ -98,6 +98,7 @@ result = validator.validate(level=ValidationLevel.QUICK, ...)
 ## Diagnostics & Advisor (`src/backtest/advisor/`)
 
 전략 진단 분석:
+
 - **Signal Analyzer**: 시그널 품질, 승률, 보유 기간 분포
 - **Regime Analyzer**: 시장 국면별 성과 (상승/하락/횡보)
 - **Loss Analyzer**: 손실 구간 분석, 연속 손실 패턴
@@ -106,6 +107,7 @@ result = validator.validate(level=ValidationLevel.QUICK, ...)
 ## Performance Metrics
 
 핵심 지표:
+
 - Sharpe Ratio (연율화)
 - Sortino Ratio (하방 변동성 기준)
 - Max Drawdown

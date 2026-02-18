@@ -33,6 +33,7 @@ df["breakout"] = df["close"] > df["high"].shift(1).rolling(20).max()
 ```
 
 **grep 탐지:**
+
 ```bash
 grep -rn "shift(-" --include="*.py"
 grep -rn "pct_change(-" --include="*.py"
@@ -303,6 +304,7 @@ tscv = TimeSeriesSplit(n_splits=5)
 ### 5.3 통계적 유의성
 
 확인할 항목:
+
 - 총 거래 횟수: 최소 100회 이상이어야 통계적 의미
 - 시장 레짐별 성과 분해: 상승장에서만 수익이면 방향성 편향
 - Monte Carlo 시뮬레이션: 거래 순서 랜덤 셔플 후 결과 분포

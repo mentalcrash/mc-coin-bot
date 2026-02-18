@@ -156,9 +156,9 @@
 - [ ] `from_params()` classmethod
 - [ ] `get_startup_info()` 메서드
 
-### __init__.py
+### **init**.py
 
-- [ ] 전략 모듈 __init__.py (Config, Strategy, preprocess, generate_signals, ShortMode)
+- [ ] 전략 모듈 **init**.py (Config, Strategy, preprocess, generate_signals, ShortMode)
 - [ ] `src/strategy/__init__.py`에 import 추가 (알파벳 순)
 
 ### Tests

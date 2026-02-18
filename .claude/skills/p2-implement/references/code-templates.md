@@ -266,6 +266,7 @@ def liquidation_intensity(liq_volume: pd.Series, volume: pd.Series, window: int)
 ```
 
 전체 목록은 `src/market/indicators/__init__.py` 참조.
+
 ```
 
 ---
@@ -696,7 +697,7 @@ class {StrategyClass}(BaseStrategy):
 
 ---
 
-## 5. __init__.py Template
+## 5. **init**.py Template
 
 ```python
 """{StrategyDisplayName}: {한줄 설명}."""

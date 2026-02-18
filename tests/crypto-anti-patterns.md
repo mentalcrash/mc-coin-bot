@@ -154,7 +154,7 @@ def get_universe_at(date, top_n=50):
     return market_cap.nlargest(top_n, "market_cap")["symbol"].tolist()
 ```
 
-## 9. ccxt 라이브러리 특화 주의사항
+## 9. CCXT 라이브러리 특화 주의사항
 
 ```python
 # ❌ ccxt 반환값 검증 없이 사용

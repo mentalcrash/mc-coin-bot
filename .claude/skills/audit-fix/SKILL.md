@@ -51,6 +51,7 @@ uv run mcbot audit actions  # 관련 Action 확인
 ```
 
 Action ID가 주어진 경우:
+
 ```bash
 uv run mcbot audit action-show {id}
 # related_findings에서 Finding ID 추출 후 각각 로드
@@ -61,10 +62,11 @@ uv run mcbot audit action-show {id}
 Finding의 정보를 분석하여 수정 계획을 수립:
 
 1. **영향 범위**: `location` 필드의 파일 + 관련 파일 식별
-2. **수정 패턴**: [fix-patterns.md](references/fix-patterns.md) 참조
-3. **리스크 평가**: 변경이 다른 컴포넌트에 미치는 영향
+1. **수정 패턴**: [fix-patterns.md](references/fix-patterns.md) 참조
+1. **리스크 평가**: 변경이 다른 컴포넌트에 미치는 영향
 
 출력:
+
 ```
 수정 계획
 ──────────────────────────────────────
@@ -81,6 +83,7 @@ Category: {category}
 ```
 
 **HIGH 리스크** (아래 해당 시 사용자 승인 필수):
+
 - 전략 시그널 생성 로직 변경
 - PM/RM 리스크 파라미터 수정
 - 외부 API (Binance, Discord) 호출 변경
@@ -92,6 +95,7 @@ Category: {category}
 [fix-patterns.md](references/fix-patterns.md)의 카테고리별 패턴을 적용:
 
 **수정 원칙**:
+
 - 기존 코드 스타일과 일관성 유지
 - `from __future__ import annotations` 패턴 준수
 - Pydantic V2 / frozen model 패턴 준수
@@ -127,11 +131,13 @@ uv run pytest
 ### Step 5: YAML 갱신
 
 Finding 해결:
+
 ```bash
 uv run mcbot audit resolve-finding {finding_id}
 ```
 
 관련 Action 완료:
+
 ```bash
 uv run mcbot audit update-action {action_id} -s completed
 ```

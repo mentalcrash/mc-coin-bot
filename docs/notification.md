@@ -155,11 +155,13 @@ MC Coin Bot CRASHED
 시스템 상태 요약.
 
 **Color Logic:**
+
 - GREEN: DD < 5%, stale symbols = 0, CB off, queue normal, safety_stop_failures < 5
 - YELLOW: DD 5-8%, stale > 0, queue depth > 50, on-chain sources degraded (ok < total)
 - RED: DD > 8%, CB active, all stale, notification degraded, safety_stop_failures >= 5
 
 **Fields:**
+
 - Uptime, Equity, Drawdown, WS Status, Positions, Leverage
 - Today PnL (trade count), Queue Depth, CB Status
 - Safety Stops (active count + failures), On-chain (조건부: sources OK/total + columns)
@@ -169,6 +171,7 @@ MC Coin Bot CRASHED
 시장 체제 + 파생 데이터 요약.
 
 **Fields:**
+
 - Regime Label & Score (-1.0 ~ +1.0)
 - Per-symbol: Price, Funding Rate (annualized), LS Ratio, Taker Ratio
 
@@ -177,6 +180,7 @@ MC Coin Bot CRASHED
 전략별 성과 분석 + Alpha Decay 감지.
 
 **Fields:**
+
 - Rolling Sharpe (30d), Win Rate (recent 20), Profit Factor
 - Trades Total, Open Positions, CB Status
 - Alpha Decay (3 consecutive Sharpe declines × 2 confirmations = 16h window)
@@ -191,6 +195,7 @@ MC Coin Bot CRASHED
 | Manual | `/report` command | 즉시 daily report 생성 | 4종 |
 
 **Charts (PNG, matplotlib) — Daily & Weekly 공통:**
+
 - Equity Curve (timeseries with fill)
 - Drawdown (% with fill)
 - Monthly Return Heatmap (RdYlGn colormap)
@@ -204,6 +209,7 @@ MC Coin Bot CRASHED
 | On Event | Lifecycle transition, Capital rebalance, Risk alerts | ALERTS / TRADE_LOG |
 
 **Lifecycle Color:**
+
 - Incubation -> BLUE
 - Production -> GREEN
 - Warning -> YELLOW

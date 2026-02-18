@@ -58,9 +58,11 @@
 ## 3. INCUBATION (초기 관찰)
 
 ### 진입 조건
+
 - 신규 Pod 생성 시 기본 상태
 
 ### 자본 배분
+
 - `min(allocated_weight, initial_fraction)`
 - 예: allocator가 30%를 계산해도 `initial_fraction=10%`이면 10%로 제한
 
@@ -80,6 +82,7 @@
 > `max_backtest_live_gap` (30%)은 정의만 있고 평가 로직은 deferred 상태.
 
 ### 졸업 실패 시
+
 - INCUBATION 유지, `initial_fraction`으로 고정 배분
 - 리밸런스마다 재평가 — 기간 제한 없음 (Hard Stop에 걸리지 않는 한 영구 대기)
 
@@ -91,10 +94,12 @@
 ## 4. PRODUCTION (본격 운용)
 
 ### 진입 조건
+
 - INCUBATION에서 졸업 기준 ALL 충족
 - WARNING/PROBATION에서 recovery
 
 ### 자본 배분
+
 - `clip(allocated_weight, min_fraction, max_fraction)`
 - Allocator가 계산한 동적 가중치를 min/max 범위로 제한
 - 예: min=2%, max=40% → allocator 50% 계산 시 40%로 clamp
@@ -128,24 +133,29 @@ Detection: m_t - M_t > λ              (λ=50.0)
 ## 5. WARNING (성과 악화 경고)
 
 ### 진입 조건
+
 - PRODUCTION에서 PH detector가 열화 감지
 
 ### 자본 배분
+
 - `weight * 0.5` (즉시 50% 감축) → `clip(min_fraction, max_fraction)`
 - 예: 30% 배분 → 15%로 축소
 
 ### 전이 경로
 
 #### Recovery (→ PRODUCTION)
+
 - **조건**: `PH_score < lambda * 0.2` AND `days_in_warning >= 5`
 - 의미: PH score가 임계값의 20% 미만으로 하락 + 최소 5일 관찰
 - PRODUCTION 복귀 시 **PH detector reset** (누적값 초기화)
 
 #### Escalation (→ PROBATION)
+
 - **조건**: `days_in_warning >= 30`
 - 의미: 30일간 WARNING 상태에서 회복 실패
 
 #### Hard Stop (→ RETIRED)
+
 - MDD >= 25% 또는 6개월 연속 손실 시 즉시 퇴출
 
 > 코드: `lifecycle.py:181` — `_evaluate_warning()`
@@ -155,24 +165,29 @@ Detection: m_t - M_t > λ              (λ=50.0)
 ## 6. PROBATION (유예 기간)
 
 ### 진입 조건
+
 - WARNING에서 30일간 미회복
 
 ### 자본 배분
+
 - `min_fraction` 고정 (기본값 2%)
 - 최소한의 자본만 유지하며 최종 관찰
 
 ### 전이 경로
 
 #### Strong Recovery (→ PRODUCTION)
+
 - **조건**: `sharpe_ratio >= min_sharpe` AND `ph_detector.score <= 0.0`
 - 의미: Sharpe가 졸업 기준(1.0) 이상이고 PH detector가 완전 안정
 - PRODUCTION 복귀 시 **PH detector reset**
 
 #### Expired (→ RETIRED)
+
 - **조건**: `days_in_probation >= probation_days` (기본값 30)
 - 의미: 30일 유예 기간 경과 후 미회복 → 영구 퇴출
 
 #### Hard Stop (→ RETIRED)
+
 - MDD >= 25% 또는 6개월 연속 손실 시 즉시 퇴출
 
 > 코드: `lifecycle.py:204` — `_evaluate_probation()`
@@ -182,10 +197,12 @@ Detection: m_t - M_t > λ              (λ=50.0)
 ## 7. RETIRED (운용 종료)
 
 ### 진입 조건
+
 - PROBATION 유예 만료
 - Hard Stop 트리거 (어떤 상태에서든)
 
 ### 자본 배분
+
 - `0.0` — 모든 자본 회수, 포지션 청산
 - **Terminal state** — 복귀 불가
 
@@ -197,6 +214,7 @@ Detection: m_t - M_t > λ              (λ=50.0)
 | `consecutive_loss_months` | 6 | 6개월 연속 손실 → 즉시 퇴출 |
 
 **연속 손실 개월 계산:**
+
 - 30일 청크 기반 (0~29일 = M1, 30~59일 = M2, ...)
 - 각 월의 복리 수익률이 음수 → 카운터 +1
 - 양수 월 출현 → 카운터 reset

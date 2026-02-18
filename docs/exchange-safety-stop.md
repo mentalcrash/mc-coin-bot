@@ -33,9 +33,9 @@ SW SL보다 약간 넓게 설정하여 정상 상황에서는 소프트웨어가
 ### 동작 원리
 
 1. **진입 Fill** 감지 → 거래소에 `STOP_MARKET(closePosition=true)` 주문 배치
-2. **매 Bar** → Trailing Stop price 재계산 → 0.5%+ 변동 시에만 cancel+create 업데이트
-3. **청산 Fill** 감지 → 거래소 stop 취소
-4. **봇 Shutdown** → 기본적으로 거래소 stop **유지** (재시작까지 보호 지속)
+1. **매 Bar** → Trailing Stop price 재계산 → 0.5%+ 변동 시에만 cancel+create 업데이트
+1. **청산 Fill** 감지 → 거래소 stop 취소
+1. **봇 Shutdown** → 기본적으로 거래소 stop **유지** (재시작까지 보호 지속)
 
 ### Ratchet 규칙
 
@@ -87,6 +87,7 @@ SHORT: entry_price * (1 + system_stop_loss + exchange_safety_margin)
 ```
 
 예시 (LONG, entry $50,000, SL 10%, margin 2%):
+
 - SW SL: $50,000 * 0.90 = **$45,000**
 - Exchange stop: $50,000 * 0.88 = **$44,000**
 - Gap: $1,000 (2%) — 봇이 살아있으면 SW가 먼저 발동
@@ -99,6 +100,7 @@ SHORT: (trough_price + ATR * multiplier) * (1 + exchange_trailing_safety_margin)
 ```
 
 **Combined (SL + TS 모두 활성):**
+
 - LONG: `min(sl_stop, ts_stop)` — 더 넓은 쪽 (안전망이므로)
 - SHORT: `max(sl_stop, ts_stop)` — 더 넓은 쪽
 

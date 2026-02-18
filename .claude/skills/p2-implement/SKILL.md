@@ -22,6 +22,7 @@ argument-hint: <strategy-name>
 판단 기준: **"이 코드가 실제 돈을 운용하는 프로덕션 시스템에 배포되어도 안전한가?"**
 
 핵심 원칙:
+
 - **정확성 > 속도**: shift(1) 누락이 수백만 원 차이를 만든다
 - **벡터화 필수**: pandas/numpy 벡터 연산 (루프 절대 금지)
 - **일관된 패턴**: 기존 전략과 동일한 코드 구조 유지
@@ -80,7 +81,7 @@ mkdir -p src/strategy/{name_snake}/ tests/strategy/{name_snake}/
 touch tests/strategy/{name_snake}/__init__.py
 ```
 
-**필수 파일**: config.py, preprocessor.py, signal.py, strategy.py, __init__.py + 테스트 4개.
+**필수 파일**: config.py, preprocessor.py, signal.py, strategy.py, **init**.py + 테스트 4개.
 
 ---
 
@@ -107,6 +108,7 @@ touch tests/strategy/{name_snake}/__init__.py
 ## Step 2.5: 레짐 적응형 전략 (해당 시)
 
 레짐 활용이 지정된 경우: [references/regime-implementation.md](references/regime-implementation.md) 참조.
+
 - 접근 A: RegimeService 자동 주입 (권장, EDA live 호환)
 - 접근 B: 자체 레짐 감지 (regime-tsmom 참고)
 
@@ -175,16 +177,18 @@ OHLCV 외 Derivatives 데이터 필요 시: [references/derivatives-implementati
 
 ---
 
-## Step 6: __init__.py + Registry 등록
+## Step 6: **init**.py + Registry 등록
 
 전략 모듈 `__init__.py`: Config, Strategy, ShortMode, preprocess, generate_signals export.
 
 `src/strategy/__init__.py`에 알파벳 순 import 추가:
+
 ```python
 from src.strategy import {name_snake}  # noqa: F401 — registry side-effect
 ```
 
 등록 확인:
+
 ```bash
 uv run python -c "from src.strategy import list_strategies; print('{name}' in list_strategies())"
 ```
@@ -196,6 +200,7 @@ uv run python -c "from src.strategy import list_strategies; print('{name}' in li
 전략당 4개 파일, 총 **40~60개 테스트**. 상세 테스트 클래스 목록: [references/implementation-checklist.md](references/implementation-checklist.md) Tests 섹션 참조.
 
 **핵심 테스트 그룹**:
+
 - **test_config.py**: ShortMode enum, 기본값, frozen, 경계값, 교차 검증, warmup
 - **test_preprocessor.py**: 컬럼 존재, 길이, 불변, missing, feature 범위
 - **test_signal.py**: 구조, shift(1) 첫 bar 중립, ShortMode 3종, 전략 고유 로직
@@ -227,9 +232,10 @@ uv run pytest --tb=short -q  # 전체
 ## Step 8.5: 앙상블 호환성 확인
 
 모든 `BaseStrategy` 구현체는 앙상블 자동 호환. 확인 사항:
+
 1. `from_params()` 정상 작동
-2. `warmup_periods()` 정의
-3. direction 값 범위 {-1, 0, 1}
+1. `warmup_periods()` 정의
+1. direction 값 범위 {-1, 0, 1}
 
 > 앙상블 편입 시 `config/ensemble-example.yaml`에 서브 전략 추가. 상관 < 0.4 + Sharpe > 0.3 기준.
 

@@ -103,9 +103,9 @@ portfolio:
 ### 새 전략 설정 작성법
 
 1. `config/` 디렉토리에 YAML 파일 생성
-2. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
-3. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
-4. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
+1. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
+1. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
+1. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
 
 ### 앙상블 전략 설정
 
@@ -364,9 +364,9 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 1D 프레임워크 안에서 다음 축으로 확장합니다.
 
 1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
-2. **자산 다각화**: ✅ 8종 → 16종 확장 완료 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
-3. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([상세](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
-4. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
+1. **자산 다각화**: ✅ 8종 → 16종 확장 완료 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
+1. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([Asset Allocation 설계](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
+1. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
 
 ---
 

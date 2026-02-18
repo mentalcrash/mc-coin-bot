@@ -384,11 +384,13 @@ asset_allocation:
 #### 배분 위치 결정: Pod 레벨
 
 **Pod 레벨을 선택한 이유:**
+
 - Pod이 이미 심볼별 버퍼(`_buffers`)를 관리 → 변동성 계산 히스토리 존재
 - Orchestrator나 PM을 변경하지 않아도 됨
 - VBT↔EDA parity 유지 용이
 
 **비채택 대안:**
+
 - **(A) Orchestrator 2D 배분 테이블** — Pod + Symbol 조합을 Orchestrator가 관리. Orchestrator 책임 비대화 + Pod 캡슐화 위반으로 비채택.
 - **(B) PM에서 에셋 배분** — PM은 실행 전담. 배분 로직 혼재 시 테스트 복잡도 증가 + net signal 중복 적용 위험으로 비채택.
 - **(C) 정적 YAML 비중** — 시장 환경 변화에 적응 불가. 변동성 레짐 전환 시 수동 조정 필요로 비채택.

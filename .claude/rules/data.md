@@ -62,9 +62,9 @@ df = pd.read_parquet(path, dtype_backend="pyarrow")
 Silver 레이어 처리 시 검증:
 
 1. 시간 갭 탐지 (1분 기준)
-2. 중복 타임스탬프 제거
-3. 가격 이상치 검증 (급등락 체크)
-4. 타임스탬프 정렬 확인
+1. 중복 타임스탬프 제거
+1. 가격 이상치 검증 (급등락 체크)
+1. 타임스탬프 정렬 확인
 
 ## Derivatives Data Layer
 
@@ -111,6 +111,7 @@ store.build_precompute_map(["BTC/USDT"])   # → symbol→sources 매핑
 ### 마이그레이션 상태
 
 `service.py`와 `onchain_feed.py`는 catalog 우선, 실패 시 기존 상수 fallback:
+
 - `OnchainDataService.__init__`에 `catalog` 인자 (자동 로드)
 - `build_precompute_map()` → `_try_catalog_precompute()` 시도
 - 기존 `ONCHAIN_BATCH_DEFINITIONS`, `SOURCE_DATE_COLUMNS`, `SOURCE_LAG_DAYS` 유지 (deprecated)

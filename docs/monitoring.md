@@ -244,111 +244,141 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 ## Alert Runbook
 
 ### HighDrawdown
+
 **원인**: 포트폴리오 손실이 고점 대비 10% 초과.
 **대응**:
+
 1. Grafana에서 포지션별 PnL 확인
-2. 시장 전체 하락인지 단일 포지션 문제인지 판단
-3. 필요 시 `/kill` 명령으로 전 포지션 청산
+1. 시장 전체 하락인지 단일 포지션 문제인지 판단
+1. 필요 시 `/kill` 명령으로 전 포지션 청산
 
 ### APIUnhealthy
+
 **원인**: Binance API 5회 연속 실패.
 **대응**:
+
 1. Binance 상태 페이지 확인
-2. 네트워크 연결 상태 점검
-3. Rate limit 초과 여부 확인 (API 호출률 패널)
-4. 자동 복구 대기 (성공 시 카운터 리셋)
+1. 네트워크 연결 상태 점검
+1. Rate limit 초과 여부 확인 (API 호출률 패널)
+1. 자동 복구 대기 (성공 시 카운터 리셋)
 
 ### EventsDropped
+
 **원인**: EventBus 큐 가득 -> 드롭 가능 이벤트(BAR) 제거.
 **대응**:
+
 1. Queue Depth 패널에서 추이 확인
-2. Handler Errors 증가 시 특정 핸들러 병목 점검
-3. queue_size 설정 증가 검토
+1. Handler Errors 증가 시 특정 핸들러 병목 점검
+1. queue_size 설정 증가 검토
 
 ### WSDisconnected
+
 **원인**: WebSocket 연결 끊김 (네트워크 문제 또는 거래소 유지보수).
 **대응**:
+
 1. 자동 재연결 대기 (exponential backoff)
-2. 2분 이상 지속 시 봇 로그 확인
-3. 전 심볼 동시 끊김이면 네트워크 문제
+1. 2분 이상 지속 시 봇 로그 확인
+1. 전 심볼 동시 끊김이면 네트워크 문제
 
 ### HighSlippage
+
 **원인**: 주문 체결가가 기대가 대비 20bp 이상 차이.
 **대응**:
+
 1. 유동성 부족 코인인지 확인 (volume 패널)
-2. 주문 크기가 시장 대비 과대한지 점검
-3. 시장 급변 시 일시적 현상
+1. 주문 크기가 시장 대비 과대한지 점검
+1. 시장 급변 시 일시적 현상
 
 ### QueueCongestion
+
 **원인**: EventBus 처리 속도 < 이벤트 발생 속도.
 **대응**:
+
 1. Bars Processed Rate 이상 없는지 확인
-2. 핸들러 에러로 인한 지연 확인
-3. 큐 크기 설정 검토
+1. 핸들러 에러로 인한 지연 확인
+1. 큐 크기 설정 검토
 
 ### HighEventLoopLag
+
 **원인**: asyncio event loop 스케줄링 지연 > 1초.
 **대응**:
+
 1. CPU 사용률 확인 (CPU saturation)
-2. Blocking I/O 호출이 없는지 로그 점검
-3. 핸들러 처리 시간 확인
+1. Blocking I/O 호출이 없는지 로그 점검
+1. 핸들러 처리 시간 확인
 
 ### HighMemoryUsage
+
 **원인**: RSS 메모리 2GB 초과 (5분 지속).
 **대응**:
+
 1. 메모리 증가 추이 확인 (leak vs spike)
-2. 대량 데이터 로드 여부 점검
-3. GC 강제 실행 검토
+1. 대량 데이터 로드 여부 점검
+1. GC 강제 실행 검토
 
 ### WSFrequentReconnects
+
 **원인**: 5분 내 3회 이상 WS 재연결.
 **대응**:
+
 1. 네트워크 안정성 점검
-2. 거래소 유지보수 공지 확인
-3. 단일 심볼만이면 해당 마켓 이슈
+1. 거래소 유지보수 공지 확인
+1. 단일 심볼만이면 해당 마켓 이슈
 
 ### WSNoMessages
+
 **원인**: 60초 이상 WS 메시지 수신 없음.
 **대응**:
+
 1. WS 연결 상태 확인 (`mcbot_exchange_ws_connected`)
-2. 거래소 API 상태 확인
-3. 데이터 피드 재시작 검토
+1. 거래소 API 상태 확인
+1. 데이터 피드 재시작 검토
 
 ### DistributionDrift
+
 **원인**: 라이브 수익률 분포가 백테스트 분포와 유의미하게 다름 (KS p < 0.05, 1일 지속).
 **대응**:
+
 1. 최근 시장 구조 변화 확인
-2. 전략 파라미터 재최적화 검토
-3. 1일 이상 지속 시 전략 교체 고려
+1. 전략 파라미터 재최적화 검토
+1. 1일 이상 지속 시 전략 교체 고려
 
 ### StructuralDecay
+
 **원인**: RANSAC 기울기 <= 0 또는 conformal 하한 돌파 (1일 지속).
 **대응**:
+
 1. 전략 누적 수익률 추세 확인
-2. GBM drawdown 결과와 교차 검증
-3. 전략 retiring / 교체 검토
+1. GBM drawdown 결과와 교차 검증
+1. 전략 retiring / 교체 검토
 
 ### OnchainFetchHighFailureRate
+
 **원인**: On-chain 데이터 수집 실패율 50% 초과 (24시간).
 **대응**:
+
 1. 외부 API 상태 확인 (DeFiLlama, CoinMetrics, Etherscan 등)
-2. 네트워크 연결 상태 점검
-3. Rate limit 초과 여부 확인
-4. 자동 재시도 대기
+1. 네트워크 연결 상태 점검
+1. Rate limit 초과 여부 확인
+1. 자동 재시도 대기
 
 ### OnchainDataStale
+
 **원인**: 특정 소스가 48시간 이상 데이터 미갱신.
 **대응**:
+
 1. `/onchain` Discord 명령으로 소스별 상태 확인
-2. 해당 소스 API 정상 여부 수동 확인
-3. `mcbot ingest onchain batch` 수동 실행 검토
+1. 해당 소스 API 정상 여부 수동 확인
+1. `mcbot ingest onchain batch` 수동 실행 검토
 
 ### OnchainCacheEmpty
+
 **원인**: Live 캐시에 on-chain 컬럼이 0개 (30분 지속).
 **대응**:
+
 1. Silver 데이터 존재 여부 확인 (`mcbot ingest onchain info`)
-2. Silver 데이터 미존재 시 batch 수집 실행
-3. LiveOnchainFeed 로그 확인
+1. Silver 데이터 미존재 시 batch 수집 실행
+1. LiveOnchainFeed 로그 확인
 
 ---
 

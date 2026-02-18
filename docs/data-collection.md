@@ -143,9 +143,10 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 > - **현재 코드 이슈**: `AsyncOnchainClient`가 5xx 에러에 대해 retry 없이 즉시 `NetworkError` raise — 5xx retry 로직 추가 필요
 >
 > **조치 사항**:
+>
 > 1. ✅ `src/data/onchain/client.py`에 5xx 서버 에러 retry 로직 추가 완료 (exponential backoff, 최대 3회)
-> 2. Blockchain.com API 복구 시까지 `--type blockchain` 배치 수집은 실패 예상
-> 3. 장기 미복구 시 해당 소스 비활성화 또는 대체 소스 전환 검토
+> 1. Blockchain.com API 복구 시까지 `--type blockchain` 배치 수집은 실패 예상
+> 1. 장기 미복구 시 해당 소스 비활성화 또는 대체 소스 전환 검토
 
 ### Macro (매크로 경제 데이터)
 
@@ -160,6 +161,7 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 **저장 경로**: `data/{layer}/macro/{source}/{name}.parquet`
 
 **Alpha 근거:**
+
 - DXY-BTC 역상관(-0.6~-0.8): Dollar 강세 시 BTC 약세 패턴 → regime filter
 - VIX > 30 구간에서 BTC 평균 수익률 음수 → 고변동 시 포지션 축소
 - M2 YoY 변화율이 BTC 가격에 6~12개월 선행
@@ -199,6 +201,7 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 **저장 경로**: `data/{layer}/options/deribit/{name}.parquet`
 
 **Alpha 근거:**
+
 - **Forward-looking**: 기존 데이터(OHLCV, funding, on-chain)는 모두 backward-looking. IV/Skew는 미래 기대치를 직접 반영하는 유일한 데이터
 - DVOL/RV spread: IV > RV = 시장 불안 → mean-reversion 기회
 - Put/Call Ratio > 1.5: 과도한 공포 → contrarian long signal
@@ -230,6 +233,7 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 **저장 경로**: `data/{layer}/deriv_ext/{source}/{name}.parquet`
 
 **Alpha 근거:**
+
 - Cross-exchange OI divergence: Binance OI 상승 + 전체 OI 하락 → localized leverage (위험 신호)
 - Funding dispersion: `std(FR across exchanges)` 급등 → squeeze 임박
 - CVD-Price divergence: 가격 상승 + CVD 하락 → hidden selling → 반전 시그널
@@ -524,11 +528,13 @@ On-chain 데이터는 일 단위로 발행되며, 실제 접근 가능 시점에
 | DerivExt | timestamp 기준 | 1H→1D 롤업 (Liq) | 시간순 | UTC 필수 |
 
 ### OHLCV 추가 검증
+
 - 시간 갭 탐지 (1분 기준)
 - 가격 이상치 검증 (급등락 체크)
 - 타임스탬프 연속성 확인
 
 ### On-chain 추가 검증
+
 - Decimal 타입 강제 (금융 값)
 - Pydantic V2 frozen model로 불변성 보장
 - Source별 date 컬럼 자동 매핑 (`date` or `timestamp`)
@@ -655,11 +661,11 @@ FRED_API_KEY=                     # FRED 무료 API key (https://fred.stlouisfed
 ## 향후 계획
 
 1. **Cron 자동 수집**: Derivatives(OI/LS/Taker) 30일 제한 + CoinGecko 스냅샷 → 일일 수집 자동화
-2. **데이터 품질 알림**: 수집 실패/이상 감지 시 Discord 알림
-3. **FeatureStore 통합**: Silver on-chain/macro/options → FeatureStore 등록 → 전략 직접 사용
-4. **Macro Regime Filter**: DXY trend + VIX regime + M2 momentum → 1D 앙상블 전략 보조
-5. **DVOL Regime**: IV/RV spread + Put/Call extremes → forward-looking 포지션 조절
-6. **Cross-venue 시그널**: Aggregated OI divergence + Funding dispersion → squeeze 방어
+1. **데이터 품질 알림**: 수집 실패/이상 감지 시 Discord 알림
+1. **FeatureStore 통합**: Silver on-chain/macro/options → FeatureStore 등록 → 전략 직접 사용
+1. **Macro Regime Filter**: DXY trend + VIX regime + M2 momentum → 1D 앙상블 전략 보조
+1. **DVOL Regime**: IV/RV spread + Put/Call extremes → forward-looking 포지션 조절
+1. **Cross-venue 시그널**: Aggregated OI divergence + Funding dispersion → squeeze 방어
 
 ---
 
