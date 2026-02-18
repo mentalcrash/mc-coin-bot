@@ -129,3 +129,43 @@ groups:
         annotations:
           summary: "Structural decay detected for {{ $labels.strategy }}"
           description: "Conformal-RANSAC detector indicates structural performance decay (slope <= 0 or conformal bound breach)."
+
+      # 14. On-chain fetch 실패율 50% 초과 — 24시간 기준, 1시간 유지
+      - alert: OnchainFetchHighFailureRate
+        expr: rate(mcbot_onchain_fetch_total{status="failure"}[24h]) / rate(mcbot_onchain_fetch_total[24h]) > 0.5
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain fetch failure rate > 50% ({{ $value | printf \"%.0f\" }}%)"
+          description: "On-chain data fetch failure rate exceeds 50% over the last 24 hours. External API may be down."
+
+      # 15. On-chain 데이터 48시간 이상 미갱신
+      - alert: OnchainDataStale
+        expr: time() - mcbot_onchain_last_success_timestamp > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain data stale for {{ $labels.source }} (> 48h)"
+          description: "Source {{ $labels.source }} has not been updated for over 48 hours. Manual ingestion may be needed."
+
+      # 16. Live 캐시에 on-chain 컬럼 0개 — 30분 유지
+      - alert: OnchainCacheEmpty
+        expr: mcbot_onchain_cache_size == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "On-chain cache empty for {{ $labels.symbol }}"
+          description: "Live on-chain cache has 0 columns for {{ $labels.symbol }} for over 30 minutes. Check silver data and LiveOnchainFeed."
+
+      # 17. On-chain fetch P95 지연시간 60초 초과
+      - alert: OnchainFetchSlow
+        expr: histogram_quantile(0.95, rate(mcbot_onchain_fetch_latency_seconds_bucket[1h])) > 60
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "On-chain fetch slow (P95: {{ $value | printf \"%.1f\" }}s)"
+          description: "On-chain data fetch P95 latency exceeds 60 seconds. Network or API performance degradation."

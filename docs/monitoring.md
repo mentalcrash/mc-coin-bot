@@ -8,7 +8,7 @@ Prometheus + Grafana 기반 모니터링 시스템 레퍼런스.
 mc-bot (:8000/metrics)
     -> Prometheus (scrape 10s)
         -> Grafana (6 dashboards)
-        -> Alertmanager (alerts.yml, 13 rules)
+        -> Alertmanager (alerts.yml, 17 rules)
 
 node-exporter (:9100/metrics)
     -> Prometheus (scrape 15s)
@@ -31,6 +31,7 @@ Anomaly Detectors (in-process)
 | `src/monitoring/anomaly/distribution.py` | KS test 기반 수익률 분포 변화 감지 |
 | `src/monitoring/anomaly/execution_quality.py` | 실행 품질 이상 패턴 감지 |
 | `src/monitoring/anomaly/conformal_ransac.py` | RANSAC + Conformal 구조적 쇠퇴 감지 |
+| `src/orchestrator/metrics.py` | OrchestratorMetrics — Pod/Portfolio Prometheus 메트릭 |
 
 ---
 
@@ -60,7 +61,8 @@ Anomaly Detectors (in-process)
 | `mcbot_position_size` | Gauge | symbol | 포지션 수량 |
 | `mcbot_position_notional_usdt` | Gauge | symbol | 포지션 명목 금액 |
 | `mcbot_unrealized_pnl_usdt` | Gauge | symbol | 미실현 손익 |
-| `mcbot_realized_pnl_usdt_total` | Counter | symbol | 누적 실현 손익 |
+| `mcbot_realized_profit_usdt_total` | Counter | symbol | 누적 실현 수익 |
+| `mcbot_realized_loss_usdt_total` | Counter | symbol | 누적 실현 손실 |
 | `mcbot_aggregate_leverage` | Gauge | -- | 포트폴리오 총 레버리지 |
 | `mcbot_margin_used_usdt` | Gauge | -- | 사용 중인 마진 |
 
@@ -91,11 +93,9 @@ Anomaly Detectors (in-process)
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `mcbot_strategy_pnl_usdt` | Gauge | strategy | 전략별 PnL (USDT) |
-| `mcbot_strategy_drawdown_pct` | Gauge | strategy | 전략별 drawdown (%) |
 | `mcbot_strategy_signals_total` | Counter | strategy, side | 전략별 시그널 수 |
 | `mcbot_strategy_fills_total` | Counter | strategy, side | 전략별 체결 수 |
-| `mcbot_strategy_win_rate` | Gauge | strategy | 전략별 승률 (rolling 20) |
-| `mcbot_strategy_sharpe_rolling` | Gauge | strategy | Rolling Sharpe (30d) |
+| `mcbot_strategy_fees_usdt_total` | Counter | strategy | 전략별 수수료 (USDT) |
 
 ### Layer 6: WebSocket
 
@@ -120,10 +120,11 @@ Anomaly Detectors (in-process)
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_gbm_drawdown_severity` | Gauge | strategy | GBM 심각도 (0=NORMAL, 1=WARNING, 2=CRITICAL) |
+| `mcbot_distribution_ks_statistic` | Gauge | strategy | KS test 통계량 |
 | `mcbot_distribution_p_value` | Gauge | strategy | KS test p-value |
-| `mcbot_ransac_decay_detected` | Gauge | strategy | RANSAC 구조적 쇠퇴 감지 (0/1) |
 | `mcbot_ransac_slope` | Gauge | strategy | RANSAC 추정 기울기 |
+| `mcbot_ransac_conformal_lower` | Gauge | strategy | RANSAC conformal 하한 |
+| `mcbot_ransac_decay_detected` | Gauge | strategy | RANSAC 구조적 쇠퇴 감지 (0/1) |
 
 ### Layer 9: On-chain Data
 
@@ -135,6 +136,20 @@ Anomaly Detectors (in-process)
 | `mcbot_onchain_last_success_timestamp` | Gauge | source | 마지막 성공 Unix timestamp |
 | `mcbot_onchain_cache_size` | Gauge | symbol | 심볼별 캐시된 on-chain 컬럼 수 |
 | `mcbot_onchain_cache_refresh_total` | Counter | status | 캐시 refresh 횟수 (success/failure) |
+
+### Layer 10: Orchestrator
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `mcbot_pod_equity_usdt` | Gauge | pod_id | Pod 현재 equity (USDT) |
+| `mcbot_pod_allocation_fraction` | Gauge | pod_id | Pod 자본 배분 비율 |
+| `mcbot_pod_rolling_sharpe` | Gauge | pod_id | Pod Rolling Sharpe |
+| `mcbot_pod_drawdown_pct` | Gauge | pod_id | Pod 현재 drawdown (%) |
+| `mcbot_pod_risk_contribution` | Gauge | pod_id | Pod 리스크 기여도 PRC (%) |
+| `mcbot_pod_lifecycle_state` | Enum | pod_id | Pod 생명주기 (incubation/production/warning/probation/retired) |
+| `mcbot_portfolio_effective_n` | Gauge | -- | 포트폴리오 유효 분산도 (1/HHI) |
+| `mcbot_portfolio_avg_correlation` | Gauge | -- | 평균 pair-wise 상관계수 |
+| `mcbot_active_pods` | Gauge | -- | 활성 Pod 수 |
 
 ### Meta
 
@@ -399,7 +414,7 @@ docker-compose.yaml
 ```
 monitoring/
 ├── prometheus.yml                   Scrape 설정 (10s/15s)
-├── alerts.yml                       13개 Alert Rule
+├── alerts.yml                       17개 Alert Rule
 ├── Dockerfile.prometheus
 ├── Dockerfile.grafana
 └── grafana/
