@@ -50,7 +50,7 @@ Slash Commands (interactive)
 | Channel | Env Variable | 용도 |
 |---------|-------------|------|
 | `TRADE_LOG` | `DISCORD_TRADE_LOG_CHANNEL_ID` | 체결, 잔고, 포지션 업데이트 |
-| `ALERTS` | `DISCORD_ALERTS_CHANNEL_ID` | Circuit Breaker, Risk Alert, Lifecycle, Orchestrator |
+| `ALERTS` | `DISCORD_ALERTS_CHANNEL_ID` | Circuit Breaker, Risk Alert, Lifecycle, Orchestrator, Safety Stop, Drift, On-chain |
 | `DAILY_REPORT` | `DISCORD_DAILY_REPORT_CHANNEL_ID` | Daily/Weekly 리포트, Strategy Health (8h) |
 | `HEARTBEAT` | `DISCORD_HEARTBEAT_CHANNEL_ID` | System Health (1h) |
 | `MARKET_REGIME` | `DISCORD_REGIME_CHANNEL_ID` | Market Regime (4h) |
@@ -72,11 +72,13 @@ NotificationEngine이 EventBus를 구독하여 자동 전송.
 
 | Event | Formatter | Channel | Severity |
 |-------|-----------|---------|----------|
-| `FillEvent` | `format_fill_embed()` | TRADE_LOG | INFO |
+| `FillEvent` + `PositionUpdateEvent` | `format_fill_with_position_embed()` | TRADE_LOG | INFO |
+| `PositionUpdateEvent` (단독) | `format_position_embed()` | TRADE_LOG | INFO |
 | `CircuitBreakerEvent` | `format_circuit_breaker_embed()` | ALERTS | CRITICAL |
 | `RiskAlertEvent` | `format_risk_alert_embed()` | ALERTS | WARNING/CRITICAL |
 | `BalanceUpdateEvent` | `format_balance_embed()` | TRADE_LOG | INFO |
-| `PositionUpdateEvent` | `format_position_embed()` | TRADE_LOG | INFO |
+
+> **Fill + Position 병합:** `FillEvent`는 `_pending_fills`에 버퍼링 → 다음 `PositionUpdateEvent`에서 병합 전송. Fill 없이 Position만 오면 `format_position_embed()`으로 단독 전송.
 
 ### Embed Color Palette
 
@@ -99,10 +101,15 @@ NotificationEngine이 EventBus를 구독하여 자동 전송.
 ```
 MC Coin Bot Started
   Mode:       LIVE
-  Strategy:   anchor-mom
-  Timeframe:  12h
-  Capital:    $10,000.00
-  Symbols:    DOGE/USDT, SOL/USDT, BTC/USDT, ETH/USDT, BNB/USDT
+  Strategy:   Orchestrator (2 pods)
+  Timeframe:  1D
+  Capital:    $100,000
+  Symbols:    BTC/USDT, ETH/USDT, SOL/USDT, DOGE/USDT, BNB/USDT
+  Pods:
+    Pod              State       Alloc
+    ──────────────────────────────────
+    anchor-mom       production  50.0%
+    ctrend           incubation  30.0%
 ```
 
 ### Graceful Shutdown (YELLOW)
@@ -111,18 +118,28 @@ MC Coin Bot Started
 MC Coin Bot Stopped
   Reason:         Graceful shutdown
   Uptime:         12h 34m
-  Final Equity:   $10,150.00
-  Today PnL:      +$150.00 (+1.50%)
-  Open Positions: 0
+  Final Equity:   $10,150
+  Today PnL:      $+500.00 (+5.00%)
+  Realized:       $+300.00
+  Unrealized:     $+200.00
+  Open Positions: 2
+  Pods:
+    Pod              State       Alloc
+    ──────────────────────────────────
+    anchor-mom       production  50.0%
+    ctrend           incubation  30.0%
 ```
 
 ### Crash (RED)
 
 ```
 MC Coin Bot CRASHED
-  Error Type:  ConnectionError
-  Uptime:      2h 15m
-  Error:       Connection to Binance lost after 3 retries...
+  Error Type:      ConnectionError
+  Uptime:          2h 15m
+  Error:           Connection to Binance lost after 3 retries...
+  Final Equity:    $9,500       (조건부: PM 접근 가능 시)
+  Open Positions:  2            (조건부)
+  Unrealized PnL:  $-150.50     (조건부)
 ```
 
 ---
@@ -143,9 +160,9 @@ MC Coin Bot CRASHED
 - RED: DD > 8%, CB active, all stale, notification degraded
 
 **Fields:**
-- Uptime, Equity, Cash, Leverage, Positions
-- Drawdown, Regime, WS Health
-- Queue Depth, Events Dropped
+- Uptime, Equity, Drawdown, WS Status, Positions, Leverage
+- Today PnL (trade count), Queue Depth, CB Status
+- Safety Stops (active count + failures), On-chain (조건부: sources OK/total + columns)
 
 #### Market Regime (4h) -> MARKET_REGIME
 
@@ -223,6 +240,46 @@ Position Drift Detected
 
 ---
 
+## Safety Stop Alerts
+
+`ExchangeStopManager`가 안전 정지 주문 실패/누락 감지 시 ALERTS 채널 전송.
+
+### Safety Stop Failure (RED)
+
+연속 5회 이상 배치 실패 시 CRITICAL 알림.
+
+```
+SAFETY STOP FAILURE
+  Symbol:    BTC/USDT
+  Failures:  5
+  거래소 safety net 비활성화 가능 — 수동 확인 필요
+```
+
+### Safety Stop Stale (ORANGE)
+
+재시작 후 거래소에 안전 정지 주문이 없을 때 WARNING 알림.
+
+```
+SAFETY STOP STALE
+  Symbol:    BTC/USDT
+  다음 bar에서 자동 재배치 예정
+```
+
+---
+
+## On-chain Data Alerts
+
+`LiveOnchainFeed` 캐시 갱신 실패 시 ALERTS 채널 전송.
+
+```
+On-chain Alert — LiveOnchainFeed
+  Cache refresh failed
+```
+
+**Severity:** WARNING, **Spam Key:** `onchain_refresh_fail` (300s 쿨다운)
+
+---
+
 ## Discord Slash Commands
 
 ### Read-Only
@@ -236,16 +293,17 @@ Position Drift Detected
 | `/strategies` | Orchestrator pod overview (state/sharpe/DD/WR) | Embed |
 | `/report` | Trigger daily report immediately | Charts + Embed |
 | `/strategy <name>` | Individual pod details (state/capital/performance/GBM) | Embed |
+| `/onchain` | On-chain 데이터 소스 상태 (cache + per-source last fetch) | Embed |
 
-### Action Commands (Confirmation Required)
+### Action Commands
 
 | Command | Description | Confirmation |
 |---------|-------------|-------------|
-| `/kill` | Emergency shutdown + 전 포지션 청산 | Button (30s timeout) |
+| `/kill` | Emergency shutdown + 시스템 비활성화 | **없음** (즉시 실행) |
 | `/pause <name>` | Pod 시그널 생성 중지 | Button (30s timeout) |
 | `/resume <name>` | 중지된 pod 재개 | Button (30s timeout) |
 
-**Confirmation UI:** `_ConfirmView` (discord.ui.View) - Confirm/Cancel 버튼, 30초 timeout.
+> **주의:** `/kill`은 확인 없이 즉시 실행됩니다. `/pause`, `/resume`만 `_ConfirmView` (Confirm/Cancel 버튼, 30초 timeout) 사용.
 
 ---
 
@@ -266,12 +324,21 @@ Fire-and-forget 비동기 큐. 트레이딩 로직을 절대 블로킹하지 않
 
 동일 이벤트 반복 전송 방지.
 
-| Spam Key | 용도 |
-|----------|------|
-| `balance_update` | 잔고 업데이트 (5분 쿨다운) |
-| `risk_alert:{level}` | Risk alert (레벨별 쿨다운) |
-| `heartbeat` | Heartbeat (5분 쿨다운) |
-| `orchestrator_rebalance` | Rebalance 알림 |
+| Spam Key | Source | 용도 |
+|----------|--------|------|
+| `balance_update` | engine.py | 잔고 업데이트 |
+| `risk_alert:{level}` | engine.py | Risk alert (레벨별) |
+| `heartbeat` | health_scheduler.py | System heartbeat |
+| `regime_report` | health_scheduler.py | Market regime |
+| `strategy_health` | health_scheduler.py | Strategy health |
+| `orchestrator_rebalance` | orchestrator_engine.py | Capital rebalance |
+| `orch_risk:{type}` | orchestrator_engine.py | Orchestrator risk (유형별) |
+| `startup_drift` | live_runner.py | 시작 시 포지션 drift |
+| `position_drift` | live_runner.py | 주기적 포지션 drift |
+| `balance_drift` | live_runner.py | 잔고 drift |
+| `onchain_refresh_fail` | onchain_feed.py | On-chain 갱신 실패 |
+
+모든 spam key의 기본 쿨다운은 300초 (5분).
 
 ### Graceful Degradation
 

@@ -173,6 +173,11 @@ class EDAPortfolioManager:
         return total_abs_notional / equity
 
     @property
+    def initial_capital(self) -> float:
+        """초기 자본."""
+        return self._initial_capital
+
+    @property
     def open_position_count(self) -> int:
         """오픈 포지션 수."""
         return sum(1 for p in self._positions.values() if p.is_open)

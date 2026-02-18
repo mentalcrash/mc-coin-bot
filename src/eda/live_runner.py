@@ -480,6 +480,7 @@ class LiveRunner:
         capital, db = await self._init_capital_and_db()
 
         discord_tasks: _DiscordTasks | None = None
+        pm: EDAPortfolioManager | None = None
         try:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
@@ -648,7 +649,7 @@ class LiveRunner:
                 exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
-            await self._send_lifecycle_crash(discord_tasks, exc)
+            await self._send_lifecycle_crash(discord_tasks, exc, pm=pm)
             raise
         finally:
             if db:
@@ -1627,12 +1628,18 @@ class LiveRunner:
             if self._orchestrator is not None
             else self._strategy.name
         )
+        pod_summaries = (
+            self._orchestrator.get_pod_summary()
+            if self._orchestrator is not None
+            else None
+        )
         embed = format_startup_embed(
             mode=self._mode.value,
             strategy_name=strategy_label,
             symbols=self._symbols,
             capital=capital,
             timeframe=self._target_timeframe,
+            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.INFO,
@@ -1656,18 +1663,29 @@ class LiveRunner:
         uptime = time.monotonic() - self._start_time
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         trades = analytics.closed_trades
-        today_pnl = sum(
+        realized_pnl = sum(
             float(t.pnl)
             for t in trades
             if t.exit_time and t.exit_time >= today_start and t.pnl is not None
+        )
+        unrealized_pnl = sum(
+            p.unrealized_pnl for p in pm.positions.values() if p.is_open
+        )
+        pod_summaries = (
+            self._orchestrator.get_pod_summary()
+            if self._orchestrator is not None
+            else None
         )
 
         embed = format_shutdown_embed(
             reason="Graceful shutdown",
             uptime_seconds=uptime,
             final_equity=pm.total_equity,
-            today_pnl=today_pnl,
+            initial_capital=pm.initial_capital,
+            realized_pnl=realized_pnl,
+            unrealized_pnl=unrealized_pnl,
             open_positions=pm.open_position_count,
+            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.WARNING,
@@ -1680,6 +1698,7 @@ class LiveRunner:
         self,
         discord_tasks: _DiscordTasks | None,
         exc: Exception,
+        pm: EDAPortfolioManager | None = None,
     ) -> None:
         """봇 비정상 종료 알림을 Discord ALERTS 채널에 전송."""
         if discord_tasks is None:
@@ -1688,10 +1707,27 @@ class LiveRunner:
         from src.notification.lifecycle import format_crash_embed
 
         uptime = time.monotonic() - self._start_time
+
+        final_equity: float | None = None
+        open_positions: int | None = None
+        unrealized_pnl: float | None = None
+        if pm is not None:
+            try:
+                final_equity = pm.total_equity
+                open_positions = pm.open_position_count
+                unrealized_pnl = sum(
+                    p.unrealized_pnl for p in pm.positions.values() if p.is_open
+                )
+            except Exception:
+                logger.debug("Could not collect PM state for crash embed")
+
         embed = format_crash_embed(
             error_type=type(exc).__name__,
             error_message=str(exc),
             uptime_seconds=uptime,
+            final_equity=final_equity,
+            open_positions=open_positions,
+            unrealized_pnl=unrealized_pnl,
         )
         item = NotificationItem(
             severity=Severity.CRITICAL,
