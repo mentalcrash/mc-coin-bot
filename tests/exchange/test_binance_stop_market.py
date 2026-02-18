@@ -147,8 +147,10 @@ class TestCreateStopMarketOrder:
         assert client.consecutive_failures == 1
 
     @pytest.mark.asyncio
-    async def test_network_error(self) -> None:
+    async def test_network_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """NetworkError → 재시도 후 NetworkError raise."""
+        monkeypatch.setattr("asyncio.sleep", AsyncMock())
+
         client, mock = await _make_client()
         mock.create_order = AsyncMock(side_effect=ccxt.NetworkError("timeout"))
 

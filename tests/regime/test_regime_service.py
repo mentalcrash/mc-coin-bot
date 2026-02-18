@@ -6,7 +6,6 @@ enrich_dataframe, EDA 통합, Warmup을 검증합니다.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 
 import numpy as np
@@ -375,7 +374,8 @@ class TestGetRegimeColumns:
 class TestEDAIntegration:
     """EventBus 등록 + _on_bar 동작 검증."""
 
-    def test_register_subscribes_to_bar(self) -> None:
+    @pytest.mark.asyncio
+    async def test_register_subscribes_to_bar(self) -> None:
         """register()는 BAR 이벤트를 구독."""
         from src.core.event_bus import EventBus
         from src.core.events import EventType
@@ -383,11 +383,12 @@ class TestEDAIntegration:
         service = RegimeService()
         bus = EventBus(queue_size=100)
 
-        asyncio.get_event_loop().run_until_complete(service.register(bus))
+        await service.register(bus)
 
         assert len(bus._handlers[EventType.BAR]) >= 1
 
-    def test_on_bar_updates_state(self) -> None:
+    @pytest.mark.asyncio
+    async def test_on_bar_updates_state(self) -> None:
         """_on_bar() 호출 후 state 업데이트."""
         from src.core.events import BarEvent
 
@@ -408,12 +409,13 @@ class TestEDAIntegration:
             volume=1000.0,
             bar_timestamp=closes.index[-1].to_pydatetime(),
         )
-        asyncio.get_event_loop().run_until_complete(service._on_bar(bar))
+        await service._on_bar(bar)
 
         state = service.get_regime("BTC/USDT")
         assert state is not None
 
-    def test_tf_filter(self) -> None:
+    @pytest.mark.asyncio
+    async def test_tf_filter(self) -> None:
         """target_timeframe과 다른 TF bar는 무시."""
         from src.core.events import BarEvent
 
@@ -434,7 +436,7 @@ class TestEDAIntegration:
         )
         # state 개수가 변하지 않아야 함
         before = service.get_regime("BTC/USDT")
-        asyncio.get_event_loop().run_until_complete(service._on_bar(bar))
+        await service._on_bar(bar)
         after = service.get_regime("BTC/USDT")
 
         # warmup으로 이미 state가 있으므로, 4h bar는 무시 → 동일 state

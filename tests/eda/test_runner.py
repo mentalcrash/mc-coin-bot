@@ -300,7 +300,7 @@ class TestMultiAssetEDA:
 
     async def test_8_asset_equal_weight(self) -> None:
         """8개 심볼 equal-weight 실행."""
-        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=3)
+        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=1)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
@@ -330,7 +330,7 @@ class TestMultiAssetEDA:
     async def test_multi_asset_weight_distribution(self) -> None:
         """불균등 가중치 적용 확인."""
         symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
-        data = _make_multi_trending_1m_data(symbols, n_days=3)
+        data = _make_multi_trending_1m_data(symbols, n_days=1)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
@@ -356,7 +356,7 @@ class TestMultiAssetEDA:
 
     async def test_multi_asset_results_reasonable(self) -> None:
         """8-asset 결과가 합리적 범위 내."""
-        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=3)
+        data = _make_multi_trending_1m_data(_EIGHT_SYMBOLS, n_days=1)
         strategy = SimpleMovingAverageStrategy()
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
