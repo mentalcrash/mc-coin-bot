@@ -54,8 +54,12 @@ External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro 
 | Binance Futures | Long/Short Ratio | 1H | 30일 제한 | 〃 |
 | Binance Futures | Taker Buy/Sell Ratio | 1H | 30일 제한 | 〃 |
 
+- **대상 에셋**: 16종 (Tier 1 + Tier 2), `src/config/universe.py`에서 중앙 관리
+  - **Tier 1** (8종): BTC, ETH, BNB, SOL, DOGE, LINK, ADA, AVAX — 6종 전체 수집
+  - **Tier 2** (8종): XRP, DOT, POL, UNI, NEAR, ATOM, FIL, LTC — **Funding Rate만** 수집 (`--fr-only`)
 - Silver: 1시간 리샘플 + forward-fill + 중복 제거
 - OI/LS/Taker는 Binance API 30일 제한 → **일일 cron 수집 필요**
+- POL(구 MATIC): 2024-09-10 심볼 전환 — `scripts/stitch_matic_pol.py`로 데이터 결합
 
 ### On-chain (온체인 데이터)
 
@@ -367,10 +371,15 @@ uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
 uv run mcbot ingest derivatives bronze BTC/USDT --year 2024
 uv run mcbot ingest derivatives silver BTC/USDT --year 2024
 
-# 배치 (기본: 8개 Tier-1/2 자산)
-uv run mcbot ingest derivatives batch
-uv run mcbot ingest derivatives batch -s BTC/USDT,ETH/USDT -y 2024 -y 2025
-uv run mcbot ingest derivatives batch --dry-run
+# 배치 (기본: 16 에셋, 2020-2026)
+uv run mcbot ingest derivatives batch                        # 전체 16 에셋
+uv run mcbot ingest derivatives batch --tier 1 -y 2026       # Tier 1 (8) — 6종 전체
+uv run mcbot ingest derivatives batch --tier 2 --fr-only     # Tier 2 (8) — FR만
+uv run mcbot ingest derivatives batch -s BTC/USDT,ETH/USDT -y 2024 -y 2025  # 커스텀
+uv run mcbot ingest derivatives batch --dry-run              # 대상 미리보기
+
+# POL(MATIC) 심볼 전환 스티칭
+uv run python scripts/stitch_matic_pol.py --skip-existing
 
 # 데이터 정보
 uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025

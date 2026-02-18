@@ -65,8 +65,10 @@ uv run mcbot ingest info
 
 # Derivatives (Funding Rate, OI, LS Ratio, Taker Ratio)
 uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest derivatives batch            # 8 Tier-1/2 assets
-uv run mcbot ingest derivatives batch --dry-run  # Preview targets
+uv run mcbot ingest derivatives batch                        # All 16 assets (2020-2026)
+uv run mcbot ingest derivatives batch --tier 1 -y 2026       # Tier 1 (8) — full 6-type
+uv run mcbot ingest derivatives batch --tier 2 --fr-only     # Tier 2 (8) — FR only
+uv run mcbot ingest derivatives batch --dry-run              # Preview targets
 uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
 
 # On-chain (DeFiLlama, Coin Metrics, Fear & Greed, Blockchain.com, Etherscan, mempool)

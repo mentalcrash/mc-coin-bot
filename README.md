@@ -258,8 +258,10 @@ uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
 # OHLCV (1분봉)
 uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
 
-# 파생상품 — Binance Futures (8 자산)
-uv run mcbot ingest derivatives batch
+# 파생상품 — Binance Futures (16 자산: Tier1 전체 + Tier2 FR only)
+uv run mcbot ingest derivatives batch                      # 전체 16 에셋
+uv run mcbot ingest derivatives batch --tier 1             # Tier 1 (8) — 6종 전체
+uv run mcbot ingest derivatives batch --tier 2 --fr-only   # Tier 2 (8) — FR만
 
 # On-chain — DeFiLlama, Coin Metrics, F&G 등 (22 데이터셋)
 uv run mcbot ingest onchain batch --type all
@@ -362,7 +364,7 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 1D 프레임워크 안에서 다음 축으로 확장합니다.
 
 1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
-2. **자산 다각화**: 8종 → 15~20종 (Tier-2/3 altcoin 추가)
+2. **자산 다각화**: ✅ 8종 → 16종 확장 완료 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
 3. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([상세](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
 4. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
 
