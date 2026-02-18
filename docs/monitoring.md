@@ -8,7 +8,7 @@ Prometheus + Grafana 기반 모니터링 시스템 레퍼런스.
 mc-bot (:8000/metrics)
     -> Prometheus (scrape 10s)
         -> Grafana (6 dashboards)
-        -> Alertmanager (alerts.yml, 27 rules)
+        -> Alertmanager (alerts.yml, 33 rules)
 
 node-exporter (:9100/metrics)
     -> Prometheus (scrape 15s)
@@ -198,11 +198,32 @@ Anomaly Detectors (in-process)
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_event_loop_lag_seconds` | Gauge | -- | Event loop 스케줄링 지연 |
-| `mcbot_active_tasks` | Gauge | -- | 활성 asyncio Task 수 |
-| `mcbot_process_memory_rss_bytes` | Gauge | -- | RSS 메모리 사용량 |
-| `mcbot_process_cpu_percent` | Gauge | -- | CPU 사용률 (%) |
-| `mcbot_process_open_fds` | Gauge | -- | 열린 file descriptor 수 |
+| `mcbot_event_loop_lag_seconds` | Gauge | -- | Event loop 스케줄링 지연. `sleep(interval)` 전후 monotonic 차이 - interval |
+| `mcbot_active_tasks` | Gauge | -- | 활성 asyncio Task 수. `asyncio.all_tasks()` 기반 |
+| `mcbot_process_memory_rss_bytes` | Gauge | -- | **현재** RSS 메모리. Linux: `/proc/self/statm` field[1] × page_size. macOS: `ru_maxrss` (peak fallback) |
+| `mcbot_process_memory_rss_peak_bytes` | Gauge | -- | Peak (high-water mark) RSS. `ru_maxrss` 기반. 진단용 — GC 후 감소하지 않음 |
+| `mcbot_process_cpu_percent` | Gauge | -- | CPU 사용률 (%). `os.times()` user+system delta / wall delta × 100 |
+| `mcbot_process_open_fds` | Gauge | -- | 열린 file descriptor 수. Linux: `/proc/self/fd`, macOS: `/dev/fd`. 실패 시 0 + warning 로그 |
+| `mcbot_process_gc_collections_total` | Counter | generation | GC collection 횟수 (generation: 0, 1, 2). `gc.get_stats()` delta 방식 |
+| `mcbot_process_thread_count` | Gauge | -- | 활성 스레드 수. `threading.active_count()` 기반 |
+
+**운영 주의사항:**
+
+- **RSS current vs peak**: `mcbot_process_memory_rss_bytes`는 Linux에서 `/proc/self/statm`을
+  통해 실시간 현재값을 반환하므로 GC 후 감소가 반영됩니다. `mcbot_process_memory_rss_peak_bytes`는
+  `ru_maxrss` 기반 high-water mark로 프로세스 수명 동안 증가만 합니다.
+  macOS에서는 `/proc` 미지원으로 두 값이 동일할 수 있습니다 (둘 다 peak)
+- **갱신 주기**: 기본 10초. `ProcessMonitorConfig.interval`로 설정 가능
+- **GC 영향**: gen2 수집은 full GC — 대량 객체 순환 시 event loop lag spike의 근인.
+  `rate(mcbot_process_gc_collections_total{generation="2"}[5m]) > 0.1` 시 주의
+- **Thread count 의미**: asyncio 이벤트 루프 외의 스레드 (ThreadPoolExecutor, DB driver 등).
+  급증 시 blocking I/O 과다 또는 thread pool 미회수
+- **Alert 쿨다운**: 모든 alert에 key별 60초 쿨다운 적용 (기본값). 동일 alert의 반복 발행 방지.
+  `ProcessMonitorConfig.alert_cooldown`으로 조정 가능
+- **임계값 설정**: `ProcessMonitorConfig` frozen dataclass로 환경별 튜닝 가능.
+  기본값: loop_lag 1.0s, RSS 2GB, FD 1000, CPU 80%, active_tasks 200
+- **FD count 실패**: 컨테이너 환경에서 `/proc/self/fd` 접근 불가 시 0 반환 + warning 로그.
+  FD 고갈을 0으로 착각하지 않도록 로그 확인 필요
 
 ### Layer 8: Anomaly Detection
 
@@ -214,6 +235,21 @@ Anomaly Detectors (in-process)
 | `mcbot_ransac_conformal_lower` | Gauge | strategy | RANSAC conformal 하한 |
 | `mcbot_ransac_decay_detected` | Gauge | strategy | RANSAC 구조적 쇠퇴 감지 (0/1) |
 
+**운영 주의사항:**
+
+- **메트릭 업데이트 경로**: OrchestratorMetrics.update()에서 30초 주기로 Prometheus gauge에 반영.
+  실제 detector 결과는 LifecycleManager.\_check\_degradation()에서 일별 수익률 입력 시 갱신되므로,
+  실질 변화는 리밸런싱 주기(1D bar)에 종속
+- **strategy 라벨**: pod\_id를 strategy 라벨로 사용. 단일 전략 Pod에서는 전략명과 동일
+- **GBM Drawdown Monitor**: 전용 Prometheus 메트릭 없음. CRITICAL 시 RiskAlertEvent 경유로
+  `mcbot_risk_alerts` counter(level=CRITICAL)에 반영. 상세 결과는 JSONL audit log 확인
+- **Execution Anomaly Detector**: 전용 메트릭 없음. `mcbot_risk_alerts` counter에
+  level=WARNING|CRITICAL로 반영. MetricsExporter.\_on\_fill()에서 실시간 감지
+- **최소 샘플 요구**: Distribution Drift 30개, Conformal-RANSAC 60개 최소 샘플 필요.
+  미달 시 NORMAL 반환하며 gauge는 이전 값 유지
+- **auto\_init\_detectors()**: 백테스트 수익률로 GBM/Distribution/RANSAC 3종을 일괄 초기화.
+  mu/sigma가 0에 가까우면 초기화 스킵
+
 ### Layer 9: On-chain Data
 
 | Metric | Type | Labels | Description |
@@ -224,6 +260,21 @@ Anomaly Detectors (in-process)
 | `mcbot_onchain_last_success_timestamp` | Gauge | source | 마지막 성공 Unix timestamp |
 | `mcbot_onchain_cache_size` | Gauge | symbol | 심볼별 캐시된 on-chain 컬럼 수 |
 | `mcbot_onchain_cache_refresh_total` | Counter | status | 캐시 refresh 횟수 (success/failure) |
+
+**운영 주의사항:**
+
+- **Histogram Bucket (fetch\_latency\_seconds)**: (0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)
+- **갱신 메커니즘**: LiveOnchainFeed가 소스별 독립 asyncio task로 API polling.
+  DeFiLlama: 6h, Sentiment: 6h, CoinMetrics: 12h, mempool(BTC): 6h, Etherscan(ETH): 12h
+- **Callback 주입**: PrometheusOnchainCallback이 OnchainFetcher에 주입되어
+  fetch\_total/latency/rows/last\_success 4개 메트릭 자동 기록
+- **cache\_refresh\_total**: 각 polling 사이클 완료 시 success/failure 카운트.
+  5개 fetcher(defillama, sentiment, coinmetrics, btc\_mining, eth\_supply) 각각 독립 반영
+- **cache\_size gauge**: LiveOnchainFeed.update\_cache\_metrics()에서 30초 주기 갱신
+  (LiveRunner.\_periodic\_metrics\_update 호출 경유)
+- **Graceful Degradation**: API 실패 시 이전 캐시 값 유지. 전체 실패 시에도
+  Silver 초기 로드 데이터로 cold start 보장
+- **ETH supply polling 조건**: ETHERSCAN\_API\_KEY 환경변수 + ETH 심볼 포함 시에만 활성
 
 ### Layer 10: Orchestrator
 
@@ -238,6 +289,26 @@ Anomaly Detectors (in-process)
 | `mcbot_portfolio_effective_n` | Gauge | -- | 포트폴리오 유효 분산도 (1/HHI) |
 | `mcbot_portfolio_avg_correlation` | Gauge | -- | 평균 pair-wise 상관계수 |
 | `mcbot_active_pods` | Gauge | -- | 활성 Pod 수 |
+| `mcbot_netting_gross_exposure` | Gauge | -- | Pod간 총 gross exposure (sum of abs weights) |
+| `mcbot_netting_net_exposure` | Gauge | -- | 넷팅 후 net exposure (sum of abs netted weights) |
+| `mcbot_netting_offset_ratio` | Gauge | -- | 포지션 상쇄 비율 (0=상쇄 없음, 1=완전 상쇄) |
+
+**운영 주의사항:**
+
+- **갱신 주기**: OrchestratorMetrics.update()에서 30초 주기 갱신
+  (LiveRunner.\_periodic\_metrics\_update 호출 경유)
+- **카디널리티**: Pod-level 메트릭 6종 x pod\_id = 최대 N\_pods x 6 시계열.
+  10 Pod 기준 60 시계열. Portfolio-level 3종 + Netting 3종 = 고정 6 시계열
+- **lifecycle\_state Enum**: 5개 상태 중 정확히 1개만 1.0, 나머지 0.0.
+  쿼리 형식: `mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="production"} == 1`
+- **Netting 메트릭 해석**: offset\_ratio 0.5 = 50% 상쇄. Pod간 반대 포지션이 많을수록 1에 가까움.
+  last\_pod\_targets가 비어있으면 3개 gauge 모두 0.0
+- **PRC 계산 조건**: active\_pods < 2일 때 균등 배분 (1/N).
+  Pod 수익률 길이 불일치 시 0으로 앞쪽 패딩하여 정렬
+- **리셋 동작**: 봇 재시작 시 모든 gauge 0에서 시작.
+  Orchestrator 첫 rebalance 실행 전까지 기본값 유지
+- **에러 처리**: update() 내부 exception은 catch → logger.exception()으로 기록.
+  하나의 sub-update 실패가 다른 메트릭 갱신을 차단하지 않음
 
 ### Meta
 
@@ -336,6 +407,12 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 | QueueCongestionCritical | `mcbot_eventbus_queue_depth > 8000` | 30s | CRITICAL |
 | StrategyPnlNegative | `mcbot_strategy_pnl_usdt < -500` | 1h | WARNING |
 | StrategySignalSilent | `rate(mcbot_strategy_signals_total[6h]) == 0` | 1d | WARNING |
+| HighCPUUsage | `mcbot_process_cpu_percent > 80` | 2m | WARNING |
+| HighTaskCount | `mcbot_active_tasks > 200` | 5m | WARNING |
+| HighGCPressure | `rate(mcbot_process_gc_collections_total{generation="2"}[5m]) > 0.1` | 5m | WARNING |
+| NettingLowOffset | `mcbot_netting_offset_ratio < 0.1 and mcbot_netting_gross_exposure > 0` | 1h | WARNING |
+| PodInProbation | `mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="probation"} == 1` | 0s | WARNING |
+| HighGrossExposure | `mcbot_netting_gross_exposure > 3.0` | 5m | WARNING |
 
 ---
 
@@ -604,6 +681,66 @@ for 1분 조건에서 실제 감지까지 60~90초 소요 가능. LiveDataFeed �
 1. bar 수신 여부 확인 (`mcbot_bars_total` rate)
 1. 전략 로직 데드락 점검 (handler errors 확인)
 
+### HighCPUUsage
+
+**원인**: CPU 사용률 80% 초과 (2분 지속). Compute-bound handler 또는 blocking I/O.
+**대응**:
+
+1. `HighEventLoopLag` alert 동시 발생 여부 확인 (CPU saturation → loop lag)
+1. GC pressure 확인 (`HighGCPressure` alert)
+1. handler 처리 시간 로그 점검 (특정 이벤트에 과도한 연산)
+1. ThreadPoolExecutor 사용 여부 확인 (CPU-bound 작업은 executor 분리)
+
+### HighTaskCount
+
+**원인**: asyncio Task 200개 초과 (5분 지속). Task 누수 가능성.
+**대응**:
+
+1. `asyncio.all_tasks()` 목록 확인 — 어떤 coroutine이 다수인지
+1. Task 생성 후 `await`/`cancel()` 없이 참조 소실된 건 없는지 점검
+1. WS 재연결 시 이전 Task cancel 확인
+1. 추이 확인: 단조 증가이면 leak, 주기적이면 burst
+
+### HighGCPressure
+
+**원인**: Gen2 GC 수집 빈도 0.1/s 초과 (5분 지속). 대량 객체 생성/소멸.
+**대응**:
+
+1. `mcbot_event_loop_lag_seconds`와 상관관계 확인 (gen2 GC 동안 event loop stall)
+1. 대량 DataFrame 생성/파기 패턴 점검 (strategy collect 주기)
+1. 메모리 프로파일링 검토 (`tracemalloc`, `objgraph`)
+1. 장기 지속 시 객체 풀링 또는 데이터 파이프라인 최적화
+
+### NettingLowOffset
+
+**원인**: Pod간 포지션 상쇄 비율 10% 미만 (1시간 지속). 방향성 편중 위험.
+**대응**:
+
+1. Pod별 포지션 방향 확인 (Orchestrator 대시보드)
+1. 시장 추세 vs 의도치 않은 편중 판단
+1. 의도된 동일 방향이면 alert 무시 가능
+1. 의도치 않은 편중이면 Pod 전략 구성 검토
+
+### PodInProbation
+
+**원인**: Pod가 probation 상태에 진입 (성과 하락 감지).
+**대응**:
+
+1. Pod 성과/Sharpe 확인 (Strategy Performance 대시보드)
+1. `DistributionDrift`, `StructuralDecay` alert 동시 발생 여부 확인
+1. 파라미터 재최적화 검토
+1. 유예 기간 내 미회복 시 자동 RETIRED 전환 — 수동 개입 불필요
+
+### HighGrossExposure
+
+**원인**: Pod간 총 gross exposure 3.0 초과 (5분 지속). 레버리지 과다 위험.
+**대응**:
+
+1. Pod별 allocation 확인 (`mcbot_pod_allocation_fraction`)
+1. 레버리지 배수 점검 (`mcbot_aggregate_leverage`)
+1. offset\_ratio 교차 확인 — 높은 gross + 높은 offset이면 실질 risk 낮음
+1. 지속 시 allocation 상한 조정 검토
+
 ---
 
 ## Infrastructure
@@ -623,7 +760,7 @@ docker-compose.yaml
 ```
 monitoring/
 ├── prometheus.yml                   Scrape 설정 (10s/15s)
-├── alerts.yml                       27개 Alert Rule
+├── alerts.yml                       33개 Alert Rule
 ├── Dockerfile.prometheus
 ├── Dockerfile.grafana
 └── grafana/

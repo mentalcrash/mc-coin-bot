@@ -267,3 +267,63 @@ groups:
         annotations:
           summary: "Strategy {{ $labels.strategy }} emitted no signals for 1 day"
           description: "전략이 24시간 시그널 미발생. 데이터 피드 문제 또는 전략 로직 확인 필요"
+
+      # 28. CPU 사용률 80% 초과 — 2분 유지
+      - alert: HighCPUUsage
+        expr: mcbot_process_cpu_percent > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage ({{ $value | printf \"%.1f\" }}%)"
+          description: "Process CPU usage exceeds 80% for over 2 minutes. Possible compute-bound handler or blocking I/O."
+
+      # 29. Active asyncio tasks 200개 초과 — 5분 유지
+      - alert: HighTaskCount
+        expr: mcbot_active_tasks > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High active task count ({{ $value | printf \"%.0f\" }})"
+          description: "Number of active asyncio tasks exceeds 200 for over 5 minutes. Possible task leak."
+
+      # 30. GC Gen2 수집 빈도 — 5분간 rate > 0.1
+      - alert: HighGCPressure
+        expr: rate(mcbot_process_gc_collections_total{generation="2"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GC pressure (gen2 rate: {{ $value | printf \"%.3f\" }}/s)"
+          description: "Generation 2 GC collection rate exceeds 0.1/s for over 5 minutes. Large object churn may cause event loop lag spikes."
+
+      # 31. Netting 상쇄 비율 급락
+      - alert: NettingLowOffset
+        expr: mcbot_netting_offset_ratio < 0.1 and mcbot_netting_gross_exposure > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low netting offset ratio ({{ $value | printf \"%.2f\" }})"
+          description: "Pod간 포지션 상쇄 비율이 10% 미만. 방향성 편중 위험."
+
+      # 32. Pod Probation 진입
+      - alert: PodInProbation
+        expr: mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="probation"} == 1
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod_id }} entered probation"
+          description: "Pod가 probation 상태에 진입. 유예 기간 내 미회복 시 RETIRED 전환."
+
+      # 33. Gross exposure 과다
+      - alert: HighGrossExposure
+        expr: mcbot_netting_gross_exposure > 3.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gross exposure ({{ $value | printf \"%.2f\" }})"
+          description: "Pod간 총 gross exposure 3.0 초과. 레버리지 과다 위험."

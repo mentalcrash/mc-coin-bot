@@ -286,6 +286,7 @@ class LiveOnchainFeed:
     async def _fetch_defillama(self) -> None:
         """DeFiLlama 단일 사이클."""
         assert self._fetcher is not None
+        any_success = False
 
         # Stablecoin Total
         try:
@@ -295,6 +296,7 @@ class LiveOnchainFeed:
                     "oc_stablecoin_total_usd",
                     float(df.iloc[-1]["total_circulating_usd"]),
                 )
+                any_success = True
         except Exception as e:
             logger.warning("DeFiLlama stablecoin polling error: {}", e)
 
@@ -303,6 +305,7 @@ class LiveOnchainFeed:
             df = await self._fetcher.fetch_tvl("")
             if not df.empty:
                 self._set_global_cache("oc_tvl_usd", float(df.iloc[-1]["tvl_usd"]))
+                any_success = True
         except Exception as e:
             logger.warning("DeFiLlama TVL polling error: {}", e)
 
@@ -311,10 +314,11 @@ class LiveOnchainFeed:
             df = await self._fetcher.fetch_dex_volume()
             if not df.empty:
                 self._set_global_cache("oc_dex_volume_usd", float(df.iloc[-1]["volume_usd"]))
+                any_success = True
         except Exception as e:
             logger.warning("DeFiLlama DEX volume polling error: {}", e)
 
-        _inc_cache_refresh("success")
+        _inc_cache_refresh("success" if any_success else "failure")
         logger.debug("LiveOnchainFeed DeFiLlama poll done")
 
     async def _poll_sentiment(self) -> None:
@@ -339,8 +343,10 @@ class LiveOnchainFeed:
             df = await self._fetcher.fetch_fear_greed()
             if not df.empty:
                 self._set_global_cache("oc_fear_greed", float(df.iloc[-1]["value"]))
+            _inc_cache_refresh("success")
         except Exception as e:
             logger.warning("Fear & Greed polling error: {}", e)
+            _inc_cache_refresh("failure")
 
         logger.debug("LiveOnchainFeed sentiment poll done")
 
@@ -365,6 +371,7 @@ class LiveOnchainFeed:
 
         start = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
         end = datetime.now(UTC).strftime("%Y-%m-%d")
+        any_failure = False
 
         for asset_lower in ("btc", "eth"):
             asset_upper = asset_lower.upper()
@@ -373,9 +380,7 @@ class LiveOnchainFeed:
                 continue
 
             try:
-                df = await self._fetcher.fetch_coinmetrics(
-                    asset_lower, start=start, end=end
-                )
+                df = await self._fetcher.fetch_coinmetrics(asset_lower, start=start, end=end)
                 if not df.empty:
                     last = df.iloc[-1]
                     cache = self._cache.setdefault(sym, {})
@@ -387,7 +392,9 @@ class LiveOnchainFeed:
                                 continue
             except Exception as e:
                 logger.warning("CoinMetrics {} polling error: {}", asset_upper, e)
+                any_failure = True
 
+        _inc_cache_refresh("failure" if any_failure else "success")
         logger.debug("LiveOnchainFeed CoinMetrics poll done")
 
     async def _poll_btc_mining(self) -> None:
@@ -421,8 +428,10 @@ class LiveOnchainFeed:
                     cache["oc_avg_hashrate"] = float(last["avg_hashrate"])
                 if "difficulty" in last.index:
                     cache["oc_difficulty"] = float(last["difficulty"])
+            _inc_cache_refresh("success")
         except Exception as e:
             logger.warning("mempool.space mining polling error: {}", e)
+            _inc_cache_refresh("failure")
 
         logger.debug("LiveOnchainFeed BTC mining poll done")
 
@@ -461,8 +470,10 @@ class LiveOnchainFeed:
                     cache["oc_eth_supply"] = float(last["eth_supply"])
                 if "eth2_staking" in last.index:
                     cache["oc_eth2_staking"] = float(last["eth2_staking"])
+            _inc_cache_refresh("success")
         except Exception as e:
             logger.warning("Etherscan ETH supply polling error: {}", e)
+            _inc_cache_refresh("failure")
 
         logger.debug("LiveOnchainFeed ETH supply poll done")
 

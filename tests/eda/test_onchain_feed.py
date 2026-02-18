@@ -508,3 +508,163 @@ class TestPrecompute:
 
         assert result.columns.empty
         assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# Cache Refresh Counter 검증
+# ---------------------------------------------------------------------------
+
+_INC_PATH = "src.eda.onchain_feed._inc_cache_refresh"
+
+
+class TestCacheRefreshCounter:
+    @pytest.mark.asyncio
+    async def test_defillama_success_counter(self) -> None:
+        """DeFiLlama 최소 1개 성공 시 success 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(
+            return_value=pd.DataFrame(
+                {"total_circulating_usd": [150e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_tvl = AsyncMock(return_value=pd.DataFrame())
+        mock_fetcher.fetch_dex_volume = AsyncMock(return_value=pd.DataFrame())
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_defillama()
+            mock_inc.assert_called_once_with("success")
+
+    @pytest.mark.asyncio
+    async def test_defillama_all_fail_counter(self) -> None:
+        """DeFiLlama 전부 실패 시 failure 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(side_effect=RuntimeError("err"))
+        mock_fetcher.fetch_tvl = AsyncMock(side_effect=RuntimeError("err"))
+        mock_fetcher.fetch_dex_volume = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_defillama()
+            mock_inc.assert_called_once_with("failure")
+
+    @pytest.mark.asyncio
+    async def test_sentiment_success_counter(self) -> None:
+        """Sentiment 성공 시 success 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fear_greed = AsyncMock(
+            return_value=pd.DataFrame(
+                {"value": [72]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_sentiment()
+            mock_inc.assert_called_once_with("success")
+
+    @pytest.mark.asyncio
+    async def test_sentiment_failure_counter(self) -> None:
+        """Sentiment 실패 시 failure 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fear_greed = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_sentiment()
+            mock_inc.assert_called_once_with("failure")
+
+    @pytest.mark.asyncio
+    async def test_coinmetrics_success_counter(self) -> None:
+        """CoinMetrics 전부 성공 시 success 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_coinmetrics = AsyncMock(
+            return_value=pd.DataFrame(
+                {"CapMVRVCur": [1.5]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_coinmetrics()
+            mock_inc.assert_called_once_with("success")
+
+    @pytest.mark.asyncio
+    async def test_coinmetrics_failure_counter(self) -> None:
+        """CoinMetrics 일부 실패 시 failure 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_coinmetrics = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_coinmetrics()
+            mock_inc.assert_called_once_with("failure")
+
+    @pytest.mark.asyncio
+    async def test_btc_mining_success_counter(self) -> None:
+        """BTC mining 성공 시 success 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_mempool_mining = AsyncMock(
+            return_value=pd.DataFrame(
+                {"avg_hashrate": [500e18], "difficulty": [70e12]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_btc_mining()
+            mock_inc.assert_called_once_with("success")
+
+    @pytest.mark.asyncio
+    async def test_btc_mining_failure_counter(self) -> None:
+        """BTC mining 실패 시 failure 카운트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_mempool_mining = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            await feed._fetch_btc_mining()
+            mock_inc.assert_called_once_with("failure")
+
+    @pytest.mark.asyncio
+    async def test_eth_supply_success_counter(self) -> None:
+        """ETH supply 성공 시 success 카운트."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_eth_supply = AsyncMock(
+            return_value=pd.DataFrame(
+                {"eth_supply": [120e6], "eth2_staking": [30e6]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            with patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False):
+                await feed._fetch_eth_supply()
+            mock_inc.assert_called_once_with("success")
+
+    @pytest.mark.asyncio
+    async def test_eth_supply_failure_counter(self) -> None:
+        """ETH supply 실패 시 failure 카운트."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_eth_supply = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_INC_PATH) as mock_inc:
+            with patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False):
+                await feed._fetch_eth_supply()
+            mock_inc.assert_called_once_with("failure")
