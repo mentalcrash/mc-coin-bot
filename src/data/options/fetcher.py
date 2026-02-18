@@ -132,7 +132,7 @@ class OptionsFetcher:
         start: str = "2021-03-01",
         end: str = "2099-12-31",
     ) -> pd.DataFrame:
-        """DVOL 히스토리 (get_tradingview_chart_data).
+        """DVOL 히스토리 (get_volatility_index_data).
 
         Args:
             currency: "BTC" or "ETH"
@@ -151,44 +151,43 @@ class OptionsFetcher:
 
         all_rows: list[dict[str, object]] = []
 
-        # Paginate in 720-day chunks (tradingview_chart_data has a limit)
+        # Paginate in 720-day chunks
         chunk_ms = 720 * _MS_PER_DAY
         cursor = start_ts
+
+        daily_resolution = 86400  # seconds per day
 
         while cursor < end_ts:
             chunk_end = min(cursor + chunk_ms, end_ts)
             params = {
-                "instrument_name": f"{currency.upper()}_DVOL",
+                "currency": currency.upper(),
                 "start_timestamp": cursor,
                 "end_timestamp": chunk_end,
-                "resolution": "1D",
+                "resolution": daily_resolution,
             }
 
-            response = await self._client.get("get_tradingview_chart_data", params=params)
+            response = await self._client.get("get_volatility_index_data", params=params)
             data = response.json()
             result = data.get("result", {})
 
-            ticks = result.get("ticks", [])
-            if not ticks:
+            # Response: {"result": {"data": [[ts, open, high, low, close], ...], "continuation": ...}}
+            bars = result.get("data", [])
+            if not bars:
                 cursor = chunk_end
                 continue
 
-            opens = result.get("open", [])
-            highs = result.get("high", [])
-            lows = result.get("low", [])
-            closes = result.get("close", [])
-            volumes = result.get("volume", [])
-
-            for i, tick in enumerate(ticks):
+            for bar in bars:
+                if not isinstance(bar, list) or len(bar) < 5:  # noqa: PLR2004
+                    continue
                 all_rows.append(
                     {
-                        "date": datetime.fromtimestamp(tick / 1000, tz=UTC),
+                        "date": datetime.fromtimestamp(bar[0] / 1000, tz=UTC),
                         "currency": currency.upper(),
-                        "open": Decimal(str(opens[i])) if i < len(opens) else None,
-                        "high": Decimal(str(highs[i])) if i < len(highs) else None,
-                        "low": Decimal(str(lows[i])) if i < len(lows) else None,
-                        "close": Decimal(str(closes[i])) if i < len(closes) else None,
-                        "volume": Decimal(str(volumes[i])) if i < len(volumes) else None,
+                        "open": Decimal(str(bar[1])),
+                        "high": Decimal(str(bar[2])),
+                        "low": Decimal(str(bar[3])),
+                        "close": Decimal(str(bar[4])),
+                        "volume": None,
                         "source": "deribit",
                     }
                 )

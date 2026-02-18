@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
@@ -31,7 +31,6 @@ class TestBacktestDerivExtProvider:
 
         assert "dext_agg_oi_close" in result.columns
         assert len(result) == 5
-        # merge_asof backward: Jan 1 → 1e9, Jan 2 → 1e9, Jan 3 → 1.1e9
         assert result.iloc[0]["dext_agg_oi_close"] == 1e9
         assert result.iloc[2]["dext_agg_oi_close"] == 1.1e9
 
@@ -106,16 +105,43 @@ class TestBacktestDerivExtProvider:
 
 class TestLiveDerivExtFeed:
     @pytest.mark.asyncio
-    async def test_start_stop(self) -> None:
-        """라이프사이클 검증 — start/stop이 오류 없이 완료."""
-        feed = LiveDerivExtFeed(["BTC/USDT"], refresh_interval=86400)
+    async def test_start_creates_clients_and_tasks(self) -> None:
+        """start() — clients 생성 + polling tasks 시작."""
+        feed = LiveDerivExtFeed(["BTC/USDT"])
 
-        with patch.object(feed, "_load_cache"):
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"COINALYZE_API_KEY": "test-key"}, clear=False),
+        ):
             await feed.start()
-            assert feed._task is not None
+            assert feed._ca_client is not None
+            assert feed._hl_client is not None
+            assert feed._ca_fetcher is not None
+            assert feed._hl_fetcher is not None
+            # coinalyze + hyperliquid = 2 tasks
+            assert len(feed._tasks) == 2
 
             await feed.stop()
-            assert feed._task is None
+            assert feed._ca_client is None
+            assert feed._hl_client is None
+            assert len(feed._tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_coinalyze_key_skips_task(self) -> None:
+        """COINALYZE_API_KEY 없으면 Coinalyze polling 건너뜀."""
+        feed = LiveDerivExtFeed(["BTC/USDT"])
+
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"COINALYZE_API_KEY": ""}, clear=False),
+        ):
+            await feed.start()
+            assert feed._ca_client is None
+            assert feed._ca_fetcher is None
+            # hyperliquid only = 1 task
+            assert len(feed._tasks) == 1
+
+            await feed.stop()
 
     def test_enrich_broadcasts_cached(self) -> None:
         """캐시된 PER-ASSET 값이 전체 행에 broadcast."""
@@ -153,28 +179,83 @@ class TestLiveDerivExtFeed:
         result = feed.enrich_dataframe(ohlcv, "UNKNOWN/USDT")
         pd.testing.assert_frame_equal(result, ohlcv)
 
-    def test_asset_extraction(self) -> None:
-        """symbol에서 asset 추출 검증 (BTC/USDT → BTC)."""
+    def test_symbol_for_asset(self) -> None:
+        """asset → symbol 매핑 검증."""
         feed = LiveDerivExtFeed(["BTC/USDT", "ETH/USDT", "DOGE/USDT"])
-        # DOGE는 ASSET_PRECOMPUTE_DEFS에 없으므로 skip
-        symbols = feed._symbols
-        for s in symbols:
-            asset = s.split("/")[0].upper()
-            assert asset in ("BTC", "ETH", "DOGE")
+        assert feed._symbol_for_asset("BTC") == "BTC/USDT"
+        assert feed._symbol_for_asset("ETH") == "ETH/USDT"
+        assert feed._symbol_for_asset("SOL") is None
 
     @pytest.mark.asyncio
-    async def test_periodic_refresh(self) -> None:
-        """_periodic_refresh에서 _load_cache 성공 시 정상 동작."""
-        feed = LiveDerivExtFeed(["BTC/USDT"], refresh_interval=1)
-        call_count = 0
+    async def test_poll_coinalyze_updates_cache(self) -> None:
+        """_fetch_coinalyze — API 응답 → PER-ASSET 캐시 업데이트."""
+        feed = LiveDerivExtFeed(["BTC/USDT", "ETH/USDT"])
 
-        def mock_load() -> None:
-            nonlocal call_count
-            call_count += 1
-            feed._shutdown.set()
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_agg_oi = AsyncMock(
+            return_value=pd.DataFrame(
+                {"close": [1.5e9]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+        mock_fetcher.fetch_agg_funding = AsyncMock(
+            return_value=pd.DataFrame(
+                {"close": [0.0005]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+        mock_fetcher.fetch_liquidations = AsyncMock(
+            return_value=pd.DataFrame(
+                {"long_volume": [5e6], "short_volume": [3e6]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_cvd = AsyncMock(
+            return_value=pd.DataFrame(
+                {"buy_volume": [2e7]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
 
-        with patch.object(feed, "_load_cache", side_effect=mock_load):
-            feed._shutdown.clear()
-            await feed._periodic_refresh()
+        feed._ca_fetcher = mock_fetcher
+        await feed._fetch_coinalyze()
 
-        assert call_count == 1
+        assert feed._cache["BTC/USDT"]["dext_agg_oi_close"] == 1.5e9
+        assert feed._cache["BTC/USDT"]["dext_agg_funding_close"] == 0.0005
+        assert feed._cache["BTC/USDT"]["dext_liq_long_vol"] == 5e6
+        assert feed._cache["BTC/USDT"]["dext_cvd_buy_vol"] == 2e7
+
+    @pytest.mark.asyncio
+    async def test_poll_hyperliquid_updates_cache(self) -> None:
+        """_fetch_hyperliquid — asset contexts → PER-ASSET 캐시 업데이트."""
+        feed = LiveDerivExtFeed(["BTC/USDT", "ETH/USDT"])
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_asset_contexts = AsyncMock(
+            return_value=pd.DataFrame(
+                {
+                    "coin": ["BTC", "ETH"],
+                    "open_interest": [5e9, 2e9],
+                    "funding": [0.0001, 0.0002],
+                },
+                index=pd.to_datetime(["2024-01-01", "2024-01-01"], utc=True),
+            )
+        )
+
+        feed._hl_fetcher = mock_fetcher
+        await feed._fetch_hyperliquid()
+
+        assert feed._cache["BTC/USDT"]["dext_hl_oi"] == 5e9
+        assert feed._cache["BTC/USDT"]["dext_hl_funding"] == 0.0001
+        assert feed._cache["ETH/USDT"]["dext_hl_oi"] == 2e9
+
+    @pytest.mark.asyncio
+    async def test_poll_error_keeps_cache(self) -> None:
+        """API 실패 시 기존 캐시 값 유지."""
+        feed = LiveDerivExtFeed(["BTC/USDT"])
+        feed._cache = {"BTC/USDT": {"dext_hl_oi": 5e9}}
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_asset_contexts = AsyncMock(side_effect=RuntimeError("API error"))
+
+        feed._hl_fetcher = mock_fetcher
+        await feed._fetch_hyperliquid()
+
+        assert feed._cache["BTC/USDT"]["dext_hl_oi"] == 5e9

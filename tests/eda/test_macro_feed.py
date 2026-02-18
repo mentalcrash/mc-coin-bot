@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
@@ -72,16 +72,41 @@ class TestBacktestMacroProvider:
 
 class TestLiveMacroFeed:
     @pytest.mark.asyncio
-    async def test_start_stop(self) -> None:
-        """라이프사이클 검증 — start/stop이 오류 없이 완료."""
-        feed = LiveMacroFeed(refresh_interval=86400)
+    async def test_start_creates_clients_and_tasks(self) -> None:
+        """start() — clients 생성 + polling tasks 시작."""
+        feed = LiveMacroFeed()
 
-        with patch.object(feed, "_load_cache"):
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"FRED_API_KEY": "test-key"}, clear=False),
+        ):
             await feed.start()
-            assert feed._task is not None
+            assert feed._fred_client is not None
+            assert feed._cg_client is not None
+            assert feed._fetcher is not None
+            # FRED + yfinance + coingecko = 3 tasks
+            assert len(feed._tasks) == 3
 
             await feed.stop()
-            assert feed._task is None
+            assert feed._fred_client is None
+            assert feed._cg_client is None
+            assert feed._fetcher is None
+            assert len(feed._tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_fred_key_skips_fred_task(self) -> None:
+        """FRED_API_KEY 없으면 FRED polling task 건너뜀."""
+        feed = LiveMacroFeed()
+
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"FRED_API_KEY": ""}, clear=False),
+        ):
+            await feed.start()
+            # yfinance + coingecko only = 2 tasks
+            assert len(feed._tasks) == 2
+
+            await feed.stop()
 
     def test_enrich_broadcasts_cached(self) -> None:
         """캐시된 GLOBAL 값이 전체 행에 broadcast."""
@@ -135,18 +160,78 @@ class TestLiveMacroFeed:
         pd.testing.assert_frame_equal(result, ohlcv)
 
     @pytest.mark.asyncio
-    async def test_periodic_refresh(self) -> None:
-        """_periodic_refresh에서 _load_cache 성공 시 정상 동작."""
-        feed = LiveMacroFeed(refresh_interval=1)
-        call_count = 0
+    async def test_poll_fred_updates_cache(self) -> None:
+        """_fetch_fred — API 응답 → 캐시 업데이트."""
+        feed = LiveMacroFeed()
 
-        def mock_load() -> None:
-            nonlocal call_count
-            call_count += 1
-            feed._shutdown.set()
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fred_series = AsyncMock(
+            return_value=pd.DataFrame(
+                {"value": [103.5]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
 
-        with patch.object(feed, "_load_cache", side_effect=mock_load):
-            feed._shutdown.clear()
-            await feed._periodic_refresh()
+        feed._fetcher = mock_fetcher
+        await feed._fetch_fred()
 
-        assert call_count == 1
+        # All 6 FRED series should be called
+        assert mock_fetcher.fetch_fred_series.call_count == 6
+        assert feed._cache["macro_dxy"] == 103.5
+
+    @pytest.mark.asyncio
+    async def test_poll_coingecko_updates_cache(self) -> None:
+        """_fetch_coingecko — CoinGecko global + defi → 캐시 업데이트."""
+        feed = LiveMacroFeed()
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_coingecko_global = AsyncMock(
+            return_value=pd.DataFrame(
+                {"btc_dominance": [55.0], "total_market_cap_usd": [2.5e12]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_coingecko_defi = AsyncMock(
+            return_value=pd.DataFrame(
+                {"defi_dominance": [3.5]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_coingecko()
+
+        assert feed._cache["macro_btc_dom"] == 55.0
+        assert feed._cache["macro_total_mcap"] == 2.5e12
+        assert feed._cache["macro_defi_dom"] == 3.5
+
+    @pytest.mark.asyncio
+    async def test_poll_error_keeps_cache(self) -> None:
+        """API 실패 시 기존 캐시 값 유지."""
+        feed = LiveMacroFeed()
+        feed._cache = {"macro_dxy": 103.5}
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fred_series = AsyncMock(side_effect=RuntimeError("API error"))
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_fred()
+
+        assert feed._cache["macro_dxy"] == 103.5
+
+    @pytest.mark.asyncio
+    async def test_poll_yfinance_updates_cache(self) -> None:
+        """_fetch_yfinance — yfinance 응답 → 캐시 업데이트."""
+        feed = LiveMacroFeed()
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_yfinance_ticker = AsyncMock(
+            return_value=pd.DataFrame(
+                {"close": [450.0]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_yfinance()
+
+        assert mock_fetcher.fetch_yfinance_ticker.call_count == 6
+        assert feed._cache["macro_spy_close"] == 450.0

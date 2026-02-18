@@ -63,7 +63,7 @@ class TestMacroDataService:
         """FRED batch definitions."""
         service = MacroDataService(settings, catalog=None)
         defs = service.get_batch_definitions("fred")
-        assert len(defs) == 7
+        assert len(defs) == 6  # gold removed (FRED series discontinued 2022-01)
         assert all(s == "fred" for s, _ in defs)
 
     def test_batch_definitions_yfinance(self, settings: IngestionSettings) -> None:
@@ -77,7 +77,7 @@ class TestMacroDataService:
         """전체 batch definitions."""
         service = MacroDataService(settings, catalog=None)
         defs = service.get_batch_definitions("all")
-        assert len(defs) == 15
+        assert len(defs) == 14  # gold removed
 
     def test_batch_definitions_invalid(self, settings: IngestionSettings) -> None:
         """잘못된 batch type."""
@@ -116,5 +116,5 @@ class TestMacroDataService:
         """MACRO_BATCH_DEFINITIONS 상수 확인."""
         assert "fred" in MACRO_BATCH_DEFINITIONS
         assert "yfinance" in MACRO_BATCH_DEFINITIONS
-        assert len(MACRO_BATCH_DEFINITIONS["fred"]) == 7
+        assert len(MACRO_BATCH_DEFINITIONS["fred"]) == 6  # gold removed
         assert len(MACRO_BATCH_DEFINITIONS["yfinance"]) == 6

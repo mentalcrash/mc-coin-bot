@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
@@ -92,16 +92,35 @@ class TestBacktestOptionsProvider:
 
 class TestLiveOptionsFeed:
     @pytest.mark.asyncio
-    async def test_start_stop(self) -> None:
-        """라이프사이클 검증 — start/stop이 오류 없이 완료."""
-        feed = LiveOptionsFeed(refresh_interval=86400)
+    async def test_start_creates_clients_and_tasks(self) -> None:
+        """start() — client 생성 + 2개 polling task 시작."""
+        feed = LiveOptionsFeed()
 
         with patch.object(feed, "_load_cache"):
             await feed.start()
-            assert feed._task is not None
+            assert feed._client is not None
+            assert feed._fetcher is not None
+            assert len(feed._tasks) == 2
 
             await feed.stop()
-            assert feed._task is None
+            assert feed._client is None
+            assert feed._fetcher is None
+            assert len(feed._tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_stop_closes_client(self) -> None:
+        """stop() — client close + task cancel."""
+        feed = LiveOptionsFeed()
+
+        with patch.object(feed, "_load_cache"):
+            await feed.start()
+            client = feed._client
+            assert client is not None
+
+            await feed.stop()
+            # Client should be cleaned up
+            assert feed._client is None
+            assert feed._tasks == []
 
     def test_enrich_broadcasts_cached(self) -> None:
         """캐시된 GLOBAL 값이 전체 행에 broadcast."""
@@ -140,18 +159,85 @@ class TestLiveOptionsFeed:
         pd.testing.assert_frame_equal(result, ohlcv)
 
     @pytest.mark.asyncio
-    async def test_periodic_refresh(self) -> None:
-        """_periodic_refresh에서 _load_cache 성공 시 정상 동작."""
-        feed = LiveOptionsFeed(refresh_interval=1)
-        call_count = 0
+    async def test_poll_dvol_pcr_updates_cache(self) -> None:
+        """_fetch_dvol_pcr — API 응답 → 캐시 업데이트."""
+        feed = LiveOptionsFeed()
+
+        mock_fetcher = AsyncMock()
+        # BTC DVOL
+        mock_fetcher.fetch_dvol = AsyncMock(
+            side_effect=[
+                pd.DataFrame({"close": [55.0]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]),
+                pd.DataFrame({"close": [45.0]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]),
+            ]
+        )
+        # PC Ratio
+        mock_fetcher.fetch_pc_ratio = AsyncMock(
+            return_value=pd.DataFrame(
+                {"pc_ratio": [0.85]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_dvol_pcr()
+
+        assert feed._cache["opt_btc_dvol"] == 55.0
+        assert feed._cache["opt_eth_dvol"] == 45.0
+        assert feed._cache["opt_btc_pc_ratio"] == 0.85
+
+    @pytest.mark.asyncio
+    async def test_poll_error_keeps_cache(self) -> None:
+        """API 실패 시 기존 캐시 값 유지."""
+        feed = LiveOptionsFeed()
+        feed._cache = {"opt_btc_dvol": 55.0}
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_dvol = AsyncMock(side_effect=RuntimeError("API error"))
+        mock_fetcher.fetch_pc_ratio = AsyncMock(side_effect=RuntimeError("API error"))
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_dvol_pcr()
+
+        # 기존 값 유지
+        assert feed._cache["opt_btc_dvol"] == 55.0
+
+    @pytest.mark.asyncio
+    async def test_poll_vol_term_updates_cache(self) -> None:
+        """_fetch_vol_term — Hist Vol + Term Structure 캐시 업데이트."""
+        feed = LiveOptionsFeed()
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_hist_vol = AsyncMock(
+            return_value=pd.DataFrame(
+                {"vol_30d": [0.52]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+        mock_fetcher.fetch_term_structure = AsyncMock(
+            return_value=pd.DataFrame(
+                {"slope": [1.25]}, index=[pd.Timestamp("2024-01-01", tz="UTC")]
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_vol_term()
+
+        assert feed._cache["opt_btc_rv30d"] == 0.52
+        assert feed._cache["opt_btc_term_slope"] == 1.25
+
+    @pytest.mark.asyncio
+    async def test_silver_fallback_on_start(self) -> None:
+        """시작 시 Silver에서 초기 로드."""
+        feed = LiveOptionsFeed()
+        load_called = False
 
         def mock_load() -> None:
-            nonlocal call_count
-            call_count += 1
-            feed._shutdown.set()
+            nonlocal load_called
+            load_called = True
+            feed._cache = {"opt_btc_dvol": 50.0}
 
         with patch.object(feed, "_load_cache", side_effect=mock_load):
-            feed._shutdown.clear()
-            await feed._periodic_refresh()
+            await feed.start()
 
-        assert call_count == 1
+        assert load_called
+        assert feed._cache["opt_btc_dvol"] == 50.0
+        await feed.stop()

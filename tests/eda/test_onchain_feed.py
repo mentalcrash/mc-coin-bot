@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -32,7 +32,6 @@ class TestBacktestOnchainProvider:
 
         assert "oc_fear_greed" in result.columns
         assert len(result) == 5
-        # merge_asof backward: Jan 1 → 72, Jan 2 → 72, Jan 3 → 68
         assert result.iloc[0]["oc_fear_greed"] == 72.0
         assert result.iloc[2]["oc_fear_greed"] == 68.0
 
@@ -72,17 +71,51 @@ class TestBacktestOnchainProvider:
 
 class TestLiveOnchainFeed:
     @pytest.mark.asyncio
-    async def test_start_stop(self) -> None:
-        """라이프사이클 검증 — start/stop이 오류 없이 완료."""
-        feed = LiveOnchainFeed(["BTC/USDT"], refresh_interval=86400)
+    async def test_start_creates_clients_and_tasks(self) -> None:
+        """start() — client 생성 + polling tasks 시작."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
 
-        # _load_cache를 빈 캐시로 patch
-        with patch.object(feed, "_load_cache"):
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False),
+        ):
             await feed.start()
-            assert feed._task is not None
+            assert feed._fetcher is not None
+            assert len(feed._clients) == 1
+            # defillama + sentiment + coinmetrics + btc_mining + eth_supply = 5
+            assert len(feed._tasks) == 5
 
             await feed.stop()
-            assert feed._task is None
+            assert feed._fetcher is None
+            assert len(feed._clients) == 0
+            assert len(feed._tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_etherscan_key_skips_eth_supply(self) -> None:
+        """ETHERSCAN_API_KEY 없으면 ETH supply polling 건너뜀."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+
+        with (
+            patch.object(feed, "_load_cache"),
+            patch.dict("os.environ", {"ETHERSCAN_API_KEY": ""}, clear=False),
+        ):
+            await feed.start()
+            # defillama + sentiment + coinmetrics + btc_mining = 4
+            assert len(feed._tasks) == 4
+
+            await feed.stop()
+
+    @pytest.mark.asyncio
+    async def test_no_btc_symbol_skips_mining(self) -> None:
+        """BTC 심볼 없으면 mining polling 건너뜀."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+
+        with patch.object(feed, "_load_cache"):
+            await feed.start()
+            # defillama + sentiment + coinmetrics = 3 (no btc_mining, no eth_supply w/o key)
+            assert len(feed._tasks) == 3
+
+            await feed.stop()
 
     def test_enrich_broadcasts_cached(self) -> None:
         """캐시된 값이 전체 행에 broadcast."""
@@ -110,10 +143,15 @@ class TestLiveOnchainFeed:
         """Silver 없으면 빈 캐시."""
         feed = LiveOnchainFeed(["DOGE/USDT"])
 
-        # _load_cache가 service.load에서 예외 → 빈 캐시
-        with patch(
-            "src.data.onchain.service.OnchainDataService.load",
-            side_effect=StorageError("not found"),
+        with (
+            patch(
+                "src.data.onchain.service.OnchainDataService.load",
+                side_effect=StorageError("not found"),
+            ),
+            patch(
+                "src.data.macro.storage.MacroSilverProcessor.load",
+                side_effect=StorageError("not found"),
+            ),
         ):
             feed._load_cache()
 
@@ -151,7 +189,6 @@ class TestLiveOnchainFeed:
         """update_cache_metrics() 호출 시 오류 없이 완료."""
         feed = LiveOnchainFeed(["BTC/USDT"])
         feed._cache = {"BTC/USDT": {"oc_fear_greed": 72.0}}
-        # Should not raise even if prometheus_client imported
         feed.update_cache_metrics()
 
     def test_notification_queue_default_none(self) -> None:
@@ -159,42 +196,145 @@ class TestLiveOnchainFeed:
         feed = LiveOnchainFeed(["BTC/USDT"])
         assert feed._notification_queue is None
 
-    @pytest.mark.asyncio
-    async def test_periodic_refresh_success_increments(self) -> None:
-        """_periodic_refresh에서 _load_cache 성공 시 success counter."""
-        feed = LiveOnchainFeed(["BTC/USDT"], refresh_interval=1)
-        call_count = 0
+    def test_symbol_for_asset(self) -> None:
+        """_symbol_for_asset 매핑 검증."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+        assert feed._symbol_for_asset("BTC") == "BTC/USDT"
+        assert feed._symbol_for_asset("ETH") == "ETH/USDT"
+        assert feed._symbol_for_asset("SOL") is None
 
-        def mock_load() -> None:
-            nonlocal call_count
-            call_count += 1
-            feed._shutdown.set()  # 1회 refresh 후 종료
+    def test_set_global_cache(self) -> None:
+        """_set_global_cache — 모든 심볼에 값 설정."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+        feed._set_global_cache("oc_fear_greed", 72.0)
 
-        with patch.object(feed, "_load_cache", side_effect=mock_load):
-            feed._shutdown.clear()
-            await feed._periodic_refresh()
-
-        assert call_count == 1
+        assert feed._cache["BTC/USDT"]["oc_fear_greed"] == 72.0
+        assert feed._cache["ETH/USDT"]["oc_fear_greed"] == 72.0
 
     @pytest.mark.asyncio
-    async def test_periodic_refresh_failure_does_not_crash(self) -> None:
-        """_periodic_refresh에서 _load_cache 예외 시 계속 실행."""
-        feed = LiveOnchainFeed(["BTC/USDT"], refresh_interval=1)
-        call_count = 0
+    async def test_poll_defillama_updates_cache(self) -> None:
+        """_fetch_defillama — DeFiLlama → GLOBAL 캐시 업데이트."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
 
-        def mock_load() -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                msg = "test error"
-                raise RuntimeError(msg)
-            feed._shutdown.set()
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(
+            return_value=pd.DataFrame(
+                {"total_circulating_usd": [150e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_tvl = AsyncMock(
+            return_value=pd.DataFrame(
+                {"tvl_usd": [50e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_dex_volume = AsyncMock(
+            return_value=pd.DataFrame(
+                {"volume_usd": [5e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
 
-        with patch.object(feed, "_load_cache", side_effect=mock_load):
-            feed._shutdown.clear()
-            await feed._periodic_refresh()
+        feed._fetcher = mock_fetcher
+        await feed._fetch_defillama()
 
-        assert call_count == 2  # 1 failure + 1 success then shutdown
+        # GLOBAL → 모든 심볼에 설정
+        assert feed._cache["BTC/USDT"]["oc_stablecoin_total_usd"] == 150e9
+        assert feed._cache["ETH/USDT"]["oc_tvl_usd"] == 50e9
+        assert feed._cache["BTC/USDT"]["oc_dex_volume_usd"] == 5e9
+
+    @pytest.mark.asyncio
+    async def test_poll_sentiment_updates_cache(self) -> None:
+        """_fetch_sentiment — Fear & Greed → GLOBAL 캐시 업데이트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fear_greed = AsyncMock(
+            return_value=pd.DataFrame(
+                {"value": [72]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_sentiment()
+
+        assert feed._cache["BTC/USDT"]["oc_fear_greed"] == 72.0
+
+    @pytest.mark.asyncio
+    async def test_poll_coinmetrics_updates_cache(self) -> None:
+        """_fetch_coinmetrics — CM BTC/ETH → PER-ASSET 캐시 업데이트."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_coinmetrics = AsyncMock(
+            return_value=pd.DataFrame(
+                {"CapMVRVCur": [1.5], "CapMrktCurUSD": [400e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_coinmetrics()
+
+        assert feed._cache["BTC/USDT"]["oc_mvrv"] == 1.5
+        assert feed._cache["BTC/USDT"]["oc_mktcap_usd"] == 400e9
+
+    @pytest.mark.asyncio
+    async def test_poll_btc_mining_updates_cache(self) -> None:
+        """_fetch_btc_mining — mempool.space → BTC 캐시 업데이트."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_mempool_mining = AsyncMock(
+            return_value=pd.DataFrame(
+                {"avg_hashrate": [500e18], "difficulty": [70e12]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_btc_mining()
+
+        assert feed._cache["BTC/USDT"]["oc_avg_hashrate"] == 500e18
+        assert feed._cache["BTC/USDT"]["oc_difficulty"] == 70e12
+
+    @pytest.mark.asyncio
+    async def test_poll_eth_supply_updates_cache(self) -> None:
+        """_fetch_eth_supply — Etherscan → ETH 캐시 업데이트."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_eth_supply = AsyncMock(
+            return_value=pd.DataFrame(
+                {"eth_supply": [120e6], "eth2_staking": [30e6]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+
+        feed._fetcher = mock_fetcher
+        with patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False):
+            await feed._fetch_eth_supply()
+
+        assert feed._cache["ETH/USDT"]["oc_eth_supply"] == 120e6
+        assert feed._cache["ETH/USDT"]["oc_eth2_staking"] == 30e6
+
+    @pytest.mark.asyncio
+    async def test_poll_error_keeps_cache(self) -> None:
+        """API 실패 시 기존 캐시 값 유지."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        feed._cache = {"BTC/USDT": {"oc_fear_greed": 72.0}}
+
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(side_effect=RuntimeError("API error"))
+        mock_fetcher.fetch_tvl = AsyncMock(side_effect=RuntimeError("API error"))
+        mock_fetcher.fetch_dex_volume = AsyncMock(side_effect=RuntimeError("API error"))
+
+        feed._fetcher = mock_fetcher
+        await feed._fetch_defillama()
+
+        assert feed._cache["BTC/USDT"]["oc_fear_greed"] == 72.0
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +445,6 @@ class TestPrecompute:
 
         assert "oc_stablecoin_total_usd" in result.columns
         assert "oc_fear_greed" in result.columns
-        # No BTC/ETH specific columns
         assert "oc_mvrv" not in result.columns
         assert "oc_hash_rate" not in result.columns
 
@@ -352,9 +491,8 @@ class TestPrecompute:
         ohlcv_index = pd.date_range("2024-01-01", periods=4, freq="1D", tz="UTC")
         result = service.precompute("SOL/USDT", ohlcv_index)
 
-        # lag=1 → Jan 1 data available at Jan 2
-        assert pd.isna(result.iloc[0]["oc_stablecoin_total_usd"])  # Jan 1: no data yet
-        assert result.iloc[1]["oc_stablecoin_total_usd"] == 1e9  # Jan 2: Jan 1 data
+        assert pd.isna(result.iloc[0]["oc_stablecoin_total_usd"])
+        assert result.iloc[1]["oc_stablecoin_total_usd"] == 1e9
 
     def test_precompute_no_data_empty_df(self) -> None:
         """Silver 데이터 없으면 빈 DataFrame."""
@@ -363,7 +501,7 @@ class TestPrecompute:
         service = OnchainDataService.__new__(OnchainDataService)
         service._settings = MagicMock()
         service._catalog = None
-        service._silver = _make_mock_silver({})  # all loads will raise
+        service._silver = _make_mock_silver({})
 
         ohlcv_index = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
         result = service.precompute("BTC/USDT", ohlcv_index)

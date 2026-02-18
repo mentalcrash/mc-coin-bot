@@ -26,19 +26,18 @@ class TestOptionsFetcher:
     """OptionsFetcher 테스트."""
 
     async def test_fetch_dvol(self, mock_client: AsyncMock) -> None:
-        """DVOL 데이터 가져오기."""
+        """DVOL 데이터 가져오기 (get_volatility_index_data)."""
         dvol_data = {
             "result": {
-                "ticks": [1705276800000, 1705363200000],
-                "open": [60.0, 62.0],
-                "high": [65.0, 67.0],
-                "low": [58.0, 60.0],
-                "close": [63.0, 65.0],
-                "volume": [100.0, 110.0],
+                "data": [
+                    [1705276800000, 60.0, 65.0, 58.0, 63.0],
+                    [1705363200000, 62.0, 67.0, 60.0, 65.0],
+                ],
+                "continuation": None,
             }
         }
         # First call returns data, subsequent calls return empty (pagination)
-        empty_data = {"result": {}}
+        empty_data = {"result": {"data": [], "continuation": None}}
         mock_client.get.side_effect = [
             _make_response(dvol_data),
             _make_response(empty_data),
@@ -212,12 +211,8 @@ class TestRouteFetch:
         """DVOL 라우팅."""
         dvol_data = {
             "result": {
-                "ticks": [1705276800000],
-                "open": [60.0],
-                "high": [65.0],
-                "low": [58.0],
-                "close": [63.0],
-                "volume": [100.0],
+                "data": [[1705276800000, 60.0, 65.0, 58.0, 63.0]],
+                "continuation": None,
             }
         }
         mock_client.get.return_value = _make_response(dvol_data)

@@ -27,7 +27,9 @@ FRED_API_URL = "https://api.stlouisfed.org/fred/series/observations"
 # FRED 시리즈 매핑: name → series_id
 FRED_SERIES: dict[str, str] = {
     "dxy": "DTWEXBGS",
-    "gold": "GOLDAMGBD228NLBM",
+    # gold: GOLDAMGBD228NLBM was removed from FRED on 2022-01-31
+    # (ICE Benchmark Administration data discontinuation).
+    # Gold price is now covered by yfinance/gld (Gold ETF).
     "dgs10": "DGS10",
     "dgs2": "DGS2",
     "t10y2y": "T10Y2Y",

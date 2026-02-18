@@ -24,6 +24,7 @@ class DataType(StrEnum):
     ONCHAIN = "onchain"
     MACRO = "macro"
     OPTIONS = "options"
+    DERIV_EXT = "deriv_ext"
 
 
 class EnrichmentScope(StrEnum):
@@ -31,6 +32,7 @@ class EnrichmentScope(StrEnum):
 
     GLOBAL = "global"
     ASSET = "asset"
+    PER_ASSET = "per_asset"
 
 
 # ─── Models ──────────────────────────────────────────────────────────

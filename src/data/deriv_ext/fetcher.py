@@ -274,18 +274,24 @@ class CoinalyzeFetcher:
         if not isinstance(history, list):
             return []
 
-        return [
-            {
-                "date": _ts_to_dt(int(entry["t"])),  # type: ignore[arg-type]
-                "symbol": symbol,
-                "open": Decimal(str(entry["o"])),
-                "high": Decimal(str(entry["h"])),
-                "low": Decimal(str(entry["l"])),
-                "close": Decimal(str(entry["c"])),
-                "source": "coinalyze",
-            }
-            for entry in history
-        ]
+        rows: list[dict[str, object]] = []
+        for entry in history:
+            try:
+                rows.append(
+                    {
+                        "date": _ts_to_dt(int(entry["t"])),  # type: ignore[arg-type]
+                        "symbol": symbol,
+                        "open": Decimal(str(entry["o"])),
+                        "high": Decimal(str(entry["h"])),
+                        "low": Decimal(str(entry["l"])),
+                        "close": Decimal(str(entry["c"])),
+                        "source": "coinalyze",
+                    }
+                )
+            except Exception:
+                logger.debug("Skipping malformed Coinalyze entry: {}", entry)
+                continue
+        return rows
 
     def _parse_liquidation_response(
         self, data: list[dict[str, object]], symbol: str
@@ -456,16 +462,29 @@ class HyperliquidFetcher:
         rows: list[dict[str, object]] = []
 
         for entry in data:
-            coin = entry.get("coin", "")
+            # API returns nested lists: ["COIN", [["Exchange", {...}], ...]]
+            if isinstance(entry, list) and len(entry) >= 2:  # noqa: PLR2004
+                coin = str(entry[0])
+                venues = entry[1] if isinstance(entry[1], list) else []
+            elif isinstance(entry, dict):
+                coin = str(entry.get("coin", ""))
+                venues = entry.get("venues", [])
+            else:
+                continue
+
             if coin not in HL_TARGET_COINS:
                 continue
 
-            venues = entry.get("venues", [])
             for venue_data in venues:
                 if not isinstance(venue_data, list) or len(venue_data) < 2:  # noqa: PLR2004
                     continue
                 venue_name = str(venue_data[0])
-                predicted_rate = venue_data[1]
+                funding_info = venue_data[1]
+                # Handle both dict format {"fundingRate": "0.0001"} and raw string
+                if isinstance(funding_info, dict):
+                    predicted_rate = funding_info.get("fundingRate", "0")
+                else:
+                    predicted_rate = funding_info
                 rows.append(
                     {
                         "date": now,
