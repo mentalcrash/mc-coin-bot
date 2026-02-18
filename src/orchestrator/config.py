@@ -411,6 +411,17 @@ class OrchestratorConfig(BaseModel):
         return tuple(result)
 
     @property
+    def all_timeframes(self) -> tuple[str, ...]:
+        """모든 Pod의 고유 TF 목록 (순서 보존)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for pod in self.pods:
+            if pod.timeframe not in seen:
+                seen.add(pod.timeframe)
+                result.append(pod.timeframe)
+        return tuple(result)
+
+    @property
     def n_pods(self) -> int:
         """Pod 수."""
         return len(self.pods)

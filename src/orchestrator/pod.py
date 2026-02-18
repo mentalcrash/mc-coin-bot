@@ -96,6 +96,11 @@ class StrategyPod:
         return self._config.symbols
 
     @property
+    def timeframe(self) -> str:
+        """Pod 타임프레임."""
+        return self._config.timeframe
+
+    @property
     def state(self) -> LifecycleState:
         """현재 생애주기 상태."""
         return self._state

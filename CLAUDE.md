@@ -116,6 +116,7 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 ```
 [Backtest] 1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
 [Live]     WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
+[Multi-TF] 1m → MultiTimeframeCandleAggregator → BAR(4h,1D,...) → Orchestrator(per-pod TF routing) → SIGNAL → PM
 ```
 
 ### 의존성 흐름 (단방향)

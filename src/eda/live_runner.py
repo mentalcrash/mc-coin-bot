@@ -314,8 +314,13 @@ class LiveRunner:
         from src.strategy.tsmom.strategy import TSMOMStrategy
 
         symbols = list(orchestrator_config.all_symbols)
+        all_tfs = set(orchestrator_config.all_timeframes)
+        multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(symbols, target_timeframe, client)
+        feed = LiveDataFeed(
+            symbols, target_timeframe, client,
+            target_timeframes=all_tfs if multi_tf else None,
+        )
         executor = BacktestExecutor(cost_model=pm_config.cost_model)
 
         # Dummy strategy (LiveRunner 생성자 필수)
@@ -352,7 +357,7 @@ class LiveRunner:
             allocator=allocator,
             lifecycle_manager=lifecycle_mgr,
             risk_aggregator=risk_aggregator,
-            target_timeframe=target_timeframe,
+            target_timeframe=None if multi_tf else target_timeframe,
         )
 
         return runner
@@ -393,8 +398,13 @@ class LiveRunner:
         from src.strategy.tsmom.strategy import TSMOMStrategy
 
         symbols = list(orchestrator_config.all_symbols)
+        all_tfs = set(orchestrator_config.all_timeframes)
+        multi_tf = len(all_tfs) > 1
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(symbols, target_timeframe, client)
+        feed = LiveDataFeed(
+            symbols, target_timeframe, client,
+            target_timeframes=all_tfs if multi_tf else None,
+        )
         executor = LiveExecutor(futures_client)
 
         # Dummy strategy
@@ -432,7 +442,7 @@ class LiveRunner:
             allocator=allocator,
             lifecycle_manager=lifecycle_mgr,
             risk_aggregator=risk_aggregator,
-            target_timeframe=target_timeframe,
+            target_timeframe=None if multi_tf else target_timeframe,
         )
 
         # Live 모드에서 DerivativesFeed 자동 생성
@@ -1060,7 +1070,7 @@ class LiveRunner:
             for symbol in pod.symbols:
                 try:
                     bars, timestamps = await self._fetch_warmup_bars(
-                        symbol, self._target_timeframe, warmup_needed
+                        symbol, pod.timeframe, warmup_needed
                     )
                     if bars:
                         pod.inject_warmup(symbol, bars, timestamps)

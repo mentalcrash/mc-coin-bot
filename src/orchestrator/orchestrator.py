@@ -88,6 +88,12 @@ class StrategyOrchestrator:
         self._notification: OrchestratorNotificationEngine | None = notification
         self._bus: EventBus | None = None
 
+        # Per-pod TF routing: accepted TF set
+        if target_timeframe is not None:
+            self._accepted_timeframes: set[str] = {target_timeframe}
+        else:
+            self._accepted_timeframes = {pod.config.timeframe for pod in pods}
+
         # 심볼 → Pod 인덱스 라우팅 테이블 (O(1) lookup)
         self._symbol_pod_map: dict[str, list[int]] = {}
         self._build_routing_table()
@@ -147,8 +153,8 @@ class StrategyOrchestrator:
         assert isinstance(event, BarEvent)
         bar = event
 
-        # TF 필터: target_timeframe이 설정된 경우, 해당 TF bar만 처리
-        if self._target_timeframe is not None and bar.timeframe != self._target_timeframe:
+        # TF 필터: accepted TF만 처리
+        if bar.timeframe not in self._accepted_timeframes:
             return
 
         symbol = bar.symbol
@@ -185,6 +191,8 @@ class StrategyOrchestrator:
         for idx in pod_indices:
             pod = self._pods[idx]
             if not pod.is_active:
+                continue
+            if pod.config.timeframe != bar.timeframe:
                 continue
 
             result = pod.compute_signal(symbol, bar_data, bar.bar_timestamp)
@@ -247,22 +255,37 @@ class StrategyOrchestrator:
     # ── Signal Emission ──────────────────────────────────────────
 
     async def _flush_net_signals(self) -> None:
-        """누적된 net weight → SignalEvent 발행."""
+        """누적된 net weight → SignalEvent 발행.
+
+        Multi-TF 모드: _last_pod_targets에서 전체 net weight를 재계산하되,
+        이번 배치에서 변경된 심볼만 emit하여 불필요한 주문을 방지합니다.
+        """
         bus = self._bus
         if bus is None or self._pending_bar_ts is None:
             return
 
+        # 이번 배치에서 변경된 심볼
+        changed_symbols = set(self._pending_net_weights.keys())
+
+        # Multi-TF: _last_pod_targets에서 전체 net weight 재계산
+        # 단일 TF: _pending_net_weights == full net (기존과 동일)
+        if len(self._accepted_timeframes) > 1:
+            full_net = self._compute_current_net_weights()
+        else:
+            full_net = dict(self._pending_net_weights)
+
         # Risk breached → 모든 weight 0으로 억제
         if self._risk_breached:
-            self._pending_net_weights = dict.fromkeys(self._pending_net_weights, 0.0)
+            full_net = dict.fromkeys(full_net, 0.0)
 
         # 레버리지 한도 적용
         scaled = scale_weights_to_leverage(
-            self._pending_net_weights,
+            full_net,
             self._config.max_gross_leverage,
         )
 
-        for symbol, net_weight in scaled.items():
+        for symbol in changed_symbols:
+            net_weight = scaled.get(symbol, 0.0)
             abs_weight = abs(net_weight)
             if abs_weight < _MIN_NET_WEIGHT:
                 direction = Direction.NEUTRAL

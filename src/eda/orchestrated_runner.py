@@ -144,6 +144,9 @@ class OrchestratedRunner:
         self._queue_size = queue_size
         self._pods = pods
 
+        # Multi-TF: Pod configs에서 필요 TF 자동 수집
+        self._all_timeframes: set[str] = set(orchestrator_config.all_timeframes)
+
     @classmethod
     def backtest(
         cls,
@@ -201,13 +204,15 @@ class OrchestratedRunner:
             config=orch_config,
         )
 
+        # Multi-TF: per-pod routing (target_timeframe=None) vs 단일 TF (기존 경로)
+        multi_tf = len(self._all_timeframes) > 1
         orchestrator = StrategyOrchestrator(
             config=orch_config,
             pods=pods,
             allocator=allocator,
             lifecycle_manager=lifecycle_mgr,
             risk_aggregator=risk_aggregator,
-            target_timeframe=self._target_timeframe,
+            target_timeframe=None if multi_tf else self._target_timeframe,
         )
 
         # 2.5. Initial capital → Pod base equity 초기화
@@ -218,6 +223,7 @@ class OrchestratedRunner:
         feed = HistoricalDataFeed(
             self._data,
             target_timeframe=self._target_timeframe,
+            target_timeframes=self._all_timeframes if multi_tf else None,
         )
         executor = BacktestExecutor(cost_model=pm_config.cost_model)
 
@@ -225,11 +231,18 @@ class OrchestratedRunner:
         all_symbols = list(orch_config.all_symbols)
         asset_weights = dict.fromkeys(all_symbols, 1.0)
 
+        # PM: 가장 짧은 TF 사용 (intrabar SL/TS 리셋 주기)
+        from src.eda.candle_aggregator import timeframe_to_seconds
+
+        shortest_tf = min(
+            self._all_timeframes,
+            key=lambda tf: timeframe_to_seconds(tf),
+        )
         pm = EDAPortfolioManager(
             config=pm_config,
             initial_capital=self._initial_capital,
             asset_weights=asset_weights,
-            target_timeframe=self._target_timeframe,
+            target_timeframe=shortest_tf,
         )
         rm = EDARiskManager(
             config=pm_config,
@@ -242,12 +255,12 @@ class OrchestratedRunner:
 
         # 4. 컴포넌트 등록 (순서 중요!)
         # 4a. Executor bar handler (BAR → deferred fill)
-        target_tf = self._target_timeframe
+        all_timeframes = {pod.timeframe for pod in pods}
 
         async def executor_bar_handler(event: AnyEvent) -> None:
             assert isinstance(event, BarEvent)
             executor.on_bar(event)
-            if event.timeframe == target_tf:
+            if event.timeframe in all_timeframes:
                 executor.fill_pending(event)
                 for fill in executor.drain_fills():
                     await bus.publish(fill)
@@ -264,11 +277,17 @@ class OrchestratedRunner:
         await analytics.register(bus)
 
         # 5. 실행
+        tf_label = (
+            ", ".join(sorted(self._all_timeframes))
+            if multi_tf
+            else self._target_timeframe
+        )
         logger.info(
-            "OrchestratedRunner starting: {} pods, {} symbols, TF={}",
+            "OrchestratedRunner starting: {} pods, {} symbols, TF={}{}",
             len(pods),
             len(all_symbols),
-            self._target_timeframe,
+            tf_label,
+            " (multi-TF)" if multi_tf else "",
         )
         bus_task = asyncio.create_task(bus.start())
         await feed.start(bus)

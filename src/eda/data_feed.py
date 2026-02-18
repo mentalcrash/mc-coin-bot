@@ -78,10 +78,14 @@ class HistoricalDataFeed:
     TF bar만 리플레이합니다. CandleAggregator를 바이패스하여
     이벤트 수를 ~1,189x 감소시킵니다 (1D 기준).
 
+    Multi-TF 모드: target_timeframes에 2개 이상 TF를 전달하면
+    MultiTimeframeCandleAggregator를 사용하여 복수 TF bar를 생성합니다.
+
     Args:
         data: 1m 원본 데이터 (MarketDataSet 또는 MultiSymbolData)
         target_timeframe: 집계 목표 TF ("1D", "4h", "1h" 등)
         fast_mode: True면 pre-aggregation 후 TF bar만 리플레이 (intrabar SL/TS 없음)
+        target_timeframes: Multi-TF 모드용 TF 집합 (None이면 단일 TF)
     """
 
     def __init__(
@@ -90,18 +94,24 @@ class HistoricalDataFeed:
         target_timeframe: str,
         *,
         fast_mode: bool = False,
+        target_timeframes: set[str] | None = None,
     ) -> None:
         self._data = data
         self._target_tf = target_timeframe
         self._fast_mode = fast_mode
         self._bars_emitted: int = 0
 
-        if not fast_mode:
-            from src.eda.candle_aggregator import CandleAggregator
+        # Multi-TF aggregator (2+ TF)
+        from src.eda.candle_aggregator import CandleAggregator, MultiTimeframeCandleAggregator
 
-            self._aggregator: CandleAggregator | None = CandleAggregator(target_timeframe)
-        else:
-            self._aggregator = None
+        self._multi_aggregator: MultiTimeframeCandleAggregator | None = None
+        self._aggregator: CandleAggregator | None = None
+
+        if target_timeframes and len(target_timeframes) > 1:
+            self._multi_aggregator = MultiTimeframeCandleAggregator(target_timeframes)
+        elif not fast_mode:
+            tf = target_timeframe if not target_timeframes else next(iter(target_timeframes))
+            self._aggregator = CandleAggregator(tf)
 
     @property
     def data(self) -> MarketDataSet | MultiSymbolData:
@@ -121,7 +131,14 @@ class HistoricalDataFeed:
             await self._replay_single(bus)
 
         # 마지막 미완성 캔들 flush (fast_mode에서는 불필요)
-        if self._aggregator is not None:
+        if self._multi_aggregator is not None:
+            remaining = self._multi_aggregator.flush_all()
+            for completed in remaining:
+                await bus.publish(completed)
+                self._bars_emitted += 1
+            if remaining:
+                await bus.flush()
+        elif self._aggregator is not None:
             remaining = self._aggregator.flush_all()
             for completed in remaining:
                 await bus.publish(completed)
@@ -259,7 +276,6 @@ class HistoricalDataFeed:
         from src.data.market_data import MarketDataSet
 
         assert isinstance(self._data, MarketDataSet)
-        assert self._aggregator is not None
 
         symbol = self._data.symbol
         df = self._data.ohlcv
@@ -292,13 +308,19 @@ class HistoricalDataFeed:
             self._bars_emitted += 1
 
             # 2. CandleAggregator에 전달
-            completed = self._aggregator.on_1m_bar(bar_1m)
-            if completed is not None:
-                # 3. 완성된 TF BarEvent 발행
-                await bus.publish(completed)
-                self._bars_emitted += 1
-                # 4. Signal→Order→Fill 체인 완료 대기
-                await bus.flush()
+            if self._multi_aggregator is not None:
+                completed_list = self._multi_aggregator.on_1m_bar(bar_1m)
+                for completed in completed_list:
+                    await bus.publish(completed)
+                    self._bars_emitted += 1
+                if completed_list:
+                    await bus.flush()
+            elif self._aggregator is not None:
+                completed = self._aggregator.on_1m_bar(bar_1m)
+                if completed is not None:
+                    await bus.publish(completed)
+                    self._bars_emitted += 1
+                    await bus.flush()
 
     async def _replay_multi(self, bus: EventBus) -> None:
         """멀티 심볼 1m 리플레이 + 집계.
@@ -308,7 +330,6 @@ class HistoricalDataFeed:
         from src.data.market_data import MultiSymbolData
 
         assert isinstance(self._data, MultiSymbolData)
-        assert self._aggregator is not None
 
         symbols = self._data.symbols
         ohlcv_dict = self._data.ohlcv
@@ -351,11 +372,19 @@ class HistoricalDataFeed:
                 self._bars_emitted += 1
 
                 # 2. CandleAggregator에 전달
-                completed = self._aggregator.on_1m_bar(bar_1m)
-                if completed is not None:
-                    await bus.publish(completed)
-                    self._bars_emitted += 1
-                    any_completed = True
+                if self._multi_aggregator is not None:
+                    completed_list = self._multi_aggregator.on_1m_bar(bar_1m)
+                    for completed in completed_list:
+                        await bus.publish(completed)
+                        self._bars_emitted += 1
+                    if completed_list:
+                        any_completed = True
+                elif self._aggregator is not None:
+                    completed = self._aggregator.on_1m_bar(bar_1m)
+                    if completed is not None:
+                        await bus.publish(completed)
+                        self._bars_emitted += 1
+                        any_completed = True
 
             # TF candle이 완성된 경우에만 flush
             if any_completed:

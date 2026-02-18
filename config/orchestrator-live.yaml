@@ -2,14 +2,16 @@
 # Orchestrator Live Config — CTREND + Anchor-Mom (2 Pods)
 # ==============================================================================
 #
-# 아키텍처 제약:
-#   현재 LiveDataFeed/CandleAggregator는 단일 target TF만 지원합니다.
-#   따라서 모든 Pod은 동일한 TF에서 실행됩니다.
+# Multi-TF 지원:
+#   각 Pod은 독립적인 timeframe을 가질 수 있습니다.
+#   MultiTimeframeCandleAggregator가 1m bar에서 복수 TF bar를 생성하고,
+#   Orchestrator가 bar.timeframe과 pod.timeframe을 매칭하여 라우팅합니다.
+#   동일 TF Pod이 2개 이상이면 기존과 동일하게 단일 TF 경로를 사용합니다.
 #
-# TF 선택: 1D
+# TF 선택: Multi-TF (1D + 12H)
 #   - CTREND (1D): G2H IS=3.68, OOS=2.54 — 주력 전략, 원본 TF 유지
-#   - Anchor-Mom (12H→1D): 기본 파라미터 사용 (G2H는 12H 전용)
-#     annualization_factor를 365로 오버라이드 (12H=730)
+#   - Anchor-Mom (12H): G2H IS=1.75, OOS=0.78 — 원본 TF 복원 + G2H 최적화 파라미터
+#   - MultiTimeframeCandleAggregator가 12H/1D bar를 각 Pod에 독립 라우팅
 #
 # 에셋 선별 (Sharpe ≥ 1.0 기준):
 #   - CTREND:     BTC(1.70) ETH(1.53) SOL(2.05) BNB(1.59) — DOGE 제외(0.83)
@@ -109,32 +111,31 @@ orchestrator:
       rebalance_threshold: 0.10
 
     # ────────────────────────────────────────────────────────
-    # Pod 2: Anchor-Mom — Anchored Momentum
-    # Sharpe 1.36 (VBT), CAGR 49.8%, G0A-G5+G2H 전 PASS
+    # Pod 2: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
+    # G2H IS=1.75, OOS=0.78 — 원본 12H TF + G2H 최적화 파라미터 적용
     # 에셋: Sharpe ≥ 1.0 — DOGE(1.36) SOL(1.01)
     # 제외: BNB(0.90) ETH(0.84) BTC(0.58)
-    # 주의: 원래 12H에서 검증됨. 1D 전환 시 기본 파라미터 사용
     # ────────────────────────────────────────────────────────
     - pod_id: pod-anchor-mom
       strategy_name: anchor-mom
       strategy_params:
-        nearness_lookback: 60            # 기본값 (12H G2H 29 미적용)
-        mom_lookback: 30                 # 기본값 (12H G2H 51 미적용)
-        strong_nearness: 0.95            # 기본값
-        weak_nearness: 0.85              # 기본값
-        short_nearness: 0.80             # 기본값
+        nearness_lookback: 29            # G2H 최적화 (기본 60)
+        mom_lookback: 51                 # G2H 최적화 (기본 30)
+        strong_nearness: 0.9692          # G2H 최적화 (기본 0.95)
+        weak_nearness: 0.8555           # G2H 최적화 (기본 0.85)
+        short_nearness: 0.5293          # G2H 최적화 (기본 0.80)
         vol_target: 0.35
-        vol_window: 30
+        vol_window: 12                   # G2H 최적화 (기본 30)
         min_volatility: 0.05
-        annualization_factor: 365.0      # 1D로 오버라이드 (12H 기본 730)
-        atr_period: 14
+        annualization_factor: 730.0      # 12H (하루 2봉)
+        atr_period: 22                   # G2H 최적화 (기본 14)
         short_mode: 1                    # HEDGE_ONLY
         hedge_threshold: -0.07
         hedge_strength_ratio: 0.8
       symbols:
         - DOGE/USDT
         - SOL/USDT
-      timeframe: "1D"
+      timeframe: "12H"
       initial_fraction: 0.45            # 보조 전략, 2 에셋
       max_fraction: 0.55
       min_fraction: 0.15

@@ -95,6 +95,7 @@ def _display_pod_config_table(orch_config: OrchestratorConfig) -> None:
     table = Table(title="Pod Configuration")
     table.add_column("Pod ID", style="cyan")
     table.add_column("Strategy", style="green")
+    table.add_column("TF")
     table.add_column("Symbols")
     table.add_column("Fraction", justify="right")
     table.add_column("Max DD", style="red", justify="right")
@@ -103,6 +104,7 @@ def _display_pod_config_table(orch_config: OrchestratorConfig) -> None:
         table.add_row(
             pod.pod_id,
             pod.strategy_name,
+            pod.timeframe,
             ", ".join(pod.symbols),
             f"{pod.initial_fraction:.0%}",
             f"{pod.max_drawdown:.0%}",
@@ -336,11 +338,15 @@ def backtest(
         f"Orchestrator Backtest: {orch_config.n_pods} pods / "
         f"{len(loaded_symbols)} symbols (1m → {target_tf})"
     )
+    all_tfs = orch_config.all_timeframes
+    if len(all_tfs) > 1:
+        logger.info("Multi-TF mode: {}", ", ".join(all_tfs))
+
     logger.info(
         "Running Orchestrator backtest: {} pods, {} symbols, TF={}",
         orch_config.n_pods,
         len(loaded_symbols),
-        target_tf,
+        ", ".join(all_tfs) if len(all_tfs) > 1 else target_tf,
     )
 
     from src.eda.orchestrated_runner import OrchestratedRunner
