@@ -2,8 +2,8 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-87개 전략을 8단계 Gate 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
-현재 **2개 전략 ACTIVE** (CTREND, Anchor-Mom), **3개 CANDIDATE** 검증 중.
+103개 전략을 7단계 Phase 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
+현재 **2개 전략 ACTIVE** (CTREND, Anchor-Mom) 운용 중.
 
 ---
 
@@ -187,16 +187,16 @@ pods:
 
 ## 전략 파이프라인
 
-전략은 **아이디어 발굴(G0A)** → **실전 배포(G7)** 까지 8단계 Gate를 순차 통과해야 합니다.
-각 Gate에서 FAIL 시 즉시 폐기. 87개 전략 중 **2개 ACTIVE + 3개 CANDIDATE + 83개 RETIRED**.
+전략은 **Alpha Research(P1)** → **Live Readiness(P7)** 까지 7단계 Phase를 순차 통과해야 합니다.
+각 Phase에서 FAIL 시 즉시 RETIRED.
 
-| Phase | Gates | 검증 내용 |
-|-------|-------|----------|
-| 발굴 & 구현 | G0A → G0B | 전략 후보 선정, Critical 7항목 코드 검증 |
-| 백테스트 검증 | G1 → G4 | 5코인×6년, IS/OOS, 파라미터 Sweep, WFA+CPCV+PBO+DSR |
-| 라이브 전환 | G5 → G7 | VBT↔EDA Parity, Paper Trading(2주+), Live 배포 |
+| 구분 | Phase | 검증 내용 |
+|------|-------|----------|
+| 발굴 · 구현 | P1 → P3 | 데이터 기반 알파 발굴, 4-file 구현, C1~C7 코드 검증 |
+| 백테스트 검증 | P4 → P6 | 5코인x6년, IS/OOS, 파라미터 최적화, WFA+CPCV+PBO+DSR |
+| 라이브 전환 | P7 | VBT↔EDA Parity, 라이브 인프라 검증, 배포 설정 |
 
-Gate별 상세 기준과 전체 현황은 `uv run mcbot pipeline report`로 확인.
+> Phase별 상세 기준: [`docs/strategy-pipeline.md`](docs/strategy-pipeline.md)
 
 ---
 
@@ -335,14 +335,14 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 
 ### 왜 1D인가
 
-87개 전략을 6년간 검증한 결과, **1D(일봉) 앙상블이 개인 퀀트에게 최적**이라는 결론에 도달했습니다.
+103개 전략을 6년간 검증한 결과, **1D(일봉) 앙상블이 개인 퀀트에게 최적**이라는 결론에 도달했습니다.
 
 | 근거 | 설명 |
 |------|------|
-| **실증 결과** | 4H 단일지표 전략은 전량 RETIRED. 1D 앙상블만 G5 도달 (CTREND Sharpe 2.05) |
+| **실증 결과** | 4H 단일지표 전략은 전량 RETIRED. 1D 앙상블만 P7 도달 (CTREND Sharpe 2.05) |
 | **거래비용** | 4H는 6배 잦은 리밸런싱 → 수수료·슬리피지가 edge 잠식 |
 | **노이즈** | 4H intraday noise가 높아 단일지표로 신호 추출 곤란. 1D에서도 앙상블 필수 |
-| **OOS 안정성** | 4H 파라미터는 IS→OOS 붕괴 빈번 (G2 실패 패턴). 1D 모멘텀은 구조적으로 강건 |
+| **OOS 안정성** | 4H 파라미터는 IS→OOS 붕괴 빈번 (P4 실패 패턴). 1D 모멘텀은 구조적으로 강건 |
 | **운영 효율** | 데이터 관리 간편, Rate Limit 여유, 본업 병행 가능 |
 
 ### "느리지 않은가?" — SL/TS가 해결
@@ -377,60 +377,35 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 | **CTREND** | SOL/USDT | 1D | 2.05 | +97.8% | ACTIVE |
 | **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | +49.8% | ACTIVE |
 
-> 87개 전략: 2 ACTIVE + 3 CANDIDATE + 83 RETIRED.
-> 상세 현황은 `uv run mcbot pipeline report`로 확인.
-
-```bash
-uv run mcbot pipeline status          # 현황 요약
-uv run mcbot pipeline table           # 전체 Gate 진행도
-uv run mcbot pipeline show ctrend     # 전략 상세
-```
+> 103개 전략: 2 ACTIVE + 101 RETIRED. 상세: `uv run mcbot pipeline report`
 
 ---
 
 ## 운영 도구
 
-### 과적합 검증
-
 ```bash
+# 과적합 검증
 uv run mcbot backtest validate -m quick       # IS/OOS Split
 uv run mcbot backtest validate -m milestone   # Walk-Forward (5-fold)
 uv run mcbot backtest validate -m final       # CPCV + DSR + PBO
-```
 
-### 시그널 진단
-
-```bash
+# 시그널 진단
 uv run mcbot backtest diagnose BTC/USDT -s tsmom
-```
 
-### 교훈 관리
+# 교훈 관리 (lessons/*.yaml)
+uv run mcbot pipeline lessons-list            # 전체 교훈 목록
 
-87개 전략 평가 과정에서 축적된 44개 핵심 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
-
-```bash
-uv run mcbot pipeline lessons-list                      # 전체 교훈 목록
-uv run mcbot pipeline lessons-list -c strategy-design   # 카테고리/태그/전략/TF 필터
-uv run mcbot pipeline lessons-show 1                    # 교훈 상세
-```
-
-### 아키텍처 감사
-
-정기적인 아키텍처/보안/코드 품질 감사 결과를 `audits/`에 관리합니다.
-
-```bash
-uv run mcbot audit latest                               # 최신 스냅샷
-uv run mcbot audit findings --status open               # 미해결 발견사항
-uv run mcbot audit actions --priority P0                # 긴급 액션
-uv run mcbot audit trend                                # 지표 추이
+# 아키텍처 감사 (audits/)
+uv run mcbot audit latest                     # 최신 스냅샷
 ```
 
 ---
 
-## 아키텍처 문서
+## 문서
 
 | 문서 | 설명 |
 |------|------|
+| [`docs/strategy-pipeline.md`](docs/strategy-pipeline.md) | **전략 파이프라인** (Phase 1~7, PASS 기준, YAML 스키마) |
 | [`docs/data-collection.md`](docs/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |
 | [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
