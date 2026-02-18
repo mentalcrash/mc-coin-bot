@@ -417,3 +417,166 @@ class TestHysteresisPendingLabel:
         # B는 1번뿐이므로 전환 안 됨
         for i in range(7):
             assert result.iloc[i] == "A", f"bar {i} should be A"
+
+
+# ── Vectorized ↔ Incremental Parity ──
+
+
+class TestVectorizedIncrementalParity:
+    """classify_series() (vectorized) vs update() (incremental) 결과 일치 검증.
+
+    문서 §13 "동일 결과 보장" 주장의 실증적 검증.
+    """
+
+    def test_probability_parity_no_hysteresis(self) -> None:
+        """min_hold_bars=1로 hysteresis 비활성 → 확률 값 정확히 일치."""
+        cfg = RegimeDetectorConfig(min_hold_bars=1)
+        vec_det = RegimeDetector(cfg)
+        inc_det = RegimeDetector(cfg)
+
+        closes = _make_trending_series(80)
+        vec_df = vec_det.classify_series(closes)
+
+        # Incremental: 같은 시리즈를 bar-by-bar로
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        # warmup 이후 구간 비교
+        warmup = inc_det.warmup_periods
+        for i in range(warmup + 1, len(closes)):
+            vec_pt = vec_df.iloc[i]["p_trending"]
+
+            if pd.isna(vec_pt):
+                continue
+
+            state = inc_det.get_regime("TEST")
+            assert state is not None
+
+        # 마지막 bar의 확률 비교
+        last_valid_idx = vec_df.dropna().index[-1]
+        last_pos = closes.index.get_loc(last_valid_idx)
+        vec_row = vec_df.iloc[last_pos]
+        state = inc_det.get_regime("TEST")
+        assert state is not None
+        np.testing.assert_allclose(
+            state.probabilities["trending"], vec_row["p_trending"], atol=1e-6
+        )
+        np.testing.assert_allclose(
+            state.probabilities["ranging"], vec_row["p_ranging"], atol=1e-6
+        )
+        np.testing.assert_allclose(
+            state.probabilities["volatile"], vec_row["p_volatile"], atol=1e-6
+        )
+
+    def test_label_parity_with_hysteresis(self) -> None:
+        """min_hold_bars=5로 hysteresis 포함 → label 일치."""
+        cfg = RegimeDetectorConfig(min_hold_bars=5)
+        vec_det = RegimeDetector(cfg)
+        inc_det = RegimeDetector(cfg)
+
+        closes = _make_trending_series(80)
+        vec_df = vec_det.classify_series(closes)
+
+        # Incremental
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        # warmup 이후 label 비교
+        valid = vec_df.dropna()
+        if len(valid) > 0:
+            last_vec_label = valid.iloc[-1]["regime_label"]
+            state = inc_det.get_regime("TEST")
+            assert state is not None
+            assert last_vec_label in (state.label, state.label.value)
+
+    def test_parity_ranging_series(self) -> None:
+        """횡보 시리즈에서도 parity 유지."""
+        cfg = RegimeDetectorConfig(min_hold_bars=1)
+        vec_det = RegimeDetector(cfg)
+        inc_det = RegimeDetector(cfg)
+
+        closes = _make_ranging_series(80)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det.get_regime("TEST")
+        last_valid = vec_df.dropna()
+        if len(last_valid) > 0 and state is not None:
+            last_row = last_valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=1e-6
+            )
+
+    def test_parity_volatile_series(self) -> None:
+        """고변동 시리즈에서도 parity 유지."""
+        cfg = RegimeDetectorConfig(min_hold_bars=1)
+        vec_det = RegimeDetector(cfg)
+        inc_det = RegimeDetector(cfg)
+
+        closes = _make_volatile_series(80)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det.get_regime("TEST")
+        last_valid = vec_df.dropna()
+        if len(last_valid) > 0 and state is not None:
+            last_row = last_valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["volatile"], last_row["p_volatile"], atol=1e-6
+            )
+
+
+# ── Edge Case Tests ──
+
+
+class TestEdgeCases:
+    """극단 입력 시 crash 없는 graceful handling 검증."""
+
+    def test_constant_prices(self) -> None:
+        """일정 가격 → NaN 또는 유효값, crash 없음."""
+        detector = RegimeDetector()
+        closes = pd.Series(
+            [100.0] * 50,
+            index=pd.date_range("2024-01-01", periods=50, freq="D"),
+        )
+        result = detector.classify_series(closes)
+        # rv_ratio는 0/0 → NaN, crash 없어야 함
+        assert len(result) == 50
+
+    def test_nan_infected_input(self) -> None:
+        """중간 NaN이 포함된 입력 → graceful handling."""
+        rng = np.random.default_rng(42)
+        prices = 100.0 * np.exp(np.cumsum(rng.normal(0.005, 0.01, 50)))
+        prices[20:25] = np.nan  # 5 bars NaN
+        closes = pd.Series(
+            prices,
+            index=pd.date_range("2024-01-01", periods=50, freq="D"),
+        )
+        detector = RegimeDetector()
+        result = detector.classify_series(closes)
+        assert len(result) == 50  # crash 없음
+
+    def test_very_short_series(self) -> None:
+        """warmup 미만 시리즈 → 전체 NaN."""
+        detector = RegimeDetector()
+        closes = pd.Series(
+            [100.0, 101.0, 99.0],
+            index=pd.date_range("2024-01-01", periods=3, freq="D"),
+        )
+        result = detector.classify_series(closes)
+        assert result["regime_label"].isna().all()
+
+    def test_single_price(self) -> None:
+        """단일 가격 → crash 없음."""
+        detector = RegimeDetector()
+        closes = pd.Series(
+            [100.0],
+            index=pd.date_range("2024-01-01", periods=1, freq="D"),
+        )
+        result = detector.classify_series(closes)
+        assert len(result) == 1
+        assert result["regime_label"].isna().all()

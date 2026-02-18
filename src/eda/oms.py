@@ -22,6 +22,7 @@ from src.core.events import (
     CircuitBreakerEvent,
     EventType,
     OrderAckEvent,
+    OrderRejectedEvent,
     OrderRequestEvent,
 )
 from src.eda.ports import ExecutorPort
@@ -112,6 +113,14 @@ class OMS:
         if order.client_order_id in self._processed_orders:
             logger.warning("Duplicate order ignored: {}", order.client_order_id)
             self._total_rejected += 1
+            rejected = OrderRejectedEvent(
+                client_order_id=order.client_order_id,
+                symbol=order.symbol,
+                reason="Duplicate order",
+                correlation_id=order.correlation_id,
+                source="OMS",
+            )
+            await bus.publish(rejected)
             return
 
         self._processed_orders.add(order.client_order_id)

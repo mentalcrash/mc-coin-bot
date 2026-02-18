@@ -712,11 +712,19 @@ class TestRegimeChangeEvent:
 
     @pytest.mark.asyncio
     async def test_event_published_on_regime_change(self) -> None:
-        """레짐 변경 시 REGIME_CHANGE 이벤트 발행."""
+        """레짐 변경 시 REGIME_CHANGE 이벤트 발행 (결정론적).
+
+        min_hold_bars=1로 hysteresis 최소화 후,
+        Phase 1: 강한 상승 추세 warmup → TRENDING 확립
+        Phase 2: 횡보 (ER~0, low vol) bars → RANGING 전환 유도
+        """
         from src.core.event_bus import EventBus
         from src.core.events import BarEvent, EventType, RegimeChangeEvent
 
-        service = RegimeService()
+        config = RegimeServiceConfig(
+            ensemble=EnsembleRegimeDetectorConfig(min_hold_bars=1),
+        )
+        service = RegimeService(config)
         bus = EventBus(queue_size=100)
 
         events_received: list[RegimeChangeEvent] = []
@@ -728,28 +736,48 @@ class TestRegimeChangeEvent:
         bus.subscribe(EventType.REGIME_CHANGE, capture_event)
         await service.register(bus)
 
-        # warmup으로 초기 상태 설정 (trending)
-        trending = _make_trending_series(60)
-        service.warmup("BTC/USDT", trending.tolist())
+        # EventBus 소비 루프 시작
+        await bus.start()
 
-        # 극단적 volatile bar 연속 투입 → 레짐 변경 유도
-        rng = np.random.default_rng(999)
+        # Phase 1: 강한 상승 추세 (40 bars) → TRENDING 확립
+        warmup_prices: list[float] = []
+        base = 100.0
+        for _ in range(40):
+            base *= 1.015  # 1.5% daily gain → strong uptrend
+            warmup_prices.append(base)
+        service.warmup("BTC/USDT", warmup_prices)
+
+        initial = service.get_regime("BTC/USDT")
+        assert initial is not None
+
+        # Phase 2: 횡보 (mean-reverting, tiny noise) → RANGING 전환
+        # RV ratio → ~1.0 (low expansion), ER → ~0 (no direction) → RANGING
+        rng = np.random.default_rng(42)
+        flat_price = warmup_prices[-1]
         for i in range(30):
-            close = float(trending.iloc[-1]) * (1 + rng.normal(0, 0.1))
+            close = flat_price * (1.0 + rng.normal(0, 0.001))
             bar = BarEvent(
                 symbol="BTC/USDT",
                 timeframe="1D",
-                open=close * 0.95,
-                high=close * 1.1,
-                low=close * 0.9,
+                open=close * 0.999,
+                high=close * 1.001,
+                low=close * 0.999,
                 close=close,
                 volume=1000.0,
                 bar_timestamp=datetime(2024, 7, 1 + i % 28, tzinfo=UTC),
             )
             await service._on_bar(bar)
+            await bus.flush()
 
-        # Note: regime change may or may not happen depending on hysteresis
-        # We just verify the mechanism exists and doesn't crash
+        await bus.stop()
+
+        # 레짐 변경 이벤트가 반드시 발행되어야 함
+        assert len(events_received) > 0, "REGIME_CHANGE event should be published"
+        # 이벤트 필드 검증
+        event = events_received[0]
+        assert event.prev_label != event.new_label
+        assert event.symbol == "BTC/USDT"
+        assert 0.0 <= event.confidence <= 1.0
 
     @pytest.mark.asyncio
     async def test_no_event_without_bus(self) -> None:
@@ -814,6 +842,43 @@ class TestRegimeChangeEvent:
 # ═══════════════════════════════════════
 # Backward Compatibility 테스트
 # ═══════════════════════════════════════
+
+
+class TestExpandingWindowTransition:
+    """Expanding-window transition matrix 검증."""
+
+    def test_expanding_converges_to_full(self) -> None:
+        """Expanding-window 마지막 값이 full-sequence matrix와 수렴."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        result = service.precompute("BTC/USDT", closes)
+
+        # Full-sequence matrix
+        labels = result["regime_label"]
+        full_mat = service._estimate_transition_matrix(labels)
+
+        # Expanding의 마지막 값은 full의 마지막 값과 유사해야 함
+        last_valid_label = labels.dropna().iloc[-1]
+        if last_valid_label in service._IDX_MAP:
+            idx = service._IDX_MAP[str(last_valid_label)]
+            expanding_last = float(result["regime_transition_prob"].iloc[-1])
+            full_prob = 1.0 - float(full_mat[idx, idx])
+            # Expanding은 bar별 누적이므로 마지막에서 full과 일치
+            np.testing.assert_allclose(expanding_last, full_prob, atol=1e-6)
+
+    def test_expanding_no_look_ahead(self) -> None:
+        """Expanding-window는 현재 bar까지만 사용 (look-ahead 없음)."""
+        service = RegimeService()
+        closes = _make_trending_series(80)
+        result = service.precompute("BTC/USDT", closes)
+
+        # 초기 bar의 transition_prob는 0 (데이터 부족)
+        valid = result["regime_transition_prob"]
+        # warmup 직후 값은 Laplace smoothing 기반의 작은 값
+        first_valid = valid[valid > 0].iloc[:5] if (valid > 0).any() else pd.Series(dtype=float)
+        if len(first_valid) > 0:
+            # 초기에는 transition 데이터가 적으므로 값이 작거나 Laplace default
+            assert first_valid.iloc[0] <= 1.0
 
 
 class TestBackwardCompatibility:

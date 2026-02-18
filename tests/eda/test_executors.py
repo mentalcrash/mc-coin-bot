@@ -398,3 +398,71 @@ class TestLiveExecutorSafetyChecks:
         order = _make_order()
         await executor.execute(order)
         executor._execute_single.assert_called_once()
+
+
+class TestLiveExecutorMetricsCallback:
+    """LiveExecutor metrics 콜백 주입 테스트."""
+
+    def _make_live_executor_with_metrics(self) -> tuple[LiveExecutor, MagicMock]:
+        """Mock BinanceFuturesClient + Mock metrics로 LiveExecutor 생성."""
+        mock_client = MagicMock()
+        mock_client.is_api_healthy = True
+        mock_client.consecutive_failures = 0
+        mock_client.to_futures_symbol = MagicMock(return_value="BTC/USDT:USDT")
+        mock_metrics = MagicMock()
+        executor = LiveExecutor(futures_client=mock_client, metrics=mock_metrics)
+        return executor, mock_metrics
+
+    async def test_api_blocked_calls_metrics(self) -> None:
+        """API unhealthy 시 on_api_blocked 호출."""
+        executor, metrics = self._make_live_executor_with_metrics()
+        executor._client.is_api_healthy = False
+        mock_pm = MagicMock()
+        executor.set_pm(mock_pm)
+
+        order = _make_order()
+        result = await executor.execute(order)
+
+        assert result is None
+        metrics.on_api_blocked.assert_called_once_with(order.symbol)
+
+    async def test_fill_parse_failure_calls_metrics(self) -> None:
+        """Fill 파싱 실패 시 on_fill_parse_failure 호출."""
+        _, metrics = self._make_live_executor_with_metrics()
+
+        order = _make_order()
+        result = LiveExecutor._parse_fill(
+            order, {"average": 0, "filled": 0}, metrics=metrics
+        )
+
+        assert result is None
+        metrics.on_fill_parse_failure.assert_called_once_with(order.symbol)
+
+    async def test_partial_fill_calls_metrics(self) -> None:
+        """Partial fill 시 on_partial_fill 호출."""
+        _, metrics = self._make_live_executor_with_metrics()
+
+        order = _make_order()
+        result = LiveExecutor._parse_fill(
+            order,
+            {"average": 50000.0, "filled": 0.05, "fee": {"cost": 1.0}},
+            requested_amount=0.1,
+            metrics=metrics,
+        )
+
+        assert result is not None  # fill은 성공
+        metrics.on_partial_fill.assert_called_once_with(order.symbol)
+
+    async def test_no_metrics_no_error(self) -> None:
+        """metrics=None이어도 에러 없이 동작."""
+        mock_client = MagicMock()
+        mock_client.is_api_healthy = False
+        mock_client.consecutive_failures = 3
+        mock_client.to_futures_symbol = MagicMock(return_value="BTC/USDT:USDT")
+        executor = LiveExecutor(futures_client=mock_client)
+        mock_pm = MagicMock()
+        executor.set_pm(mock_pm)
+
+        order = _make_order()
+        result = await executor.execute(order)
+        assert result is None  # no error, just returns None

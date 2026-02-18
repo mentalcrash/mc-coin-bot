@@ -46,11 +46,6 @@ SOURCE_LAG_DAYS: dict[str, int] = {
     "coingecko": 0,
 }
 
-# M2는 월간 데이터이므로 T+14 특수 lag
-_SPECIAL_LAGS: dict[str, int] = {
-    "m2": 14,
-}
-
 # ---------------------------------------------------------------------------
 # Date Column Mapping
 # ---------------------------------------------------------------------------
@@ -250,12 +245,14 @@ class MacroDataService:
         return result
 
     def _resolve_lag_days(self, source: str, name: str) -> int:
-        """source/name의 publication lag 일수 조회."""
-        if name in _SPECIAL_LAGS:
-            return _SPECIAL_LAGS[name]
+        """source/name의 publication lag 일수 조회.
+
+        catalog의 dataset-level lag_days → source-level lag_days → 하드코딩 fallback 순서.
+        """
         if self._catalog is not None:
             try:
-                return self._catalog.get_lag_days(source)
+                dataset_id = f"{source}_{name}"
+                return self._catalog.get_lag_days(source, dataset_id=dataset_id)
             except KeyError:
                 pass
         return SOURCE_LAG_DAYS.get(source, 0)

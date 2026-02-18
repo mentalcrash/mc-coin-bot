@@ -68,6 +68,7 @@ import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hd_mom_rev  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
+import src.strategy.hurst_adaptive  # 전략 등록 side effect
 import src.strategy.hour_season  # 전략 등록 side effect
 import src.strategy.jump_drift_mom  # 전략 등록 side effect
 import src.strategy.kalman_trend  # 전략 등록 side effect
@@ -85,6 +86,8 @@ import src.strategy.mtf_macd  # 전략 등록 side effect
 import src.strategy.multi_domain_score  # 전략 등록 side effect
 import src.strategy.multi_factor  # 전략 등록 side effect
 import src.strategy.obv_accel  # 전략 등록 side effect
+import src.strategy.oi_diverge  # 전략 등록 side effect
+import src.strategy.onchain_accum  # 전략 등록 side effect
 import src.strategy.onchain_bias_4h  # 전략 등록 side effect
 import src.strategy.ou_meanrev  # 전략 등록 side effect
 import src.strategy.perm_entropy_mom  # 전략 등록 side effect

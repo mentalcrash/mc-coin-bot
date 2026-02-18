@@ -32,6 +32,12 @@ _SAMPLE_YAML = {
             "date_column": "timestamp",
             "lag_days": 1,
         },
+        {
+            "id": "fred",
+            "name": "FRED",
+            "date_column": "date",
+            "lag_days": 1,
+        },
     ],
     "datasets": [
         {
@@ -103,6 +109,16 @@ _SAMPLE_YAML = {
             "batch_group": "ohlcv",
             "columns": ["open", "high", "low", "close", "volume"],
         },
+        {
+            "id": "fred_m2",
+            "name": "M2 Money Supply",
+            "data_type": "macro",
+            "source_id": "fred",
+            "batch_group": "fred",
+            "columns": ["value"],
+            "fetch_key": "m2",
+            "lag_days": 14,
+        },
     ],
 }
 
@@ -126,7 +142,7 @@ def catalog_store(catalog_yaml_path: Path) -> DataCatalogStore:
 class TestDataCatalogStore:
     def test_load_all_count(self, catalog_store: DataCatalogStore) -> None:
         datasets = catalog_store.load_all()
-        assert len(datasets) == 5
+        assert len(datasets) == 6
 
     def test_load_single(self, catalog_store: DataCatalogStore) -> None:
         ds = catalog_store.load("btc_metrics")
@@ -155,7 +171,7 @@ class TestDataCatalogStore:
 
     def test_get_all_sources(self, catalog_store: DataCatalogStore) -> None:
         sources = catalog_store.get_all_sources()
-        assert len(sources) == 3
+        assert len(sources) == 4
 
     def test_get_by_type(self, catalog_store: DataCatalogStore) -> None:
         onchain = catalog_store.get_by_type(DataType.ONCHAIN)
@@ -176,7 +192,7 @@ class TestDataCatalogStore:
         catalog_store.load_all()
         assert catalog_store._catalog is not None
         datasets = catalog_store.load_all()
-        assert len(datasets) == 5
+        assert len(datasets) == 6
 
 
 class TestCompatAPI:
@@ -199,6 +215,16 @@ class TestCompatAPI:
     def test_get_lag_days(self, catalog_store: DataCatalogStore) -> None:
         assert catalog_store.get_lag_days("defillama") == 1
         assert catalog_store.get_lag_days("coinmetrics") == 1
+        assert catalog_store.get_lag_days("fred") == 1
+
+    def test_get_lag_days_dataset_override(self, catalog_store: DataCatalogStore) -> None:
+        """Dataset-level lag_days가 source-level보다 우선."""
+        # fred source: lag_days=1, fred_m2 dataset: lag_days=14
+        assert catalog_store.get_lag_days("fred", dataset_id="fred_m2") == 14
+        # dataset에 lag_days 없으면 source fallback
+        assert catalog_store.get_lag_days("defillama", dataset_id="stablecoin_total") == 1
+        # 존재하지 않는 dataset → source fallback
+        assert catalog_store.get_lag_days("fred", dataset_id="nonexistent") == 1
 
     def test_build_precompute_map_global(self, catalog_store: DataCatalogStore) -> None:
         result = catalog_store.build_precompute_map(["SOL/USDT"])
@@ -296,6 +322,17 @@ class TestRealCatalogYaml:
         assert store.get_lag_days("blockchain_com") == 1
         assert store.get_lag_days("etherscan") == 0
         assert store.get_lag_days("mempool_space") == 0
+
+    def test_real_yaml_m2_dataset_lag(self) -> None:
+        """fred_m2 dataset-level lag_days=14 검증."""
+        real_path = Path("catalogs/datasets.yaml")
+        if not real_path.exists():
+            pytest.skip("catalogs/datasets.yaml not found")
+        store = DataCatalogStore(path=real_path)
+
+        # fred source: lag_days=1, fred_m2 dataset: lag_days=14
+        assert store.get_lag_days("fred") == 1
+        assert store.get_lag_days("fred", dataset_id="fred_m2") == 14
 
     def test_real_yaml_precompute_map_compat(self) -> None:
         """build_precompute_map과 _GLOBAL_SOURCES/_ASSET_SOURCES 호환성 검증."""

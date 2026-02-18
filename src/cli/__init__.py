@@ -34,6 +34,7 @@ def create_app() -> typer.Typer:
     from src.cli.ingest import app as ingest_app
     from src.cli.orchestrate import app as orchestrate_app
     from src.cli.pipeline import app as pipeline_app
+    from src.cli.strategy_scaffold import app as strategy_app
 
     main_app = typer.Typer(
         name="mcbot",
@@ -50,6 +51,7 @@ def create_app() -> typer.Typer:
     main_app.add_typer(pipeline_app, name="pipeline", help="Strategy pipeline management (YAML)")
     main_app.add_typer(audit_app, name="audit", help="Architecture audit report system")
     main_app.add_typer(catalog_app, name="catalog", help="Data catalog (dataset metadata)")
+    main_app.add_typer(strategy_app, name="strategy", help="Strategy scaffolding tools")
 
     return main_app
 

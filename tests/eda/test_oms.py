@@ -15,6 +15,7 @@ from src.core.events import (
     EventType,
     FillEvent,
     OrderAckEvent,
+    OrderRejectedEvent,
     OrderRequestEvent,
 )
 from src.eda.executors import BacktestExecutor, ShadowExecutor
@@ -397,4 +398,63 @@ class TestOMSPersistence:
         await task
 
         assert len(fills) == 0  # 중복 주문 → 실행 안 됨
+        assert oms.total_rejected == 1
+
+
+class TestOMSDuplicateRejectionEvent:
+    """OMS 중복 주문 시 OrderRejectedEvent 발행 테스트."""
+
+    async def test_duplicate_publishes_rejected_event(self) -> None:
+        """동일 client_order_id 중복 주문 시 OrderRejectedEvent 발행."""
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        executor.on_bar(
+            BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=50000.0,
+                high=51000.0,
+                low=49000.0,
+                close=50500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+        )
+
+        oms = OMS(executor=executor)
+        bus = EventBus(queue_size=100)
+        rejections: list[OrderRejectedEvent] = []
+
+        async def rejection_handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRejectedEvent):
+                rejections.append(event)
+
+        bus.subscribe(EventType.ORDER_REJECTED, rejection_handler)
+        await oms.register(bus)
+
+        task = asyncio.create_task(bus.start())
+
+        # SL 스타일 주문 (price 설정 → 즉시 체결)
+        order = OrderRequestEvent(
+            client_order_id="dup-rej-1",
+            symbol="BTC/USDT",
+            side="BUY",
+            target_weight=0.5,
+            notional_usd=5000.0,
+            price=50000.0,
+            validated=True,
+            correlation_id=uuid4(),
+            source="test",
+        )
+        await bus.publish(order)
+        await bus.flush()
+        # 동일 ID로 재발행
+        await bus.publish(order)
+        await bus.flush()
+
+        await bus.stop()
+        await task
+
+        assert len(rejections) == 1
+        assert rejections[0].client_order_id == "dup-rej-1"
+        assert "duplicate" in rejections[0].reason.lower()
         assert oms.total_rejected == 1

@@ -1,0 +1,477 @@
+# Indicator Catalog — 53개 지표 메타데이터
+# src/market/indicators/__all__ 함수와 1:1 매핑
+
+indicators:
+  # ─── Trend (6) ──────────────────────────────────────────────────────
+  - id: adx
+    name: Average Directional Index
+    module: trend
+    category: trend
+    description: "추세 강도 측정 (0-100). ADX>25 강한 추세"
+    default_params: {period: 14}
+    used_by: [ctrend]
+    alpha_potential: medium
+    notes: "추세 존재 여부 판별용, 방향 정보 없음"
+
+  - id: atr
+    name: Average True Range
+    module: trend
+    category: trend
+    description: "변동폭 측정. SL/TS 설정, 포지션 사이징의 핵심"
+    default_params: {period: 14}
+    used_by: [ctrend, anchor-mom]
+    alpha_potential: low
+    notes: "모든 전략의 리스크 관리에 사용"
+
+  - id: efficiency_ratio
+    name: Kaufman Efficiency Ratio
+    module: trend
+    category: trend
+    description: "가격 이동 효율성 (0-1). 높을수록 추세적"
+    default_params: {period: 10}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: ema
+    name: Exponential Moving Average
+    module: trend
+    category: trend
+    description: "지수 이동평균 — 최근 가격에 가중"
+    default_params: {period: 20}
+    used_by: [ctrend]
+    alpha_potential: low
+
+  - id: kama
+    name: Kaufman Adaptive Moving Average
+    module: trend
+    category: trend
+    description: "변동성 적응형 이동평균. ER 기반 smoothing 조절"
+    default_params: {er_lookback: 10, fast_period: 2, slow_period: 30}
+    used_by: []
+    alpha_potential: medium
+    notes: "KAMA 전략은 RETIRED (G2 FAIL)"
+
+  - id: sma
+    name: Simple Moving Average
+    module: trend
+    category: trend
+    description: "단순 이동평균"
+    default_params: {period: 20}
+    used_by: [ctrend]
+    alpha_potential: low
+
+  # ─── Oscillators (7) ────────────────────────────────────────────────
+  - id: cci
+    name: Commodity Channel Index
+    module: oscillators
+    category: oscillator
+    description: "가격의 통계적 평균 이탈도"
+    default_params: {period: 20}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: macd
+    name: MACD
+    module: oscillators
+    category: oscillator
+    description: "이동평균 수렴/발산. 추세 전환 신호"
+    default_params: {fast: 12, slow: 26, signal: 9}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: momentum
+    name: Momentum
+    module: oscillators
+    category: oscillator
+    description: "N기간 가격 변화량. 추세 방향+강도"
+    default_params: {period: 10}
+    used_by: [ctrend, anchor-mom]
+    alpha_potential: medium
+
+  - id: roc
+    name: Rate of Change
+    module: oscillators
+    category: oscillator
+    description: "N기간 가격 변화율 (%)"
+    default_params: {period: 10}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: rsi
+    name: Relative Strength Index
+    module: oscillators
+    category: oscillator
+    description: "상대강도지수 (0-100). 과매수/과매도 판별"
+    default_params: {period: 14}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: stochastic
+    name: Stochastic Oscillator
+    module: oscillators
+    category: oscillator
+    description: "현재가의 고저 범위 내 위치 (0-100)"
+    default_params: {k_period: 14, d_period: 3}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: williams_r
+    name: Williams %R
+    module: oscillators
+    category: oscillator
+    description: "고가 대비 현재가 위치 (-100~0)"
+    default_params: {period: 14}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  # ─── Volatility (8) ────────────────────────────────────────────────
+  - id: garman_klass_volatility
+    name: Garman-Klass Volatility
+    module: volatility
+    category: volatility
+    description: "OHLC 기반 변동성 추정 (close-to-close 대비 효율적)"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: medium
+    notes: "RV보다 효율적 추정. 미사용 상태"
+
+  - id: parkinson_volatility
+    name: Parkinson Volatility
+    module: volatility
+    category: volatility
+    description: "High-Low 기반 변동성 추정"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: low
+
+  - id: realized_volatility
+    name: Realized Volatility
+    module: volatility
+    category: volatility
+    description: "로그수익률 표준편차 기반 실현 변동성"
+    default_params: {period: 20}
+    used_by: [ctrend, anchor-mom]
+    alpha_potential: low
+
+  - id: vol_percentile_rank
+    name: Volatility Percentile Rank
+    module: volatility
+    category: volatility
+    description: "변동성의 백분위 순위 (0-1). 고변동/저변동 구간 판별"
+    default_params: {period: 252}
+    used_by: []
+    alpha_potential: medium
+    notes: "반환값 0~1, config가 0~100이면 /100.0 변환 필수"
+
+  - id: vol_regime
+    name: Volatility Regime
+    module: volatility
+    category: volatility
+    description: "변동성 레짐 분류 (low/normal/high)"
+    default_params: {period: 60, n_regimes: 3}
+    used_by: []
+    alpha_potential: medium
+    notes: "레짐 필터로 사용 가능"
+
+  - id: volatility_of_volatility
+    name: Volatility of Volatility
+    module: volatility
+    category: volatility
+    description: "변동성의 변동성 — 시장 불확실성 지표"
+    default_params: {vol_period: 20, vov_period: 20}
+    used_by: []
+    alpha_potential: medium
+
+  - id: volatility_scalar
+    name: Volatility Scalar
+    module: volatility
+    category: volatility
+    description: "목표 변동성 대비 스케일링 팩터 (포지션 사이징)"
+    default_params: {target_vol: 0.15, lookback: 60}
+    used_by: []
+    alpha_potential: low
+
+  - id: yang_zhang_volatility
+    name: Yang-Zhang Volatility
+    module: volatility
+    category: volatility
+    description: "Open-Close + High-Low 결합 변동성 추정 (최소 분산)"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: medium
+    notes: "이론적으로 가장 효율적 OHLC 변동성 추정량"
+
+  # ─── Channels (3) ──────────────────────────────────────────────────
+  - id: bollinger_bands
+    name: Bollinger Bands
+    module: channels
+    category: channel
+    description: "이동평균 ± N표준편차 밴드. 변동성 기반 범위"
+    default_params: {period: 20, std: 2.0}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: donchian_channel
+    name: Donchian Channel
+    module: channels
+    category: channel
+    description: "N기간 최고가/최저가 채널. Breakout 전략 핵심"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: medium
+    notes: "Donchian Ensemble 전략은 RETIRED"
+
+  - id: keltner_channels
+    name: Keltner Channels
+    module: channels
+    category: channel
+    description: "EMA ± ATR 배수 채널. Squeeze 감지에 사용"
+    default_params: {period: 20, multiplier: 1.5}
+    used_by: []
+    alpha_potential: medium
+
+  # ─── Returns (3) ───────────────────────────────────────────────────
+  - id: log_returns
+    name: Log Returns
+    module: returns
+    category: returns
+    description: "로그 수익률 — 연속복리 기반"
+    default_params: {}
+    used_by: [ctrend]
+    alpha_potential: low
+
+  - id: rolling_return
+    name: Rolling Return
+    module: returns
+    category: returns
+    description: "N기간 누적 수익률"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: low
+
+  - id: simple_returns
+    name: Simple Returns
+    module: returns
+    category: returns
+    description: "단순 수익률 (pct_change)"
+    default_params: {}
+    used_by: []
+    alpha_potential: low
+
+  # ─── Volume (4) ────────────────────────────────────────────────────
+  - id: chaikin_money_flow
+    name: Chaikin Money Flow
+    module: volume
+    category: volume
+    description: "자금 흐름 지표 — 거래량 가중 가격 위치"
+    default_params: {period: 20}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: obv
+    name: On-Balance Volume
+    module: volume
+    category: volume
+    description: "누적 거래량 — 가격 방향에 따라 가감"
+    default_params: {}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: volume_macd
+    name: Volume MACD
+    module: volume
+    category: volume
+    description: "거래량 MACD — 거래량 추세 전환 신호"
+    default_params: {fast: 12, slow: 26, signal: 9}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: volume_weighted_returns
+    name: Volume-Weighted Returns
+    module: volume
+    category: volume
+    description: "거래량 가중 수익률 (TSMOM 핵심)"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: medium
+
+  # ─── Derivatives (7) ──────────────────────────────────────────────
+  - id: basis_spread
+    name: Basis Spread
+    module: derivatives
+    category: derivatives
+    description: "현물-선물 베이시스. 시장 센티먼트 프록시"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: high
+    notes: "BTC/ETH 전용 데이터 필요. 범용 전략 부적합"
+
+  - id: funding_rate_ma
+    name: Funding Rate MA
+    module: derivatives
+    category: derivatives
+    description: "펀딩비 이동평균"
+    default_params: {period: 24}
+    used_by: []
+    alpha_potential: medium
+
+  - id: funding_zscore
+    name: Funding Rate Z-Score
+    module: derivatives
+    category: derivatives
+    description: "펀딩비 z-score — 극단값 탐지"
+    default_params: {period: 60}
+    used_by: []
+    alpha_potential: high
+    notes: "극단적 funding → mean-reversion 시그널"
+
+  - id: liquidation_intensity
+    name: Liquidation Intensity
+    module: derivatives
+    category: derivatives
+    description: "청산 강도 — 거래량 대비 청산 비율"
+    default_params: {period: 24}
+    used_by: []
+    alpha_potential: high
+    notes: "BTC/ETH 전용. Cascade 청산 탐지"
+
+  - id: ls_ratio_zscore
+    name: Long/Short Ratio Z-Score
+    module: derivatives
+    category: derivatives
+    description: "롱숏비율 z-score — 포지셔닝 극단값"
+    default_params: {period: 60}
+    used_by: []
+    alpha_potential: medium
+
+  - id: oi_momentum
+    name: OI Momentum
+    module: derivatives
+    category: derivatives
+    description: "미결제약정 변화율 — 포지션 축적/해소 모멘텀"
+    default_params: {period: 14}
+    used_by: []
+    alpha_potential: medium
+
+  - id: oi_price_divergence
+    name: OI-Price Divergence
+    module: derivatives
+    category: derivatives
+    description: "OI와 가격의 다이버전스 — 추세 전환 선행지표"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: high
+    notes: "BTC/ETH 전용. 미사용 고가치 지표"
+
+  # ─── Composite (12) ────────────────────────────────────────────────
+  - id: bb_position
+    name: Bollinger Band Position
+    module: composite
+    category: composite
+    description: "BB 내 가격 위치 (0-1). %B 등가"
+    default_params: {period: 20, std: 2.0}
+    used_by: []
+    alpha_potential: medium
+
+  - id: drawdown
+    name: Drawdown
+    module: composite
+    category: composite
+    description: "고점 대비 하락률"
+    default_params: {}
+    used_by: [ctrend, anchor-mom]
+    alpha_potential: low
+
+  - id: ema_cross
+    name: EMA Cross Signal
+    module: composite
+    category: composite
+    description: "EMA 골든/데드 크로스 신호"
+    default_params: {fast: 12, slow: 26}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: fractal_dimension
+    name: Fractal Dimension
+    module: composite
+    category: composite
+    description: "시계열 복잡도 (1=추세, 2=랜덤). 추세/횡보 판별"
+    default_params: {period: 30}
+    used_by: []
+    alpha_potential: high
+    notes: "미사용 고가치. Hurst와 상호보완적"
+
+  - id: hurst_exponent
+    name: Hurst Exponent
+    module: composite
+    category: composite
+    description: "시계열 지속성 (H>0.5 추세, H<0.5 평균회귀, H=0.5 랜덤)"
+    default_params: {lags: 50}
+    used_by: []
+    alpha_potential: high
+    notes: "레짐 전환 전략 핵심. 미사용 고가치 지표"
+
+  - id: mean_reversion_score
+    name: Mean Reversion Score
+    module: composite
+    category: composite
+    description: "평균회귀 강도 (z-score + Hurst + autocorrelation 조합)"
+    default_params: {period: 60}
+    used_by: []
+    alpha_potential: high
+    notes: "미사용 고가치. Mean-reversion 전략 후보"
+
+  - id: price_acceleration
+    name: Price Acceleration
+    module: composite
+    category: composite
+    description: "가격 모멘텀의 변화율 (2차 도함수)"
+    default_params: {period: 10}
+    used_by: []
+    alpha_potential: medium
+
+  - id: rolling_zscore
+    name: Rolling Z-Score
+    module: composite
+    category: composite
+    description: "N기간 z-score — 통계적 이상치 탐지"
+    default_params: {period: 60}
+    used_by: []
+    alpha_potential: medium
+
+  - id: rsi_divergence
+    name: RSI Divergence
+    module: composite
+    category: composite
+    description: "RSI-가격 다이버전스 — 추세 반전 선행지표"
+    default_params: {rsi_period: 14, lookback: 20}
+    used_by: []
+    alpha_potential: medium
+
+  - id: sma_cross
+    name: SMA Cross Signal
+    module: composite
+    category: composite
+    description: "SMA 골든/데드 크로스 신호"
+    default_params: {fast: 10, slow: 30}
+    used_by: [ctrend]
+    alpha_potential: medium
+
+  - id: squeeze_detect
+    name: Squeeze Detect
+    module: composite
+    category: composite
+    description: "BB가 KC 안에 들어간 squeeze 상태 감지. Breakout 전조"
+    default_params: {bb_period: 20, bb_std: 2.0, kc_period: 20, kc_mult: 1.5}
+    used_by: []
+    alpha_potential: high
+    notes: "미사용 고가치. TTM Squeeze 전략은 RETIRED이나 지표 자체는 유용"
+
+  - id: trend_strength
+    name: Trend Strength
+    module: composite
+    category: composite
+    description: "다중 지표 기반 추세 강도 종합 점수"
+    default_params: {period: 20}
+    used_by: []
+    alpha_potential: medium

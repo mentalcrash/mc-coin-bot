@@ -14,6 +14,7 @@ Rules Applied:
     - #18 Typer CLI: Annotated syntax, Rich UI, async handling
 """
 
+import pathlib
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
@@ -1581,6 +1582,171 @@ def ic_check(
         console.print(Panel("[bold red]VERDICT: FAIL[/bold red]", border_style="red"))
 
 
+@app.command(name="ic-batch")
+def ic_batch(
+    symbol: Annotated[
+        str,
+        typer.Argument(help="Trading symbol (e.g., BTC/USDT)"),
+    ] = "BTC/USDT",
+    timeframe: Annotated[
+        str,
+        typer.Option("--tf", help="Timeframe"),
+    ] = "1D",
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s)"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    category: Annotated[
+        str | None,
+        typer.Option("--category", "-c", help="Filter by indicator category"),
+    ] = None,
+) -> None:
+    """Run IC batch check on all indicators.
+
+    전체 지표의 forward return 예측력을 일괄 검증합니다.
+
+    Example:
+        uv run mcbot backtest ic-batch BTC/USDT --tf 1D
+        uv run mcbot backtest ic-batch BTC/USDT --tf 1D --category oscillator
+    """
+    from src.backtest.ic_analyzer import ICAnalyzer, ICBatchEntry, ICBatchResult, ICVerdict
+    from src.market.feature_store import IndicatorSpec, compute_indicator
+    from src.market.indicators import __all__ as all_indicators
+
+    setup_logger(console_level="WARNING")
+
+    # 지표 목록 결정
+    target_indicators: list[str] = list(all_indicators)
+    if category:
+        try:
+            from src.catalog.indicator_store import IndicatorCatalogStore
+
+            store = IndicatorCatalogStore()
+            filtered = store.get_by_category(category)
+            target_indicators = [i.id for i in filtered]
+        except Exception:
+            console.print("[yellow]Category filter failed, using all indicators[/yellow]")
+
+    console.print(
+        Panel.fit(
+            (
+                f"[bold]IC Batch Check[/bold]\n"
+                f"Symbol: {symbol} | TF: {timeframe}\n"
+                f"Indicators: {len(target_indicators)}"
+                + (f" (category: {category})" if category else "")
+            ),
+            border_style="cyan",
+        )
+    )
+
+    # 데이터 로드 (1회)
+    try:
+        settings = get_settings()
+        data_service = MarketDataService(settings)
+
+        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+        data = data_service.get(
+            MarketDataRequest(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start_date,
+                end=end_date,
+            )
+        )
+    except DataNotFoundError as e:
+        console.print(f"[red]Data load failed: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    # Forward returns (1회)
+    close_series = data.ohlcv["close"]
+    forward_returns = close_series.pct_change().shift(-1)
+
+    # 각 지표에 대해 IC 분석
+    entries: list[ICBatchEntry] = []
+    for ind_name in target_indicators:
+        spec = IndicatorSpec(name=ind_name, params={})
+        try:
+            indicator_series = compute_indicator(spec, data.ohlcv)
+            result = ICAnalyzer.analyze(indicator_series, forward_returns)  # type: ignore[arg-type]
+            entries.append(ICBatchEntry(indicator_name=ind_name, result=result))
+        except Exception as e:
+            entries.append(ICBatchEntry(indicator_name=ind_name, result=None, error=str(e)))
+
+    # 집계
+    passed = sum(1 for e in entries if e.result and e.result.verdict == ICVerdict.PASS)
+    failed = sum(1 for e in entries if e.result and e.result.verdict == ICVerdict.FAIL)
+    skipped = sum(1 for e in entries if e.result is None)
+    batch_result = ICBatchResult(
+        entries=entries, total=len(entries), passed=passed, failed=failed, skipped=skipped
+    )
+
+    # PASS 먼저, rank_ic 내림차순 정렬
+    sorted_entries = sorted(
+        entries,
+        key=lambda e: (
+            0 if e.result and e.result.verdict == ICVerdict.PASS else 1,
+            -(abs(e.result.rank_ic) if e.result else 0),
+        ),
+    )
+
+    # Rich 테이블 출력
+    from src.backtest.ic_analyzer import HIT_RATE_THRESHOLD, IC_ABS_THRESHOLD, IC_IR_ABS_THRESHOLD
+
+    result_table = Table(title=f"IC Batch Results ({batch_result.total} indicators)")
+    result_table.add_column("Indicator", style="cyan", min_width=20)
+    result_table.add_column("Rank IC", justify="right", width=10)
+    result_table.add_column("IC IR", justify="right", width=10)
+    result_table.add_column("Hit Rate", justify="right", width=10)
+    result_table.add_column("Decay", justify="center", width=7)
+    result_table.add_column("Verdict", justify="center", width=8)
+
+    for entry in sorted_entries:
+        if entry.result is None:
+            result_table.add_row(
+                entry.indicator_name,
+                "[dim]ERR[/dim]",
+                "[dim]ERR[/dim]",
+                "[dim]ERR[/dim]",
+                "[dim]ERR[/dim]",
+                "[dim]SKIP[/dim]",
+            )
+            continue
+
+        r = entry.result
+        ic_style = "green" if abs(r.rank_ic) > IC_ABS_THRESHOLD else "red"
+        ir_style = "green" if abs(r.ic_ir) > IC_IR_ABS_THRESHOLD else "red"
+        hr_style = "green" if r.hit_rate > HIT_RATE_THRESHOLD else "red"
+        decay_str = "[green]Y[/green]" if r.ic_decay_stable else "[red]N[/red]"
+        verdict_str = (
+            "[bold green]PASS[/bold green]"
+            if r.verdict == ICVerdict.PASS
+            else "[bold red]FAIL[/bold red]"
+        )
+
+        result_table.add_row(
+            entry.indicator_name,
+            f"[{ic_style}]{r.rank_ic:+.4f}[/{ic_style}]",
+            f"[{ir_style}]{r.ic_ir:+.4f}[/{ir_style}]",
+            f"[{hr_style}]{r.hit_rate:.1f}%[/{hr_style}]",
+            decay_str,
+            verdict_str,
+        )
+
+    console.print(result_table)
+
+    # Summary
+    summary = (
+        f"Total: {batch_result.total} | "
+        f"[green]PASS: {batch_result.passed}[/green] | "
+        f"[red]FAIL: {batch_result.failed}[/red] | "
+        f"[dim]SKIP: {batch_result.skipped}[/dim]"
+    )
+    border = "green" if batch_result.passed > 0 else "red"
+    console.print(Panel(summary, title="Summary", border_style=border))
+
+
 @app.command()
 def info() -> None:
     """Display VW-TSMOM strategy information."""
@@ -1828,6 +1994,115 @@ def validate(
     except ImportError as e:
         logger.warning(f"Import failed: {e}")
         raise typer.Exit(code=1) from e
+
+
+@app.command()
+def stress(
+    config_path: Annotated[
+        str,
+        typer.Argument(help="YAML config file path"),
+    ],
+    scenario: Annotated[
+        str,
+        typer.Option(
+            "--scenario",
+            "-s",
+            help="Scenario name (BLACK_SWAN, LIQUIDITY_CRISIS, FUNDING_SPIKE, FLASH_CRASH, all)",
+        ),
+    ] = "all",
+    injection_bar: Annotated[
+        int | None,
+        typer.Option("--injection-bar", "-b", help="Shock injection bar index (None=midpoint)"),
+    ] = None,
+) -> None:
+    """Stress test with synthetic shock injection."""
+    import yaml
+
+    from src.backtest.stress_test import (
+        ALL_SCENARIOS,
+        BLACK_SWAN,
+        FLASH_CRASH,
+        FUNDING_SPIKE,
+        LIQUIDITY_CRISIS,
+        StressScenario,
+        run_stress_test,
+    )
+
+    setup_logger(verbose=False)
+
+    # Config 로드
+    with pathlib.Path(config_path).open(encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    bt_cfg = cfg.get("backtest", {})
+    strategy_cfg = cfg.get("strategy", {})
+    symbol = bt_cfg.get("symbols", ["BTC/USDT"])[0]
+    timeframe = bt_cfg.get("timeframe", "1D")
+    start_str = bt_cfg.get("start", "2023-01-01")
+    end_str = bt_cfg.get("end", "2025-12-31")
+    capital = float(bt_cfg.get("capital", 100000))
+
+    strategy_name = strategy_cfg.get("name", "tsmom")
+    strategy_params = strategy_cfg.get("params", {})
+    strategy = get_strategy(strategy_name, **strategy_params)
+
+    # 데이터 로드
+    settings = get_settings()
+    svc = MarketDataService(settings)
+    req = MarketDataRequest(
+        symbol=symbol,
+        timeframe=timeframe,
+        start=datetime.strptime(start_str, "%Y-%m-%d").replace(tzinfo=UTC),
+        end=datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=UTC),
+    )
+    data = svc.load(req)
+
+    # Scenario 선택
+    scenario_map: dict[str, StressScenario] = {
+        "BLACK_SWAN": BLACK_SWAN,
+        "LIQUIDITY_CRISIS": LIQUIDITY_CRISIS,
+        "FUNDING_SPIKE": FUNDING_SPIKE,
+        "FLASH_CRASH": FLASH_CRASH,
+    }
+
+    scenarios_to_run = ALL_SCENARIOS if scenario == "all" else [scenario_map[scenario.upper()]]
+
+    # 전략 함수 래핑
+    import pandas as pd
+
+    def strategy_fn(df: pd.DataFrame) -> pd.Series:  # type: ignore[type-arg]
+        processed = strategy.preprocess(df)
+        signals = strategy.generate_signal(processed)
+        weights = signals.clip(-1.0, 1.0)
+        return pd.Series(weights, index=df.index[: len(weights)])
+
+    # 결과 테이블
+    table = Table(title=f"Stress Test Results — {symbol} ({timeframe})")
+    table.add_column("Scenario", style="cyan")
+    table.add_column("Survived", style="green")
+    table.add_column("Min Equity %", justify="right")
+    table.add_column("Max Drawdown", justify="right")
+    table.add_column("Recovery Bars", justify="right")
+
+    for sc in scenarios_to_run:
+        result = run_stress_test(
+            data.ohlcv,
+            sc,
+            strategy_fn,
+            initial_capital=capital,
+            injection_bar=injection_bar,
+        )
+        survived_str = "[green]YES[/green]" if result.survived else "[red]NO[/red]"
+        recovery_str = str(result.bars_to_recover) if result.bars_to_recover is not None else "N/A"
+        table.add_row(
+            sc.name,
+            survived_str,
+            f"{result.min_equity_pct:.1f}%",
+            f"{result.max_drawdown:.1f}%",
+            recovery_str,
+        )
+
+    console.print(table)
 
 
 # Main entry point

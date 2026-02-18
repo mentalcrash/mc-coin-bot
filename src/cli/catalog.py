@@ -3,6 +3,10 @@
 Commands:
     - list: 데이터셋 목록 (유형/그룹 필터링)
     - show: 데이터셋 상세 정보
+    - failure-patterns: 실패 패턴 목록
+    - failure-pattern-show: 실패 패턴 상세
+    - indicators: 지표 목록
+    - indicator-show: 지표 상세
 """
 
 from __future__ import annotations
@@ -144,3 +148,224 @@ def show(
         lines.extend(f"  [dim]•[/dim] {hint}" for hint in ds.strategy_hints)
 
     console.print(Panel("\n".join(lines), title=f"Dataset: {ds.id}"))
+
+
+# ─── Failure Patterns ────────────────────────────────────────────────
+
+
+@app.command(name="failure-patterns")
+def failure_patterns(
+    gate: Annotated[
+        str | None, typer.Option("--gate", "-g", help="Filter by affected gate (e.g., G1)")
+    ] = None,
+    freq: Annotated[
+        str | None, typer.Option("--freq", "-f", help="Filter by frequency (high/medium/low)")
+    ] = None,
+) -> None:
+    """실패 패턴 목록."""
+    from src.catalog.failure_store import FailurePatternStore
+
+    store = FailurePatternStore()
+    try:
+        if gate:
+            patterns = store.filter_by_gate(gate)
+        elif freq:
+            patterns = store.filter_by_frequency(freq)
+        else:
+            patterns = store.load_all()
+    except FileNotFoundError:
+        console.print("[red]catalogs/failure_patterns.yaml not found.[/red]")
+        raise typer.Exit(code=1) from None
+
+    if not patterns:
+        console.print("[yellow]No patterns match the given filters.[/yellow]")
+        return
+
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        title=f"Failure Patterns ({len(patterns)})",
+    )
+    table.add_column("ID", style="bold", min_width=12)
+    table.add_column("Name", min_width=16)
+    table.add_column("Freq", width=8)
+    table.add_column("Gates", width=10)
+    table.add_column("Examples", width=5, justify="right")
+    table.add_column("Prevention", min_width=20)
+
+    freq_colors = {"high": "red", "medium": "yellow", "low": "green"}
+    for p in patterns:
+        color = freq_colors.get(p.frequency, "white")
+        table.add_row(
+            p.id,
+            p.name,
+            f"[{color}]{p.frequency}[/{color}]",
+            ", ".join(p.affected_gates),
+            str(len(p.examples)),
+            p.prevention[0] if p.prevention else "-",
+        )
+
+    console.print(table)
+
+
+@app.command(name="failure-pattern-show")
+def failure_pattern_show(
+    pattern_id: Annotated[str, typer.Argument(help="Pattern ID (e.g., cost_erosion)")],
+) -> None:
+    """실패 패턴 상세 정보."""
+    from src.catalog.failure_store import FailurePatternStore
+
+    store = FailurePatternStore()
+    try:
+        p = store.load(pattern_id)
+    except FileNotFoundError:
+        console.print("[red]catalogs/failure_patterns.yaml not found.[/red]")
+        raise typer.Exit(code=1) from None
+    except KeyError:
+        console.print(f"[red]Pattern not found: {pattern_id}[/red]")
+        raise typer.Exit(code=1) from None
+
+    freq_colors = {"high": "red", "medium": "yellow", "low": "green"}
+    color = freq_colors.get(p.frequency, "white")
+
+    lines = [
+        f"[bold]{p.id}[/bold] — {p.name}",
+        "",
+        p.description,
+        "",
+        f"[bold]Frequency:[/bold] [{color}]{p.frequency}[/{color}]",
+        f"[bold]Affected Gates:[/bold] {', '.join(p.affected_gates)}",
+    ]
+
+    if p.detection_rules:
+        lines.append("")
+        lines.append("[bold]Detection Rules:[/bold]")
+        lines.extend(
+            f"  [dim]•[/dim] {rule.metric} {rule.operator} {rule.threshold}"
+            for rule in p.detection_rules
+        )
+
+    if p.prevention:
+        lines.append("")
+        lines.append("[bold]Prevention:[/bold]")
+        lines.extend(f"  [dim]•[/dim] {tip}" for tip in p.prevention)
+
+    if p.examples:
+        lines.append("")
+        lines.append(f"[bold]Examples:[/bold] {', '.join(p.examples)}")
+
+    if p.related_lessons:
+        lines.append(
+            f"[bold]Related Lessons:[/bold] {', '.join(str(lid) for lid in p.related_lessons)}"
+        )
+
+    console.print(Panel("\n".join(lines), title=f"Failure Pattern: {p.id}"))
+
+
+# ─── Indicators ──────────────────────────────────────────────────────
+
+
+@app.command(name="indicators")
+def list_indicators(
+    category: Annotated[
+        str | None, typer.Option("--category", "-c", help="Filter by category")
+    ] = None,
+    unused: Annotated[
+        bool, typer.Option("--unused", help="Show only unused indicators")
+    ] = False,
+    potential: Annotated[
+        str | None, typer.Option("--potential", "-p", help="Filter by alpha potential")
+    ] = None,
+) -> None:
+    """지표 목록."""
+    from src.catalog.indicator_store import IndicatorCatalogStore
+
+    store = IndicatorCatalogStore()
+    try:
+        if category:
+            indicators = store.get_by_category(category)
+        elif unused:
+            indicators = store.get_unused()
+        elif potential:
+            indicators = store.get_by_potential(potential)
+        else:
+            indicators = store.load_all()
+    except FileNotFoundError:
+        console.print("[red]catalogs/indicators.yaml not found.[/red]")
+        raise typer.Exit(code=1) from None
+
+    if not indicators:
+        console.print("[yellow]No indicators match the given filters.[/yellow]")
+        return
+
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        title=f"Indicator Catalog ({len(indicators)})",
+    )
+    table.add_column("ID", style="bold", min_width=12)
+    table.add_column("Name", min_width=16)
+    table.add_column("Module", width=12)
+    table.add_column("Category", width=12)
+    table.add_column("Used By", width=15)
+    table.add_column("Alpha", width=8)
+
+    pot_colors = {"high": "green", "medium": "yellow", "low": "dim"}
+    for ind in indicators:
+        color = pot_colors.get(ind.alpha_potential, "white")
+        table.add_row(
+            ind.id,
+            ind.name,
+            ind.module,
+            ind.category.value,
+            ", ".join(ind.used_by) if ind.used_by else "[dim]-[/dim]",
+            f"[{color}]{ind.alpha_potential}[/{color}]",
+        )
+
+    console.print(table)
+
+
+@app.command(name="indicator-show")
+def indicator_show(
+    indicator_id: Annotated[str, typer.Argument(help="Indicator ID (e.g., hurst_exponent)")],
+) -> None:
+    """지표 상세 정보."""
+    from src.catalog.indicator_store import IndicatorCatalogStore
+
+    store = IndicatorCatalogStore()
+    try:
+        ind = store.load(indicator_id)
+    except FileNotFoundError:
+        console.print("[red]catalogs/indicators.yaml not found.[/red]")
+        raise typer.Exit(code=1) from None
+    except KeyError:
+        console.print(f"[red]Indicator not found: {indicator_id}[/red]")
+        raise typer.Exit(code=1) from None
+
+    pot_colors = {"high": "green", "medium": "yellow", "low": "dim"}
+    color = pot_colors.get(ind.alpha_potential, "white")
+
+    lines = [
+        f"[bold]{ind.id}[/bold] — {ind.name}",
+        "",
+        ind.description,
+        "",
+        f"[bold]Module:[/bold] {ind.module}",
+        f"[bold]Category:[/bold] {ind.category.value}",
+        f"[bold]Alpha Potential:[/bold] [{color}]{ind.alpha_potential}[/{color}]",
+    ]
+
+    if ind.default_params:
+        params = ", ".join(f"{k}={v}" for k, v in ind.default_params.items())
+        lines.append(f"[bold]Default Params:[/bold] {params}")
+
+    if ind.used_by:
+        lines.append(f"[bold]Used By:[/bold] {', '.join(ind.used_by)}")
+    else:
+        lines.append("[bold]Used By:[/bold] [dim]None (unused)[/dim]")
+
+    if ind.notes:
+        lines.append("")
+        lines.append(f"[bold]Notes:[/bold] {ind.notes}")
+
+    console.print(Panel("\n".join(lines), title=f"Indicator: {ind.id}"))

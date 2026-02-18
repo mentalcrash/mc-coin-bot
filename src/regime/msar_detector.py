@@ -140,6 +140,9 @@ class MSARDetector:
         self._models: dict[str, Any] = {}
         self._mappings: dict[str, dict[int, RegimeLabel]] = {}
         self._bar_counts: dict[str, int] = {}
+        # Convergence tracking
+        self._fit_attempts: int = 0
+        self._fit_failures: int = 0
 
     @property
     def config(self) -> MSARDetectorConfig:
@@ -151,6 +154,13 @@ class MSARDetector:
         """필요한 워밍업 기간."""
         return self._config.warmup_periods
 
+    @property
+    def convergence_rate(self) -> float:
+        """학습 수렴률 (0~1). 1.0이면 모든 학습 시도 성공."""
+        if self._fit_attempts == 0:
+            return 1.0
+        return 1.0 - (self._fit_failures / self._fit_attempts)
+
     def _fit_model(self, train_data: np.ndarray) -> tuple[Any, dict[int, RegimeLabel]] | None:  # type: ignore[type-arg]
         """MSAR 모델 학습.
 
@@ -158,6 +168,7 @@ class MSARDetector:
             (model_result, mapping) 또는 실패 시 None
         """
         cfg = self._config
+        self._fit_attempts += 1
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             try:
@@ -171,6 +182,7 @@ class MSARDetector:
                 result = model.fit(maxiter=_MAX_FIT_ITER, disp=False)
                 mapping = _map_regime_from_model(result, cfg.k_regimes)
             except Exception:
+                self._fit_failures += 1
                 return None
             else:
                 return result, mapping

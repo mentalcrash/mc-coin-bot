@@ -60,6 +60,30 @@
         { "expr": "mcbot_strategy_fees_usdt_total{strategy=~\"$strategy\"}", "legendFormat": "{{strategy}}", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "title": "Row 2: Execution Quality",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false
+    },
+    {
+      "title": "Slippage P95 (bps)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(mcbot_strategy_slippage_bps_bucket{strategy=~\"$strategy\"}[1h]))", "legendFormat": "{{strategy}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "axisSoftMin": 0 } }, "overrides": [] }
+    },
+    {
+      "title": "Profit Factor (1d rolling)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "targets": [
+        { "expr": "rate(mcbot_strategy_realized_profit_usdt_total{strategy=~\"$strategy\"}[1d]) / rate(mcbot_strategy_realized_loss_usdt_total{strategy=~\"$strategy\"}[1d])", "legendFormat": "{{strategy}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "axisSoftMin": 0 } }, "overrides": [] }
     }
   ],
   "schemaVersion": 39,
@@ -69,5 +93,5 @@
   "timezone": "utc",
   "title": "MC Coin Bot — Strategy",
   "uid": "mc-strategy",
-  "version": 1
+  "version": 2
 }

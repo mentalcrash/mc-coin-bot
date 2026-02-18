@@ -164,6 +164,11 @@ hysteresis(min_hold_bars) → 최종 라벨
 
 **Warmup:** `min_train_window + 1` bar
 
+> **Known Issue — HMM State Ordering Instability:**
+> HMM의 latent state → regime 매핑은 mean return 기준 정렬에 의존합니다.
+> mean return이 유사한 경우 retrain 시 label flipping이 발생할 수 있습니다.
+> 완화: `decay_half_life` 또는 `sliding_window`를 사용하여 최신 데이터에 가중치를 부여합니다.
+
 ### 4.3 Vol-Structure (선택)
 
 **파일:** `src/regime/vol_detector.py`
@@ -288,7 +293,23 @@ blended_p = Σ(weight_i × p_i) / Σ(weight_i)   (NaN이 아닌 감지기만)
 
 > 기본 설정에서는 Rule-Based만 활성. 다른 감지기 활성화 시 가중치 재배분 필요.
 
-### 5.3 Confidence (Detector Agreement)
+**감지기 활성화 예시 (Rule + Vol-Structure):**
+
+```python
+from src.regime.config import EnsembleRegimeDetectorConfig, VolStructureDetectorConfig
+from src.regime.ensemble import EnsembleRegimeDetector
+
+config = EnsembleRegimeDetectorConfig(
+    vol_structure=VolStructureDetectorConfig(),  # Vol-Structure 활성화
+    weight_rule_based=0.6,                       # 가중치 재배분
+    weight_vol_structure=0.4,
+    min_hold_bars=3,
+)
+detector = EnsembleRegimeDetector(config)
+result = detector.classify_series(closes)
+```
+
+### 5.2 Confidence (Detector Agreement)
 
 앙상블의 **confidence**는 활성 감지기가 최종 label에 동의하는 비율입니다:
 
@@ -300,7 +321,7 @@ confidence = (최종 label과 동일한 argmax를 가진 감지기 수) / (활�
 - 4개 감지기 모두 TRENDING이면 `confidence = 1.0`
 - 3/4 TRENDING, 1/4 RANGING이면 `confidence = 0.75`
 
-### 5.2 Meta-Learner (sklearn 필요)
+### 5.3 Meta-Learner (sklearn 필요)
 
 ```
 features = [rule_pt, rule_pr, rule_pv, hmm_pt, hmm_pr, hmm_pv, ...]
@@ -337,6 +358,21 @@ if raw_label != current_label:
 | 파라미터 | 범위 | 권장값 | 설명 |
 |---------|------|-------|------|
 | `min_hold_bars` | 1~20 | 3~5 | 작을수록 민감, 클수록 안정 |
+
+### 6.1 Post-Blend Hysteresis 설계 의도
+
+Hysteresis는 **앙상블 블렌딩 후** 최종 라벨에 적용됩니다 (per-detector가 아닌 post-blend).
+
+**설계 trade-off:**
+
+- **Post-blend (현재):** 앙상블 확률이 변동해도 최종 라벨은 안정적. 개별 detector 노이즈가 상쇄.
+- **Per-detector:** 각 detector가 독립적으로 hysteresis를 적용. 더 안정적이나 앙상블 반응성 저하.
+
+Post-blend 방식을 선택한 이유:
+
+1. 단일 `min_hold_bars` 파라미터로 시스템 전체 안정성 제어
+2. 앙상블 효과(노이즈 상쇄) 이후 적용하므로 불필요한 이중 필터링 방지
+3. vectorized와 incremental에서 동일한 `apply_hysteresis()` 함수 공유 가능
 
 ---
 
@@ -397,6 +433,12 @@ transition_prob = 1.0 - P(current_label -> current_label)
 ```
 
 - `precompute()`에서 vectorized label 시퀀스로 matrix 구축
+
+> **Known Limitation — Look-Ahead in Backtest:**
+> Backtest `precompute()`는 **전체 label 시퀀스**로 transition matrix를 추정합니다 (look-ahead).
+> Live에서는 `_update_transition_counts()`로 expanding window 누적합니다.
+> transition_prob는 정보용 메트릭이므로 전략 시그널에 직접 영향을 주지 않습니다.
+> Phase 3에서 expanding-window 방식으로 개선 예정입니다.
 - `_on_bar()`에서 incremental 카운터로 matrix 갱신
 
 ### 7.6 RegimeContext (전략 소비용 API)
@@ -683,6 +725,8 @@ elif config.hmm is not None:
 
 ### 14.1 단위 테스트
 
+> 아래는 문서 시점 기준 목록입니다. 최신 테스트는 `tests/regime/` 디렉토리를 직접 확인하세요.
+
 | 테스트 파일 | 대상 |
 |------------|------|
 | `tests/regime/test_detector.py` | RegimeDetector (vectorized + incremental) |
@@ -736,6 +780,55 @@ elif config.hmm is not None:
 1. **TF 필터:** RegimeService는 `target_timeframe`에 해당하는 BAR만 처리
 1. **Derivatives 데이터 없이도 동작:** `derivatives_provider=None`이면 derivatives detector 비활성, cascade_risk=0.0
 1. **REGIME_CHANGE 이벤트:** EventBus에 register() 호출 후에만 발행 (bus=None이면 스킵)
+1. **Backtest cascade_risk=0.0:** derivatives 데이터 없는 backtest에서는 `cascade_risk` 컬럼이 전체 0.0. DerivativesDetector가 활성이어도 `deriv_df=None`이면 cascade_risk가 계산되지 않음
+
+---
+
+## 17. Future Enhancement: Regime 조건부 성과 추적
+
+현재 시스템은 레짐 분류와 전환 확률을 실시간으로 계산하지만,
+**레짐별 전략 성과**를 체계적으로 추적하는 메커니즘은 아직 없다.
+
+### 17.1 목표
+
+- 레짐별 Sharpe / Win Rate / PnL 실시간 집계
+- "이 전략은 TRENDING에서만 수익" 패턴 자동 감지
+- Regime-conditional position sizing 근거 제공
+
+### 17.2 설계 스케치
+
+```text
+┌──────────────┐     ┌───────────────────┐     ┌──────────────────┐
+│  FILL Event   │────▶│  RegimeTracker    │────▶│  Prometheus      │
+│  (PnL, side)  │     │  (regime × asset) │     │  regime_pnl_total│
+└──────────────┘     └───────────────────┘     │  regime_trades   │
+                                                │  regime_sharpe   │
+       ┌──────────────┐                         └──────────────────┘
+       │ REGIME_CHANGE│────▶ label switch 기록          │
+       └──────────────┘                                 ▼
+                                                ┌──────────────────┐
+                                                │  Grafana Panel   │
+                                                │  - PnL by regime │
+                                                │  - Drawdown curve│
+                                                │  - Regime timeline│
+                                                └──────────────────┘
+```
+
+### 17.3 Prometheus 메트릭 예시
+
+| 메트릭 | Labels | 설명 |
+|--------|--------|------|
+| `regime_pnl_total` | `regime`, `asset`, `strategy` | 레짐별 누적 PnL |
+| `regime_trade_count` | `regime`, `asset` | 레짐별 거래 횟수 |
+| `regime_win_rate` | `regime`, `strategy` | 레짐별 승률 |
+| `regime_duration_bars` | `regime` | 현재 레짐 지속 bar 수 |
+
+### 17.4 구현 우선순위
+
+1. **P1:** RegimeTracker 클래스 (FILL + REGIME_CHANGE 구독, in-memory 집계)
+2. **P2:** Prometheus exporter 연동 (기존 `src/monitoring/metrics.py` 확장)
+3. **P3:** Grafana 대시보드 템플릿 (JSON export)
+4. **P4:** Regime-conditional sizing (RegimeContext.suggested_vol_scalar 확장)
 
 ---
 
@@ -745,3 +838,4 @@ elif config.hmm is not None:
 |------|----------|
 | 2026-02-18 | 초기 문서 작성 -- 4개 감지기, 앙상블, RegimeService, EDA 통합 흐름 |
 | 2026-02-18 | Phase 1-3: confidence, transition_prob, DerivativesDetector(5th), REGIME_CHANGE event, RegimeContext API |
+| 2026-02-18 | 검증 및 보완: Parity 테스트, Edge case, Convergence tracking, Expanding-window transition, §17 Future Enhancement |

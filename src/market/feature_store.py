@@ -15,6 +15,9 @@ import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
@@ -149,6 +152,37 @@ class FeatureStore:
         # Live: OHLCV 버퍼 {symbol: list of bar dicts}
         self._buffers: dict[str, list[dict[str, float]]] = {}
         self._timestamps: dict[str, list[Any]] = {}
+
+    # -------------------------------------------------------------------
+    # Dynamic Spec Registration
+    # -------------------------------------------------------------------
+
+    def register_specs(self, extra: Sequence[IndicatorSpec]) -> None:
+        """외부에서 추가 지표 Spec 등록. 중복(name 기준)은 무시.
+
+        전략별로 필요한 추가 지표를 등록할 때 사용합니다.
+        ``precompute()`` 호출 전에 등록이 완료되어야 합니다.
+
+        Args:
+            extra: 추가할 IndicatorSpec 시퀀스
+        """
+        existing = {s.name for s in self._config.specs}
+        added: list[str] = []
+        new_specs = list(self._config.specs)
+        for spec in extra:
+            if spec.name not in existing:
+                new_specs.append(spec)
+                existing.add(spec.name)
+                added.append(spec.name)
+
+        if added:
+            # frozen config이므로 새 인스턴스로 교체
+            self._config = FeatureStoreConfig(
+                specs=tuple(new_specs),
+                target_timeframe=self._config.target_timeframe,
+                max_buffer_size=self._config.max_buffer_size,
+            )
+            logger.info("FeatureStore: registered {} specs: {}", len(added), added)
 
     # -------------------------------------------------------------------
     # Backtest

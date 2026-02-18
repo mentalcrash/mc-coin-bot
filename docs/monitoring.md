@@ -8,7 +8,7 @@ Prometheus + Grafana 기반 모니터링 시스템 레퍼런스.
 mc-bot (:8000/metrics)
     -> Prometheus (scrape 10s)
         -> Grafana (6 dashboards)
-        -> Alertmanager (alerts.yml, 17 rules)
+        -> Alertmanager (alerts.yml, 27 rules)
 
 node-exporter (:9100/metrics)
     -> Prometheus (scrape 15s)
@@ -41,70 +41,158 @@ Anomaly Detectors (in-process)
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_orders_total` | Counter | symbol, side, order_type, status | 주문 건수 (status: ack/filled/rejected) |
-| `mcbot_order_latency_seconds` | Histogram | symbol | 주문요청->체결 지연시간 |
-| `mcbot_slippage_bps` | Histogram | symbol, side | 슬리피지 (basis points) |
-| `mcbot_order_rejected_total` | Counter | symbol, reason | 거부 주문 |
+| `mcbot_orders_total` | Counter | symbol, side, order_type, status | 주문 건수 (status: ack/filled/rejected). 단일 주문이 ack+filled 또는 ack+rejected로 **2회** 카운트됨. CircuitBreaker 직접 체결은 pending 없어 미반영 (mcbot_fills만 증가) |
+| `mcbot_order_latency_seconds` | Histogram | symbol | 주문요청→체결 지연시간. **주의**: backtest에서는 코드 실행 시간(마이크로초), live/paper에서만 실제 주문 지연 |
+| `mcbot_slippage_bps` | Histogram | symbol, side | 슬리피지 절대값 (basis points). signal-to-execution 가격 변화 측정 (순수 마이크로스트럭처 슬리피지 아님). MARKET 주문 기준가 = last bar close (1D TF에서 최대 24h 전 가격) |
+| `mcbot_slippage_signed_bps` | Histogram | symbol, side | 방향성 슬리피지 (양수=불리, 음수=유리). BUY: fill-expected, SELL: expected-fill |
+| `mcbot_order_rejected_total` | Counter | symbol, reason | 거부 주문. reason: leverage_exceeded, max_positions, order_size_exceeded, circuit_breaker, duplicate, other |
 | `mcbot_fees_usdt_total` | Counter | symbol | 누적 수수료 (USDT) |
 | `mcbot_fills` | Counter | symbol, side | 체결 건수 |
 | `mcbot_signals` | Counter | symbol | 시그널 건수 |
 | `mcbot_bars` | Counter | timeframe | 처리된 bar 수 |
+
+### Layer 1b: Live Execution (Live/Paper 모드 전용)
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `mcbot_live_min_notional_skip_total` | Counter | symbol | MIN_NOTIONAL 미달로 스킵된 주문 |
+| `mcbot_live_api_blocked_total` | Counter | symbol | API unhealthy로 차단된 주문 |
+| `mcbot_live_partial_fill_total` | Counter | symbol | Partial fill 발생 건수 |
+| `mcbot_live_fill_parse_failure_total` | Counter | symbol | Fill 응답 파싱 실패 건수 |
 
 ### Layer 2: Position & PnL
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `mcbot_equity_usdt` | Gauge | -- | 포트폴리오 총 가치 |
-| `mcbot_drawdown_pct` | Gauge | -- | 고점 대비 낙폭 |
+| `mcbot_drawdown_pct` | Gauge | -- | HWM 기반 고점 대비 낙폭 (0-100%) |
 | `mcbot_cash_usdt` | Gauge | -- | 가용 현금 |
 | `mcbot_open_positions` | Gauge | -- | 열린 포지션 수 |
 | `mcbot_position_size` | Gauge | symbol | 포지션 수량 |
-| `mcbot_position_notional_usdt` | Gauge | symbol | 포지션 명목 금액 |
+| `mcbot_position_notional_usdt` | Gauge | symbol | 포지션 명목 금액 (mark-to-market, last_price 기준) |
 | `mcbot_unrealized_pnl_usdt` | Gauge | symbol | 미실현 손익 |
 | `mcbot_realized_profit_usdt_total` | Counter | symbol | 누적 실현 수익 |
 | `mcbot_realized_loss_usdt_total` | Counter | symbol | 누적 실현 손실 |
-| `mcbot_aggregate_leverage` | Gauge | -- | 포트폴리오 총 레버리지 |
+| `mcbot_aggregate_leverage` | Gauge | -- | 포트폴리오 총 레버리지 (total_abs_notional / equity) |
 | `mcbot_margin_used_usdt` | Gauge | -- | 사용 중인 마진 |
 
 ### Layer 3: Exchange API
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_exchange_api_calls_total` | Counter | endpoint, status | API 호출 수 |
-| `mcbot_exchange_api_latency_seconds` | Histogram | endpoint | API 응답 시간 |
-| `mcbot_exchange_ws_connected` | Gauge | symbol | WS 연결 상태 (1/0) |
-| `mcbot_exchange_consecutive_failures` | Gauge | -- | 연속 API 실패 횟수 |
+| `mcbot_exchange_api_calls_total` | Counter | endpoint, status | API 호출 수. endpoint: create_order, create_stop_market, fetch_positions, fetch_balance, fetch_ticker, fetch_open_orders, fetch_order, cancel_order, cancel_all_orders (9종). status: "success" \| "failure". 미계측: setup_account(), 데이터 수집 6종 (fetch_funding_rate_history 등) |
+| `mcbot_exchange_api_latency_seconds` | Histogram | endpoint | API 응답 시간 (monotonic 시계). Buckets: 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0s. `_retry_with_backoff` 포함 총 소요 시간 (retry backoff 대기 시간 포함) |
+| `mcbot_exchange_ws_connected` | Gauge | symbol | WS 연결 상태 (1=connected, 0=disconnected). `WsStatusCallback.on_ws_status()` 콜백으로 실시간 갱신. 상세: Layer 6 참조 |
+| `mcbot_exchange_consecutive_failures` | Gauge | -- | 주문 실행(create_order, create_stop_market) 연속 실패 횟수. **write-ops만 추적** — 읽기 API 실패는 미반영. InvalidOrder는 로직 에러로 CB 카운트 제외. 5 도달 시 주문 차단 (is_healthy=False). 성공 시 0 리셋 |
+
+**운영 주의사항:**
+
+- **consecutive_failures 범위 제한**: `_record_failure()`는 create_order/create_stop_market에서만
+  호출됨. InvalidOrder는 CB 카운트 제외 (로직 에러). 읽기 API(fetch_positions, fetch_balance 등)
+  실패는 consecutive_failures에 반영되지 않으므로 `APIUnhealthy` alert는 주문 실행 실패에만 반응함
+- **Latency 측정 특성**: `time.monotonic()` 기반. `_retry_with_backoff` 호출 전후 측정이므로
+  retry 시도 + exponential backoff 대기 시간이 모두 포함됨
+- **미계측 영역**: `setup_account()` (일회성 설정, 계측 불필요), 데이터 수집 6종
+  (fetch_funding_rate_history, fetch_open_interest_history, fetch_long_short_ratio,
+  fetch_taker_buy_sell_ratio, fetch_top_long_short_account_ratio,
+  fetch_top_long_short_position_ratio)은 인제스트 전용으로 라이브 트레이딩과 무관
 
 ### Layer 4: Bot Health
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_uptime_seconds` | Gauge | -- | 봇 가동 시간 |
-| `mcbot_heartbeat_timestamp` | Gauge | -- | 마지막 heartbeat |
-| `mcbot_errors_total` | Counter | component, error_type | 에러 수 |
-| `mcbot_eventbus_queue_depth` | Gauge | -- | 큐 대기 이벤트 수 |
-| `mcbot_eventbus_events_dropped_total` | Counter | -- | 이벤트 드롭 수 |
-| `mcbot_eventbus_handler_errors_total` | Counter | -- | 핸들러 에러 수 |
-| `mcbot_circuit_breaker` | Counter | -- | 서킷 브레이커 발동 |
-| `mcbot_risk_alerts` | Counter | level | 리스크 알림 |
+| `mcbot_uptime_seconds` | Gauge | -- | `time.monotonic()` 기반 봇 가동 시간. MetricsExporter 생성 시점부터 측정, 30초 주기 갱신. 프로세스 재시작 시 0 리셋 |
+| `mcbot_heartbeat_timestamp` | Gauge | -- | HeartbeatEvent 수신 시 `event.timestamp.timestamp()` 기록. 30초 주기로 LiveRunner `_periodic_metrics_update()`에서 발행. Event loop hung 감지에 사용 |
+| `mcbot_errors_total` | Counter | component, error_type | 컴포넌트별 에러 수. component: EventBus \| LiveRunner \| Exchange. error_type: exception class name. EventBus handler error, LiveRunner crash, Exchange API failure 시 증가 |
+| `mcbot_eventbus_queue_depth` | Gauge | -- | 30초 주기 `bus.queue_size` 조회. 기본 큐 크기 10,000. 5,000 초과 시 QueueCongestion alert, 8,000 초과 시 QueueCongestionCritical alert |
+| `mcbot_eventbus_events_dropped_total` | Counter | -- | Delta 방식 — 내부 카운터 vs 이전 스냅샷 차이분만 반영. 드롭 대상(DROPPABLE): BAR, HEARTBEAT, RISK_ALERT, REGIME_CHANGE. 비드롭(SIGNAL, FILL, ORDER_*, CB 등)은 큐 여유까지 blocking |
+| `mcbot_eventbus_handler_errors_total` | Counter | -- | Delta 방식. handler 내 exception 시 증가. 에러 격리: 한 handler 실패해도 나머지 계속 실행 |
+| `mcbot_last_bar_age_seconds` | Gauge | symbol | 마지막 bar 수신 후 경과 시간. BarEvent(1m+target TF) handler에서 0 리셋, `update_bar_ages()`에서 30초 주기 갱신. `time.monotonic()` 기반. Layer 6 교차 기재 — WS 데이터 파이프라인 종단 건강 지표 |
+| `mcbot_circuit_breaker` | Counter | -- | CircuitBreakerEvent 수신 시 1 증가. 트리거: RiskManager (drawdown >= system_stop_loss). OMS가 전량 청산 실행. reason 필드는 metric 미노출 (JSONL audit log 확인) |
+| `mcbot_risk_alerts` | Counter | level | level: WARNING \| CRITICAL. 발행 소스: RiskManager, ProcessMonitor (loop lag/RSS/FD), MetricsExporter (slippage/latency), Anomaly Detectors. source label 미노출 → audit log에서 확인 |
+
+**운영 주의사항:**
+
+- **Delta 방식 counter 갱신 주기**: EventBus 내부 카운터(events_dropped, handler_errors)는
+  30초 주기로 Prometheus counter에 delta 반영. 30초 미만의 burst는 다음 갱신 주기에 일괄 반영됨
+- **Backpressure 정책**: `DROPPABLE_EVENTS`(BAR, HEARTBEAT, RISK_ALERT, REGIME_CHANGE)는
+  큐 가득 시 즉시 드롭. `NEVER_DROP`(SIGNAL, FILL, ORDER_REQUEST, ORDER_ACK, ORDER_REJECTED,
+  CIRCUIT_BREAKER 등)은 큐 여유 생길 때까지 blocking. DROPPABLE 이벤트 드롭은 데이터 지연을
+  의미하지만 거래 체인은 보호됨
+- **Circuit Breaker 재발동 방지**: RiskManager 내부 `_circuit_breaker_triggered=True` 플래그로
+  동일 세션에서 CB 중복 발동 방지. 재시작 시 리셋
+- **risk_alerts source 추적**: `mcbot_risk_alerts` counter는 level label만 노출. 발행 소스
+  (RiskManager, ProcessMonitor, MetricsExporter, Anomaly Detectors)는 JSONL audit log의
+  `source` 필드에서 확인 가능
+- **미노출 EventBus 내부 메트릭**: `events_published`, `events_dispatched`, `max_queue_depth`는
+  EventBusMetrics에 내부 추적되지만 Prometheus로 미노출. `bus.metrics.snapshot()` 또는
+  shutdown 로그에서 확인 가능
+
+<!-- 향후 추가 검토 메트릭:
+- `mcbot_eventbus_events_published_total`: 처리량(throughput) 측정. published vs dispatched 비교로 backpressure 정량화
+- `mcbot_eventbus_max_queue_depth`: 갱신 주기(30초) 사이 peak depth. EventBusMetrics에 이미 내부 추적됨
+- `mcbot_pending_orders_count`: MetricsExporter._pending_orders dict 크기. fill 누락/executor hung 감지
+-->
 
 ### Layer 5: Per-Strategy
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_strategy_pnl_usdt` | Gauge | strategy | 전략별 PnL (USDT) |
-| `mcbot_strategy_signals_total` | Counter | strategy, side | 전략별 시그널 수 |
-| `mcbot_strategy_fills_total` | Counter | strategy, side | 전략별 체결 수 |
-| `mcbot_strategy_fees_usdt_total` | Counter | strategy | 전략별 수수료 (USDT) |
+| `mcbot_strategy_pnl_usdt` | Gauge | strategy | 전략별 누적 realized PnL (USDT). Fill 체결 시 `realized_pnl_delta` 귀속. 봇 재시작 시 0 리셋 |
+| `mcbot_strategy_signals_total` | Counter | strategy, side | 전략별 시그널 수. side: LONG/SHORT/NEUTRAL |
+| `mcbot_strategy_fills_total` | Counter | strategy, side | 전략별 체결 수. `_PendingOrder` 매칭된 fill만 카운트 |
+| `mcbot_strategy_fees_usdt_total` | Counter | strategy | 전략별 누적 수수료 (USDT). fee > 0인 fill만 |
+| `mcbot_strategy_slippage_bps` | Histogram | strategy, symbol, side | 전략별 슬리피지 (basis points). Buckets: 0,1,2,5,10,20,50,100. 카디널리티 ~320 (10전략 × 16심볼 × 2방향) |
+| `mcbot_strategy_realized_profit_usdt_total` | Counter | strategy | 전략별 누적 실현 수익 (USDT) |
+| `mcbot_strategy_realized_loss_usdt_total` | Counter | strategy | 전략별 누적 실현 손실 (USDT) |
+| `mcbot_strategy_trade_count_total` | Counter | strategy | 전략별 완료 거래 수 (realized PnL 발생 fill만) |
+
+**운영 주의사항:**
+
+- **Strategy Name 추출 메커니즘**: `client_order_id = "{strategy}-{symbol_slug}-{counter}"` →
+  `rsplit("-", 2)` 파싱. 하이픈 포함 전략명(예: `anchor-mom`) 정상 처리
+- **`_PendingOrder` 매칭 한계**: `_pending_orders`에서 `client_order_id`로 매칭 실패 시
+  per-strategy 카운터 미반영 (symbol-level 카운터만 증가). SL/TS 직접 체결은 PM이
+  별도 client_order_id 발급하므로 정상 추적
+- **PnL 귀속 방식**: `_last_fill_strategy[symbol]`로 최근 fill의 전략을 추적,
+  PositionUpdateEvent의 `realized_pnl_delta`를 해당 전략에 귀속.
+  단일전략 모드에서는 정확, 멀티전략 동일심볼 시 마지막 fill 전략에 귀속됨
+- **카디널리티 경고**: `strategy_slippage_bps`는 3-label
+  (strategy × symbol × side) → 10전략 × 16심볼 × 2방향 = 320 시계열.
+  전략 수 20 초과 시 Prometheus 메모리 주의
+- **Gauge 리셋**: `strategy_pnl_usdt`는 봇 재시작 시 0부터 시작 (persistent state 아님)
 
 ### Layer 6: WebSocket
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `mcbot_ws_reconnects_total` | Counter | symbol | WS 재연결 횟수 |
-| `mcbot_ws_last_message_age_seconds` | Gauge | symbol | 마지막 메시지 후 경과 시간 |
-| `mcbot_ws_messages_received_total` | Counter | symbol | 수신 메시지 수 |
-| `mcbot_last_bar_age_seconds` | Gauge | symbol | 마지막 bar 수신 후 경과 시간 |
+| `mcbot_exchange_ws_connected` | Gauge | symbol | WS 연결 상태 (1=connected, 0=disconnected). `on_ws_status()` 콜백으로 실시간 갱신. WSDisconnected alert 기준 메트릭. Layer 3 교차 기재 |
+| `mcbot_ws_reconnects_total` | Counter | symbol | 끊김 후 재연결 **성공** 시에만 증가 (끊김 자체는 미카운트). `_stream_symbol()`에서 `was_disconnected=True` 상태의 재연결 시 `on_ws_reconnect()` 콜백 경유 |
+| `mcbot_ws_last_message_age_seconds` | Gauge | symbol | 마지막 WS 메시지 후 경과 시간. `time.monotonic()` 기반 (NTP 변경 무관). `PrometheusWsDetailCallback.update_message_ages()`에서 **30초 주기** 갱신 — 실시간이 아닌 snapshot. WSNoMessages(60초) alert 기준 메트릭 |
+| `mcbot_ws_messages_received_total` | Counter | symbol | `watch_ohlcv()` 반환마다 1 증가. `on_ws_message()` 콜백 경유. `rate()` 쿼리로 심볼별 throughput 추적 가능. 급감 시 시그널 생성 지연의 선행 지표 |
+| `mcbot_last_bar_age_seconds` | Gauge | symbol | BarEvent(1m+target TF) handler에서 0 리셋. `update_bar_ages()`에서 30초 주기 갱신. `time.monotonic()` 기반. Layer 4(Bot Health) 정의, WS 파이프라인 종단 지표로 교차 기재 |
+
+**운영 주의사항:**
+
+- **gauge 갱신 주기와 alert 정확성**: `ws_last_message_age_seconds`, `last_bar_age_seconds`
+  모두 `_periodic_metrics_update()` 30초 주기 갱신. WSNoMessages(60초 threshold + 1분 for)
+  alert 실제 감지까지 최대 ~90초 지연 가능
+- **monotonic 시계**: 두 age gauge 모두 `time.monotonic()` 기반. NTP 시계 변경에 무관하게
+  정확한 경과 시간 측정
+- **이중 staleness 감지**: LiveDataFeed 내부 `_staleness_monitor()`(120초 timeout) →
+  RiskAlertEvent → Discord 알림 vs Prometheus `ws_last_message_age_seconds`(60초) +
+  WSNoMessages alert → Alertmanager. 두 경로가 독립 동작하여 이중 방어
+- **이중 heartbeat 추적**: `_last_received`(LiveDataFeed 내부 staleness용) +
+  `_last_message_time`(PrometheusWsDetailCallback Prometheus용) 별도 추적.
+  `_stream_symbol()`에서 `_record_heartbeat()` + `on_ws_message()` 동시 호출로 갱신
+- **Reconnection 파라미터**: 초기 `_INITIAL_RECONNECT_DELAY=1.0`초 → 최대
+  `_MAX_RECONNECT_DELAY=60.0`초 exponential backoff. `_MAX_CONSECUTIVE_FAILURES=10`
+  도달 시 CRITICAL RiskAlertEvent 발행. 성공 시 delay 즉시 리셋
+- **Stagger delay**: 심볼당 0.5초 offset (`stagger_delay=i * 0.5`). 16심볼 기준 최종
+  연결까지 7.5초. Binance WS 동시 연결 에러(1008) 방지 목적
+- **데이터 파이프라인 건강 지표**: `ws_messages_received_total`(입구) →
+  `last_bar_age_seconds`(출구). `rate(ws_messages_received_total[5m])` 급감 시
+  bar 생성 지연 및 시그널 생성 지연의 선행 지표
 
 ### Layer 7: Process & Event Loop
 
@@ -238,6 +326,16 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 | OnchainDataStale | `time() - mcbot_onchain_last_success_timestamp > 172800` | 1h | WARNING |
 | OnchainCacheEmpty | `mcbot_onchain_cache_size == 0` | 30m | WARNING |
 | OnchainFetchSlow | `histogram_quantile(0.95, mcbot_onchain_fetch_latency_seconds) > 60` | 5m | INFO |
+| APIReadFailures | `rate(mcbot_exchange_api_calls_total{endpoint=~"fetch_.*", status="failure"}[5m]) > 0.1` | 2m | WARNING |
+| APILatencyHigh | `histogram_quantile(0.95, mcbot_exchange_api_latency_seconds) > 5` | 2m | WARNING |
+| APIRateLimitApproaching | `sum(rate(mcbot_exchange_api_calls_total[1m])) * 60 > 900` | 1m | WARNING |
+| BotRestarted | `resets(mcbot_uptime_seconds[10m]) > 0` | 0s | WARNING |
+| HeartbeatStale | `time() - mcbot_heartbeat_timestamp > 120` | 1m | CRITICAL |
+| HandlerErrorsHigh | `rate(mcbot_eventbus_handler_errors_total[5m]) > 0.01` | 2m | WARNING |
+| CircuitBreakerTriggered | `increase(mcbot_circuit_breaker_total[5m]) > 0` | 0s | CRITICAL |
+| QueueCongestionCritical | `mcbot_eventbus_queue_depth > 8000` | 30s | CRITICAL |
+| StrategyPnlNegative | `mcbot_strategy_pnl_usdt < -500` | 1h | WARNING |
+| StrategySignalSilent | `rate(mcbot_strategy_signals_total[6h]) == 0` | 1d | WARNING |
 
 ---
 
@@ -269,13 +367,16 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 
 ### APIUnhealthy
 
-**원인**: Binance API 5회 연속 실패.
+**원인**: Binance API 주문 실행(create_order/create_stop_market) 5회 연속 실패.
 **대응**:
 
 1. Binance 상태 페이지 확인
 1. 네트워크 연결 상태 점검
-1. Rate limit 초과 여부 확인 (API 호출률 패널)
+1. Rate limit 초과 여부 확인 (`rate(mcbot_exchange_api_calls_total[1m])` 쿼리)
 1. 자동 복구 대기 (성공 시 카운터 리셋)
+
+**주의**: 이 alert는 주문 실행(write-ops) 연속 실패에만 반응합니다. 읽기 API
+(fetch_positions, fetch_balance 등) 실패는 `APIReadFailures` alert로 별도 모니터링됩니다.
 
 ### EventsDropped
 
@@ -291,9 +392,12 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 **원인**: WebSocket 연결 끊김 (네트워크 문제 또는 거래소 유지보수).
 **대응**:
 
-1. 자동 재연결 대기 (exponential backoff)
+1. 자동 재연결 대기 — exponential backoff (초기 1.0초 → 최대 60.0초)
 1. 2분 이상 지속 시 봇 로그 확인
 1. 전 심볼 동시 끊김이면 네트워크 문제
+1. 연속 실패 10회(`_MAX_CONSECUTIVE_FAILURES`) 도달 시 CRITICAL RiskAlertEvent
+   자동 발행 → Discord 알림 확인
+1. CRITICAL 이후에도 복구 안 되면 프로세스 재시작 검토 (포지션 안전 확인 후)
 
 ### HighSlippage
 
@@ -339,6 +443,8 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 1. 네트워크 안정성 점검
 1. 거래소 유지보수 공지 확인
 1. 단일 심볼만이면 해당 마켓 이슈
+1. 전 심볼 동시 재연결은 네트워크 장애 증거 — stagger delay(0.5초/심볼)로
+   정상 시 재연결이 분산되므로, 동시 발생은 외부 요인 확실
 
 ### WSNoMessages
 
@@ -347,7 +453,12 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 
 1. WS 연결 상태 확인 (`mcbot_exchange_ws_connected`)
 1. 거래소 API 상태 확인
+1. `rate(mcbot_ws_messages_received_total[5m])` 쿼리로 메시지 수신률 추이 확인
 1. 데이터 피드 재시작 검토
+
+**참고**: `ws_last_message_age_seconds` gauge는 30초 주기 갱신이므로 threshold 60초 +
+for 1분 조건에서 실제 감지까지 60~90초 소요 가능. LiveDataFeed 내부
+`_staleness_monitor()`(120초)가 별도 이중 감지 → CRITICAL 시 RiskAlertEvent → Discord
 
 ### DistributionDrift
 
@@ -395,6 +506,104 @@ RANSAC regression + conformal prediction으로 구조적 성과 쇠퇴를 감지
 1. Silver 데이터 미존재 시 batch 수집 실행
 1. LiveOnchainFeed 로그 확인
 
+### APIReadFailures
+
+**원인**: 읽기 API(fetch_positions, fetch_balance 등) 실패율 0.1/s 초과 (2분 지속).
+**대응**:
+
+1. Binance 상태 페이지 확인
+1. 네트워크 연결 상태 점검
+1. `rate(mcbot_exchange_api_calls_total{endpoint=~"fetch_.*"}[5m])` 쿼리로 endpoint별 실패율 확인
+1. 포지션 동기화 지연 여부 확인 (PositionReconciler drift)
+
+### APILatencyHigh
+
+**원인**: API P95 지연시간 5초 초과 (2분 지속). retry backoff 시간 포함.
+**대응**:
+
+1. Binance API 상태 확인
+1. 네트워크 latency 점검 (ping, traceroute)
+1. Exchange Health 대시보드에서 endpoint별 지연시간 분포 확인
+1. retry 빈도 확인 — latency 급증은 retry backoff 포함 가능성
+
+### APIRateLimitApproaching
+
+**원인**: API 호출률이 900 req/min 초과 (Binance 한도 1200의 75%).
+**대응**:
+
+1. Exchange Health 대시보드에서 endpoint별 호출률 확인
+1. 불필요한 fetch 호출 빈도 감소 검토
+1. 심볼 수 과다 여부 확인 (16 심볼 × 30초 polling = 32 req/min 기준)
+1. 한도 초과 시 IP 밴 위험 — 즉시 대응 필요
+
+### BotRestarted
+
+**원인**: `mcbot_uptime_seconds` gauge가 리셋됨 (OOM kill, crash, 수동 재시작).
+**대응**:
+
+1. 시스템 로그에서 OOM kill 여부 확인 (`dmesg`, `journalctl`)
+1. 봇 로그에서 crash traceback 확인
+1. 자동 재시작(systemd 등) 동작 확인
+1. 반복 발생 시 메모리 제한 조정 또는 원인 디버깅
+
+### HeartbeatStale
+
+**원인**: 120초 이상 HeartbeatEvent 미수신. Event loop hung 또는 프로세스 unresponsive.
+**대응**:
+
+1. 프로세스 상태 확인 (`ps`, CPU 사용률)
+1. `HighEventLoopLag` alert 동시 발생 여부 확인
+1. Blocking I/O 또는 deadlock 가능성 점검
+1. 프로세스 재시작 검토 (포지션 안전 확인 후)
+
+### HandlerErrorsHigh
+
+**원인**: EventBus handler 에러율 0.01/s 초과 (2분 지속). 이벤트 체인 중단 위험.
+**대응**:
+
+1. 봇 로그에서 "Handler error" 로그 확인 (handler 이름 + event_type 포함)
+1. 특정 이벤트 타입에 집중되는지 확인
+1. 외부 의존성(API, DB) 장애 여부 점검
+1. handler 코드 버그 시 핫픽스 배포
+
+### CircuitBreakerTriggered
+
+**원인**: RiskManager가 system_stop_loss 임계값 도달로 전량 청산 실행.
+**대응**:
+
+1. **즉시 확인**: 거래소에서 포지션 상태 확인 (전량 청산 완료 여부)
+1. Grafana에서 drawdown 추이 확인 (급락 원인 분석)
+1. 시장 전체 급락인지 전략 문제인지 판단
+1. 봇 재시작 전 원인 분석 완료 필수 (CB는 세션당 1회만 발동)
+
+### QueueCongestionCritical
+
+**원인**: EventBus 큐 80% 이상 사용 (8,000/10,000). 이벤트 드롭 임박.
+**대응**:
+
+1. `QueueCongestion` (5,000 WARNING)에서 이미 경고되었는지 확인
+1. handler 처리 지연 원인 점검 (CPU, 외부 API 지연)
+1. DROPPABLE 이벤트 드롭 발생 여부 확인 (`EventsDropped` alert)
+1. 큐 크기 설정 증가 또는 handler 최적화 검토
+
+### StrategyPnlNegative
+
+**원인**: 특정 전략 누적 realized PnL이 -$500 이하 (1시간 지속).
+**대응**:
+
+1. 전략별 PnL 추이 확인 (Strategy Performance 대시보드)
+1. 시장 환경 변화 vs 전략 결함 판단
+1. Orchestrator probation/retired 전환 검토
+
+### StrategySignalSilent
+
+**원인**: 24시간 시그널 미발생.
+**대응**:
+
+1. 데이터 피드 정상 여부 확인 (`mcbot_last_bar_age_seconds`)
+1. bar 수신 여부 확인 (`mcbot_bars_total` rate)
+1. 전략 로직 데드락 점검 (handler errors 확인)
+
 ---
 
 ## Infrastructure
@@ -414,7 +623,7 @@ docker-compose.yaml
 ```
 monitoring/
 ├── prometheus.yml                   Scrape 설정 (10s/15s)
-├── alerts.yml                       17개 Alert Rule
+├── alerts.yml                       27개 Alert Rule
 ├── Dockerfile.prometheus
 ├── Dockerfile.grafana
 └── grafana/

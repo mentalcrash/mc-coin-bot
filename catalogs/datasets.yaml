@@ -756,6 +756,7 @@ datasets:
     storage_path: "data/silver/macro/fred/m2.parquet"
     columns: [value]
     fetch_key: m2
+    lag_days: 14
     strategy_hints:
       - "M2 증가 → 유동성 확대, 자산가격 상승 선행"
       - "M2 YoY 변화율 → 매크로 regime indicator"

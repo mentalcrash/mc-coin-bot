@@ -56,7 +56,7 @@ uptime_gauge = Gauge("mcbot_uptime_seconds", "Bot uptime in seconds")
 
 # Layer 2: Position & PnL — 신규
 position_notional_gauge = Gauge(
-    "mcbot_position_notional_usdt", "Position notional value", ["symbol"]
+    "mcbot_position_notional_usdt", "Position notional value (mark-to-market)", ["symbol"]
 )
 unrealized_pnl_gauge = Gauge("mcbot_unrealized_pnl_usdt", "Unrealized PnL", ["symbol"])
 realized_profit_counter = Counter(
@@ -91,9 +91,15 @@ order_latency_histogram = Histogram(
 )
 slippage_histogram = Histogram(
     "mcbot_slippage_bps",
-    "Slippage in basis points",
+    "Slippage in basis points (unsigned)",
     ["symbol", "side"],
     buckets=(0, 1, 2, 5, 10, 20, 50, 100),
+)
+slippage_signed_histogram = Histogram(
+    "mcbot_slippage_signed_bps",
+    "Signed slippage in basis points (positive=adverse, negative=favorable)",
+    ["symbol", "side"],
+    buckets=(-100, -50, -20, -10, -5, 0, 5, 10, 20, 50, 100),
 )
 order_rejected_counter = Counter(
     "mcbot_order_rejected_total",
@@ -234,7 +240,7 @@ class ApiMetricsCallback(Protocol):
         Args:
             endpoint: API endpoint 이름 (예: "create_order")
             duration: 호출 소요 시간 (초)
-            status: "success" | "retry" | "failure"
+            status: "success" | "failure"
         """
         ...
 
@@ -367,14 +373,90 @@ class PrometheusWsDetailCallback:
 
 
 # ==========================================================================
+# Layer 1: LiveExecutor-only Counters
+# ==========================================================================
+live_min_notional_skip_counter = Counter(
+    "mcbot_live_min_notional_skip_total",
+    "Orders skipped due to MIN_NOTIONAL check",
+    ["symbol"],
+)
+live_api_blocked_counter = Counter(
+    "mcbot_live_api_blocked_total",
+    "Orders blocked due to unhealthy API",
+    ["symbol"],
+)
+live_partial_fill_counter = Counter(
+    "mcbot_live_partial_fill_total",
+    "Partial fill occurrences",
+    ["symbol"],
+)
+live_fill_parse_failure_counter = Counter(
+    "mcbot_live_fill_parse_failure_total",
+    "Fill parsing failures",
+    ["symbol"],
+)
+
+
+# ==========================================================================
+# LiveExecutorMetrics — LiveExecutor 계측 Protocol
+# ==========================================================================
+@runtime_checkable
+class LiveExecutorMetrics(Protocol):
+    """LiveExecutor 내부 이벤트 메트릭 콜백 Protocol.
+
+    LiveExecutor에 주입하여 관심사 분리.
+    """
+
+    def on_min_notional_skip(self, symbol: str) -> None:
+        """MIN_NOTIONAL 미달로 주문 스킵."""
+        ...
+
+    def on_api_blocked(self, symbol: str) -> None:
+        """API 건강 상태 불량으로 주문 차단."""
+        ...
+
+    def on_partial_fill(self, symbol: str) -> None:
+        """Partial fill 발생."""
+        ...
+
+    def on_fill_parse_failure(self, symbol: str) -> None:
+        """Fill 응답 파싱 실패."""
+        ...
+
+
+class PrometheusLiveExecutorMetrics:
+    """Prometheus 기반 LiveExecutor 메트릭 콜백 구현."""
+
+    def on_min_notional_skip(self, symbol: str) -> None:
+        """MIN_NOTIONAL 스킵 → counter 증가."""
+        live_min_notional_skip_counter.labels(symbol=symbol).inc()
+
+    def on_api_blocked(self, symbol: str) -> None:
+        """API 차단 → counter 증가."""
+        live_api_blocked_counter.labels(symbol=symbol).inc()
+
+    def on_partial_fill(self, symbol: str) -> None:
+        """Partial fill → counter 증가."""
+        live_partial_fill_counter.labels(symbol=symbol).inc()
+
+    def on_fill_parse_failure(self, symbol: str) -> None:
+        """Fill parse 실패 → counter 증가."""
+        live_fill_parse_failure_counter.labels(symbol=symbol).inc()
+
+
+# ==========================================================================
 # Rejection reason 분류
 # ==========================================================================
 _REJECTION_REASON_MAP: dict[str, str] = {
     "leverage": "leverage_exceeded",
+    "aggregate leverage": "leverage_exceeded",
     "max_positions": "max_positions",
+    "positions reached": "max_positions",
     "order_size": "order_size_exceeded",
+    "order size": "order_size_exceeded",
     "circuit_breaker": "circuit_breaker",
     "circuit breaker": "circuit_breaker",
+    "duplicate": "duplicate",
 }
 
 
@@ -409,6 +491,30 @@ def _calculate_slippage_bps(expected_price: float, fill_price: float) -> float:
     return abs(fill_price - expected_price) / expected_price * 10000
 
 
+def _calculate_signed_slippage_bps(
+    expected_price: float, fill_price: float, side: str
+) -> float:
+    """방향성 슬리피지 계산 (양수=불리, 음수=유리).
+
+    BUY: fill이 expected보다 높으면 불리(양수)
+    SELL: fill이 expected보다 낮으면 불리(양수)
+
+    Args:
+        expected_price: 기준가 (bar close 또는 limit price)
+        fill_price: 실제 체결가
+        side: "BUY" 또는 "SELL"
+
+    Returns:
+        방향성 슬리피지 (basis points). 기대가 0이면 0.0
+    """
+    if expected_price <= 0:
+        return 0.0
+    raw_bps = (fill_price - expected_price) / expected_price * 10000
+    if side == "BUY":
+        return raw_bps  # 높게 사면 불리(양수)
+    return -raw_bps  # 낮게 팔면 불리(양수)
+
+
 # ==========================================================================
 # MetricsExporter
 # ==========================================================================
@@ -440,7 +546,7 @@ ransac_decay_detected_gauge = Gauge(
     "mcbot_ransac_decay_detected", "RANSAC structural decay detected (0 or 1)", ["strategy"]
 )
 
-strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy PnL", ["strategy"])
+strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy realized PnL", ["strategy"])
 strategy_signals_counter = Counter(
     "mcbot_strategy_signals_total", "Signals by strategy", ["strategy", "side"]
 )
@@ -448,6 +554,27 @@ strategy_fills_counter = Counter(
     "mcbot_strategy_fills_total", "Fills by strategy", ["strategy", "side"]
 )
 strategy_fees_counter = Counter("mcbot_strategy_fees_usdt_total", "Fees by strategy", ["strategy"])
+strategy_slippage_histogram = Histogram(
+    "mcbot_strategy_slippage_bps",
+    "Per-strategy slippage in basis points",
+    ["strategy", "symbol", "side"],
+    buckets=(0, 1, 2, 5, 10, 20, 50, 100),
+)
+strategy_realized_profit_counter = Counter(
+    "mcbot_strategy_realized_profit_usdt_total",
+    "Cumulative realized profit by strategy",
+    ["strategy"],
+)
+strategy_realized_loss_counter = Counter(
+    "mcbot_strategy_realized_loss_usdt_total",
+    "Cumulative realized loss by strategy",
+    ["strategy"],
+)
+strategy_trade_count_counter = Counter(
+    "mcbot_strategy_trade_count_total",
+    "Closed trades by strategy",
+    ["strategy"],
+)
 
 
 def _extract_strategy(client_order_id: str) -> str:
@@ -492,6 +619,8 @@ class MetricsExporter:
         self._pending_orders: dict[str, _PendingOrder] = {}
         self._last_bar_close: dict[str, float] = {}
         self._last_bar_time: dict[str, float] = {}  # symbol → monotonic timestamp
+        self._last_fill_strategy: dict[str, str] = {}  # symbol → strategy_name (최근 fill)
+        self._strategy_cumulative_pnl: dict[str, float] = {}  # strategy → 누적 realized PnL
         self._eventbus_snapshot = _EventBusSnapshot()
         self._bus: EventBus | None = None
         self._anomaly_detector = ExecutionAnomalyDetector()
@@ -570,11 +699,14 @@ class MetricsExporter:
     # Event handlers
     # ------------------------------------------------------------------
     async def _on_balance(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent → equity/cash/margin gauges."""
+        """BalanceUpdateEvent → equity/cash/margin/drawdown/positions/leverage gauges."""
         assert isinstance(event, BalanceUpdateEvent)
         equity_gauge.set(event.total_equity)
         cash_gauge.set(event.available_cash)
         margin_used_gauge.set(event.total_margin_used)
+        drawdown_gauge.set(event.drawdown_pct * 100)  # 0-1 → 0-100% scale
+        position_count_gauge.set(event.open_position_count)
+        aggregate_leverage_gauge.set(event.aggregate_leverage)
 
     async def _on_fill(self, event: AnyEvent) -> None:
         """FillEvent → fills counter + latency + slippage + fees + execution quality alerts."""
@@ -609,6 +741,20 @@ class MetricsExporter:
                 bps = _calculate_slippage_bps(expected, event.fill_price)
                 slippage_histogram.labels(symbol=event.symbol, side=event.side).observe(bps)
 
+                signed_bps = _calculate_signed_slippage_bps(
+                    expected, event.fill_price, event.side
+                )
+                slippage_signed_histogram.labels(
+                    symbol=event.symbol, side=event.side
+                ).observe(signed_bps)
+
+                # Per-strategy slippage
+                strategy_slippage_histogram.labels(
+                    strategy=pending.strategy_name,
+                    symbol=event.symbol,
+                    side=event.side,
+                ).observe(bps)
+
                 # Slippage alert
                 await self._check_slippage_alert(bps, event.symbol)
 
@@ -616,6 +762,9 @@ class MetricsExporter:
             strategy_fills_counter.labels(strategy=pending.strategy_name, side=event.side).inc()
             if event.fee > 0:
                 strategy_fees_counter.labels(strategy=pending.strategy_name).inc(event.fee)
+
+            # Cache strategy for PnL attribution in _on_position()
+            self._last_fill_strategy[event.symbol] = pending.strategy_name
 
             # Execution anomaly detection
             bps_for_anomaly = (
@@ -654,18 +803,40 @@ class MetricsExporter:
         risk_alerts_counter.labels(level=event.alert_level).inc()
 
     async def _on_position(self, event: AnyEvent) -> None:
-        """PositionUpdateEvent → position gauges + notional + unrealized PnL."""
+        """PositionUpdateEvent → position gauges + MTM notional + delta PnL."""
         assert isinstance(event, PositionUpdateEvent)
         position_size_gauge.labels(symbol=event.symbol).set(event.size)
-        notional = abs(event.size * event.avg_entry_price)
+
+        # MTM notional (fallback to entry price for backward compat)
+        price = event.last_price if event.last_price > 0 else event.avg_entry_price
+        notional = abs(event.size * price)
         position_notional_gauge.labels(symbol=event.symbol).set(notional)
         unrealized_pnl_gauge.labels(symbol=event.symbol).set(event.unrealized_pnl)
 
-        # 실현 손익: profit/loss 분리 (Counter는 단조 증가만 가능)
-        if event.realized_pnl > 0:
-            realized_profit_counter.labels(symbol=event.symbol).inc(event.realized_pnl)
-        elif event.realized_pnl < 0:
-            realized_loss_counter.labels(symbol=event.symbol).inc(abs(event.realized_pnl))
+        # Delta-based counter increment (이중 계산 방지)
+        delta = event.realized_pnl_delta
+        if delta > 0:
+            realized_profit_counter.labels(symbol=event.symbol).inc(delta)
+        elif delta < 0:
+            realized_loss_counter.labels(symbol=event.symbol).inc(abs(delta))
+
+        # Per-strategy PnL attribution via _last_fill_strategy cache
+        if delta != 0:
+            strategy = self._last_fill_strategy.get(event.symbol)
+            if strategy is not None:
+                # Cumulative PnL gauge
+                cumulative = self._strategy_cumulative_pnl.get(strategy, 0.0) + delta
+                self._strategy_cumulative_pnl[strategy] = cumulative
+                strategy_pnl_gauge.labels(strategy=strategy).set(cumulative)
+
+                # Profit/Loss split counters
+                if delta > 0:
+                    strategy_realized_profit_counter.labels(strategy=strategy).inc(delta)
+                else:
+                    strategy_realized_loss_counter.labels(strategy=strategy).inc(abs(delta))
+
+                # Trade count (realized PnL 발생 = round-trip 완료)
+                strategy_trade_count_counter.labels(strategy=strategy).inc()
 
     async def _on_order_request(self, event: AnyEvent) -> None:
         """OrderRequestEvent → pending 등록 + 기준가 저장."""

@@ -216,7 +216,7 @@ class EventBus:
         for handler in handlers:
             try:
                 await handler(event)
-            except Exception:
+            except Exception as exc:
                 self.metrics.handler_errors += 1
                 logger.exception(
                     "Handler error: handler={} event_type={} event_id={}",
@@ -224,6 +224,15 @@ class EventBus:
                     event_type,
                     event.event_id,
                 )
+                # Prometheus errors_counter (lazy import — core → monitoring 의존 방지)
+                try:
+                    from src.monitoring.metrics import errors_counter
+
+                    errors_counter.labels(
+                        component="EventBus", error_type=type(exc).__name__
+                    ).inc()
+                except Exception:  # noqa: S110
+                    pass
 
         self.metrics.events_dispatched += 1
 

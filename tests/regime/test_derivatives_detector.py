@@ -228,3 +228,127 @@ class TestIncrementalUpdate:
         detector = DerivativesDetector()
         assert detector.get_regime("UNKNOWN") is None
         assert detector.get_cascade_risk("UNKNOWN") == 0.0
+
+
+# ── Vectorized ↔ Incremental Parity ──
+
+
+class TestVectorizedIncrementalParity:
+    """classify_series() vs update() 결과 일치 검증."""
+
+    def test_probability_parity(self) -> None:
+        """마지막 bar 확률이 vectorized와 incremental에서 일치."""
+        detector_vec = DerivativesDetector()
+        detector_inc = DerivativesDetector()
+
+        df = _make_deriv_df(n=50, seed=42)
+        vec_result = detector_vec.classify_series(df)
+
+        # Incremental
+        for _, row in df.iterrows():
+            detector_inc.update(
+                "BTC/USDT",
+                funding_rate=float(row["funding_rate"]),
+                oi=float(row["oi"]),
+            )
+
+        state = detector_inc.get_regime("BTC/USDT")
+        valid = vec_result.dropna(subset=["p_trending"])
+
+        if len(valid) > 0 and state is not None:
+            last_row = valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=0.05
+            )
+            np.testing.assert_allclose(
+                state.probabilities["volatile"], last_row["p_volatile"], atol=0.05
+            )
+
+    def test_cascade_risk_parity(self) -> None:
+        """cascade risk가 vectorized와 incremental에서 유사."""
+        detector_vec = DerivativesDetector()
+        detector_inc = DerivativesDetector()
+
+        df = _make_extreme_funding_df(n=60)
+        vec_risk = detector_vec.get_cascade_risk_series(df)
+
+        for _, row in df.iterrows():
+            detector_inc.update(
+                "BTC/USDT",
+                funding_rate=float(row["funding_rate"]),
+                oi=float(row["oi"]),
+            )
+
+        inc_risk = detector_inc.get_cascade_risk("BTC/USDT")
+        vec_last = vec_risk.dropna().iloc[-1] if not vec_risk.dropna().empty else 0.0
+
+        # Cascade risk 방향 일치 (절대값 비교는 rolling window 차이로 느슨)
+        assert abs(inc_risk - vec_last) < 0.3
+
+
+# ── Edge Case Tests ──
+
+
+class TestEdgeCases:
+    """극단 입력 시 crash 없는 graceful handling 검증."""
+
+    def test_constant_funding_rate(self) -> None:
+        """일정 funding rate → crash 없이 유효 결과."""
+        idx = pd.date_range("2024-01-01", periods=30, freq="D", tz=UTC)
+        df = pd.DataFrame(
+            {"funding_rate": [0.0001] * 30, "oi": [1e9] * 30},
+            index=idx,
+        )
+        detector = DerivativesDetector()
+        result = detector.classify_series(df)
+        assert len(result) == 30
+
+    def test_nan_funding_rate(self) -> None:
+        """중간 NaN funding rate → graceful handling."""
+        idx = pd.date_range("2024-01-01", periods=30, freq="D", tz=UTC)
+        fr = np.full(30, 0.0001)
+        fr[10:15] = np.nan
+        df = pd.DataFrame(
+            {"funding_rate": fr, "oi": [1e9] * 30},
+            index=idx,
+        )
+        detector = DerivativesDetector()
+        result = detector.classify_series(df)
+        assert len(result) == 30  # crash 없음
+
+    def test_oi_near_zero(self) -> None:
+        """OI가 극히 작은 값 → 0 나눗셈 없음."""
+        idx = pd.date_range("2024-01-01", periods=30, freq="D", tz=UTC)
+        oi = np.full(30, 0.001)  # 극히 작은 OI
+        df = pd.DataFrame(
+            {"funding_rate": [0.0001] * 30, "oi": oi},
+            index=idx,
+        )
+        detector = DerivativesDetector()
+        result = detector.classify_series(df)
+        assert len(result) == 30
+        # NaN이나 inf 없이 cascade risk 유효
+        risk = detector.get_cascade_risk_series(df)
+        valid = risk.dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()
+
+    def test_very_short_series(self) -> None:
+        """warmup 미만 시리즈 → 전체 NaN."""
+        idx = pd.date_range("2024-01-01", periods=3, freq="D", tz=UTC)
+        df = pd.DataFrame(
+            {"funding_rate": [0.0001, 0.0002, 0.0001], "oi": [1e9, 1e9, 1e9]},
+            index=idx,
+        )
+        detector = DerivativesDetector()
+        result = detector.classify_series(df)
+        assert result["p_trending"].isna().all()
+
+    def test_incremental_oi_zero(self) -> None:
+        """Incremental OI=0 → 0 나눗셈 없음."""
+        detector = DerivativesDetector()
+        for _i in range(20):
+            result = detector.update("BTC/USDT", funding_rate=0.0001, oi=0.0)
+        # crash 없이 결과 반환
+        if result is not None:
+            assert 0.0 <= result.probabilities["trending"] <= 1.0

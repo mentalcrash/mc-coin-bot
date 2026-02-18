@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from src.core.event_bus import EventBus
-from src.core.events import AnyEvent, BarEvent, EventType
+from src.core.events import AnyEvent, BarEvent, EventType, HeartbeatEvent
 from src.eda.analytics import AnalyticsEngine
 from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
@@ -665,6 +665,15 @@ class LiveRunner:
                 exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
+            # Prometheus errors_counter (lazy import)
+            try:
+                from src.monitoring.metrics import errors_counter
+
+                errors_counter.labels(
+                    component="LiveRunner", error_type=type(exc).__name__
+                ).inc()
+            except Exception:  # noqa: S110
+                pass
             await self._send_lifecycle_crash(discord_tasks, exc, pm=pm)
             raise
         finally:
@@ -1653,6 +1662,8 @@ class LiveRunner:
                 ws_detail_callback.update_message_ages()
             if onchain_feed is not None:
                 onchain_feed.update_cache_metrics()
+            # HeartbeatEvent 발행 — MetricsExporter가 heartbeat_timestamp gauge 갱신
+            await bus.publish(HeartbeatEvent(component="LiveRunner"))
 
     @staticmethod
     async def _periodic_reconciliation(

@@ -252,6 +252,8 @@ class PositionUpdateEvent(BaseModel):
     avg_entry_price: float
     unrealized_pnl: float = 0.0
     realized_pnl: float = 0.0
+    realized_pnl_delta: float = 0.0  # 이번 체결의 증분 PnL (누적이 아닌 delta)
+    last_price: float = 0.0  # MTM 가격 (mark-to-market)
 
 
 class BalanceUpdateEvent(BaseModel):
@@ -271,6 +273,9 @@ class BalanceUpdateEvent(BaseModel):
     total_equity: float
     available_cash: float
     total_margin_used: float = 0.0
+    drawdown_pct: float = 0.0  # HWM 대비 낙폭 0.0~1.0
+    open_position_count: int = 0  # 오픈 포지션 수
+    aggregate_leverage: float = 0.0  # 합산 레버리지
 
 
 # ==========================================================================

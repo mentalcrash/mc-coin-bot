@@ -596,15 +596,22 @@ class TestMetaLearnerEnsemble:
         # train_window + fwd_window 이후 결과 존재
         assert len(valid) > 0
 
-    def test_incremental_falls_back(self, detector: EnsembleRegimeDetector) -> None:
-        """incremental update에서 weighted_average 폴백."""
+    def test_incremental_falls_back(self, detector: EnsembleRegimeDetector, caplog: pytest.LogCaptureFixture) -> None:
+        """incremental update에서 weighted_average 폴백 + 로그 검증."""
         result = None
-        for i in range(detector.warmup_periods + 10):
-            result = detector.update("BTC/USDT", 100.0 + i * 0.5)
+        with caplog.at_level("WARNING", logger="src.regime.ensemble"):
+            for i in range(detector.warmup_periods + 10):
+                result = detector.update("BTC/USDT", 100.0 + i * 0.5)
+
+        # 폴백 로그 메시지 검증
+        assert any("falling back to weighted_average" in m for m in caplog.messages)
 
         # 폴백 후에도 결과 반환
         if result is not None:
             assert isinstance(result, RegimeState)
+
+        # meta_model은 incremental에서 학습되지 않음
+        assert detector._meta_model is None
 
 
 # ── Ensemble Hysteresis Pending Label ──
@@ -691,3 +698,164 @@ class TestEnsembleConfidence:
         valid = result["confidence"].dropna()
         assert (valid >= 0.0).all()
         assert (valid <= 1.0).all()
+
+
+# ── Vectorized ↔ Incremental Parity (Ensemble) ──
+
+
+class TestEnsembleVectorizedIncrementalParity:
+    """Ensemble classify_series() vs update() 결과 일치 검증."""
+
+    def test_rule_only_probability_parity(self) -> None:
+        """Rule-only 앙상블에서 마지막 bar 확률 일치."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=1)
+        vec_det = EnsembleRegimeDetector(cfg)
+        inc_det = EnsembleRegimeDetector(cfg)
+
+        closes = _make_trending_series(100)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det.get_regime("TEST")
+        valid = vec_df.dropna()
+        if len(valid) > 0 and state is not None:
+            last_row = valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=1e-6
+            )
+            np.testing.assert_allclose(
+                state.probabilities["ranging"], last_row["p_ranging"], atol=1e-6
+            )
+            np.testing.assert_allclose(
+                state.probabilities["volatile"], last_row["p_volatile"], atol=1e-6
+            )
+
+    def test_rule_vol_label_parity_with_hysteresis(self) -> None:
+        """Rule+Vol 앙상블 min_hold_bars=5 → 마지막 label 일치."""
+        cfg = EnsembleRegimeDetectorConfig(
+            vol_structure=VolStructureDetectorConfig(),
+            weight_rule_based=0.6,
+            weight_vol_structure=0.4,
+            min_hold_bars=5,
+        )
+        vec_det = EnsembleRegimeDetector(cfg)
+        inc_det = EnsembleRegimeDetector(cfg)
+
+        closes = _make_trending_series(150)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det.get_regime("TEST")
+        valid = vec_df.dropna()
+        if len(valid) > 0 and state is not None:
+            last_vec_label = valid.iloc[-1]["regime_label"]
+            assert last_vec_label in (state.label, state.label.value)
+
+    def test_ranging_parity(self) -> None:
+        """횡보 시리즈에서 rule-only parity."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=1)
+        vec_det = EnsembleRegimeDetector(cfg)
+        inc_det = EnsembleRegimeDetector(cfg)
+
+        closes = _make_ranging_series(100)
+        vec_df = vec_det.classify_series(closes)
+
+        for price in closes:
+            inc_det.update("TEST", float(price))
+
+        state = inc_det.get_regime("TEST")
+        valid = vec_df.dropna()
+        if len(valid) > 0 and state is not None:
+            last_row = valid.iloc[-1]
+            np.testing.assert_allclose(
+                state.probabilities["trending"], last_row["p_trending"], atol=1e-6
+            )
+
+
+# ── Graceful Degradation Tests ──
+
+
+class TestGracefulDegradation:
+    """Optional 라이브러리 미설치 시 graceful degradation 동작 검증."""
+
+    def test_hmm_unavailable_falls_back(self, caplog: pytest.LogCaptureFixture) -> None:
+        """HMM config 있어도 라이브러리 미설치 시 경고 후 Rule-only 동작."""
+        import src.regime.ensemble as ens_mod
+
+        original = ens_mod._hmm_detector_available
+        try:
+            ens_mod._hmm_detector_available = False
+            with caplog.at_level("WARNING", logger="src.regime.ensemble"):
+                cfg = EnsembleRegimeDetectorConfig(
+                    hmm=HMMDetectorConfig(),
+                    weight_rule_based=0.6,
+                    weight_hmm=0.4,
+                )
+                det = EnsembleRegimeDetector(cfg)
+
+            # HMM 감지기가 비활성
+            assert det._hmm_detector is None
+            assert any("hmmlearn not available" in m for m in caplog.messages)
+
+            # Rule-only로 정상 동작
+            closes = _make_trending_series(80)
+            result = det.classify_series(closes)
+            valid = result.dropna()
+            assert len(valid) > 0
+        finally:
+            ens_mod._hmm_detector_available = original
+
+    def test_msar_unavailable_falls_back(self, caplog: pytest.LogCaptureFixture) -> None:
+        """MSAR config 있어도 라이브러리 미설치 시 경고 후 Rule-only 동작."""
+        import src.regime.ensemble as ens_mod
+
+        original = ens_mod._msar_detector_available
+        try:
+            ens_mod._msar_detector_available = False
+            with caplog.at_level("WARNING", logger="src.regime.ensemble"):
+                cfg = EnsembleRegimeDetectorConfig(
+                    msar=MSARDetectorConfig(),
+                    weight_rule_based=0.6,
+                    weight_msar=0.4,
+                )
+                det = EnsembleRegimeDetector(cfg)
+
+            assert det._msar_detector is None
+            assert any("statsmodels not available" in m for m in caplog.messages)
+
+            closes = _make_trending_series(80)
+            result = det.classify_series(closes)
+            valid = result.dropna()
+            assert len(valid) > 0
+        finally:
+            ens_mod._msar_detector_available = original
+
+    def test_sklearn_unavailable_falls_back(self, caplog: pytest.LogCaptureFixture) -> None:
+        """sklearn 미설치 시 meta-learner → weighted_average 폴백."""
+        import src.regime.ensemble as ens_mod
+
+        original = ens_mod._sklearn_available
+        original_cls = ens_mod._LogisticRegressionCls
+        try:
+            ens_mod._sklearn_available = False
+            ens_mod._LogisticRegressionCls = None
+            cfg = EnsembleRegimeDetectorConfig(
+                ensemble_method="meta_learner",
+                meta_learner=MetaLearnerConfig(),
+            )
+            det = EnsembleRegimeDetector(cfg)
+
+            closes = _make_trending_series(80)
+            with caplog.at_level("WARNING", logger="src.regime.ensemble"):
+                result = det.classify_series(closes)
+
+            assert any("sklearn not available" in m for m in caplog.messages)
+            valid = result.dropna()
+            assert len(valid) > 0
+        finally:
+            ens_mod._sklearn_available = original
+            ens_mod._LogisticRegressionCls = original_cls

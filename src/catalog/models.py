@@ -84,6 +84,7 @@ class DatasetEntry(BaseModel):
     enrichment: EnrichmentConfig | None = Field(default=None, description="OHLCV Enrichment 설정")
     silver_resample: str = Field(default="", description="Silver 리샘플 주기")
     history_limit_days: int = Field(default=0, description="API 히스토리 제한 (일)")
+    lag_days: int | None = Field(default=None, description="Dataset-level publication lag override (일)")
 
 
 class DataCatalog(BaseModel):

@@ -310,3 +310,47 @@ class TestHMMSlidingWindow:
         # 수렴 실패 가능 → None이어도 크래시 없이 종료
         if result is not None:
             assert result.label in list(RegimeLabel)
+
+
+# ── Convergence Tracking Tests ──
+
+
+@pytest.mark.skipif(not HMM_AVAILABLE, reason="hmmlearn not installed")
+class TestConvergenceTracking:
+    """HMMDetector convergence tracking 검증."""
+
+    def test_convergence_rate_initial(self) -> None:
+        """학습 전 convergence_rate = 1.0."""
+        cfg = HMMDetectorConfig(min_train_window=120, n_iter=50)
+        detector = HMMDetector(cfg)
+        assert detector.convergence_rate == 1.0
+        assert detector._fit_attempts == 0
+        assert detector._fit_failures == 0
+
+    def test_convergence_rate_after_training(self) -> None:
+        """학습 후 convergence_rate가 0~1 범위."""
+        cfg = HMMDetectorConfig(
+            min_train_window=120,
+            retrain_interval=50,
+            n_iter=50,
+        )
+        detector = HMMDetector(cfg)
+        closes = _make_trending_series(300)
+        detector.classify_series(closes)
+
+        assert detector._fit_attempts > 0
+        assert 0.0 <= detector.convergence_rate <= 1.0
+
+    def test_convergence_counts_incremental(self) -> None:
+        """incremental에서도 fit_attempts 카운트."""
+        cfg = HMMDetectorConfig(
+            min_train_window=120,
+            retrain_interval=50,
+            n_iter=50,
+        )
+        detector = HMMDetector(cfg)
+
+        for i in range(cfg.min_train_window + 60):
+            detector.update("BTC/USDT", 100.0 + i * 0.5)
+
+        assert detector._fit_attempts > 0

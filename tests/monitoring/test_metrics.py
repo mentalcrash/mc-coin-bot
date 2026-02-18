@@ -25,10 +25,13 @@ from src.core.events import (
 )
 from src.models.types import Direction
 from src.monitoring.metrics import (
+    LiveExecutorMetrics,
     MetricsExporter,
     PrometheusApiCallback,
+    PrometheusLiveExecutorMetrics,
     PrometheusWsCallback,
     PrometheusWsDetailCallback,
+    _calculate_signed_slippage_bps,
     _calculate_slippage_bps,
     _categorize_reason,
     _extract_strategy,
@@ -215,6 +218,7 @@ class TestPositionUpdateEvent:
         assert val == 5.0
 
     async def test_position_notional_gauge(self) -> None:
+        """last_price 기반 MTM notional 확인."""
         exporter = MetricsExporter(port=0)
         event = PositionUpdateEvent(
             symbol="BTC/USDT",
@@ -222,11 +226,12 @@ class TestPositionUpdateEvent:
             size=0.5,
             avg_entry_price=60000.0,
             unrealized_pnl=500.0,
+            last_price=62000.0,
         )
         await _run_with_bus(exporter, [event])
 
         notional = _sample("mcbot_position_notional_usdt", {"symbol": "BTC/USDT"})
-        assert notional == 30000.0  # 0.5 * 60000
+        assert notional == 31000.0  # 0.5 * 62000 (MTM)
 
     async def test_unrealized_pnl_gauge(self) -> None:
         exporter = MetricsExporter(port=0)
@@ -243,6 +248,7 @@ class TestPositionUpdateEvent:
         assert pnl == -150.0
 
     async def test_realized_profit_counter(self) -> None:
+        """realized_pnl_delta 기반 증분 카운터 확인."""
         exporter = MetricsExporter(port=0)
         before = _sample("mcbot_realized_profit_usdt_total", {"symbol": "BTC/USDT"}) or 0.0
 
@@ -252,6 +258,7 @@ class TestPositionUpdateEvent:
             size=0.0,
             avg_entry_price=0.0,
             realized_pnl=250.0,
+            realized_pnl_delta=250.0,
         )
         await _run_with_bus(exporter, [event])
 
@@ -260,6 +267,7 @@ class TestPositionUpdateEvent:
         assert after >= before + 250.0
 
     async def test_realized_loss_counter(self) -> None:
+        """realized_pnl_delta 기반 증분 카운터 확인 (손실)."""
         exporter = MetricsExporter(port=0)
         before = _sample("mcbot_realized_loss_usdt_total", {"symbol": "BTC/USDT"}) or 0.0
 
@@ -269,12 +277,102 @@ class TestPositionUpdateEvent:
             size=0.0,
             avg_entry_price=0.0,
             realized_pnl=-300.0,
+            realized_pnl_delta=-300.0,
         )
         await _run_with_bus(exporter, [event])
 
         after = _sample("mcbot_realized_loss_usdt_total", {"symbol": "BTC/USDT"})
         assert after is not None
         assert after >= before + 300.0
+
+    async def test_position_notional_fallback_to_entry(self) -> None:
+        """last_price=0 시 entry price fallback."""
+        exporter = MetricsExporter(port=0)
+        event = PositionUpdateEvent(
+            symbol="SOL/USDT",
+            direction=Direction.LONG,
+            size=10.0,
+            avg_entry_price=150.0,
+            last_price=0.0,  # fallback 조건
+        )
+        await _run_with_bus(exporter, [event])
+
+        notional = _sample("mcbot_position_notional_usdt", {"symbol": "SOL/USDT"})
+        assert notional == 1500.0  # 10 * 150 (entry price fallback)
+
+    async def test_realized_pnl_no_double_counting(self) -> None:
+        """B1 회귀 테스트: 2회 Fill → counter=250 (not 350)."""
+        exporter = MetricsExporter(port=0)
+        before = _sample("mcbot_realized_profit_usdt_total", {"symbol": "AVAX/USDT"}) or 0.0
+
+        # Fill 1: delta=100
+        event1 = PositionUpdateEvent(
+            symbol="AVAX/USDT",
+            direction=Direction.LONG,
+            size=5.0,
+            avg_entry_price=30.0,
+            realized_pnl=100.0,
+            realized_pnl_delta=100.0,
+        )
+        # Fill 2: delta=150 (누적 realized=250이지만 delta만 반영)
+        event2 = PositionUpdateEvent(
+            symbol="AVAX/USDT",
+            direction=Direction.LONG,
+            size=3.0,
+            avg_entry_price=30.0,
+            realized_pnl=250.0,
+            realized_pnl_delta=150.0,
+        )
+        await _run_with_bus(exporter, [event1, event2])
+
+        after = _sample("mcbot_realized_profit_usdt_total", {"symbol": "AVAX/USDT"})
+        assert after is not None
+        # counter = before + 100 + 150 = before + 250 (NOT before + 100 + 250 = before + 350)
+        assert after == pytest.approx(before + 250.0, abs=0.01)
+
+
+class TestBalanceUpdateExtended:
+    """BalanceUpdateEvent 신규 필드 (drawdown, positions, leverage) 검증."""
+
+    async def test_drawdown_gauge(self) -> None:
+        """drawdown_pct=0.10 → gauge=10.0 (0-100% scale)."""
+        exporter = MetricsExporter(port=0)
+        event = BalanceUpdateEvent(
+            total_equity=9000.0,
+            available_cash=5000.0,
+            total_margin_used=4000.0,
+            drawdown_pct=0.10,
+        )
+        await _run_with_bus(exporter, [event])
+
+        val = _sample("mcbot_drawdown_pct")
+        assert val == pytest.approx(10.0)
+
+    async def test_open_positions_gauge(self) -> None:
+        """open_position_count=3 → gauge=3.0."""
+        exporter = MetricsExporter(port=0)
+        event = BalanceUpdateEvent(
+            total_equity=10000.0,
+            available_cash=7000.0,
+            open_position_count=3,
+        )
+        await _run_with_bus(exporter, [event])
+
+        val = _sample("mcbot_open_positions")
+        assert val == 3.0
+
+    async def test_aggregate_leverage_gauge(self) -> None:
+        """aggregate_leverage=1.5 → gauge=1.5."""
+        exporter = MetricsExporter(port=0)
+        event = BalanceUpdateEvent(
+            total_equity=10000.0,
+            available_cash=5000.0,
+            aggregate_leverage=1.5,
+        )
+        await _run_with_bus(exporter, [event])
+
+        val = _sample("mcbot_aggregate_leverage")
+        assert val == 1.5
 
 
 class TestRiskAlertEvent:
@@ -963,3 +1061,571 @@ class TestPrometheusWsDetailCallback:
 
         cb = PrometheusWsCallback()
         assert isinstance(cb, WsStatusCallback)
+
+
+class TestSignedSlippageCalculation:
+    """_calculate_signed_slippage_bps() 단위 테스트."""
+
+    def test_buy_adverse(self) -> None:
+        """BUY: fill > expected → 양수 (불리)."""
+        bps = _calculate_signed_slippage_bps(40000.0, 40020.0, "BUY")
+        assert bps == pytest.approx(5.0)
+
+    def test_buy_favorable(self) -> None:
+        """BUY: fill < expected → 음수 (유리)."""
+        bps = _calculate_signed_slippage_bps(40000.0, 39980.0, "BUY")
+        assert bps == pytest.approx(-5.0)
+
+    def test_sell_adverse(self) -> None:
+        """SELL: fill < expected → 양수 (불리)."""
+        bps = _calculate_signed_slippage_bps(40000.0, 39980.0, "SELL")
+        assert bps == pytest.approx(5.0)
+
+    def test_sell_favorable(self) -> None:
+        """SELL: fill > expected → 음수 (유리)."""
+        bps = _calculate_signed_slippage_bps(40000.0, 40020.0, "SELL")
+        assert bps == pytest.approx(-5.0)
+
+    def test_zero_slippage(self) -> None:
+        """체결가 == 기대가 → 0."""
+        assert _calculate_signed_slippage_bps(100.0, 100.0, "BUY") == 0.0
+        assert _calculate_signed_slippage_bps(100.0, 100.0, "SELL") == 0.0
+
+    def test_zero_expected_price(self) -> None:
+        """기대가 0 → 0."""
+        assert _calculate_signed_slippage_bps(0.0, 100.0, "BUY") == 0.0
+
+
+class TestSignedSlippageMetric:
+    """mcbot_slippage_signed_bps Histogram 검증."""
+
+    async def test_signed_slippage_observed(self) -> None:
+        """Fill 시 signed slippage가 observe됨."""
+        exporter = MetricsExporter(port=0)
+        bar = BarEvent(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            open=40000.0,
+            high=41000.0,
+            low=39000.0,
+            close=40000.0,
+            volume=1000.0,
+            bar_timestamp=datetime.now(UTC),
+        )
+        order = OrderRequestEvent(
+            client_order_id="signed-001",
+            symbol="BTC/USDT",
+            side="BUY",
+            order_type="MARKET",
+            target_weight=0.5,
+            notional_usd=5000.0,
+        )
+        fill = FillEvent(
+            client_order_id="signed-001",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_price=40020.0,
+            fill_qty=0.1,
+            fee=4.0,
+            fill_timestamp=datetime.now(UTC),
+        )
+        await _run_with_bus(exporter, [bar, order, fill])
+
+        # signed histogram bucket에 값이 기록되었는지 확인
+        count = _sample(
+            "mcbot_slippage_signed_bps_count",
+            {"symbol": "BTC/USDT", "side": "BUY"},
+        )
+        assert count is not None
+        assert count > 0
+
+
+class TestRejectionReasonExtended:
+    """보강된 _categorize_reason() 테스트."""
+
+    def test_aggregate_leverage(self) -> None:
+        assert _categorize_reason("Aggregate leverage exceeded: 5.0x") == "leverage_exceeded"
+
+    def test_positions_reached(self) -> None:
+        assert _categorize_reason("Max positions reached (8)") == "max_positions"
+
+    def test_order_size_space(self) -> None:
+        assert _categorize_reason("Order size too large for BTC/USDT") == "order_size_exceeded"
+
+    def test_duplicate(self) -> None:
+        assert _categorize_reason("Duplicate order") == "duplicate"
+
+
+class TestLiveExecutorMetricsProtocol:
+    """LiveExecutorMetrics Protocol + Prometheus 구현 검증."""
+
+    def test_protocol_satisfies(self) -> None:
+        """PrometheusLiveExecutorMetrics가 Protocol을 충족."""
+        cb = PrometheusLiveExecutorMetrics()
+        assert isinstance(cb, LiveExecutorMetrics)
+
+    def test_min_notional_skip_counter(self) -> None:
+        cb = PrometheusLiveExecutorMetrics()
+        before = _sample("mcbot_live_min_notional_skip_total", {"symbol": "BTC/USDT"}) or 0
+        cb.on_min_notional_skip("BTC/USDT")
+        after = _sample("mcbot_live_min_notional_skip_total", {"symbol": "BTC/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+    def test_api_blocked_counter(self) -> None:
+        cb = PrometheusLiveExecutorMetrics()
+        before = _sample("mcbot_live_api_blocked_total", {"symbol": "ETH/USDT"}) or 0
+        cb.on_api_blocked("ETH/USDT")
+        after = _sample("mcbot_live_api_blocked_total", {"symbol": "ETH/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+    def test_partial_fill_counter(self) -> None:
+        cb = PrometheusLiveExecutorMetrics()
+        before = _sample("mcbot_live_partial_fill_total", {"symbol": "SOL/USDT"}) or 0
+        cb.on_partial_fill("SOL/USDT")
+        after = _sample("mcbot_live_partial_fill_total", {"symbol": "SOL/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+    def test_fill_parse_failure_counter(self) -> None:
+        cb = PrometheusLiveExecutorMetrics()
+        before = _sample("mcbot_live_fill_parse_failure_total", {"symbol": "DOGE/USDT"}) or 0
+        cb.on_fill_parse_failure("DOGE/USDT")
+        after = _sample("mcbot_live_fill_parse_failure_total", {"symbol": "DOGE/USDT"})
+        assert after is not None
+        assert after - before == 1
+
+
+class TestStrategySlippage:
+    """Per-strategy slippage 메트릭 검증."""
+
+    async def test_strategy_slippage_observed(self) -> None:
+        """Fill 시 per-strategy slippage가 observe됨."""
+        exporter = MetricsExporter(port=0)
+        bar = BarEvent(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            open=40000.0,
+            high=41000.0,
+            low=39000.0,
+            close=40000.0,
+            volume=1000.0,
+            bar_timestamp=datetime.now(UTC),
+        )
+        order = OrderRequestEvent(
+            client_order_id="ctrend-BTCUSDT-50",
+            symbol="BTC/USDT",
+            side="BUY",
+            order_type="MARKET",
+            target_weight=0.5,
+            notional_usd=5000.0,
+        )
+        fill = FillEvent(
+            client_order_id="ctrend-BTCUSDT-50",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_price=40010.0,
+            fill_qty=0.1,
+            fee=4.0,
+            fill_timestamp=datetime.now(UTC),
+        )
+        await _run_with_bus(exporter, [bar, order, fill])
+
+        count = _sample(
+            "mcbot_strategy_slippage_bps_count",
+            {"strategy": "ctrend", "symbol": "BTC/USDT", "side": "BUY"},
+        )
+        assert count is not None
+        assert count > 0
+
+
+class TestStrategyPnlAttribution:
+    """Per-strategy PnL attribution 검증 (Step 1-3)."""
+
+    async def test_strategy_pnl_attribution(self) -> None:
+        """Fill → PositionUpdate 체인에서 PnL이 올바른 전략에 귀속."""
+        exporter = MetricsExporter(port=0)
+
+        order = OrderRequestEvent(
+            client_order_id="ctrend-BTCUSDT-10",
+            symbol="BTC/USDT",
+            side="SELL",
+            order_type="MARKET",
+            target_weight=0.0,
+            notional_usd=5000.0,
+        )
+        fill = FillEvent(
+            client_order_id="ctrend-BTCUSDT-10",
+            symbol="BTC/USDT",
+            side="SELL",
+            fill_price=42000.0,
+            fill_qty=0.1,
+            fee=4.2,
+            fill_timestamp=datetime.now(UTC),
+        )
+        position = PositionUpdateEvent(
+            symbol="BTC/USDT",
+            direction=Direction.NEUTRAL,
+            size=0.0,
+            avg_entry_price=0.0,
+            realized_pnl=200.0,
+            realized_pnl_delta=200.0,
+        )
+        await _run_with_bus(exporter, [order, fill, position])
+
+        pnl = _sample("mcbot_strategy_pnl_usdt", {"strategy": "ctrend"})
+        assert pnl == pytest.approx(200.0)
+
+    async def test_strategy_pnl_cumulative(self) -> None:
+        """여러 fill에 걸친 누적 PnL gauge 정확성."""
+        exporter = MetricsExporter(port=0)
+
+        events: list[object] = []
+        # Trade 1: +100
+        events.append(
+            OrderRequestEvent(
+                client_order_id="ctrend-BTCUSDT-20",
+                symbol="BTC/USDT",
+                side="SELL",
+                order_type="MARKET",
+                target_weight=0.0,
+                notional_usd=3000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="ctrend-BTCUSDT-20",
+                symbol="BTC/USDT",
+                side="SELL",
+                fill_price=41000.0,
+                fill_qty=0.1,
+                fee=4.0,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="BTC/USDT",
+                direction=Direction.NEUTRAL,
+                size=0.0,
+                avg_entry_price=0.0,
+                realized_pnl=100.0,
+                realized_pnl_delta=100.0,
+            )
+        )
+        # Trade 2: -50
+        events.append(
+            OrderRequestEvent(
+                client_order_id="ctrend-BTCUSDT-21",
+                symbol="BTC/USDT",
+                side="SELL",
+                order_type="MARKET",
+                target_weight=0.0,
+                notional_usd=3000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="ctrend-BTCUSDT-21",
+                symbol="BTC/USDT",
+                side="SELL",
+                fill_price=39000.0,
+                fill_qty=0.1,
+                fee=4.0,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="BTC/USDT",
+                direction=Direction.NEUTRAL,
+                size=0.0,
+                avg_entry_price=0.0,
+                realized_pnl=50.0,
+                realized_pnl_delta=-50.0,
+            )
+        )
+        await _run_with_bus(exporter, events)
+
+        # Cumulative = +100 + (-50) = +50
+        pnl = _sample("mcbot_strategy_pnl_usdt", {"strategy": "ctrend"})
+        assert pnl == pytest.approx(50.0)
+
+    async def test_strategy_realized_profit_loss_split(self) -> None:
+        """profit/loss counter 분리 정확성."""
+        exporter = MetricsExporter(port=0)
+        before_profit = (
+            _sample("mcbot_strategy_realized_profit_usdt_total", {"strategy": "anchor-mom"}) or 0.0
+        )
+        before_loss = (
+            _sample("mcbot_strategy_realized_loss_usdt_total", {"strategy": "anchor-mom"}) or 0.0
+        )
+
+        events: list[object] = []
+        # Profit trade: +300
+        events.append(
+            OrderRequestEvent(
+                client_order_id="anchor-mom-ETHUSDT-1",
+                symbol="ETH/USDT",
+                side="SELL",
+                order_type="MARKET",
+                target_weight=0.0,
+                notional_usd=3000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="anchor-mom-ETHUSDT-1",
+                symbol="ETH/USDT",
+                side="SELL",
+                fill_price=3300.0,
+                fill_qty=1.0,
+                fee=3.3,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="ETH/USDT",
+                direction=Direction.NEUTRAL,
+                size=0.0,
+                avg_entry_price=0.0,
+                realized_pnl=300.0,
+                realized_pnl_delta=300.0,
+            )
+        )
+        # Loss trade: -120
+        events.append(
+            OrderRequestEvent(
+                client_order_id="anchor-mom-ETHUSDT-2",
+                symbol="ETH/USDT",
+                side="SELL",
+                order_type="MARKET",
+                target_weight=0.0,
+                notional_usd=3000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="anchor-mom-ETHUSDT-2",
+                symbol="ETH/USDT",
+                side="SELL",
+                fill_price=2900.0,
+                fill_qty=1.0,
+                fee=2.9,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="ETH/USDT",
+                direction=Direction.NEUTRAL,
+                size=0.0,
+                avg_entry_price=0.0,
+                realized_pnl=180.0,
+                realized_pnl_delta=-120.0,
+            )
+        )
+        await _run_with_bus(exporter, events)
+
+        after_profit = _sample(
+            "mcbot_strategy_realized_profit_usdt_total", {"strategy": "anchor-mom"}
+        )
+        after_loss = _sample(
+            "mcbot_strategy_realized_loss_usdt_total", {"strategy": "anchor-mom"}
+        )
+        assert after_profit is not None
+        assert after_profit >= before_profit + 300.0
+        assert after_loss is not None
+        assert after_loss >= before_loss + 120.0
+
+    async def test_strategy_trade_count(self) -> None:
+        """trade_count가 realized PnL 발생 시에만 증가."""
+        exporter = MetricsExporter(port=0)
+        before = _sample("mcbot_strategy_trade_count_total", {"strategy": "ctrend"}) or 0.0
+
+        events: list[object] = []
+        # Fill without realized PnL (position open)
+        events.append(
+            OrderRequestEvent(
+                client_order_id="ctrend-SOLUSDT-1",
+                symbol="SOL/USDT",
+                side="BUY",
+                order_type="MARKET",
+                target_weight=0.5,
+                notional_usd=2000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="ctrend-SOLUSDT-1",
+                symbol="SOL/USDT",
+                side="BUY",
+                fill_price=100.0,
+                fill_qty=10.0,
+                fee=1.0,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="SOL/USDT",
+                direction=Direction.LONG,
+                size=10.0,
+                avg_entry_price=100.0,
+                realized_pnl_delta=0.0,
+            )
+        )
+        # Fill with realized PnL (position close)
+        events.append(
+            OrderRequestEvent(
+                client_order_id="ctrend-SOLUSDT-2",
+                symbol="SOL/USDT",
+                side="SELL",
+                order_type="MARKET",
+                target_weight=0.0,
+                notional_usd=2000.0,
+            )
+        )
+        events.append(
+            FillEvent(
+                client_order_id="ctrend-SOLUSDT-2",
+                symbol="SOL/USDT",
+                side="SELL",
+                fill_price=110.0,
+                fill_qty=10.0,
+                fee=1.1,
+                fill_timestamp=datetime.now(UTC),
+            )
+        )
+        events.append(
+            PositionUpdateEvent(
+                symbol="SOL/USDT",
+                direction=Direction.NEUTRAL,
+                size=0.0,
+                avg_entry_price=0.0,
+                realized_pnl=100.0,
+                realized_pnl_delta=100.0,
+            )
+        )
+        await _run_with_bus(exporter, events)
+
+        after = _sample("mcbot_strategy_trade_count_total", {"strategy": "ctrend"})
+        assert after is not None
+        # Only the close fill should increment trade_count (delta=0 skipped)
+        assert after == pytest.approx(before + 1.0)
+
+    async def test_strategy_pnl_no_pending(self) -> None:
+        """_pending_orders 미매칭 fill 시 PnL gauge 변화 없음."""
+        exporter = MetricsExporter(port=0)
+
+        # Fill without prior OrderRequest (no pending match)
+        fill = FillEvent(
+            client_order_id="unknown-order-123",
+            symbol="DOGE/USDT",
+            side="BUY",
+            fill_price=0.1,
+            fill_qty=10000.0,
+            fee=1.0,
+            fill_timestamp=datetime.now(UTC),
+        )
+        position = PositionUpdateEvent(
+            symbol="DOGE/USDT",
+            direction=Direction.NEUTRAL,
+            size=0.0,
+            avg_entry_price=0.0,
+            realized_pnl=50.0,
+            realized_pnl_delta=50.0,
+        )
+        await _run_with_bus(exporter, [fill, position])
+
+        # _last_fill_strategy never set for DOGE/USDT → no strategy PnL gauge update
+        assert exporter._strategy_cumulative_pnl == {}
+
+
+class TestErrorsCounter:
+    """mcbot_errors_total counter 검증 (A-1: Dead Code 수정)."""
+
+    async def test_eventbus_handler_error_increments_counter(self) -> None:
+        """EventBus handler error 시 errors_counter가 증가."""
+        before = (
+            _sample(
+                "mcbot_errors_total",
+                {"component": "EventBus", "error_type": "ValueError"},
+            )
+            or 0.0
+        )
+
+        bus = EventBus(queue_size=100)
+
+        async def failing_handler(_event: object) -> None:
+            raise ValueError("test error")
+
+        from src.core.events import EventType
+
+        bus.subscribe(EventType.BAR, failing_handler)
+        bus_task = asyncio.create_task(bus.start())
+        try:
+            bar = BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=40000.0,
+                high=41000.0,
+                low=39000.0,
+                close=40500.0,
+                volume=1000.0,
+                bar_timestamp=datetime.now(UTC),
+            )
+            await bus.publish(bar)
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        after = _sample(
+            "mcbot_errors_total",
+            {"component": "EventBus", "error_type": "ValueError"},
+        )
+        assert after is not None
+        assert after > before
+
+    def test_errors_counter_direct_inc(self) -> None:
+        """errors_counter를 직접 호출해서 라벨 동작 확인."""
+        from src.monitoring.metrics import errors_counter
+
+        before = (
+            _sample(
+                "mcbot_errors_total",
+                {"component": "LiveRunner", "error_type": "RuntimeError"},
+            )
+            or 0.0
+        )
+        errors_counter.labels(component="LiveRunner", error_type="RuntimeError").inc()
+        after = _sample(
+            "mcbot_errors_total",
+            {"component": "LiveRunner", "error_type": "RuntimeError"},
+        )
+        assert after is not None
+        assert after > before
+
+
+class TestHeartbeatEventPublish:
+    """HeartbeatEvent 발행 검증 (A-2: LiveRunner에서 발행)."""
+
+    async def test_heartbeat_event_updates_gauge(self) -> None:
+        """HeartbeatEvent 발행 → heartbeat_timestamp gauge 갱신."""
+        exporter = MetricsExporter(port=0)
+        now = datetime.now(UTC)
+        event = HeartbeatEvent(component="LiveRunner", timestamp=now)
+        await _run_with_bus(exporter, [event])
+
+        val = _sample("mcbot_heartbeat_timestamp")
+        assert val is not None
+        assert val == pytest.approx(now.timestamp(), abs=1.0)
+
+    async def test_heartbeat_component_field(self) -> None:
+        """HeartbeatEvent의 component 필드가 올바르게 설정됨."""
+        event = HeartbeatEvent(component="LiveRunner")
+        assert event.component == "LiveRunner"
+        assert event.event_type.value == "heartbeat"

@@ -6,30 +6,37 @@
 
 ## 아키텍처 개요
 
+이 시스템은 **두 가지 데이터 수집 경로**를 제공합니다.
+
+- **배치 수집** (CLI `ingest`): 과거 데이터를 Medallion Architecture로 적재 → 백테스트/검증용
+- **라이브 피드** (EDA LiveRunner): 실시간 WebSocket + HTTP Polling → 라이브 트레이딩용
+
 ```
+                                    External APIs
                     ┌─ Binance Spot API ──────── OHLCV 1m
                     ├─ Binance Futures API ───── Derivatives (Funding/OI/LS/Taker)
                     ├─ On-chain APIs (6개 소스) ─ Stablecoin/TVL/MVRV/Sentiment/...
-External APIs ──────├─ FRED + yfinance + CoinGecko ── Macro (DXY/VIX/Gold/M2/ETFs)
+                    ├─ FRED + yfinance + CoinGecko ── Macro (DXY/VIX/Gold/M2/ETFs)
                     ├─ Deribit Public API ─────── Options (DVOL/PCR/TermStructure)
                     └─ Coinalyze + Hyperliquid ── DerivExt (멀티거래소 OI/Funding/Liq/CVD)
                               │
-                              ▼
-                    ┌─────────────────────────┐
-                    │  Bronze (Append-Only)    │  ← 변환 없이 원본 그대로
-                    │  data/bronze/            │
-                    └──────────┬──────────────┘
-                              │  validate + dedup + gap-fill
-                              ▼
-                    ┌─────────────────────────┐
-                    │  Silver (Cleaned)        │  ← 백테스트/전략에서 사용
-                    │  data/silver/            │
-                    └──────────┬──────────────┘
-                              │  on-the-fly 계산 (FeatureStore, Indicator Library)
-                              ▼
-                    ┌─────────────────────────┐
-                    │  Gold (Features)         │  ← 메모리 전용, 디스크 저장 없음
-                    └─────────────────────────┘
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+    ┌──── 배치 수집 (CLI) ────┐    ┌──── 라이브 피드 (EDA) ────┐
+    │                         │    │                           │
+    │  Bronze (Append-Only)   │    │  WebSocket (1m OHLCV)     │
+    │  data/bronze/           │    │  LiveDataFeed             │
+    │         │               │    │         +                 │
+    │  validate + dedup       │    │  HTTP Polling (보조 데이터) │
+    │         ▼               │    │  Live*Feed (6종)          │
+    │  Silver (Cleaned)       │    │         │                 │
+    │  data/silver/           │    │  In-Memory Cache          │
+    │         │               │    │         │                 │
+    │  on-the-fly 계산        │    │  enrich_dataframe()       │
+    │         ▼               │    │         ▼                 │
+    │  Gold (Features)        │    │  BarEvent → Strategy      │
+    │  메모리 전용             │    │  → PM → RM → OMS         │
+    └─────────────────────────┘    └───────────────────────────┘
 ```
 
 ---
@@ -541,6 +548,119 @@ On-chain 데이터는 일 단위로 발행되며, 실제 접근 가능 시점에
 
 ---
 
+## 라이브 데이터 피드
+
+라이브 모드(`mcbot eda run-live`)에서는 배치 수집 대신 **실시간 피드**를 사용합니다.
+Backtest와 동일한 `DataFeedPort` / `*ProviderPort` 인터페이스를 구현하여 **Backtest-Live 패리티**를 보장합니다.
+
+### Backtest vs Live 비교
+
+| 측면 | Backtest | Live |
+|------|----------|------|
+| **OHLCV** | Parquet 1m 재생 (`HistoricalDataFeed`) | Binance WebSocket 1m 스트리밍 (`LiveDataFeed`) |
+| **TF 집계** | `CandleAggregator` (순차 리플레이) | `CandleAggregator` (실시간, 심볼별 병렬) |
+| **보조 데이터** | `precompute()` → `merge_asof` 사전 병합 | `Live*Feed` → HTTP Polling → 인메모리 캐시 |
+| **Staleness** | 해당 없음 | 120s heartbeat 모니터링 → `RiskAlertEvent` |
+| **주문 실행** | `BacktestExecutor` (시뮬레이션) | `LiveExecutor` (Binance Futures 실주문) |
+| **상태 저장** | 메모리 전용 | SQLite 선택적 영속화 |
+
+### 라이브 피드 컴포넌트
+
+| 컴포넌트 | 클래스 | 소스 | 방식 | Polling 주기 | Scope |
+|----------|--------|------|------|:------------:|-------|
+| **OHLCV** | `LiveDataFeed` | Binance Spot | **WebSocket** (`watch_ohlcv`) | 실시간 | PER-ASSET |
+| **Derivatives** | `LiveDerivativesFeed` | Binance Futures | HTTP Polling | FR 8h, OI/LS/Taker 1h | PER-ASSET |
+| **On-chain** | `LiveOnchainFeed` | DeFiLlama, CoinMetrics 등 | HTTP Polling | 6h~12h | 혼합 |
+| **Macro** | `LiveMacroFeed` | FRED, yfinance, CoinGecko | HTTP Polling | FRED/yfinance 6h, CoinGecko 15min | GLOBAL |
+| **Options** | `LiveOptionsFeed` | Deribit | HTTP Polling | DVOL/PCR 15min, HistVol/TermStructure 1h | GLOBAL |
+| **DerivExt** | `LiveDerivExtFeed` | Coinalyze, Hyperliquid | HTTP Polling | Coinalyze 1h, Hyperliquid 5min | PER-ASSET |
+
+### OHLCV WebSocket 상세
+
+`LiveDataFeed`는 CCXT Pro `watch_ohlcv()`로 심볼별 독립 asyncio task를 생성합니다.
+
+```
+Binance WebSocket (1m stream)
+  │  심볼별 asyncio task
+  ▼
+LiveDataFeed._stream_symbol()
+  │  timestamp 변경 감지 (새 캔들 완성)
+  ▼
+BarEvent(tf="1m") 발행 → PM intrabar SL/TS
+  │  CandleAggregator / MultiTimeframeCandleAggregator
+  ▼
+BarEvent(tf=target_tf) 발행 → Strategy → PM(full)
+  │
+  ▼
+await bus.flush()  ← bar-by-bar 이벤트 체인 보장
+```
+
+주요 특성:
+
+- **Staggered 연결**: 심볼별 0.5s 지연으로 WebSocket 1008 에러 방지
+- **Reconnection**: 지수 백오프 (1s → 60s cap)
+- **Multi-TF**: `MultiTimeframeCandleAggregator` 연동 — 1m → 4h, 1D 등 동시 집계
+
+### HTTP Polling 피드 상세
+
+보조 데이터 피드는 독립 asyncio task로 주기적 HTTP polling을 수행합니다.
+
+```python
+# 각 Live*Feed 내부 패턴
+self._tasks = [
+    asyncio.create_task(self._poll_fred()),       # 6h 주기
+    asyncio.create_task(self._poll_yfinance()),   # 6h 주기
+    asyncio.create_task(self._poll_coingecko()),  # 15min 주기
+]
+```
+
+| 특성 | 설명 |
+|------|------|
+| **Cold Start 방지** | Silver 레이어에서 최신 값 초기 로드 |
+| **Cache-First** | `_cache: dict[str, dict[str, float]]` — API 실패 시 캐시 값 유지 |
+| **Enrichment** | `enrich_dataframe(df)` → StrategyEngine이 bar별 호출 |
+| **Graceful Degradation** | 개별 task 실패 시 로깅 후 재시도, 다른 feed 영향 없음 |
+
+### Staleness 감지 & Resilience
+
+| 메커니즘 | 적용 대상 | 동작 |
+|----------|----------|------|
+| **Heartbeat Monitor** | `LiveDataFeed` (OHLCV) | 120s 무수신 → `RiskAlertEvent` → Discord ALERTS |
+| **Reconnection** | `LiveDataFeed` (WebSocket) | 지수 백오프 (1s, 2s, 4s, ... 60s cap) 자동 재연결 |
+| **Task Isolation** | 모든 Polling Feed | 개별 polling task 실패가 다른 task에 전파되지 않음 |
+| **Graceful Shutdown** | `LiveRunner` | SIGTERM/SIGINT → `_shutdown_event` → 모든 task cancel → `gather(return_exceptions=True)` |
+
+### 라이브 오케스트레이션 (LiveRunner)
+
+`LiveRunner`가 전체 라이브 시스템을 조립하고 24/7 실행합니다.
+
+```
+LiveRunner
+  ├─ LiveDataFeed          ← WebSocket OHLCV
+  ├─ LiveDerivativesFeed   ← Binance Futures polling
+  ├─ LiveOnchainFeed       ← On-chain polling
+  ├─ LiveMacroFeed         ← Macro polling
+  ├─ LiveOptionsFeed       ← Deribit polling
+  ├─ LiveDerivExtFeed      ← Coinalyze/Hyperliquid polling
+  ├─ StrategyEngine        ← 전략 실행
+  ├─ EDAPortfolioManager   ← PM (SL/TS/Rebalance)
+  ├─ EDARiskManager        ← RM (CircuitBreaker)
+  ├─ OMS                   ← 주문 관리 (멱등성)
+  ├─ LiveExecutor          ← Binance Futures 주문 실행
+  ├─ DiscordBotService     ← 알림 + 양방향 명령
+  └─ PositionReconciler    ← 포지션 드리프트 검증 (5%)
+```
+
+실행 모드:
+
+| 모드 | 설명 | OHLCV | 보조 데이터 | 주문 실행 |
+|------|------|:-----:|:----------:|:---------:|
+| **Paper** | 시뮬레이션 | WebSocket 실시간 | Polling 실시간 | `BacktestExecutor` (가상) |
+| **Shadow** | 시그널 로깅만 | WebSocket 실시간 | Polling 실시간 | `ShadowExecutor` (로그만) |
+| **Live** | 실거래 | WebSocket 실시간 | Polling 실시간 | `LiveExecutor` (실주문) |
+
+---
+
 ## 코드 구조
 
 ```
@@ -591,6 +711,12 @@ src/cli/
 └── ingest_deriv_ext.py            # `ingest deriv-ext` 서브커맨드
 
 src/eda/
+├── data_feed.py                   # HistoricalDataFeed (Backtest 1m 재생)
+├── live_data_feed.py              # LiveDataFeed (WebSocket 1m 스트리밍)
+├── candle_aggregator.py           # CandleAggregator + MultiTimeframeCandleAggregator
+├── live_runner.py                 # LiveRunner (24/7 오케스트레이터, Paper/Shadow/Live)
+├── derivatives_feed.py            # BacktestDerivativesProvider + LiveDerivativesFeed
+├── onchain_feed.py                # BacktestOnchainProvider + LiveOnchainFeed
 ├── macro_feed.py                  # BacktestMacroProvider + LiveMacroFeed
 ├── options_feed.py                # BacktestOptionsProvider + LiveOptionsFeed
 └── deriv_ext_feed.py              # BacktestDerivExtProvider + LiveDerivExtFeed
@@ -648,12 +774,24 @@ dext_df = deriv_ext_service.precompute("BTC/USDT", ohlcv_index)  # PER-ASSET
 
 ```bash
 # .env 파일에 설정
+
+# --- 배치 수집 (CLI ingest) ---
 # BRONZE_DIR=data/bronze          # Bronze 저장 경로 (기본값)
 # SILVER_DIR=data/silver          # Silver 저장 경로 (기본값)
 # ETHERSCAN_API_KEY=              # Etherscan 무료 API key (on-chain etherscan 타입에 필요)
 FRED_API_KEY=                     # FRED 무료 API key (https://fred.stlouisfed.org/docs/api/api_key.html)
 # COINALYZE_API_KEY=              # Coinalyze 무료 API key (https://coinalyze.net)
 # yfinance, Deribit, Hyperliquid, CoinGecko Demo: 인증 불필요 또는 코드 내 설정
+
+# --- 라이브 피드 (EDA run-live) ---
+BINANCE_API_KEY=                  # Binance API key (WebSocket + Futures 주문)
+BINANCE_SECRET=                   # Binance API secret
+DISCORD_BOT_TOKEN=                # Discord Bot 토큰 (알림 + 양방향 명령)
+DISCORD_GUILD_ID=                 # Discord 서버 ID
+DISCORD_TRADE_LOG_CHANNEL_ID=     # 거래 로그 채널
+DISCORD_ALERTS_CHANNEL_ID=        # 알림 채널 (Staleness 등)
+DISCORD_DAILY_REPORT_CHANNEL_ID=  # 일일 리포트 채널
+# FRED_API_KEY, COINALYZE_API_KEY, ETHERSCAN_API_KEY: 배치와 동일 (라이브 polling에도 사용)
 ```
 
 ---

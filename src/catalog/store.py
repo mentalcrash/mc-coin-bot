@@ -121,8 +121,26 @@ class DataCatalogStore:
         source = self.get_source(source_id)
         return source.date_column
 
-    def get_lag_days(self, source_id: str) -> int:
-        """SOURCE_LAG_DAYS 호환: source의 publication lag (일)."""
+    def get_lag_days(self, source_id: str, dataset_id: str | None = None) -> int:
+        """Publication lag (일) — dataset 레벨 override 우선, fallback source 레벨.
+
+        Args:
+            source_id: 소스 ID
+            dataset_id: 데이터셋 ID (optional, dataset-level lag 우선)
+
+        Returns:
+            Publication lag 일수
+        """
+        if dataset_id and self._datasets is not None:
+            ds = self._datasets.get(dataset_id)
+            if ds is not None and ds.lag_days is not None:
+                return ds.lag_days
+        elif dataset_id:
+            self._ensure_loaded()
+            assert self._datasets is not None
+            ds = self._datasets.get(dataset_id)
+            if ds is not None and ds.lag_days is not None:
+                return ds.lag_days
         source = self.get_source(source_id)
         return source.lag_days
 

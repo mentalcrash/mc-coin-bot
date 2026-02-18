@@ -1,0 +1,26 @@
+# Golden Metrics -- 회귀 테스트 기준 메트릭
+#
+# 합성 데이터(seed=42) 기반 재현 가능한 메트릭.
+# 아키텍처 변경 시 동일 데이터+전략에서 결과가 일정 허용 범위 이내인지 검증.
+#
+# tolerance: 허용 오차 (절대값). delta > tolerance이면 FAIL.
+
+tsmom_btc_1d:
+  strategy: tsmom
+  symbol: BTC/USDT
+  timeframe: 1D
+  tolerance:
+    sharpe: 0.10
+    cagr: 5.0
+    mdd: 3.0
+    total_trades: 2
+
+ctrend_btc_1d:
+  strategy: ctrend
+  symbol: BTC/USDT
+  timeframe: 1D
+  tolerance:
+    sharpe: 0.10
+    cagr: 5.0
+    mdd: 3.0
+    total_trades: 2

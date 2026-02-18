@@ -457,8 +457,15 @@ class RegimeService:
         direction_df = self._compute_direction_vectorized(closes)
 
         # Transition matrix 추정
+        # NOTE: Backtest에서는 전체 label 시퀀스로 matrix를 추정합니다 (look-ahead).
+        # Live에서는 expanding window로 _update_transition_counts()가 누적합니다.
+        # 정보용(transition_prob)이므로 전략 시그널에 영향을 주지 않습니다.
         regime_labels: pd.Series = regime_df["regime_label"]  # type: ignore[assignment]
         self._transition_matrices[symbol] = self._estimate_transition_matrix(regime_labels)
+        logger.debug(
+            "Transition matrix estimated from full label sequence ({} bars, look-ahead)",
+            len(regime_labels.dropna()),
+        )
 
         # Transition probability per bar
         transition_prob = self._compute_transition_prob_vectorized(symbol, regime_labels)
@@ -472,6 +479,10 @@ class RegimeService:
             cascade_risk_col = self._detector.get_cascade_risk_series(deriv_df)
         else:
             cascade_risk_col = pd.Series(0.0, index=closes.index)
+            if self._detector.has_derivatives_detector and deriv_df is None:
+                logger.warning(
+                    "DerivativesDetector active but deriv_df=None — cascade_risk will be 0.0"
+                )
 
         # 결합
         result = pd.DataFrame(
@@ -498,10 +509,45 @@ class RegimeService:
         )
         return result
 
-    def _compute_transition_prob_vectorized(self, symbol: str, labels: pd.Series) -> pd.Series:
-        """Vectorized transition probability 계산.
+    def _compute_transition_prob_expanding(self, labels: pd.Series) -> pd.Series:
+        """Expanding-window transition probability 계산.
 
-        각 bar에서 현재 label의 자기전환 확률을 1에서 빼서 전환 확률 산출.
+        각 bar까지의 label 시퀀스로 transition matrix를 누적 추정하여
+        look-ahead bias를 제거합니다.
+
+        Args:
+            labels: regime label 시리즈
+
+        Returns:
+            transition_prob 시리즈 (0~1)
+        """
+        result = pd.Series(0.0, index=labels.index, dtype=float)
+        counts = np.ones((3, 3))  # Laplace smoothing
+        prev_label: str | None = None
+
+        for i, label in enumerate(labels):
+            if pd.isna(label):
+                prev_label = None
+                continue
+
+            lbl = str(label)
+            if prev_label is not None and lbl in self._IDX_MAP and prev_label in self._IDX_MAP:
+                counts[self._IDX_MAP[prev_label], self._IDX_MAP[lbl]] += 1
+
+            # Current matrix
+            row_sums = counts.sum(axis=1, keepdims=True)
+            mat = counts / row_sums
+
+            if lbl in self._IDX_MAP:
+                idx = self._IDX_MAP[lbl]
+                result.iloc[i] = 1.0 - float(mat[idx, idx])
+
+            prev_label = lbl
+
+        return result
+
+    def _compute_transition_prob_vectorized(self, symbol: str, labels: pd.Series) -> pd.Series:
+        """Expanding-window transition probability 계산 (look-ahead 제거).
 
         Args:
             symbol: 거래 심볼
@@ -510,17 +556,7 @@ class RegimeService:
         Returns:
             transition_prob 시리즈
         """
-        mat = self._transition_matrices.get(symbol)
-        if mat is None:
-            return pd.Series(0.0, index=labels.index)
-
-        result = pd.Series(0.0, index=labels.index, dtype=float)
-        for label_str, idx in self._IDX_MAP.items():
-            mask = labels == label_str
-            if mask.any():
-                result[mask] = 1.0 - float(mat[idx, idx])
-
-        return result
+        return self._compute_transition_prob_expanding(labels)
 
     def enrich_dataframe(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """사전 계산된 regime 컬럼을 df에 join.
