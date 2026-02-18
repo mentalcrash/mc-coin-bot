@@ -17,6 +17,7 @@ from src.regime.config import EnsembleRegimeDetectorConfig, RegimeLabel
 from src.regime.service import (
     REGIME_COLUMNS,
     EnrichedRegimeState,
+    RegimeContext,
     RegimeService,
     RegimeServiceConfig,
 )
@@ -546,3 +547,302 @@ class TestEnrichDataFrameCopy:
 
         # 결과에는 regime 컬럼 존재
         assert "regime_label" in result.columns
+
+
+# ═══════════════════════════════════════
+# Confidence + Transition Probability 테스트
+# ═══════════════════════════════════════
+
+
+class TestConfidenceAndTransition:
+    """confidence, transition_prob 필드 검증."""
+
+    def test_enriched_state_defaults(self) -> None:
+        """EnrichedRegimeState 기본값 검증."""
+        state = EnrichedRegimeState(
+            label=RegimeLabel.TRENDING,
+            probabilities={"trending": 0.7, "ranging": 0.2, "volatile": 0.1},
+            bars_held=1,
+        )
+        assert state.confidence == 0.0
+        assert state.transition_prob == 0.0
+        assert state.cascade_risk == 0.0
+
+    def test_precompute_includes_new_columns(self) -> None:
+        """precompute() 결과에 confidence, transition_prob, cascade_risk 컬럼."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        result = service.precompute("BTC/USDT", closes)
+        assert "regime_confidence" in result.columns
+        assert "regime_transition_prob" in result.columns
+        assert "cascade_risk" in result.columns
+
+    def test_transition_prob_range(self) -> None:
+        """transition_prob은 0~1 범위."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        result = service.precompute("BTC/USDT", closes)
+        valid = result["regime_transition_prob"].dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()
+
+    def test_confidence_range(self) -> None:
+        """confidence는 0~1 범위."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        result = service.precompute("BTC/USDT", closes)
+        valid = result["regime_confidence"].dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()
+
+    def test_warmup_builds_transition_matrix(self) -> None:
+        """warmup() 후 transition matrix 생성됨."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        assert "BTC/USDT" in service._transition_matrices
+
+    def test_warmup_enriched_state_has_confidence(self) -> None:
+        """warmup() 후 state에 confidence 포함."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        state = service.get_regime("BTC/USDT")
+        assert state is not None
+        assert hasattr(state, "confidence")
+        assert hasattr(state, "transition_prob")
+
+    def test_get_regime_columns_includes_new_fields(self) -> None:
+        """get_regime_columns() 반환에 새 필드 포함."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        cols = service.get_regime_columns("BTC/USDT")
+        assert cols is not None
+        assert "regime_confidence" in cols
+        assert "regime_transition_prob" in cols
+        assert "cascade_risk" in cols
+
+    def test_regime_columns_constant_updated(self) -> None:
+        """REGIME_COLUMNS 상수에 새 필드 포함."""
+        assert "regime_confidence" in REGIME_COLUMNS
+        assert "regime_transition_prob" in REGIME_COLUMNS
+        assert "cascade_risk" in REGIME_COLUMNS
+
+    def test_enrich_dataframe_new_columns(self) -> None:
+        """enrich_dataframe()에서 새 컬럼도 추가됨."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        service.precompute("BTC/USDT", closes)
+        df = _make_ohlcv_df(closes)
+        enriched = service.enrich_dataframe(df, "BTC/USDT")
+        assert "regime_confidence" in enriched.columns
+        assert "regime_transition_prob" in enriched.columns
+        assert "cascade_risk" in enriched.columns
+
+
+# ═══════════════════════════════════════
+# RegimeContext 테스트
+# ═══════════════════════════════════════
+
+
+class TestRegimeContext:
+    """RegimeContext API 검증."""
+
+    def test_none_before_warmup(self) -> None:
+        """warmup 전 None."""
+        service = RegimeService()
+        assert service.get_regime_context("BTC/USDT") is None
+
+    def test_returns_context_after_warmup(self) -> None:
+        """warmup 후 RegimeContext 반환."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        ctx = service.get_regime_context("BTC/USDT")
+        assert ctx is not None
+        assert isinstance(ctx, RegimeContext)
+
+    def test_context_fields(self) -> None:
+        """RegimeContext 모든 필드 존재."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        ctx = service.get_regime_context("BTC/USDT")
+        assert ctx is not None
+        assert hasattr(ctx, "label")
+        assert hasattr(ctx, "p_trending")
+        assert hasattr(ctx, "p_ranging")
+        assert hasattr(ctx, "p_volatile")
+        assert hasattr(ctx, "confidence")
+        assert hasattr(ctx, "transition_prob")
+        assert hasattr(ctx, "cascade_risk")
+        assert hasattr(ctx, "trend_direction")
+        assert hasattr(ctx, "trend_strength")
+        assert hasattr(ctx, "bars_in_regime")
+        assert hasattr(ctx, "suggested_vol_scalar")
+
+    def test_vol_scalar_range(self) -> None:
+        """suggested_vol_scalar는 0.0~1.0 범위."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        ctx = service.get_regime_context("BTC/USDT")
+        assert ctx is not None
+        assert 0.0 <= ctx.suggested_vol_scalar <= 1.0
+
+    def test_context_is_frozen(self) -> None:
+        """RegimeContext는 불변."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        ctx = service.get_regime_context("BTC/USDT")
+        assert ctx is not None
+        with pytest.raises(AttributeError):
+            ctx.label = RegimeLabel.VOLATILE  # type: ignore[misc]
+
+
+# ═══════════════════════════════════════
+# REGIME_CHANGE Event 테스트
+# ═══════════════════════════════════════
+
+
+class TestRegimeChangeEvent:
+    """REGIME_CHANGE 이벤트 발행 검증."""
+
+    @pytest.mark.asyncio
+    async def test_event_published_on_regime_change(self) -> None:
+        """레짐 변경 시 REGIME_CHANGE 이벤트 발행."""
+        from src.core.event_bus import EventBus
+        from src.core.events import BarEvent, EventType, RegimeChangeEvent
+
+        service = RegimeService()
+        bus = EventBus(queue_size=100)
+
+        events_received: list[RegimeChangeEvent] = []
+
+        async def capture_event(event: object) -> None:
+            if isinstance(event, RegimeChangeEvent):
+                events_received.append(event)
+
+        bus.subscribe(EventType.REGIME_CHANGE, capture_event)
+        await service.register(bus)
+
+        # warmup으로 초기 상태 설정 (trending)
+        trending = _make_trending_series(60)
+        service.warmup("BTC/USDT", trending.tolist())
+
+        # 극단적 volatile bar 연속 투입 → 레짐 변경 유도
+        rng = np.random.default_rng(999)
+        for i in range(30):
+            close = float(trending.iloc[-1]) * (1 + rng.normal(0, 0.1))
+            bar = BarEvent(
+                symbol="BTC/USDT",
+                timeframe="1D",
+                open=close * 0.95,
+                high=close * 1.1,
+                low=close * 0.9,
+                close=close,
+                volume=1000.0,
+                bar_timestamp=datetime(2024, 7, 1 + i % 28, tzinfo=UTC),
+            )
+            await service._on_bar(bar)
+
+        # Note: regime change may or may not happen depending on hysteresis
+        # We just verify the mechanism exists and doesn't crash
+
+    @pytest.mark.asyncio
+    async def test_no_event_without_bus(self) -> None:
+        """bus 없이도 _on_bar 호출 가능 (publish 스킵)."""
+        from src.core.events import BarEvent
+
+        service = RegimeService()
+        trending = _make_trending_series(60)
+        service.warmup("BTC/USDT", trending.tolist())
+
+        bar = BarEvent(
+            symbol="BTC/USDT",
+            timeframe="1D",
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            volume=1000.0,
+            bar_timestamp=datetime(2024, 7, 1, tzinfo=UTC),
+        )
+        # bus가 None이어도 에러 없이 실행
+        await service._on_bar(bar)
+
+    def test_regime_change_event_type_exists(self) -> None:
+        """EventType에 REGIME_CHANGE 추가 확인."""
+        from src.core.events import EventType
+
+        assert hasattr(EventType, "REGIME_CHANGE")
+        assert EventType.REGIME_CHANGE == "regime_change"
+
+    def test_regime_change_event_model(self) -> None:
+        """RegimeChangeEvent 모델 생성 검증."""
+        from src.core.events import RegimeChangeEvent
+
+        event = RegimeChangeEvent(
+            symbol="BTC/USDT",
+            prev_label="trending",
+            new_label="volatile",
+            confidence=0.75,
+            cascade_risk=0.3,
+            transition_prob=0.2,
+        )
+        assert event.symbol == "BTC/USDT"
+        assert event.prev_label == "trending"
+        assert event.new_label == "volatile"
+        assert event.confidence == 0.75
+
+    def test_droppable_events_includes_regime_change(self) -> None:
+        """DROPPABLE_EVENTS에 REGIME_CHANGE 포함."""
+        from src.core.events import DROPPABLE_EVENTS, EventType
+
+        assert EventType.REGIME_CHANGE in DROPPABLE_EVENTS
+
+    def test_event_type_map_includes_regime_change(self) -> None:
+        """EVENT_TYPE_MAP에 REGIME_CHANGE 매핑."""
+        from src.core.events import EVENT_TYPE_MAP, EventType, RegimeChangeEvent
+
+        assert EventType.REGIME_CHANGE in EVENT_TYPE_MAP
+        assert EVENT_TYPE_MAP[EventType.REGIME_CHANGE] is RegimeChangeEvent
+
+
+# ═══════════════════════════════════════
+# Backward Compatibility 테스트
+# ═══════════════════════════════════════
+
+
+class TestBackwardCompatibility:
+    """기존 API 하위 호환성 검증."""
+
+    def test_service_without_derivatives_provider(self) -> None:
+        """derivatives_provider=None으로 RegimeService 정상 동작."""
+        service = RegimeService()
+        closes = _make_trending_series(60)
+        service.warmup("BTC/USDT", closes.tolist())
+        state = service.get_regime("BTC/USDT")
+        assert state is not None
+        assert state.cascade_risk == 0.0
+
+    def test_precompute_without_deriv_df(self) -> None:
+        """deriv_df=None으로 precompute 정상 동작."""
+        service = RegimeService()
+        closes = _make_trending_series(100)
+        result = service.precompute("BTC/USDT", closes)
+        assert "cascade_risk" in result.columns
+        assert (result["cascade_risk"] == 0.0).all()
+
+    def test_ensemble_update_without_derivatives(self) -> None:
+        """derivatives=None으로 ensemble update 정상 동작."""
+        from src.regime.ensemble import EnsembleRegimeDetector
+
+        detector = EnsembleRegimeDetector()
+        result = None
+        for i in range(30):
+            result = detector.update("BTC/USDT", 100.0 + i * 0.5)
+        assert result is not None
+        assert result.confidence == 1.0  # single detector

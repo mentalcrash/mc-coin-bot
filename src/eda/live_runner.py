@@ -994,8 +994,8 @@ class LiveRunner:
         Returns:
             (regime_service, feature_store, strategy_engine) 튜플
         """
-        regime_service = self._create_regime_service()
         derivatives_provider = await self._start_derivatives_feed()
+        regime_service = self._create_regime_service(derivatives_provider)
         onchain_provider = await self._start_onchain_feed()
         feature_store = self._create_feature_store()
         macro_provider = await self._start_macro_feed()
@@ -1017,14 +1017,20 @@ class LiveRunner:
             )
         return regime_service, feature_store, strategy_engine
 
-    def _create_regime_service(self) -> RegimeService | None:
-        """RegimeService 생성 (regime_config가 None이면 None)."""
+    def _create_regime_service(
+        self, derivatives_provider: object | None = None,
+    ) -> RegimeService | None:
+        """RegimeService 생성 (regime_config가 None이면 None).
+
+        Args:
+            derivatives_provider: 파생상품 데이터 프로바이더 (있으면 DerivativesDetector 활성화)
+        """
         if self._regime_config is None:
             return None
 
         from src.regime.service import RegimeService
 
-        return RegimeService(self._regime_config)
+        return RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
 
     def _create_feature_store(self) -> FeatureStore | None:
         """FeatureStore 생성 (feature_store_config가 None이면 None)."""

@@ -48,6 +48,9 @@ class EventType(StrEnum):
     RISK_ALERT = "risk_alert"
     CIRCUIT_BREAKER = "circuit_breaker"
 
+    # Regime
+    REGIME_CHANGE = "regime_change"
+
     # System
     HEARTBEAT = "heartbeat"
 
@@ -311,6 +314,39 @@ class CircuitBreakerEvent(BaseModel):
 
 
 # ==========================================================================
+# Regime Events
+# ==========================================================================
+class RegimeChangeEvent(BaseModel):
+    """레짐 전환 이벤트.
+
+    RegimeService가 레짐 label 변경 시 발행합니다.
+
+    Attributes:
+        symbol: 거래 심볼
+        prev_label: 이전 레짐 라벨
+        new_label: 새 레짐 라벨
+        confidence: detector agreement (0~1)
+        cascade_risk: derivatives 기반 급락 위험도 (0~1)
+        transition_prob: transition matrix 기반 전환 확률 (0~1)
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    event_id: UUID = Field(default_factory=uuid4)
+    event_type: EventType = EventType.REGIME_CHANGE
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    correlation_id: UUID | None = None
+    source: str = "regime_service"
+
+    symbol: str
+    prev_label: str
+    new_label: str
+    confidence: float
+    cascade_risk: float = 0.0
+    transition_prob: float = 0.0
+
+
+# ==========================================================================
 # System Events
 # ==========================================================================
 class HeartbeatEvent(BaseModel):
@@ -342,6 +378,7 @@ type AnyEvent = (
     | BalanceUpdateEvent
     | RiskAlertEvent
     | CircuitBreakerEvent
+    | RegimeChangeEvent
     | HeartbeatEvent
 )
 
@@ -356,6 +393,7 @@ EVENT_TYPE_MAP: dict[EventType, type[AnyEvent]] = {
     EventType.BALANCE_UPDATE: BalanceUpdateEvent,
     EventType.RISK_ALERT: RiskAlertEvent,
     EventType.CIRCUIT_BREAKER: CircuitBreakerEvent,
+    EventType.REGIME_CHANGE: RegimeChangeEvent,
     EventType.HEARTBEAT: HeartbeatEvent,
 }
 
@@ -379,5 +417,6 @@ DROPPABLE_EVENTS: frozenset[EventType] = frozenset(
         EventType.BAR,
         EventType.HEARTBEAT,
         EventType.RISK_ALERT,
+        EventType.REGIME_CHANGE,
     }
 )

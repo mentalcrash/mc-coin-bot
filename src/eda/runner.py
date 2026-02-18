@@ -303,9 +303,10 @@ class EDARunner:
                 kwargs["precomputed_signals"] = precomputed
 
         # 각 provider를 생성하고 None이 아니면 추가
+        deriv_provider = self._create_derivatives_provider()
         providers: dict[str, object | None] = {
-            "regime_service": self._create_regime_service(),
-            "derivatives_provider": self._create_derivatives_provider(),
+            "regime_service": self._create_regime_service(deriv_provider),
+            "derivatives_provider": deriv_provider,
             "onchain_provider": self._create_onchain_provider(),
             "feature_store": self._create_feature_store(),
             "macro_provider": self._create_macro_provider(),
@@ -316,10 +317,15 @@ class EDARunner:
 
         return kwargs
 
-    def _create_regime_service(self) -> RegimeService | None:
+    def _create_regime_service(
+        self, derivatives_provider: object | None = None,
+    ) -> RegimeService | None:
         """RegimeService 생성 + 전체 데이터 사전 계산.
 
         regime_config가 None이면 None을 반환합니다.
+
+        Args:
+            derivatives_provider: 파생상품 데이터 프로바이더 (있으면 DerivativesDetector 활성화)
 
         Returns:
             RegimeService 또는 None
@@ -331,7 +337,7 @@ class EDARunner:
         from src.eda.analytics import tf_to_pandas_freq
         from src.regime.service import RegimeService
 
-        regime_service = RegimeService(self._regime_config)
+        regime_service = RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
 
         feed = self._feed
         if not isinstance(feed, HistoricalDataFeed):
@@ -340,14 +346,23 @@ class EDARunner:
         data = feed.data
         freq = tf_to_pandas_freq(self._target_timeframe)
 
+        # derivatives_provider에서 symbol별 deriv_df 추출
+        deriv_map: dict[str, pd.DataFrame] = {}
+        if derivatives_provider is not None and hasattr(derivatives_provider, "_precomputed"):
+            deriv_map = derivatives_provider._precomputed  # type: ignore[union-attr]
+
         if isinstance(data, MarketDataSet):
             df_tf = resample_1m_to_tf(data.ohlcv, freq)
-            regime_service.precompute(data.symbol, df_tf["close"])  # type: ignore[arg-type]
+            regime_service.precompute(
+                data.symbol, df_tf["close"], deriv_df=deriv_map.get(data.symbol),  # type: ignore[arg-type]
+            )
         else:
             assert isinstance(data, MultiSymbolData)
             for sym in data.symbols:
                 df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
-                regime_service.precompute(sym, df_tf["close"])  # type: ignore[arg-type]
+                regime_service.precompute(
+                    sym, df_tf["close"], deriv_df=deriv_map.get(sym),  # type: ignore[arg-type]
+                )
 
         return regime_service
 

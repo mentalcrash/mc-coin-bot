@@ -246,18 +246,49 @@ class MetaLearnerConfig(BaseModel):
     )
 
 
+class DerivativesDetectorConfig(BaseModel):
+    """Derivatives 기반 보조 레짐 감지기 설정.
+
+    Funding rate z-score, OI 변화율, funding persistence로
+    leverage 축적/해소와 cascade risk를 감지합니다.
+
+    Attributes:
+        funding_zscore_window: funding rate rolling z-score 윈도우
+        oi_change_window: OI 변화율 기간
+        funding_persistence_window: 연속 동방향 funding rate 감시 윈도우
+        cascade_risk_threshold: 고위험 cascade risk 임계값
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    funding_zscore_window: int = Field(default=7, ge=3, le=30)
+    oi_change_window: int = Field(default=1, ge=1, le=7)
+    funding_persistence_window: int = Field(default=14, ge=5, le=30)
+    cascade_risk_threshold: float = Field(default=0.7, ge=0.3, le=1.0)
+
+    @property
+    def warmup_periods(self) -> int:
+        """필요한 워밍업 기간."""
+        return max(self.funding_zscore_window, self.funding_persistence_window) + 1
+
+
 class EnsembleRegimeDetectorConfig(BaseModel):
     """앙상블 레짐 감지 설정.
 
-    Rule-Based + HMM + Vol-Structure 감지기의 가중 확률 블렌딩 설정입니다.
+    Rule-Based + HMM + Vol-Structure + MSAR + Derivatives 감지기의
+    가중 확률 블렌딩 설정입니다.
 
     Attributes:
         rule_based: Rule-Based 감지기 설정
         hmm: HMM 감지기 설정 (None이면 비활성)
         vol_structure: Vol-Structure 감지기 설정 (None이면 비활성)
+        msar: MSAR 감지기 설정 (None이면 비활성)
+        derivatives: Derivatives 감지기 설정 (None이면 비활성)
         weight_rule_based: Rule-Based 가중치
         weight_hmm: HMM 가중치
         weight_vol_structure: Vol-Structure 가중치
+        weight_msar: MSAR 가중치
+        weight_derivatives: Derivatives 가중치
         min_hold_bars: 최소 레짐 유지 bar 수 (hysteresis)
     """
 
@@ -270,11 +301,15 @@ class EnsembleRegimeDetectorConfig(BaseModel):
     )
 
     msar: MSARDetectorConfig | None = Field(default=None, description="MSAR 설정 (None=비활성)")
+    derivatives: DerivativesDetectorConfig | None = Field(
+        default=None, description="Derivatives 설정 (None=비활성)"
+    )
 
     weight_rule_based: float = Field(default=1.0, ge=0.0, le=1.0)
     weight_hmm: float = Field(default=0.0, ge=0.0, le=1.0)
     weight_vol_structure: float = Field(default=0.0, ge=0.0, le=1.0)
     weight_msar: float = Field(default=0.0, ge=0.0, le=1.0)
+    weight_derivatives: float = Field(default=0.0, ge=0.0, le=1.0)
 
     min_hold_bars: int = Field(default=5, ge=1, le=20, description="최소 레짐 유지 bar 수")
 
@@ -302,6 +337,8 @@ class EnsembleRegimeDetectorConfig(BaseModel):
             active_total += self.weight_vol_structure
         if self.msar is not None:
             active_total += self.weight_msar
+        if self.derivatives is not None:
+            active_total += self.weight_derivatives
 
         tolerance = 1e-6
         if active_total > 0 and abs(active_total - 1.0) > tolerance:

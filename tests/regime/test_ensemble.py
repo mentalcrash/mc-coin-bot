@@ -144,6 +144,7 @@ class TestRuleOnlyEnsemble:
             "p_volatile",
             "rv_ratio",
             "efficiency_ratio",
+            "confidence",
         }
         assert set(result.columns) == expected_cols
 
@@ -263,6 +264,7 @@ class TestThreeDetectorEnsemble:
             "p_volatile",
             "rv_ratio",
             "efficiency_ratio",
+            "confidence",
         }
         assert set(result.columns) == expected_cols
 
@@ -489,6 +491,7 @@ class TestFourDetectorEnsemble:
             "p_volatile",
             "rv_ratio",
             "efficiency_ratio",
+            "confidence",
         }
         assert set(result.columns) == expected_cols
 
@@ -571,6 +574,7 @@ class TestMetaLearnerEnsemble:
             "p_volatile",
             "rv_ratio",
             "efficiency_ratio",
+            "confidence",
         }
         assert set(result.columns) == expected_cols
 
@@ -637,3 +641,53 @@ class TestEnsembleHysteresisPendingLabel:
         # hold_counter와 pending_labels가 올바르게 초기화됨
         assert detector._hold_counters["TEST"] == 0
         assert detector._pending_labels["TEST"] is None
+
+
+# ── Confidence Tests ──
+
+
+class TestEnsembleConfidence:
+    """Ensemble confidence 계산 검증."""
+
+    def test_vectorized_confidence_column(self) -> None:
+        """classify_series() 결과에 confidence 컬럼 포함."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=1)
+        detector = EnsembleRegimeDetector(cfg)
+        closes = _make_trending_series()
+        result = detector.classify_series(closes)
+        assert "confidence" in result.columns
+
+    def test_single_detector_confidence_is_one(self) -> None:
+        """Rule-only → confidence = 1.0."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=1)
+        detector = EnsembleRegimeDetector(cfg)
+        closes = _make_trending_series()
+        result = detector.classify_series(closes)
+        valid = result["confidence"].dropna()
+        # Single detector → always agrees with itself
+        np.testing.assert_allclose(valid.values, 1.0, atol=1e-10)
+
+    def test_incremental_confidence(self) -> None:
+        """update() 반환 state에 confidence 필드."""
+        cfg = EnsembleRegimeDetectorConfig(min_hold_bars=1)
+        detector = EnsembleRegimeDetector(cfg)
+        result = None
+        for i in range(detector.warmup_periods + 10):
+            result = detector.update("BTC/USDT", 100.0 + i * 0.5)
+        assert result is not None
+        assert 0.0 <= result.confidence <= 1.0
+
+    def test_multi_detector_confidence_range(self) -> None:
+        """2-detector 앙상블 → confidence 0~1."""
+        cfg = EnsembleRegimeDetectorConfig(
+            vol_structure=VolStructureDetectorConfig(),
+            weight_rule_based=0.6,
+            weight_vol_structure=0.4,
+            min_hold_bars=1,
+        )
+        detector = EnsembleRegimeDetector(cfg)
+        closes = _make_trending_series(200)
+        result = detector.classify_series(closes)
+        valid = result["confidence"].dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()

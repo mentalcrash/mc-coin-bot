@@ -83,19 +83,25 @@ _MIN_META_CLASSES = 2
 def _collect_detector_probs(
     detector_dfs: list[tuple[str, pd.DataFrame, float]],
     n: int,
-) -> tuple[npt.NDArray[floating[Any]], npt.NDArray[floating[Any]], npt.NDArray[floating[Any]]]:
-    """감지기별 확률을 가중 평균.
+) -> tuple[
+    npt.NDArray[floating[Any]],
+    npt.NDArray[floating[Any]],
+    npt.NDArray[floating[Any]],
+    npt.NDArray[floating[Any]],
+]:
+    """감지기별 확률을 가중 평균 + confidence 계산.
 
     Args:
         detector_dfs: (name, df, weight) 튜플 리스트
         n: bar 수
 
     Returns:
-        (p_trending, p_ranging, p_volatile) numpy arrays
+        (p_trending, p_ranging, p_volatile, confidence) numpy arrays
     """
     p_trending = np.full(n, np.nan)
     p_ranging = np.full(n, np.nan)
     p_volatile = np.full(n, np.nan)
+    confidence = np.full(n, np.nan)
 
     # Pre-extract numpy arrays per detector
     det_arrays: list[
@@ -134,7 +140,68 @@ def _collect_detector_probs(
             p_ranging[i] = br / total_weight
             p_volatile[i] = bv / total_weight
 
-    return p_trending, p_ranging, p_volatile
+    return p_trending, p_ranging, p_volatile, confidence
+
+
+def _compute_confidence(
+    detector_dfs: list[tuple[str, pd.DataFrame, float]],
+    final_labels: pd.Series,
+    n: int,
+) -> npt.NDArray[floating[Any]]:
+    """각 bar에서 최종 label에 동의하는 detector 비율 계산.
+
+    각 detector의 argmax(p_trending, p_ranging, p_volatile) label을
+    최종 앙상블 label과 비교하여 동의 비율을 산출합니다.
+
+    Args:
+        detector_dfs: (name, prob_df, weight) 리스트
+        final_labels: 최종 앙상블 regime_label 시리즈
+        n: bar 수
+
+    Returns:
+        confidence 배열 (0~1)
+    """
+    confidence = np.full(n, np.nan)
+    final_arr = final_labels.to_numpy()
+
+    label_map = {
+        "p_trending": RegimeLabel.TRENDING.value,
+        "p_ranging": RegimeLabel.RANGING.value,
+        "p_volatile": RegimeLabel.VOLATILE.value,
+    }
+
+    # Pre-compute argmax label per detector per bar
+    det_argmax_labels: list[npt.NDArray[np.object_]] = []
+    for _name, df, _w in detector_dfs:
+        pt = df["p_trending"].to_numpy()
+        pr = df["p_ranging"].to_numpy()
+        pv = df["p_volatile"].to_numpy()
+        labels_arr = np.full(n, np.nan, dtype=object)
+        for i in range(n):
+            if not np.isnan(pt[i]):
+                pairs = [
+                    ("p_trending", float(pt[i])),
+                    ("p_ranging", float(pr[i])),
+                    ("p_volatile", float(pv[i])),
+                ]
+                max_col = max(pairs, key=lambda x: x[1])[0]
+                labels_arr[i] = label_map[max_col]
+        det_argmax_labels.append(labels_arr)
+
+    for i in range(n):
+        if pd.isna(final_arr[i]):
+            continue
+        active = 0
+        agree = 0
+        for det_labels in det_argmax_labels:
+            if pd.notna(det_labels[i]):
+                active += 1
+                if det_labels[i] == final_arr[i]:
+                    agree += 1
+        if active > 0:
+            confidence[i] = agree / active
+
+    return confidence
 
 
 def _apply_hard_labels(
@@ -202,6 +269,13 @@ class EnsembleRegimeDetector:
         elif self._config.msar is not None and not _msar_detector_available:
             logger.warning("statsmodels not available -- MSAR detector disabled")
 
+        # Derivatives detector (optional)
+        self._deriv_detector: Any = None
+        if self._config.derivatives is not None:
+            from src.regime.derivatives_detector import DerivativesDetector
+
+            self._deriv_detector = DerivativesDetector(self._config.derivatives)
+
         # Meta-learner model (lazy init)
         self._meta_model: Any = None
 
@@ -223,9 +297,15 @@ class EnsembleRegimeDetector:
     # ── Internal: detector probabilities collection ──
 
     def _run_all_detectors(
-        self, closes: pd.Series
+        self,
+        closes: pd.Series,
+        deriv_df: pd.DataFrame | None = None,
     ) -> tuple[pd.DataFrame, list[tuple[str, pd.DataFrame, float]]]:
         """모든 활성 감지기 실행.
+
+        Args:
+            closes: 종가 시리즈
+            deriv_df: derivatives 데이터 (DerivativesDetector용, None이면 비활성)
 
         Returns:
             (rule_df, list of (name, prob_df, weight))
@@ -249,25 +329,34 @@ class EnsembleRegimeDetector:
             msar_df = self._msar_detector.classify_series(closes)
             detector_results.append(("msar", msar_df, cfg.weight_msar))
 
+        if self._deriv_detector is not None and deriv_df is not None:
+            deriv_result_df = self._deriv_detector.classify_series(deriv_df)
+            detector_results.append(("derivatives", deriv_result_df, cfg.weight_derivatives))
+
         return rule_df, detector_results
 
     # ── Vectorized API ──
 
-    def classify_series(self, closes: pd.Series) -> pd.DataFrame:
+    def classify_series(
+        self,
+        closes: pd.Series,
+        deriv_df: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
         """전체 시리즈에서 앙상블 레짐 분류.
 
         각 감지기의 확률을 가중 평균하고, hysteresis를 적용합니다.
 
         Args:
             closes: 종가 시리즈
+            deriv_df: derivatives 데이터 (None이면 derivatives detector 비활성)
 
         Returns:
             DataFrame with columns:
                 regime_label, p_trending, p_ranging, p_volatile,
-                rv_ratio, efficiency_ratio
+                rv_ratio, efficiency_ratio, confidence
         """
         cfg = self._config
-        rule_df, detector_results = self._run_all_detectors(closes)
+        rule_df, detector_results = self._run_all_detectors(closes, deriv_df)
 
         if cfg.ensemble_method == "meta_learner":
             return self._classify_meta_learner(closes, rule_df, detector_results)
@@ -284,7 +373,7 @@ class EnsembleRegimeDetector:
         n = len(closes)
         cfg = self._config
 
-        p_trending, p_ranging, p_volatile = _collect_detector_probs(
+        p_trending, p_ranging, p_volatile, _unused_conf = _collect_detector_probs(
             detector_results,
             n,
         )
@@ -297,6 +386,9 @@ class EnsembleRegimeDetector:
             cfg.min_hold_bars,
         )
 
+        # Confidence: detector agreement with final ensemble label
+        confidence = _compute_confidence(detector_results, regime_labels, n)
+
         return pd.DataFrame(
             {
                 "regime_label": regime_labels,
@@ -305,6 +397,7 @@ class EnsembleRegimeDetector:
                 "p_volatile": p_volatile,
                 "rv_ratio": rule_df["rv_ratio"],
                 "efficiency_ratio": rule_df["efficiency_ratio"],
+                "confidence": confidence,
             },
             index=closes.index,
         )
@@ -462,6 +555,9 @@ class EnsembleRegimeDetector:
             cfg.min_hold_bars,
         )
 
+        # Meta-learner confidence: detector agreement
+        confidence = _compute_confidence(detector_results, regime_labels, n)
+
         return pd.DataFrame(
             {
                 "regime_label": regime_labels,
@@ -470,6 +566,7 @@ class EnsembleRegimeDetector:
                 "p_volatile": p_volatile,
                 "rv_ratio": rule_df["rv_ratio"],
                 "efficiency_ratio": rule_df["efficiency_ratio"],
+                "confidence": confidence,
             },
             index=closes.index,
         )
@@ -482,18 +579,26 @@ class EnsembleRegimeDetector:
         hmm_state: RegimeState | None,
         vol_state: RegimeState | None,
         msar_state: RegimeState | None,
-    ) -> dict[str, float]:
-        """감지기 상태를 가중 블렌딩하여 확률 dict 반환."""
+        deriv_state: RegimeState | None = None,
+    ) -> tuple[dict[str, float], float]:
+        """감지기 상태를 가중 블렌딩하여 확률 dict + confidence 반환.
+
+        Returns:
+            (probabilities dict, confidence)
+        """
         cfg = self._config
         total_weight = 0.0
         bt, br, bv = 0.0, 0.0, 0.0
 
-        for state, weight in (
+        all_states: list[tuple[RegimeState | None, float]] = [
             (rule_state, cfg.weight_rule_based),
             (hmm_state, cfg.weight_hmm),
             (vol_state, cfg.weight_vol_structure),
             (msar_state, cfg.weight_msar),
-        ):
+            (deriv_state, cfg.weight_derivatives),
+        ]
+
+        for state, weight in all_states:
             if state is not None:
                 bt += weight * state.probabilities["trending"]
                 br += weight * state.probabilities["ranging"]
@@ -505,9 +610,28 @@ class EnsembleRegimeDetector:
             br /= total_weight
             bv /= total_weight
 
-        return {"trending": bt, "ranging": br, "volatile": bv}
+        probs = {"trending": bt, "ranging": br, "volatile": bv}
 
-    def update(self, symbol: str, close: float) -> RegimeState | None:
+        # Confidence: argmax label 대비 동의 비율
+        blended_label = max(probs, key=probs.get)  # type: ignore[arg-type]
+        active_count = 0
+        agree_count = 0
+        for state, _weight in all_states:
+            if state is not None:
+                active_count += 1
+                det_label = max(state.probabilities, key=state.probabilities.get)  # type: ignore[arg-type]
+                if det_label == blended_label:
+                    agree_count += 1
+        confidence = agree_count / active_count if active_count > 0 else 1.0
+
+        return probs, confidence
+
+    def update(
+        self,
+        symbol: str,
+        close: float,
+        derivatives: dict[str, float] | None = None,
+    ) -> RegimeState | None:
         """Bar 단위 incremental 업데이트.
 
         Note: meta_learner 모드에서는 forward return이 필요하므로
@@ -516,6 +640,7 @@ class EnsembleRegimeDetector:
         Args:
             symbol: 거래 심볼
             close: 현재 종가
+            derivatives: derivatives 데이터 (None이면 derivatives detector 스킵)
 
         Returns:
             RegimeState 또는 warmup 중 None
@@ -537,13 +662,18 @@ class EnsembleRegimeDetector:
         msar_state = (
             self._msar_detector.update(symbol, close) if self._msar_detector is not None else None
         )
+        deriv_state: RegimeState | None = None
+        if self._deriv_detector is not None and derivatives is not None:
+            deriv_state = self._deriv_detector.update(symbol, **derivatives)
 
         # Rule-Based가 warmup 중이면 전체 None
         if rule_state is None:
             return None
 
-        # Weighted blending
-        probs = self._blend_detector_states(rule_state, hmm_state, vol_state, msar_state)
+        # Weighted blending + confidence
+        probs, confidence = self._blend_detector_states(
+            rule_state, hmm_state, vol_state, msar_state, deriv_state
+        )
         raw_label = RegimeLabel(max(probs, key=probs.get))  # type: ignore[arg-type]
 
         # Hysteresis (matches vectorized apply_hysteresis: same pending label required)
@@ -585,6 +715,7 @@ class EnsembleRegimeDetector:
                 "rv_ratio": rule_state.raw_indicators.get("rv_ratio", 0.0),
                 "er": rule_state.raw_indicators.get("er", 0.0),
             },
+            confidence=confidence,
         )
         self._states[symbol] = state
         return state
@@ -592,6 +723,31 @@ class EnsembleRegimeDetector:
     def get_regime(self, symbol: str) -> RegimeState | None:
         """현재 레짐 상태 조회."""
         return self._states.get(symbol)
+
+    @property
+    def has_derivatives_detector(self) -> bool:
+        """Derivatives detector가 활성인지 여부."""
+        return self._deriv_detector is not None
+
+    def get_cascade_risk(self, symbol: str) -> float:
+        """Derivatives detector의 cascade risk 조회.
+
+        Returns:
+            cascade risk (0~1). detector 없으면 0.0
+        """
+        if self._deriv_detector is None:
+            return 0.0
+        return self._deriv_detector.get_cascade_risk(symbol)
+
+    def get_cascade_risk_series(self, deriv_df: pd.DataFrame) -> pd.Series:
+        """Derivatives detector의 cascade risk 시리즈 반환.
+
+        Returns:
+            cascade risk 시리즈. detector 없으면 0.0 시리즈
+        """
+        if self._deriv_detector is None:
+            return pd.Series(0.0, index=deriv_df.index)
+        return self._deriv_detector.get_cascade_risk_series(deriv_df)
 
 
 def add_ensemble_regime_columns(

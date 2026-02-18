@@ -10,10 +10,10 @@ Components:
     - RegimeDetector: 레짐 분류기 (vectorized + incremental)
     - RegimeState: 개별 bar 레짐 상태
     - add_regime_columns: 편의 API (DataFrame에 레짐 컬럼 추가)
-    - EnsembleRegimeDetector: 앙상블 레짐 분류기 (Rule + HMM + Vol + MSAR)
+    - EnsembleRegimeDetector: 앙상블 레짐 분류기 (Rule + HMM + Vol + MSAR + Derivatives)
     - add_ensemble_regime_columns: 앙상블 편의 API
-    - MSARDetectorConfig: MSAR 감지기 설정
-    - MetaLearnerConfig: Meta-learner 앙상블 설정
+    - DerivativesDetectorConfig: Derivatives 감지기 설정
+    - RegimeContext: 전략 소비용 rich regime 정보
 
 Example:
     >>> from src.regime import add_regime_columns, RegimeDetectorConfig
@@ -22,6 +22,7 @@ Example:
 """
 
 from src.regime.config import (
+    DerivativesDetectorConfig,
     EnsembleRegimeDetectorConfig,
     HMMDetectorConfig,
     MetaLearnerConfig,
@@ -32,15 +33,22 @@ from src.regime.config import (
 )
 from src.regime.detector import RegimeDetector, RegimeState, add_regime_columns
 from src.regime.ensemble import EnsembleRegimeDetector, add_ensemble_regime_columns
-from src.regime.service import EnrichedRegimeState, RegimeService, RegimeServiceConfig
+from src.regime.service import (
+    EnrichedRegimeState,
+    RegimeContext,
+    RegimeService,
+    RegimeServiceConfig,
+)
 
 __all__ = [
+    "DerivativesDetectorConfig",
     "EnrichedRegimeState",
     "EnsembleRegimeDetector",
     "EnsembleRegimeDetectorConfig",
     "HMMDetectorConfig",
     "MSARDetectorConfig",
     "MetaLearnerConfig",
+    "RegimeContext",
     "RegimeDetector",
     "RegimeDetectorConfig",
     "RegimeLabel",

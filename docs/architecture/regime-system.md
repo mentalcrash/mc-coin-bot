@@ -1,7 +1,7 @@
 # Regime Detection System Architecture
 
 시장 상태(TRENDING/RANGING/VOLATILE)를 실시간 감지하여 전략에 제공하는 공유 인프라.
-4개 감지기의 앙상블 블렌딩 + EDA 통합 서비스로 구성.
+5개 감지기의 앙상블 블렌딩 + EDA 통합 서비스로 구성.
 
 > **핵심 목표:** 전략이 시장 레짐에 적응적으로 파라미터를 조절할 수 있도록 투명한 regime enrichment 제공
 
@@ -10,38 +10,44 @@
 ## 1. 전체 구조 개요
 
 ```
-종가 시리즈
-    │
-    ▼
-┌─────────────────────────────────────────────────────┐
-│           EnsembleRegimeDetector                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ │
-│  │Rule-Based│ │   HMM    │ │Vol-Struct│ │  MSAR   │ │
-│  │ (항상)   │ │ (선택)   │ │ (선택)   │ │ (선택)  │ │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬────┘ │
-│       └──────┬─────┴──────┬─────┘             │      │
-│              ▼            ▼                    │      │
-│     Weighted Average  또는  Meta-Learner ◄─────┘      │
-│              │                                       │
-│              ▼                                       │
-│     p_trending / p_ranging / p_volatile              │
-│     + Hysteresis → regime_label                      │
-└───────────────────────┬─────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│               RegimeService                          │
-│  Backtest: precompute() → enrich_dataframe()         │
-│  Live: _on_bar() → get_regime_columns()              │
-│  + trend_direction / trend_strength (EWM momentum)   │
-└───────────────────────┬─────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│             StrategyEngine                           │
-│  _apply_enrichments() → regime 컬럼 주입              │
-│  → strategy.generate_signals()에서 활용               │
-└─────────────────────────────────────────────────────┘
+종가 시리즈          Derivatives DF (funding_rate, oi)
+    │                       │
+    ▼                       ▼
+┌────────────────────────────────────────────────────────────┐
+│              EnsembleRegimeDetector                          │
+│  ┌──────────┐ ┌──────┐ ┌─────────┐ ┌──────┐ ┌───────────┐ │
+│  │Rule-Based│ │ HMM  │ │Vol-Str. │ │ MSAR │ │Derivatives│ │
+│  │ (항상)   │ │(선택)│ │ (선택)  │ │(선택)│ │  (선택)   │ │
+│  └────┬─────┘ └──┬───┘ └───┬─────┘ └──┬───┘ └─────┬─────┘ │
+│       └────┬─────┴────┬────┘           │           │       │
+│            ▼          ▼                │           │       │
+│   Weighted Average 또는 Meta-Learner ◄──┘           │       │
+│            │                                       │       │
+│            ▼                                       │       │
+│   p_trending / p_ranging / p_volatile              │       │
+│   + confidence (detector agreement)                │       │
+│   + Hysteresis → regime_label                      │       │
+│   + cascade_risk (from Derivatives) ◄──────────────┘       │
+└────────────────────────┬───────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────────┐
+│               RegimeService                                 │
+│  Backtest: precompute() → enrich_dataframe()                │
+│  Live: _on_bar() → get_regime_columns()                     │
+│  + trend_direction / trend_strength (EWM momentum)          │
+│  + confidence / transition_prob / cascade_risk              │
+│  + REGIME_CHANGE event (label 변경 시 EventBus 발행)          │
+│  + RegimeContext API (전략 소비용)                              │
+└────────────────────────┬───────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────────┐
+│             StrategyEngine                                   │
+│  _apply_enrichments() → regime 컬럼 주입                      │
+│  → strategy.generate_signals()에서 활용                       │
+│  → RegimeContext로 vol_scalar 등 편의 메트릭 접근               │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -52,26 +58,28 @@
 
 | 파일 | 클래스 | 역할 |
 |------|--------|------|
-| `src/regime/config.py` | `RegimeDetectorConfig`, `HMMDetectorConfig`, `VolStructureDetectorConfig`, `MSARDetectorConfig`, `MetaLearnerConfig`, `EnsembleRegimeDetectorConfig` | Pydantic 설정 (frozen=True) |
+| `src/regime/config.py` | `RegimeDetectorConfig`, `HMMDetectorConfig`, `VolStructureDetectorConfig`, `MSARDetectorConfig`, `DerivativesDetectorConfig`, `MetaLearnerConfig`, `EnsembleRegimeDetectorConfig` | Pydantic 설정 (frozen=True) |
 | `src/regime/detector.py` | `RegimeDetector`, `RegimeState` | Rule-Based 감지기 (RV Ratio + ER) |
 | `src/regime/vol_detector.py` | `VolStructureDetector` | Vol-Structure 감지기 |
 | `src/regime/hmm_detector.py` | `HMMDetector` | HMM 감지기 (hmmlearn, 선택) |
 | `src/regime/msar_detector.py` | `MSARDetector` | MSAR 감지기 (statsmodels, 선택) |
-| `src/regime/ensemble.py` | `EnsembleRegimeDetector` | 4개 감지기 앙상블 |
-| `src/regime/service.py` | `RegimeService`, `RegimeServiceConfig`, `EnrichedRegimeState` | EDA 통합 서비스 |
+| `src/regime/derivatives_detector.py` | `DerivativesDetector` | Derivatives 감지기 (funding rate + OI) |
+| `src/regime/ensemble.py` | `EnsembleRegimeDetector` | 5개 감지기 앙상블 |
+| `src/regime/service.py` | `RegimeService`, `RegimeServiceConfig`, `EnrichedRegimeState`, `RegimeContext` | EDA 통합 서비스 |
 
 ### 2.2 의존성 흐름
 
 ```
-RegimeService
+RegimeService (+ derivatives_provider)
   └─ EnsembleRegimeDetector
        ├─ RegimeDetector (항상)
-       ├─ HMMDetector (선택 — hmmlearn)
+       ├─ HMMDetector (선택 -- hmmlearn)
        ├─ VolStructureDetector (선택)
-       └─ MSARDetector (선택 — statsmodels)
+       ├─ MSARDetector (선택 -- statsmodels)
+       └─ DerivativesDetector (선택 -- derivatives 데이터)
 
 StrategyEngine → RegimeService (소비자)
-EDARunner → RegimeService (생성자)
+EDARunner → RegimeService (생성자, derivatives_provider 주입)
 ```
 
 ---
@@ -211,6 +219,50 @@ p_ranging  = 1 - p_trending - p_volatile
 
 **Warmup:** `min_train_window + 1` bar
 
+### 4.5 Derivatives (선택 - derivatives 데이터 필요)
+
+**파일:** `src/regime/derivatives_detector.py`
+
+**입력:** DataFrame with `funding_rate`, `oi` columns
+
+**지표:**
+
+| Feature | 계산 | Signal |
+|---------|------|--------|
+| `funding_zscore` | `(FR - rolling_mean) / rolling_std` | 극단 레버리지 편향 |
+| `funding_persistence` | 동방향 FR 연속 bar 수 | crash 선행지표 |
+| `oi_change_rate` | `(OI - OI.shift(N)) / OI.shift(N)` | 레버리지 축적/해소 |
+| `cascade_risk` | 위 3개의 가중 합성 0~1 | PM/RM 방어 트리거 |
+
+**분류 알고리즘:**
+
+```
+s_volatile = sigmoid(|funding_zscore|, center=1.5, scale=4) *
+             sigmoid(cascade_risk, center=0.4, scale=6)
+s_trending = sigmoid(|funding_zscore|, center=0.5, scale=3) * (1 - s_volatile)
+s_ranging  = max(0, 1 - s_trending - s_volatile)
+normalize -> p_trending + p_ranging + p_volatile = 1.0
+```
+
+**Cascade Risk 계산:**
+
+```
+cascade_risk = 0.4 * sigmoid(|funding_zscore|, 1.5, 3.0)
+             + 0.3 * sigmoid(|oi_change|, 0.1, 10.0)
+             + 0.3 * (persistence / persistence_window).clip(0, 1)
+```
+
+**기본 파라미터:**
+
+| 파라미터 | 기본값 | 설명 |
+|---------|-------|------|
+| `funding_zscore_window` | 7 | Funding rate z-score 윈도우 |
+| `oi_change_window` | 1 | OI 변화율 기간 |
+| `funding_persistence_window` | 14 | 연속 동방향 FR 감시 |
+| `cascade_risk_threshold` | 0.7 | 고위험 임계값 |
+
+**Warmup:** `max(funding_zscore_window, funding_persistence_window) + 1` bar
+
 ---
 
 ## 5. 앙상블 방식
@@ -232,8 +284,21 @@ blended_p = Σ(weight_i × p_i) / Σ(weight_i)   (NaN이 아닌 감지기만)
 | HMM | 0.0 |
 | Vol-Structure | 0.0 |
 | MSAR | 0.0 |
+| Derivatives | 0.0 |
 
-> 기본 설정에서는 Rule-Based만 활성. HMM/Vol/MSAR 활성화 시 가중치 재배분 필요.
+> 기본 설정에서는 Rule-Based만 활성. 다른 감지기 활성화 시 가중치 재배분 필요.
+
+### 5.3 Confidence (Detector Agreement)
+
+앙상블의 **confidence**는 활성 감지기가 최종 label에 동의하는 비율입니다:
+
+```
+confidence = (최종 label과 동일한 argmax를 가진 감지기 수) / (활성 감지기 수)
+```
+
+- 단일 감지기만 활성이면 `confidence = 1.0`
+- 4개 감지기 모두 TRENDING이면 `confidence = 1.0`
+- 3/4 TRENDING, 1/4 RANGING이면 `confidence = 0.75`
 
 ### 5.2 Meta-Learner (sklearn 필요)
 
@@ -286,12 +351,15 @@ if raw_label != current_label:
 
 ```python
 REGIME_COLUMNS = (
-    "regime_label",     # str: "trending" | "ranging" | "volatile"
-    "p_trending",       # float: 0.0~1.0
-    "p_ranging",        # float: 0.0~1.0
-    "p_volatile",       # float: 0.0~1.0
-    "trend_direction",  # int: -1 (하락) | 0 (중립) | +1 (상승)
-    "trend_strength",   # float: 0.0~1.0
+    "regime_label",            # str: "trending" | "ranging" | "volatile"
+    "p_trending",              # float: 0.0~1.0
+    "p_ranging",               # float: 0.0~1.0
+    "p_volatile",              # float: 0.0~1.0
+    "trend_direction",         # int: -1 (하락) | 0 (중립) | +1 (상승)
+    "trend_strength",          # float: 0.0~1.0
+    "regime_confidence",       # float: 0.0~1.0  -- detector agreement
+    "regime_transition_prob",  # float: 0.0~1.0  -- 다음 bar 전환 확률
+    "cascade_risk",            # float: 0.0~1.0  -- derivatives 기반 급락 위험
 )
 ```
 
@@ -314,7 +382,66 @@ class EnrichedRegimeState:
     raw_indicators: dict[str, float]  # rv_ratio, er 등
     trend_direction: int = 0     # -1 | 0 | +1
     trend_strength: float = 0.0  # 0.0~1.0
+    confidence: float = 0.0      # detector agreement (0~1)
+    transition_prob: float = 0.0 # 다음 bar 전환 확률 (0~1)
+    cascade_risk: float = 0.0   # derivatives 급락 위험도 (0~1)
 ```
+
+### 7.5 Transition Probability
+
+3x3 Markov transition matrix를 라벨 시퀀스에서 추정하여 현재 레짐에서 다른 레짐으로
+전환될 확률을 계산합니다. Laplace smoothing 적용.
+
+```
+transition_prob = 1.0 - P(current_label -> current_label)
+```
+
+- `precompute()`에서 vectorized label 시퀀스로 matrix 구축
+- `_on_bar()`에서 incremental 카운터로 matrix 갱신
+
+### 7.6 RegimeContext (전략 소비용 API)
+
+```python
+@dataclass(frozen=True)
+class RegimeContext:
+    label: RegimeLabel
+    p_trending: float
+    p_ranging: float
+    p_volatile: float
+    confidence: float
+    transition_prob: float
+    cascade_risk: float
+    trend_direction: int
+    trend_strength: float
+    bars_in_regime: int
+    suggested_vol_scalar: float  # 0.0~1.0
+```
+
+`suggested_vol_scalar` 계산:
+
+```
+base = p_trending * 1.0 + p_ranging * 0.4 + p_volatile * 0.2
+if cascade_risk > threshold: return 0.1
+return round(base * (0.5 + 0.5 * confidence), 2)
+```
+
+### 7.7 REGIME_CHANGE Event
+
+레짐 라벨이 변경되면 EventBus에 `REGIME_CHANGE` 이벤트를 발행합니다:
+
+```python
+class RegimeChangeEvent(BaseModel):
+    event_type: EventType = EventType.REGIME_CHANGE
+    symbol: str
+    prev_label: str
+    new_label: str
+    confidence: float
+    cascade_risk: float = 0.0
+    transition_prob: float = 0.0
+```
+
+- `DROPPABLE_EVENTS`에 포함 (stale 데이터 드롭 가능)
+- bus가 None이면 발행 스킵 (backward compatible)
 
 ---
 
@@ -323,17 +450,21 @@ class EnrichedRegimeState:
 ### 8.1 백테스트 모드 (Vectorized)
 
 ```
-EDARunner._create_regime_service()
+EDARunner._build_strategy_engine_kwargs()
   │
-  ├─ RegimeService(config) 생성
+  ├─ deriv_provider = _create_derivatives_provider()
+  ├─ RegimeService(config, derivatives_provider=deriv_provider) 생성
   │
-  ├─ regime_service.precompute(symbol, closes)
-  │    ├─ EnsembleRegimeDetector.classify_series(closes)  [벡터화]
+  ├─ regime_service.precompute(symbol, closes, deriv_df)
+  │    ├─ EnsembleRegimeDetector.classify_series(closes, deriv_df) [벡터화]
   │    │    ├─ RegimeDetector.classify_series()
   │    │    ├─ HMMDetector.classify_series()  (활성 시)
   │    │    ├─ VolStructureDetector.classify_series()  (활성 시)
-  │    │    └─ MSARDetector.classify_series()  (활성 시)
+  │    │    ├─ MSARDetector.classify_series()  (활성 시)
+  │    │    └─ DerivativesDetector.classify_series(deriv_df)  (활성 시)
   │    ├─ _compute_direction_vectorized(closes)
+  │    ├─ _estimate_transition_matrix(labels) → 3x3 matrix
+  │    ├─ confidence, transition_prob, cascade_risk 계산
   │    └─ 결과 캐시 → self._precomputed[symbol]
   │
   └─ StrategyEngine._on_bar()
@@ -353,12 +484,15 @@ WebSocket → BarEvent 발행
   │
   ├─ RegimeService._on_bar()  (1순위)
   │    ├─ TF 필터 (target_timeframe만)
-  │    ├─ EnsembleRegimeDetector.update(symbol, close)
+  │    ├─ EnsembleRegimeDetector.update(symbol, close, derivatives)
   │    │    ├─ RegimeDetector.update() → 버퍼 기반 O(1)
   │    │    ├─ HMMDetector.update() → 주기적 재학습
   │    │    ├─ VolStructureDetector.update()
-  │    │    └─ MSARDetector.update()
+  │    │    ├─ MSARDetector.update()
+  │    │    └─ DerivativesDetector.update() (derivatives 제공 시)
   │    ├─ _update_direction() → EWM momentum
+  │    ├─ transition_prob, cascade_risk 업데이트
+  │    ├─ label 변경 시 → REGIME_CHANGE 이벤트 발행
   │    └─ self._states[symbol] = EnrichedRegimeState
   │
   └─ StrategyEngine._on_bar()  (2순위)
@@ -470,15 +604,27 @@ class EnsembleRegimeDetectorConfig(BaseModel):
     hmm: HMMDetectorConfig | None           # HMM (None=비활성)
     vol_structure: VolStructureDetectorConfig | None  # Vol-Struct (None=비활성)
     msar: MSARDetectorConfig | None         # MSAR (None=비활성)
+    derivatives: DerivativesDetectorConfig | None     # Derivatives (None=비활성)
 
     weight_rule_based: float = 1.0          # 가중치 합 = 1.0 필수
     weight_hmm: float = 0.0
     weight_vol_structure: float = 0.0
     weight_msar: float = 0.0
+    weight_derivatives: float = 0.0
 
     min_hold_bars: int = 5                  # Hysteresis
     ensemble_method: "weighted_average" | "meta_learner"
     meta_learner: MetaLearnerConfig | None  # meta_learner 모드 시 필수
+```
+
+### 11.3 DerivativesDetectorConfig
+
+```python
+class DerivativesDetectorConfig(BaseModel):
+    funding_zscore_window: int = 7       # 3~30
+    oi_change_window: int = 1            # 1~7
+    funding_persistence_window: int = 14 # 5~30
+    cascade_risk_threshold: float = 0.7  # 0.3~1.0
 ```
 
 ---
@@ -521,8 +667,8 @@ elif config.hmm is not None:
 
 | API | 메서드 | 복잡도 | 용도 |
 |-----|--------|-------|------|
-| **Vectorized** | `classify_series(closes)` | O(n) | 백테스트 사전 계산 |
-| **Incremental** | `update(symbol, close)` | O(1)* | 라이브 BAR 단위 |
+| **Vectorized** | `classify_series(closes, deriv_df)` | O(n) | 백테스트 사전 계산 |
+| **Incremental** | `update(symbol, close, derivatives)` | O(1)* | 라이브 BAR 단위 |
 
 > *HMM/MSAR는 주기적 재학습 시 O(n). 일반 bar에서는 predict만 수행.
 
@@ -543,8 +689,9 @@ elif config.hmm is not None:
 | `tests/regime/test_vol_detector.py` | VolStructureDetector |
 | `tests/regime/test_hmm_detector.py` | HMMDetector |
 | `tests/regime/test_msar_detector.py` | MSARDetector |
-| `tests/regime/test_ensemble.py` | EnsembleRegimeDetector (앙상블 블렌딩) |
-| `tests/regime/test_regime_service.py` | RegimeService (precompute/incremental/warmup) |
+| `tests/regime/test_derivatives_detector.py` | DerivativesDetector (funding/OI/cascade risk) |
+| `tests/regime/test_ensemble.py` | EnsembleRegimeDetector (앙상블 블렌딩 + confidence) |
+| `tests/regime/test_regime_service.py` | RegimeService (precompute/incremental/warmup/transition/context/event) |
 
 ### 14.2 통합 테스트
 
@@ -559,6 +706,11 @@ elif config.hmm is not None:
 - Graceful degradation (라이브러리 미설치)
 - EDA 통합 (precompute + fallback)
 - Live warmup
+- Confidence + Transition probability
+- DerivativesDetector (cascade risk, funding/OI 분류)
+- REGIME_CHANGE 이벤트 발행
+- RegimeContext API (frozen, suggested_vol_scalar)
+- Backward compatibility (derivatives_provider=None)
 
 ---
 
@@ -582,6 +734,8 @@ elif config.hmm is not None:
 1. **Meta-learner Live 미지원:** forward return 필요 → weighted_average로 자동 폴백
 1. **가중치 합:** `ensemble_method="weighted_average"` 시 활성 감지기 가중치 합 = 1.0 필수
 1. **TF 필터:** RegimeService는 `target_timeframe`에 해당하는 BAR만 처리
+1. **Derivatives 데이터 없이도 동작:** `derivatives_provider=None`이면 derivatives detector 비활성, cascade_risk=0.0
+1. **REGIME_CHANGE 이벤트:** EventBus에 register() 호출 후에만 발행 (bus=None이면 스킵)
 
 ---
 
@@ -590,3 +744,4 @@ elif config.hmm is not None:
 | 날짜 | 변경 내용 |
 |------|----------|
 | 2026-02-18 | 초기 문서 작성 -- 4개 감지기, 앙상블, RegimeService, EDA 통합 흐름 |
+| 2026-02-18 | Phase 1-3: confidence, transition_prob, DerivativesDetector(5th), REGIME_CHANGE event, RegimeContext API |
