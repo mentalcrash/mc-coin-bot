@@ -1,4 +1,4 @@
-"""Tests for g0a-check CLI command."""
+"""Tests for p1-check CLI command."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ runner = CliRunner()
 
 @pytest.fixture
 def _mock_data_pipeline(tmp_path: Path) -> None:
-    """Mock data loading, indicator computation, and regime detection for g0a-check."""
+    """Mock data loading, indicator computation, and regime detection for p1-check."""
     # Create mock OHLCV data
     n = 500
     idx = pd.date_range("2020-01-01", periods=n, freq="D")
@@ -73,20 +73,20 @@ def _mock_data_pipeline(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("_mock_data_pipeline")
-class TestG0ACheck:
+class TestP1Check:
     def test_basic_ic_check(self) -> None:
         """기본 IC 점수 계산."""
-        result = runner.invoke(app, ["g0a-check", "rsi", "BTC/USDT", "--tf", "1D"])
+        result = runner.invoke(app, ["p1-check", "rsi", "BTC/USDT", "--tf", "1D"])
         assert result.exit_code == 0
         assert "IC 사전 검증" in result.output
         assert "레짐 독립성" in result.output
-        assert "--g0a-items JSON" in result.output
+        assert "--p1-items JSON" in result.output
 
     def test_with_category(self) -> None:
         """--category 옵션으로 카테고리 성공률 포함."""
         result = runner.invoke(
             app,
-            ["g0a-check", "rsi", "BTC/USDT", "--tf", "1D", "--category", "momentum"],
+            ["p1-check", "rsi", "BTC/USDT", "--tf", "1D", "--category", "momentum"],
         )
         assert result.exit_code == 0
         assert "카테고리 성공률" in result.output
@@ -95,13 +95,13 @@ class TestG0ACheck:
         """파라미터 전달."""
         result = runner.invoke(
             app,
-            ["g0a-check", "rsi", "BTC/USDT", "--tf", "1D", "-p", "period=14"],
+            ["p1-check", "rsi", "BTC/USDT", "--tf", "1D", "-p", "period=14"],
         )
         assert result.exit_code == 0
         assert "IC 사전 검증" in result.output
 
     def test_outputs_json(self) -> None:
-        """--g0a-items 복사 가능 JSON 출력."""
-        result = runner.invoke(app, ["g0a-check", "rsi", "BTC/USDT", "--tf", "1D"])
+        """--p1-items 복사 가능 JSON 출력."""
+        result = runner.invoke(app, ["p1-check", "rsi", "BTC/USDT", "--tf", "1D"])
         assert result.exit_code == 0
-        assert "--g0a-items JSON" in result.output
+        assert "--p1-items JSON" in result.output

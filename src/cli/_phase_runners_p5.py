@@ -1,7 +1,7 @@
-"""Gate 2H runner logic: Optuna TPE parameter optimization.
+"""Phase 5 runner logic: Optuna TPE parameter optimization.
 
 IS 데이터에서 최적 파라미터를 탐색하고, OOS에서 검증합니다.
-Always PASS — 정보 제공 목적이며, 과적합 방어는 G4에서 담당합니다.
+Always PASS — 정보 제공 목적이며, 과적합 방어는 P6에서 담당합니다.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from rich.table import Table
 
-from src.cli._gate_runners import resolve_timeframe
+from src.cli._phase_runners import resolve_timeframe
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -43,14 +43,14 @@ def _create_portfolio(strategy_name: str, capital: Decimal) -> Any:
     return Portfolio.create(initial_capital=capital, config=pm_config)
 
 
-def run_gate2h(
+def run_phase5_optimize(
     strategies: list[str],
     n_trials: int,
     seed: int,
     save_json: bool,
     console: Console,
 ) -> None:
-    """Gate 2H 전체 실행: Optuna TPE 파라미터 최적화 + YAML 업데이트."""
+    """Phase 5 optimize 전체 실행: Optuna TPE 파라미터 최적화 + YAML 업데이트."""
     from src.backtest.optimizer import (
         generate_g3_sweeps,
         get_config_class,
@@ -68,7 +68,7 @@ def run_gate2h(
     t0 = time.perf_counter()
 
     for strategy_name in strategies:
-        console.rule(f"[bold]G2H: {strategy_name}[/]")
+        console.rule(f"[bold]P5 Optimize: {strategy_name}[/]")
 
         if not store.exists(strategy_name):
             console.print(f"[red]Strategy not found: {strategy_name}[/]")
@@ -77,7 +77,7 @@ def run_gate2h(
         record = store.load(strategy_name)
         best_asset = record.best_asset
         if not best_asset:
-            console.print(f"[red]{strategy_name}: No best_asset (run G1 first)[/]")
+            console.print(f"[red]{strategy_name}: No best_asset (run P4 first)[/]")
             continue
 
         timeframe = resolve_timeframe(strategy_name)
@@ -111,7 +111,7 @@ def run_gate2h(
         # OOS verification (info only)
         oos_sharpe = _run_oos_verification(strategy_name, result.best_params, data_oos, portfolio)
 
-        # Generate G3 sweeps
+        # Generate P5 sweeps
         strategy_cls = get_strategy(strategy_name)
         config_class = get_config_class(strategy_cls)
         g3_sweeps = generate_g3_sweeps(result, config_class)
@@ -123,11 +123,11 @@ def run_gate2h(
         # Save JSON
         if save_json:
             _save_json_results(strategy_name, result, oos_sharpe, g3_sweeps, seed)
-            console.print(f"  [dim]JSON saved: results/gate2h_{strategy_name}.json[/]")
+            console.print(f"  [dim]JSON saved: results/phase5_opt_{strategy_name}.json[/]")
 
         # Update YAML
-        _update_yaml_g2h(strategy_name, result, oos_sharpe, store)
-        console.print(f"  [green]YAML updated: {strategy_name} G2H PASS[/]")
+        _update_yaml_p5_opt(strategy_name, result, oos_sharpe, store)
+        console.print(f"  [green]YAML updated: {strategy_name} P5 PASS[/]")
 
     elapsed = time.perf_counter() - t0
     console.print(f"\n[dim]Total elapsed: {elapsed:.1f}s[/]")
@@ -165,7 +165,7 @@ def _print_optimization_results(
     oos_sharpe: float,
 ) -> None:
     """최적화 결과 Rich Table 출력."""
-    table = Table(title=f"G2H Optimization: {strategy_name}")
+    table = Table(title=f"P5 Optimization: {strategy_name}")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
 
@@ -233,7 +233,7 @@ def _save_json_results(
     seed: int,
 ) -> None:
     """JSON 결과 파일 저장."""
-    output_path = _RESULTS_DIR / f"gate2h_{strategy_name}.json"
+    output_path = _RESULTS_DIR / f"phase5_opt_{strategy_name}.json"
 
     output: dict[str, Any] = {
         "meta": {
@@ -277,14 +277,14 @@ def _save_json_results(
     )
 
 
-def _update_yaml_g2h(
+def _update_yaml_p5_opt(
     strategy_name: str,
     result: Any,
     oos_sharpe: float,
     store: Any,
 ) -> None:
-    """Gate 2H 결과를 YAML에 기록. Always PASS."""
-    from src.pipeline.models import GateId, GateVerdict
+    """Phase 5 optimize 결과를 YAML에 기록. Always PASS."""
+    from src.pipeline.models import PhaseId, PhaseVerdict
 
     details: dict[str, Any] = {
         "best_sharpe_is": round(result.best_sharpe, 3),
@@ -300,11 +300,11 @@ def _update_yaml_g2h(
         f"({result.improvement_pct:+.1f}%), OOS={oos_sharpe:.2f}"
     )
 
-    # Record gate (Always PASS)
-    store.record_gate(
+    # Record phase (Always PASS)
+    store.record_phase(
         strategy_name,
-        GateId.G2H,
-        GateVerdict.PASS,
+        PhaseId.P5,
+        PhaseVerdict.PASS,
         details=details,
         rationale=rationale,
     )
@@ -316,4 +316,9 @@ def _update_yaml_g2h(
     updated_record = record.model_copy(update={"parameters": updated_params})
     store.save(updated_record)
 
-    logger.info(f"  YAML updated: {strategy_name} G2H PASS")
+    logger.info(f"  YAML updated: {strategy_name} P5 PASS")
+
+
+# ─── Public API alias ────────────────────────────────────────────────
+
+run_phase5 = run_phase5_optimize

@@ -9,15 +9,15 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
-from src.pipeline.gate_models import GateCriteria, GateType
-from src.pipeline.gate_store import GateCriteriaStore
 from src.pipeline.lesson_store import LessonStore
 from src.pipeline.models import (
-    GateId,
-    GateVerdict,
+    PhaseId,
+    PhaseVerdict,
     StrategyRecord,
     StrategyStatus,
 )
+from src.pipeline.phase_criteria_models import PhaseCriteria, PhaseType
+from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 from src.pipeline.store import StrategyStore
 
 
@@ -28,11 +28,11 @@ class DashboardGenerator:
         self,
         store: StrategyStore,
         lesson_store: LessonStore | None = None,
-        gate_store: GateCriteriaStore | None = None,
+        phase_store: PhaseCriteriaStore | None = None,
     ) -> None:
         self.store = store
         self.lesson_store = lesson_store
-        self.gate_store = gate_store
+        self.phase_store = phase_store
 
     def generate(self) -> str:
         """전체 dashboard markdown 생성."""
@@ -43,7 +43,7 @@ class DashboardGenerator:
         sections = [
             self._header(len(records), len(active), len(retired)),
             self._pipeline_diagram(),
-            self._gate_criteria_table(),
+            self._phase_criteria_table(),
             self._cost_model_table(),
             self._strategy_summary(len(records), len(active), len(retired)),
             self._active_table(active),
@@ -60,53 +60,52 @@ class DashboardGenerator:
             "# 전략 상황판 (Strategy Dashboard)\n\n"
             f"> {total}개 전략의 평가 현황과 검증 기준을 한눈에 파악하는 문서. "
             f"(활성 {active} + 폐기 {retired})\n"
-            "> Gate 기준은 `pipeline gates-list/gates-show`로 확인."
+            "> Phase 기준은 `pipeline phases-list/phases-show`로 확인."
         )
 
     def _pipeline_diagram(self) -> str:
         return (
             "## 평가 파이프라인\n\n"
             "```\n"
-            "Gate 0A → Gate 0B → Gate 1 → Gate 2 → Gate 2H → Gate 3 → Gate 4 → Gate 5\n"
-            "아이디어   코드검증  백테스트  IS/OOS   파라미터최적화  안정성  심층검증   EDA\n"
+            "Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7\n"
+            "Alpha    구현     코드검증  백테스트  로버스트  심층검증   라이브\n"
             "```"
         )
 
-    def _gate_criteria_table(self) -> str:
-        if self.gate_store is not None:
-            return self._generate_gate_criteria_table()
-        return self._static_gate_criteria_table()
+    def _phase_criteria_table(self) -> str:
+        if self.phase_store is not None:
+            return self._generate_phase_criteria_table()
+        return self._static_phase_criteria_table()
 
-    def _generate_gate_criteria_table(self) -> str:
-        """GateCriteriaStore → 동적 Gate 기준 테이블."""
-        assert self.gate_store is not None
-        gates = self.gate_store.load_all()
+    def _generate_phase_criteria_table(self) -> str:
+        """PhaseCriteriaStore → 동적 Phase 기준 테이블."""
+        assert self.phase_store is not None
+        phases = self.phase_store.load_all()
         lines = [
-            "### Gate별 통과 기준\n",
-            "| Gate | 검증 | 핵심 기준 | CLI |",
-            "|:----:|------|----------|-----|",
+            "### Phase별 통과 기준\n",
+            "| Phase | 검증 | 핵심 기준 | CLI |",
+            "|:-----:|------|----------|-----|",
         ]
-        for g in gates:
-            gid_short = g.gate_id.replace("G0", "0").replace("G", "")
-            cli = f"`{g.cli_command}`" if g.cli_command else "—"
-            criteria_text = _summarize_criteria(g)
-            lines.append(f"| **{gid_short}** | {g.name} | {criteria_text} | {cli} |")
+        for p in phases:
+            cli = f"`{p.cli_command}`" if p.cli_command else "—"
+            criteria_text = _summarize_criteria(p)
+            lines.append(f"| **{p.phase_id}** | {p.name} | {criteria_text} | {cli} |")
         return "\n".join(lines)
 
     @staticmethod
-    def _static_gate_criteria_table() -> str:
-        """Fallback: 하드코딩 Gate 기준 테이블."""
+    def _static_phase_criteria_table() -> str:
+        """Fallback: 하드코딩 Phase 기준 테이블."""
         return (
-            "### Gate별 통과 기준\n\n"
-            "| Gate | 검증 | 핵심 기준 | CLI |\n"
-            "|:----:|------|----------|-----|\n"
-            "| **0A** | 아이디어 검증 | 6항목 합계 >= 18/30 | — |\n"
-            "| **0B** | 코드 품질 검증 | Critical 7항목 결함 0개 | `/p3-g0b-verify` |\n"
-            "| **1** | 단일에셋 백테스트 (5코인 x 6년) | Sharpe > 1.0, CAGR > 20%, MDD < 40%, Trades > 50 | `run {config}` |\n"
-            "| **2** | IS/OOS 70/30 | OOS Sharpe >= 0.3, Decay < 50% | `validate -m quick` |\n"
-            "| **3** | 파라미터 안정성 | 고원 존재, ±20% Sharpe 부호 유지 | `sweep {config}` |\n"
-            "| **4** | WFA + CPCV + PBO + DSR | WFA OOS >= 0.5, PBO 이중 경로, DSR > 0.95 | `validate -m milestone/final` |\n"
-            "| **5** | EDA Parity | VBT vs EDA 수익 부호 일치, 편차 < 20% | `eda run {config}` |"
+            "### Phase별 통과 기준\n\n"
+            "| Phase | 검증 | 핵심 기준 | CLI |\n"
+            "|:-----:|------|----------|-----|\n"
+            "| **P1** | Alpha Research | 6항목 합계 >= 21/30 | — |\n"
+            "| **P2** | Implementation | 4-file 구조 완성 | `/p2-implement` |\n"
+            "| **P3** | Code Audit | Critical 7항목 결함 0개 | `/p3-g0b-verify` |\n"
+            "| **P4** | Backtest | Sharpe > 1.0, CAGR > 20%, MDD < 40%, OOS Sharpe >= 0.3 | `run {config}` |\n"
+            "| **P5** | Robustness | 파라미터 고원 + ±20% 안정 | `pipeline phase5-run` |\n"
+            "| **P6** | Deep Validation | WFA OOS >= 0.5, DSR > 0.95 | `validate -m milestone/final` |\n"
+            "| **P7** | Live Readiness | VBT vs EDA 수익 부호 일치, 편차 < 20% | `eda run {config}` |"
         )
 
     def _cost_model_table(self) -> str:
@@ -133,24 +132,24 @@ class DashboardGenerator:
             return "### 활성 전략 (0개)"
 
         lines = [
-            f"### 활성 전략 ({len(active)}개, Gate 5 완료)\n",
-            "| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | G0 | G1 | G2 | G3 | G4 | G5 | 비고 |",
-            "|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|:--:|------|",
+            f"### 활성 전략 ({len(active)}개, Phase 7 완료)\n",
+            "| 전략 | Best Asset | TF | Sharpe | CAGR | MDD | Trades | P1 | P4 | P5 | P6 | P7 | 비고 |",
+            "|------|-----------|-----|--------|------|-----|--------|:--:|:--:|:--:|:--:|:--:|------|",
         ]
 
         for r in sorted(active, key=lambda x: -(x.best_sharpe or 0)):
             best = max(r.asset_performance, key=lambda a: a.sharpe) if r.asset_performance else None
             if best:
-                gates_str = " | ".join(
-                    _gate_letter(r, gid)
-                    for gid in [GateId.G0A, GateId.G1, GateId.G2, GateId.G3, GateId.G4, GateId.G5]
+                phases_str = " | ".join(
+                    _phase_letter(r, pid)
+                    for pid in [PhaseId.P1, PhaseId.P4, PhaseId.P5, PhaseId.P6, PhaseId.P7]
                 )
                 note = _extract_note(r)
                 cagr = f"+{best.cagr:.1f}%" if best.cagr > 0 else f"{best.cagr:.1f}%"
                 row = (
                     f"| **{r.meta.display_name}** | {best.symbol} | {r.meta.timeframe} | "
                     + f"{best.sharpe:.2f} | {cagr} | -{best.mdd:.1f}% | {best.trades} | "
-                    + f"{gates_str} | {note} |"
+                    + f"{phases_str} | {note} |"
                 )
                 lines.append(row)
 
@@ -167,35 +166,36 @@ class DashboardGenerator:
         return "\n".join(lines)
 
     def _retired_sections(self, retired: list[StrategyRecord]) -> str:
-        """폐기 전략을 fail gate별로 분류."""
+        """폐기 전략을 fail phase별로 분류."""
         sections: list[str] = [f"### 폐기 전략 ({len(retired)}개)\n"]
-        gate_groups = self.group_retired(retired)
-        self._append_group_tables(gate_groups, sections)
+        phase_groups = self.group_retired(retired)
+        self._append_group_tables(phase_groups, sections)
         return "\n\n".join(sections)
 
     def group_retired(
         self,
         retired: list[StrategyRecord],
     ) -> dict[str, list[StrategyRecord]]:
-        """폐기 전략을 fail gate별 그룹으로 분류."""
+        """폐기 전략을 fail phase별 그룹으로 분류."""
         groups: dict[str, list[StrategyRecord]] = {
-            "G4": [],
-            "G3": [],
-            "G2": [],
-            "G1_sharpe": [],
-            "G1_negative": [],
-            "G1_data": [],
-            "G1_structural": [],
+            "P6": [],
+            "P5": [],
+            "P4_oos": [],
+            "P4_sharpe": [],
+            "P4_negative": [],
+            "P4_data": [],
+            "P4_structural": [],
         }
-        gate_map = {"G4": "G4", "G3": "G3", "G2": "G2"}
         for r in retired:
-            fg = r.fail_gate
-            if fg in gate_map:
-                groups[gate_map[fg]].append(r)
-            elif fg == "G1":
-                self._classify_g1_fail(r, groups)
+            fp = r.fail_phase
+            if fp == "P6":
+                groups["P6"].append(r)
+            elif fp == "P5":
+                groups["P5"].append(r)
+            elif fp == "P4":
+                self._classify_p4_fail(r, groups)
             else:
-                groups["G1_structural"].append(r)
+                groups["P4_structural"].append(r)
         return groups
 
     def _append_group_tables(
@@ -205,26 +205,26 @@ class DashboardGenerator:
     ) -> None:
         """그룹별 테이블을 sections에 추가."""
         renderers = [
-            ("G4", self._g4_fail_table),
-            ("G3", self._g3_fail_table),
-            ("G2", self._g2_fail_table),
-            ("G1_sharpe", self._g1_sharpe_fail_table),
-            ("G1_negative", self._g1_negative_fail_table),
-            ("G1_data", self._g1_data_fail_table),
-            ("G1_structural", self._g1_structural_fail_table),
+            ("P6", self._p6_fail_table),
+            ("P5", self._p5_fail_table),
+            ("P4_oos", self._p4_oos_fail_table),
+            ("P4_sharpe", self._p4_sharpe_fail_table),
+            ("P4_negative", self._p4_negative_fail_table),
+            ("P4_data", self._p4_data_fail_table),
+            ("P4_structural", self._p4_structural_fail_table),
         ]
         for key, renderer in renderers:
             if groups[key]:
                 sections.append(renderer(groups[key]))
 
-    def _classify_g1_fail(
+    def _classify_p4_fail(
         self,
         r: StrategyRecord,
         groups: dict[str, list[StrategyRecord]],
     ) -> None:
-        """G1 FAIL 전략을 세부 카테고리로 분류."""
+        """P4 FAIL 전략을 세부 카테고리로 분류."""
         if not r.asset_performance:
-            groups["G1_data"].append(r)
+            groups["P4_data"].append(r)
             return
 
         best = max(r.asset_performance, key=lambda a: a.sharpe)
@@ -232,56 +232,56 @@ class DashboardGenerator:
         # All negative or near-zero
         all_negative = all(a.sharpe <= 0 for a in r.asset_performance)
         if all_negative or best.sharpe < 0:
-            groups["G1_negative"].append(r)
+            groups["P4_negative"].append(r)
         elif best.sharpe < 1.0 and best.cagr > 0:
-            groups["G1_sharpe"].append(r)
+            groups["P4_sharpe"].append(r)
         else:
-            groups["G1_structural"].append(r)
+            groups["P4_structural"].append(r)
 
-    def _g4_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p6_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 4 실패 -- WFA 심층검증\n",
+            "#### Phase 6 실패 -- WFA 심층검증\n",
             "| 전략 | Sharpe | 사유 |",
             "|------|--------|------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
             link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
-            note = _fail_rationale(r, GateId.G4)
+            note = _fail_rationale(r, PhaseId.P6)
             lines.append(f"| {link} | {sharpe} | {note} |")
         return "\n".join(lines)
 
-    def _g3_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p5_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 3 실패 -- 파라미터 불안정\n",
+            "#### Phase 5 실패 -- 파라미터 불안정\n",
             "| 전략 | Sharpe | 사유 |",
             "|------|--------|------|",
         ]
         for r in records:
             link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
-            note = _fail_rationale(r, GateId.G3)
+            note = _fail_rationale(r, PhaseId.P5)
             lines.append(f"| {link} | {sharpe} | {note} |")
         return "\n".join(lines)
 
-    def _g2_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p4_oos_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            f"#### Gate 2 실패 -- IS/OOS 과적합 ({len(records)}개)\n",
+            f"#### Phase 4 실패 -- IS/OOS 과적합 ({len(records)}개)\n",
             "| 전략 | Sharpe | OOS Sharpe | Decay |",
             "|------|--------|-----------|-------|",
         ]
         for r in sorted(records, key=lambda x: -(x.best_sharpe or 0)):
             link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
-            g2 = r.gates.get(GateId.G2)
-            oos = f"{g2.details.get('oos_sharpe', '-')}" if g2 else "-"
-            decay = f"{g2.details.get('decay', '-')}%" if g2 and "decay" in g2.details else "-"
+            p4 = r.phases.get(PhaseId.P4)
+            oos = f"{p4.details.get('oos_sharpe', '-')}" if p4 else "-"
+            decay = f"{p4.details.get('decay', '-')}%" if p4 and "decay" in p4.details else "-"
             lines.append(f"| {link} | {sharpe} | {oos} | {decay} |")
         return "\n".join(lines)
 
-    def _g1_sharpe_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p4_sharpe_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 1 실패 -- Sharpe/CAGR 미달\n",
+            "#### Phase 4 실패 -- Sharpe/CAGR 미달\n",
             "| 전략 | Sharpe | CAGR | 사유 |",
             "|------|--------|------|------|",
         ]
@@ -294,13 +294,13 @@ class DashboardGenerator:
                 if best and best.cagr > 0
                 else (f"{best.cagr:.1f}%" if best else "-")
             )
-            note = _fail_rationale(r, GateId.G1)
+            note = _fail_rationale(r, PhaseId.P4)
             lines.append(f"| {link} | {sharpe} | {cagr} | {note} |")
         return "\n".join(lines)
 
-    def _g1_negative_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p4_negative_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 1 실패 -- 전 에셋 Sharpe 음수/0 근접\n",
+            "#### Phase 4 실패 -- 전 에셋 Sharpe 음수/0 근접\n",
             "| 전략 | Sharpe | CAGR | 사유 |",
             "|------|--------|------|------|",
         ]
@@ -313,38 +313,38 @@ class DashboardGenerator:
                 if best and best.cagr > 0
                 else (f"{best.cagr:.1f}%" if best else "-")
             )
-            note = _fail_rationale(r, GateId.G1)
+            note = _fail_rationale(r, PhaseId.P4)
             lines.append(f"| {link} | {sharpe} | {cagr} | {note} |")
         return "\n".join(lines)
 
-    def _g1_data_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p4_data_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 1 실패 -- 데이터 부재 / 인프라 미구축\n",
-            "| 전략 | G0 점수 | 사유 |",
+            "#### Phase 4 실패 -- 데이터 부재 / 인프라 미구축\n",
+            "| 전략 | P1 점수 | 사유 |",
             "|------|---------|------|",
         ]
         for r in records:
             link = r.meta.display_name
-            g0 = r.gates.get(GateId.G0A)
-            if g0:
-                g0_max = g0.details.get("max_score", 30)
-                score = f"{g0.details.get('score', '?')}/{g0_max}"
+            p1 = r.phases.get(PhaseId.P1)
+            if p1:
+                p1_max = p1.details.get("max_score", 30)
+                score = f"{p1.details.get('score', '?')}/{p1_max}"
             else:
                 score = "-"
-            note = _fail_rationale(r, GateId.G1)
+            note = _fail_rationale(r, PhaseId.P4)
             lines.append(f"| {link} | {score} | {note} |")
         return "\n".join(lines)
 
-    def _g1_structural_fail_table(self, records: list[StrategyRecord]) -> str:
+    def _p4_structural_fail_table(self, records: list[StrategyRecord]) -> str:
         lines = [
-            "#### Gate 1 실패 -- 구조적 결함\n",
+            "#### Phase 4 실패 -- 구조적 결함\n",
             "| 전략 | Sharpe | 사유 |",
             "|------|--------|------|",
         ]
         for r in records:
             link = r.meta.display_name
             sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe else "-"
-            note = _fail_rationale(r, GateId.G1)
+            note = _fail_rationale(r, PhaseId.P4)
             lines.append(f"| {link} | {sharpe} | {note} |")
         return "\n".join(lines)
 
@@ -372,47 +372,47 @@ class DashboardGenerator:
 # ─── Helpers ─────────────────────────────────────────────────────────
 
 
-def _summarize_criteria(g: GateCriteria) -> str:
-    """GateCriteria → 1줄 요약 텍스트."""
-    if g.gate_type == GateType.SCORING and g.scoring:
-        n = len(g.scoring.items)
-        return f"{n}항목 합계 >= {g.scoring.pass_threshold}/{g.scoring.max_total}"
-    if g.gate_type == GateType.CHECKLIST and g.checklist:
-        return g.checklist.pass_rule
-    if g.gate_type == GateType.THRESHOLD and g.threshold:
+def _summarize_criteria(p: PhaseCriteria) -> str:
+    """PhaseCriteria → 1줄 요약 텍스트."""
+    if p.phase_type == PhaseType.SCORING and p.scoring:
+        n = len(p.scoring.items)
+        return f"{n}항목 합계 >= {p.scoring.pass_threshold}/{p.scoring.max_total}"
+    if p.phase_type == PhaseType.CHECKLIST and p.checklist:
+        return p.checklist.pass_rule
+    if p.phase_type == PhaseType.THRESHOLD and p.threshold:
         parts = []
-        for m in g.threshold.pass_metrics:
+        for m in p.threshold.pass_metrics:
             val_str = str(int(m.value)) if m.value == int(m.value) else str(m.value)
             parts.append(f"{m.name} {m.operator} {val_str}{m.unit}")
         return ", ".join(parts)
     return ""
 
 
-def _gate_letter(record: StrategyRecord, gid: GateId) -> str:
-    """Gate 결과를 P/F/- 단일 문자로."""
-    result = record.gates.get(gid)
+def _phase_letter(record: StrategyRecord, pid: PhaseId) -> str:
+    """Phase 결과를 P/F/- 단일 문자로."""
+    result = record.phases.get(pid)
     if result is None:
         return " "
-    return "P" if result.status == GateVerdict.PASS else "F"
+    return "P" if result.status == PhaseVerdict.PASS else "F"
 
 
 def _extract_note(record: StrategyRecord) -> str:
     """활성 전략의 비고."""
-    g4 = record.gates.get(GateId.G4)
-    if g4 and "note" in g4.details:
-        return str(g4.details["note"])
+    p6 = record.phases.get(PhaseId.P6)
+    if p6 and "note" in p6.details:
+        return str(p6.details["note"])
     return ""
 
 
-def _fail_rationale(record: StrategyRecord, gate: GateId) -> str:
+def _fail_rationale(record: StrategyRecord, phase: PhaseId) -> str:
     """FAIL 사유 추출 — decisions.rationale 우선."""
-    # 1. decisions에서 해당 gate의 rationale 탐색
+    # 1. decisions에서 해당 phase의 rationale 탐색
     for d in reversed(record.decisions):
-        if d.gate == gate:
+        if d.phase == phase:
             return d.rationale
 
-    # 2. fallback: gates.details
-    result = record.gates.get(gate)
+    # 2. fallback: phases.details
+    result = record.phases.get(phase)
     if not result:
         return ""
     note = result.details.get("note", "")
@@ -427,26 +427,26 @@ def _fail_rationale(record: StrategyRecord, gate: GateId) -> str:
     return ", ".join(parts) if parts else ""
 
 
-def _gate_badge(record: StrategyRecord, gid: GateId) -> str:
-    """Gate 결과를 Rich 색상 문자로 변환."""
-    result = record.gates.get(gid)
+def _phase_badge(record: StrategyRecord, pid: PhaseId) -> str:
+    """Phase 결과를 Rich 색상 문자로 변환."""
+    result = record.phases.get(pid)
     if result is None:
         return "[dim]-[/dim]"
-    if result.status == GateVerdict.PASS:
+    if result.status == PhaseVerdict.PASS:
         return "[green]P[/green]"
     return "[red]F[/red]"
 
 
-_GATE_DISPLAY = ("G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5")
+_PHASE_DISPLAY = ("P1", "P2", "P3", "P4", "P5", "P6", "P7")
 
 _RETIRED_GROUP_LABELS: dict[str, str] = {
-    "G4": "G4 WFA 심층검증",
-    "G3": "G3 파라미터 불안정",
-    "G2": "G2 IS/OOS 과적합",
-    "G1_sharpe": "G1 Sharpe/CAGR 미달",
-    "G1_negative": "G1 전 에셋 Sharpe 음수",
-    "G1_data": "G1 데이터 부재",
-    "G1_structural": "G1 구조적 결함",
+    "P6": "P6 WFA 심층검증",
+    "P5": "P5 파라미터 불안정",
+    "P4_oos": "P4 IS/OOS 과적합",
+    "P4_sharpe": "P4 Sharpe/CAGR 미달",
+    "P4_negative": "P4 전 에셋 Sharpe 음수",
+    "P4_data": "P4 데이터 부재",
+    "P4_structural": "P4 구조적 결함",
 }
 
 
@@ -457,12 +457,12 @@ class ConsoleRenderer:
         self,
         store: StrategyStore,
         lesson_store: LessonStore | None = None,
-        gate_store: GateCriteriaStore | None = None,
+        phase_store: PhaseCriteriaStore | None = None,
         console: Console | None = None,
     ) -> None:
         self.store = store
         self.lesson_store = lesson_store
-        self.gate_store = gate_store
+        self.phase_store = phase_store
         self.console = console or Console()
 
     def render(self) -> None:
@@ -500,15 +500,15 @@ class ConsoleRenderer:
         table.add_column("CAGR", justify="right", width=8)
         table.add_column("MDD", justify="right", width=7)
         table.add_column("Trades", justify="right", width=7)
-        for gname in _GATE_DISPLAY:
-            table.add_column(gname, justify="center", width=3)
+        for pname in _PHASE_DISPLAY:
+            table.add_column(pname, justify="center", width=3)
 
         for r in sorted(active, key=lambda x: -(x.best_sharpe or 0)):
             best = max(r.asset_performance, key=lambda a: a.sharpe) if r.asset_performance else None
             if not best:
                 continue
             cagr = f"+{best.cagr:.1f}%" if best.cagr > 0 else f"{best.cagr:.1f}%"
-            gate_cells = [_gate_badge(r, GateId(g)) for g in _GATE_DISPLAY]
+            phase_cells = [_phase_badge(r, PhaseId(p)) for p in _PHASE_DISPLAY]
             table.add_row(
                 r.meta.display_name,
                 best.symbol,
@@ -517,7 +517,7 @@ class ConsoleRenderer:
                 cagr,
                 f"-{best.mdd:.1f}%",
                 str(best.trades),
-                *gate_cells,
+                *phase_cells,
             )
 
         self.console.print()

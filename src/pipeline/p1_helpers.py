@@ -1,4 +1,4 @@
-"""G0A v2 데이터 기반 점수 계산 헬퍼.
+"""P1 (Alpha Research) 데이터 기반 점수 계산 헬퍼.
 
 항목 2(IC 사전 검증), 3(카테고리 성공률), 4(레짐 독립성)의
 자동 점수 매핑을 수행하는 순수 함수 모듈입니다.
@@ -29,8 +29,8 @@ _ITEM_MAX_SCORE = 5
 
 
 @dataclass(frozen=True)
-class G0AItemScore:
-    """G0A 항목별 점수 결과.
+class P1ItemScore:
+    """P1 항목별 점수 결과.
 
     Attributes:
         item_name: 항목명
@@ -45,16 +45,16 @@ class G0AItemScore:
     reason: str
 
 
-def compute_ic_score(rank_ic: float) -> G0AItemScore:
+def compute_ic_score(rank_ic: float) -> P1ItemScore:
     """IC 사전 검증 점수 계산.
 
-    ICAnalyzer의 rank_ic 결과를 받아 G0A 항목 2 점수로 매핑합니다.
+    ICAnalyzer의 rank_ic 결과를 받아 P1 항목 2 점수로 매핑합니다.
 
     Args:
         rank_ic: Spearman rank correlation (ICResult.rank_ic)
 
     Returns:
-        G0AItemScore with score 1/3/5
+        P1ItemScore with score 1/3/5
     """
     abs_ic = abs(rank_ic)
     if abs_ic > IC_HIGH_THRESHOLD:
@@ -64,7 +64,7 @@ def compute_ic_score(rank_ic: float) -> G0AItemScore:
     else:
         score, reason = 1, f"|Rank IC|={abs_ic:.4f} < {IC_MEDIUM_THRESHOLD}"
 
-    return G0AItemScore(
+    return P1ItemScore(
         item_name="IC 사전 검증",
         score=score,
         evidence={"rank_ic": rank_ic, "abs_rank_ic": abs_ic},
@@ -72,7 +72,7 @@ def compute_ic_score(rank_ic: float) -> G0AItemScore:
     )
 
 
-def compute_category_success_score(category: str, store: StrategyStore) -> G0AItemScore:
+def compute_category_success_score(category: str, store: StrategyStore) -> P1ItemScore:
     """카테고리 성공률 점수 계산.
 
     동일 rationale_category의 ACTIVE/RETIRED 비율로 점수를 매깁니다.
@@ -82,7 +82,7 @@ def compute_category_success_score(category: str, store: StrategyStore) -> G0AIt
         store: StrategyStore 인스턴스
 
     Returns:
-        G0AItemScore with score 1/3/5
+        P1ItemScore with score 1/3/5
     """
     all_records = store.load_all()
     retired_same = [
@@ -111,7 +111,7 @@ def compute_category_success_score(category: str, store: StrategyStore) -> G0AIt
         score = 1
         reason = f"성공률 0% + RETIRED {n_retired}개 (동일 카테고리 반복 실패)"
 
-    return G0AItemScore(
+    return P1ItemScore(
         item_name="카테고리 성공률",
         score=score,
         evidence={"success_rate": success_rate, "n_active": n_active, "n_retired": n_retired},
@@ -119,7 +119,7 @@ def compute_category_success_score(category: str, store: StrategyStore) -> G0AIt
     )
 
 
-def compute_regime_independence_score(regime_ics: dict[str, float]) -> G0AItemScore:
+def compute_regime_independence_score(regime_ics: dict[str, float]) -> P1ItemScore:
     """레짐 독립성 점수 계산.
 
     레짐별 IC가 양수인 레짐 수로 점수를 매깁니다.
@@ -128,7 +128,7 @@ def compute_regime_independence_score(regime_ics: dict[str, float]) -> G0AItemSc
         regime_ics: 레짐별 IC 딕셔너리 (예: {"trending": 0.03, "ranging": -0.01, "volatile": 0.02})
 
     Returns:
-        G0AItemScore with score 1/3/5
+        P1ItemScore with score 1/3/5
     """
     positive_regimes = [name for name, ic in regime_ics.items() if ic > 0]
     n_positive = len(positive_regimes)
@@ -146,7 +146,7 @@ def compute_regime_independence_score(regime_ics: dict[str, float]) -> G0AItemSc
         else:
             reason = "모든 레짐에서 IC 음수 또는 0"
 
-    return G0AItemScore(
+    return P1ItemScore(
         item_name="레짐 독립성",
         score=score,
         evidence=dict(regime_ics),

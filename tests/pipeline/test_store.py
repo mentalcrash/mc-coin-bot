@@ -9,9 +9,9 @@ import pytest
 
 from src.pipeline.models import (
     AssetMetrics,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     RationaleReference,
     RationaleRefType,
     StrategyMeta,
@@ -75,18 +75,18 @@ class TestCRUD:
         store._cache.clear()
         loaded = store.load("ctrend")
         assert loaded.meta == sample_record.meta
-        assert len(loaded.gates) == len(sample_record.gates)
+        assert len(loaded.phases) == len(sample_record.phases)
         assert len(loaded.asset_performance) == len(sample_record.asset_performance)
         assert len(loaded.decisions) == len(sample_record.decisions)
         assert loaded.parameters == sample_record.parameters
 
-    def test_gates_roundtrip(self, store: StrategyStore, sample_record: StrategyRecord) -> None:
+    def test_phases_roundtrip(self, store: StrategyStore, sample_record: StrategyRecord) -> None:
         store.save(sample_record)
         store._cache.clear()
         loaded = store.load("ctrend")
-        assert GateId.G0A in loaded.gates
-        assert loaded.gates[GateId.G0A].status == GateVerdict.PASS
-        assert loaded.gates[GateId.G0A].details["score"] == 22
+        assert PhaseId.P1 in loaded.phases
+        assert loaded.phases[PhaseId.P1].status == PhaseVerdict.PASS
+        assert loaded.phases[PhaseId.P1].details["score"] == 22
 
 
 class TestQuery:
@@ -104,29 +104,29 @@ class TestQuery:
         assert len(retired) == 1
         assert retired[0].meta.name == "bb-rsi"
 
-    def test_get_at_gate(self, populated_store: StrategyStore) -> None:
-        at_g2 = populated_store.get_at_gate(GateId.G2)
-        assert len(at_g2) == 1
-        assert at_g2[0].meta.name == "ctrend"
+    def test_get_at_phase(self, populated_store: StrategyStore) -> None:
+        at_p4 = populated_store.get_at_phase(PhaseId.P4)
+        assert len(at_p4) == 1
+        assert at_p4[0].meta.name == "ctrend"
 
-    def test_get_failed_at(self, populated_store: StrategyStore) -> None:
-        failed_g1 = populated_store.get_failed_at(GateId.G1)
-        assert len(failed_g1) == 1
-        assert failed_g1[0].meta.name == "bb-rsi"
+    def test_get_failed_at_phase(self, populated_store: StrategyStore) -> None:
+        failed_p4 = populated_store.get_failed_at_phase(PhaseId.P4)
+        assert len(failed_p4) == 1
+        assert failed_p4[0].meta.name == "bb-rsi"
 
 
 class TestMutation:
-    def test_record_gate(self, store: StrategyStore, sample_record: StrategyRecord) -> None:
+    def test_record_phase(self, store: StrategyStore, sample_record: StrategyRecord) -> None:
         store.save(sample_record)
-        updated = store.record_gate(
+        updated = store.record_phase(
             "ctrend",
-            GateId.G3,
-            GateVerdict.PASS,
+            PhaseId.P5,
+            PhaseVerdict.PASS,
             details={"plateau": True, "stability": "±20% OK"},
             rationale="4/4 파라미터 고원",
         )
-        assert GateId.G3 in updated.gates
-        assert updated.gates[GateId.G3].status == GateVerdict.PASS
+        assert PhaseId.P5 in updated.phases
+        assert updated.phases[PhaseId.P5].status == PhaseVerdict.PASS
         assert len(updated.decisions) == len(sample_record.decisions) + 1
 
     def test_update_status(self, store: StrategyStore, sample_record: StrategyRecord) -> None:
@@ -161,21 +161,21 @@ def _make_implemented_record(name: str = "impl-test") -> StrategyRecord:
             status=StrategyStatus.IMPLEMENTED,
             created_at=date(2026, 1, 1),
         ),
-        gates={
-            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
+        phases={
+            PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
         },
     )
 
 
 class TestAutoTransition:
-    """record_gate()의 IMPLEMENTED → TESTING 자동 전환 테스트."""
+    """record_phase()의 IMPLEMENTED → TESTING 자동 전환 테스트."""
 
     def test_implemented_pass_transitions_to_testing(self, store: StrategyStore) -> None:
         store.save(_make_implemented_record())
-        updated = store.record_gate(
+        updated = store.record_phase(
             "impl-test",
-            GateId.G0B,
-            GateVerdict.PASS,
+            PhaseId.P3,
+            PhaseVerdict.PASS,
             details={"C1": "PASS"},
             rationale="C1-C7 PASS",
         )
@@ -186,10 +186,10 @@ class TestAutoTransition:
         active_meta = rec.meta.model_copy(update={"status": StrategyStatus.ACTIVE})
         rec = rec.model_copy(update={"meta": active_meta})
         store.save(rec)
-        updated = store.record_gate(
+        updated = store.record_phase(
             "active-test",
-            GateId.G1,
-            GateVerdict.PASS,
+            PhaseId.P4,
+            PhaseVerdict.PASS,
             details={},
             rationale="PASS",
         )
@@ -200,10 +200,10 @@ class TestAutoTransition:
         testing_meta = rec.meta.model_copy(update={"status": StrategyStatus.TESTING})
         rec = rec.model_copy(update={"meta": testing_meta})
         store.save(rec)
-        updated = store.record_gate(
+        updated = store.record_phase(
             "testing-test",
-            GateId.G1,
-            GateVerdict.PASS,
+            PhaseId.P4,
+            PhaseVerdict.PASS,
             details={},
             rationale="PASS",
         )
@@ -214,10 +214,10 @@ class TestAutoTransition:
         cand_meta = rec.meta.model_copy(update={"status": StrategyStatus.CANDIDATE})
         rec = rec.model_copy(update={"meta": cand_meta})
         store.save(rec)
-        updated = store.record_gate(
+        updated = store.record_phase(
             "cand-test",
-            GateId.G0B,
-            GateVerdict.PASS,
+            PhaseId.P3,
+            PhaseVerdict.PASS,
             details={},
             rationale="PASS",
         )
@@ -225,10 +225,10 @@ class TestAutoTransition:
 
     def test_implemented_fail_stays_implemented(self, store: StrategyStore) -> None:
         store.save(_make_implemented_record("fail-test"))
-        updated = store.record_gate(
+        updated = store.record_phase(
             "fail-test",
-            GateId.G0B,
-            GateVerdict.FAIL,
+            PhaseId.P3,
+            PhaseVerdict.FAIL,
             details={},
             rationale="C1 FAIL",
         )

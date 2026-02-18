@@ -152,9 +152,10 @@ class StrategyRecord(BaseModel):
 
     meta: StrategyMeta
     parameters: dict[str, Any] = Field(default_factory=dict)
-    gates: dict[GateId, GateResult] = Field(default_factory=dict)
+    phases: dict[PhaseId, PhaseResult] = Field(default_factory=dict)
     asset_performance: list[AssetMetrics] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
+    version: int = Field(default=2, description="Schema version")
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -167,41 +168,41 @@ class StrategyRecord(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def current_gate(self) -> str | None:
-        """현재 도달한 최고 PASS Gate (gap 허용)."""
-        last_pass: GateId | None = None
-        for gid in GATE_ORDER:
-            result = self.gates.get(gid)
+    def current_phase(self) -> str | None:
+        """현재 도달한 최고 PASS Phase (gap 허용)."""
+        last_pass: PhaseId | None = None
+        for pid in PHASE_ORDER:
+            result = self.phases.get(pid)
             if result is None:
                 continue
-            if result.status == GateVerdict.PASS:
-                last_pass = gid
+            if result.status == PhaseVerdict.PASS:
+                last_pass = pid
             else:
                 break  # FAIL 만나면 중단
         return last_pass
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def fail_gate(self) -> str | None:
-        """FAIL 발생한 Gate (있으면)."""
-        for gid in GATE_ORDER:
-            result = self.gates.get(gid)
-            if result is not None and result.status == GateVerdict.FAIL:
-                return gid
+    def fail_phase(self) -> str | None:
+        """FAIL 발생한 Phase (있으면)."""
+        for pid in PHASE_ORDER:
+            result = self.phases.get(pid)
+            if result is not None and result.status == PhaseVerdict.FAIL:
+                return pid
         return None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def next_gate(self) -> str | None:
-        """다음 수행할 Gate. FAIL 시 None, 전체 PASS 시 None."""
-        for gid in GATE_ORDER:
-            result = self.gates.get(gid)
-            if result is not None and result.status == GateVerdict.FAIL:
+    def next_phase(self) -> str | None:
+        """다음 수행할 Phase. FAIL 시 None, 전체 PASS 시 None."""
+        for pid in PHASE_ORDER:
+            result = self.phases.get(pid)
+            if result is not None and result.status == PhaseVerdict.FAIL:
                 return None  # 파이프라인 blocked
-        for gid in GATE_ORDER:
-            result = self.gates.get(gid)
-            if result is None or result.status != GateVerdict.PASS:
-                return gid  # 첫 미통과 Gate
+        for pid in PHASE_ORDER:
+            result = self.phases.get(pid)
+            if result is None or result.status != PhaseVerdict.PASS:
+                return pid  # 첫 미통과 Phase
         return None  # 전체 완료
 
     @computed_field  # type: ignore[prop-decorator]

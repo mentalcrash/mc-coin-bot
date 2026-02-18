@@ -1,4 +1,4 @@
-"""Tests for src/cli/_gate_runners.py."""
+"""Tests for src/cli/_phase_runners.py."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from src.cli._gate_runners import (
-    GATE3_STRATEGIES,
-    GATE3_WEIGHT_PAIRS,
+from src.cli._phase_runners import (
+    P5_STRATEGIES,
+    P5_WEIGHT_PAIRS,
     analyze_sweep,
     resolve_timeframe,
 )
-from src.pipeline.models import GateId, GateVerdict, StrategyMeta, StrategyRecord, StrategyStatus
+from src.pipeline.models import PhaseId, PhaseVerdict, StrategyMeta, StrategyRecord, StrategyStatus
 from src.pipeline.store import StrategyStore
 
 _STORE_PATH = "src.pipeline.store.StrategyStore"
@@ -226,13 +226,13 @@ class TestAnalyzeSweep:
 
 
 # =============================================================================
-# _update_yaml_g1 tests
+# _update_yaml_p4 tests
 # =============================================================================
 
 
-class TestUpdateYamlG1:
+class TestUpdateYamlP4:
     def test_pass_verdict(self, tmp_path: Path) -> None:
-        """G1 PASS -> YAML 업데이트 + asset_performance 기록."""
+        """P4 PASS -> YAML 업데이트 + asset_performance 기록."""
         store = StrategyStore(base_dir=tmp_path)
         record = StrategyRecord(
             meta=StrategyMeta(
@@ -265,17 +265,17 @@ class TestUpdateYamlG1:
         ]
 
         with patch(_STORE_PATH, return_value=store):
-            from src.cli._gate_runners import _update_yaml_g1
+            from src.cli._phase_runners import _update_yaml_p4
 
-            _update_yaml_g1("test-strat", results)
+            _update_yaml_p4("test-strat", results)
 
         updated = store.load("test-strat")
-        assert updated.gates[GateId.G1].status == GateVerdict.PASS
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.PASS
         assert len(updated.asset_performance) == 1
         assert updated.asset_performance[0].symbol == "SOL/USDT"
 
     def test_fail_verdict_retires(self, tmp_path: Path) -> None:
-        """G1 FAIL -> RETIRED 상태 전환."""
+        """P4 FAIL -> RETIRED 상태 전환."""
         store = StrategyStore(base_dir=tmp_path)
         record = StrategyRecord(
             meta=StrategyMeta(
@@ -306,12 +306,12 @@ class TestUpdateYamlG1:
         ]
 
         with patch(_STORE_PATH, return_value=store):
-            from src.cli._gate_runners import _update_yaml_g1
+            from src.cli._phase_runners import _update_yaml_p4
 
-            _update_yaml_g1("fail-strat", results)
+            _update_yaml_p4("fail-strat", results)
 
         updated = store.load("fail-strat")
-        assert updated.gates[GateId.G1].status == GateVerdict.FAIL
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.FAIL
         assert updated.meta.status == StrategyStatus.RETIRED
 
     def test_nonexistent_strategy_noop(self) -> None:
@@ -321,26 +321,26 @@ class TestUpdateYamlG1:
             mock_store.exists.return_value = False
             mock_cls.return_value = mock_store
 
-            from src.cli._gate_runners import _update_yaml_g1
+            from src.cli._phase_runners import _update_yaml_p4
 
-            _update_yaml_g1("nonexistent", [])
+            _update_yaml_p4("nonexistent", [])
 
-            mock_store.record_gate.assert_not_called()
+            mock_store.record_phase.assert_not_called()
 
 
 # =============================================================================
-# _update_yaml_g3 tests
+# _update_yaml_p5 tests
 # =============================================================================
 
 
-class TestUpdateYamlG3:
+class TestUpdateYamlP5:
     def test_pass_verdict(self, tmp_path: Path) -> None:
-        """G3 PASS -> YAML 업데이트."""
+        """P5 PASS -> YAML 업데이트."""
         store = StrategyStore(base_dir=tmp_path)
         record = StrategyRecord(
             meta=StrategyMeta(
-                name="g3-strat",
-                display_name="G3",
+                name="p5-strat",
+                display_name="P5",
                 category="Test",
                 timeframe="1D",
                 short_mode="FULL",
@@ -351,27 +351,27 @@ class TestUpdateYamlG3:
         store.save(record)
 
         result = {
-            "strategy": "g3-strat",
+            "strategy": "p5-strat",
             "verdict": "PASS",
             "param_verdicts": {"vol_target": "PASS", "lookback": "PASS"},
             "fail_params": [],
         }
 
         with patch(_STORE_PATH, return_value=store):
-            from src.cli._gate_runners import _update_yaml_g3
+            from src.cli._phase_runners import _update_yaml_p5
 
-            _update_yaml_g3(result)
+            _update_yaml_p5(result)
 
-        updated = store.load("g3-strat")
-        assert updated.gates[GateId.G3].status == GateVerdict.PASS
+        updated = store.load("p5-strat")
+        assert updated.phases[PhaseId.P5].status == PhaseVerdict.PASS
 
     def test_fail_verdict_retires(self, tmp_path: Path) -> None:
-        """G3 FAIL -> RETIRED."""
+        """P5 FAIL -> RETIRED."""
         store = StrategyStore(base_dir=tmp_path)
         record = StrategyRecord(
             meta=StrategyMeta(
-                name="g3-fail",
-                display_name="G3F",
+                name="p5-fail",
+                display_name="P5F",
                 category="Test",
                 timeframe="1D",
                 short_mode="FULL",
@@ -382,19 +382,19 @@ class TestUpdateYamlG3:
         store.save(record)
 
         result = {
-            "strategy": "g3-fail",
+            "strategy": "p5-fail",
             "verdict": "FAIL",
             "param_verdicts": {"vol_target": "PASS", "lookback": "FAIL"},
             "fail_params": ["lookback"],
         }
 
         with patch(_STORE_PATH, return_value=store):
-            from src.cli._gate_runners import _update_yaml_g3
+            from src.cli._phase_runners import _update_yaml_p5
 
-            _update_yaml_g3(result)
+            _update_yaml_p5(result)
 
-        updated = store.load("g3-fail")
-        assert updated.gates[GateId.G3].status == GateVerdict.FAIL
+        updated = store.load("p5-fail")
+        assert updated.phases[PhaseId.P5].status == PhaseVerdict.FAIL
         assert updated.meta.status == StrategyStatus.RETIRED
 
 
@@ -404,28 +404,28 @@ class TestUpdateYamlG3:
 
 
 class TestCLICommands:
-    def test_gate1_run_help(self) -> None:
-        """gate1-run --help 동작 확인."""
+    def test_phase4_run_help(self) -> None:
+        """phase4-run --help 동작 확인."""
         from src.cli.pipeline import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["gate1-run", "--help"])
+        result = runner.invoke(app, ["phase4-run", "--help"])
         assert result.exit_code == 0
-        assert "Gate 1" in result.output
+        assert "Phase 4" in result.output
         assert "--symbols" in result.output
         assert "--start" in result.output
         assert "--end" in result.output
         assert "--capital" in result.output
         assert "--parallel" in result.output
 
-    def test_gate3_run_help(self) -> None:
-        """gate3-run --help 동작 확인."""
+    def test_phase5_stability_help(self) -> None:
+        """phase5-stability --help 동작 확인."""
         from src.cli.pipeline import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["gate3-run", "--help"])
+        result = runner.invoke(app, ["phase5-stability", "--help"])
         assert result.exit_code == 0
-        assert "Gate 3" in result.output
+        assert "Phase 5" in result.output
         assert "--json" in result.output
 
 
@@ -435,21 +435,21 @@ class TestCLICommands:
 
 
 class TestConstants:
-    def test_gate3_strategies_have_required_keys(self) -> None:
-        """모든 GATE3_STRATEGIES에 best_asset, baseline, sweeps 있음."""
-        for name, config in GATE3_STRATEGIES.items():
+    def test_p5_strategies_have_required_keys(self) -> None:
+        """모든 P5_STRATEGIES에 best_asset, baseline, sweeps 있음."""
+        for name, config in P5_STRATEGIES.items():
             assert "best_asset" in config, f"{name} missing best_asset"
             assert "baseline" in config, f"{name} missing baseline"
             assert "sweeps" in config, f"{name} missing sweeps"
 
-    def test_gate3_weight_pairs_strategies_exist(self) -> None:
-        """GATE3_WEIGHT_PAIRS의 전략이 GATE3_STRATEGIES에 존재."""
-        for name in GATE3_WEIGHT_PAIRS:
-            assert name in GATE3_STRATEGIES, f"{name} not in GATE3_STRATEGIES"
+    def test_p5_weight_pairs_strategies_exist(self) -> None:
+        """P5_WEIGHT_PAIRS의 전략이 P5_STRATEGIES에 존재."""
+        for name in P5_WEIGHT_PAIRS:
+            assert name in P5_STRATEGIES, f"{name} not in P5_STRATEGIES"
 
-    def test_gate3_sweep_params_in_baseline(self) -> None:
+    def test_p5_sweep_params_in_baseline(self) -> None:
         """스윕 파라미터가 baseline에 존재."""
-        for name, config in GATE3_STRATEGIES.items():
+        for name, config in P5_STRATEGIES.items():
             baseline = config["baseline"]
             for param in config["sweeps"]:
                 assert param in baseline, f"{name}: sweep param '{param}' not in baseline"
@@ -460,31 +460,31 @@ class TestConstants:
 # =============================================================================
 
 
-class TestParallelGate1:
+class TestParallelPhase4:
     def test_max_workers_constant(self) -> None:
         """_MAX_WORKERS 상수가 적절한 범위."""
-        from src.cli._gate_runners import _MAX_WORKERS
+        from src.cli._phase_runners import _MAX_WORKERS
 
         assert 1 <= _MAX_WORKERS <= 8
 
-    def test_gate1_worker_is_module_level(self) -> None:
-        """_gate1_worker가 모듈 레벨 함수 (pickling 가능)."""
-        from src.cli._gate_runners import _gate1_worker
+    def test_phase4_worker_is_module_level(self) -> None:
+        """_phase4_worker가 모듈 레벨 함수 (pickling 가능)."""
+        from src.cli._phase_runners import _phase4_worker
 
-        assert callable(_gate1_worker)
+        assert callable(_phase4_worker)
 
-    def test_run_gate1_accepts_parallel_kwarg(self) -> None:
-        """run_gate1이 parallel kwarg를 받는지 확인."""
+    def test_run_phase4_accepts_parallel_kwarg(self) -> None:
+        """run_phase4이 parallel kwarg를 받는지 확인."""
         import inspect
 
-        from src.cli._gate_runners import run_gate1
+        from src.cli._phase_runners import run_phase4
 
-        sig = inspect.signature(run_gate1)
+        sig = inspect.signature(run_phase4)
         assert "parallel" in sig.parameters
         # default is True
         assert sig.parameters["parallel"].default is True
 
-    def test_run_gate1_sequential_with_mock(self, tmp_path: Path) -> None:
+    def test_run_phase4_sequential_with_mock(self, tmp_path: Path) -> None:
         """parallel=False 시 순차 실행 (_run_symbols_sequential 호출)."""
         from unittest.mock import MagicMock
 
@@ -494,17 +494,17 @@ class TestParallelGate1:
 
         with (
             patch(
-                "src.cli._gate_runners._run_symbols_sequential", return_value=[]
+                "src.cli._phase_runners._run_symbols_sequential", return_value=[]
             ) as mock_seq,
-            patch("src.cli._gate_runners.resolve_timeframe", return_value="1D"),
-            patch("src.cli._gate_runners._update_yaml_g1"),
-            patch("src.cli._gate_runners._RESULTS_DIR", tmp_path),
+            patch("src.cli._phase_runners.resolve_timeframe", return_value="1D"),
+            patch("src.cli._phase_runners._update_yaml_p4"),
+            patch("src.cli._phase_runners._RESULTS_DIR", tmp_path),
         ):
             from datetime import UTC, datetime
 
-            from src.cli._gate_runners import run_gate1
+            from src.cli._phase_runners import run_phase4
 
-            run_gate1(
+            run_phase4(
                 strategies=["test-strat"],
                 symbols=["BTC/USDT", "ETH/USDT"],
                 start=datetime(2020, 1, 1, tzinfo=UTC),
@@ -517,7 +517,7 @@ class TestParallelGate1:
 
             mock_seq.assert_called_once()
 
-    def test_run_gate1_parallel_with_mock(self, tmp_path: Path) -> None:
+    def test_run_phase4_parallel_with_mock(self, tmp_path: Path) -> None:
         """parallel=True 시 _run_symbols_parallel 호출."""
         from unittest.mock import MagicMock
 
@@ -526,18 +526,18 @@ class TestParallelGate1:
         mock_console = MagicMock(spec=RichConsole)
 
         with (
-            patch("src.cli._gate_runners.resolve_timeframe", return_value="1D"),
-            patch("src.cli._gate_runners._update_yaml_g1"),
-            patch("src.cli._gate_runners._RESULTS_DIR", tmp_path),
+            patch("src.cli._phase_runners.resolve_timeframe", return_value="1D"),
+            patch("src.cli._phase_runners._update_yaml_p4"),
+            patch("src.cli._phase_runners._RESULTS_DIR", tmp_path),
             patch(
-                "src.cli._gate_runners._run_symbols_parallel", return_value=[]
+                "src.cli._phase_runners._run_symbols_parallel", return_value=[]
             ) as mock_par,
         ):
             from datetime import UTC, datetime
 
-            from src.cli._gate_runners import run_gate1
+            from src.cli._phase_runners import run_phase4
 
-            run_gate1(
+            run_phase4(
                 strategies=["test-strat"],
                 symbols=["BTC/USDT", "ETH/USDT"],
                 start=datetime(2020, 1, 1, tzinfo=UTC),

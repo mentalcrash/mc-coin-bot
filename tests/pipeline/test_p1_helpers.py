@@ -1,4 +1,4 @@
-"""Tests for src/pipeline/g0a_helpers.py — G0A v2 데이터 기반 점수 계산."""
+"""Tests for src/pipeline/p1_helpers.py — P1 v2 데이터 기반 점수 계산."""
 
 from __future__ import annotations
 
@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from src.pipeline.g0a_helpers import (
-    G0AItemScore,
-    compute_category_success_score,
-    compute_ic_score,
-    compute_regime_independence_score,
-)
 from src.pipeline.models import (
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
+)
+from src.pipeline.p1_helpers import (
+    P1ItemScore,
+    compute_category_success_score,
+    compute_ic_score,
+    compute_regime_independence_score,
 )
 from src.pipeline.store import StrategyStore
 
@@ -68,7 +68,7 @@ class TestComputeICScore:
 
     def test_returns_frozen_dataclass(self) -> None:
         result = compute_ic_score(0.03)
-        assert isinstance(result, G0AItemScore)
+        assert isinstance(result, P1ItemScore)
         with pytest.raises(AttributeError):
             result.score = 1  # type: ignore[misc]
 
@@ -95,9 +95,9 @@ def _make_record(
             created_at=date(2026, 1, 1),
             rationale_category=rationale_category,
         ),
-        gates={
-            GateId.G0A: GateResult(
-                status=GateVerdict.PASS,
+        phases={
+            PhaseId.P1: PhaseResult(
+                status=PhaseVerdict.PASS,
                 date=date(2026, 1, 1),
                 details={"score": 22, "max_score": 30},
             )

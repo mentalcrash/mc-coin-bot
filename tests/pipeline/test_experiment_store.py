@@ -31,14 +31,14 @@ def _make_asset_result(symbol: str = "BTC/USDT", sharpe: float = 1.5) -> AssetRe
 
 def _make_record(
     strategy: str = "ctrend",
-    gate: str = "G2",
+    phase: str = "P4",
     ts: datetime | None = None,
     passed: bool = True,
     sharpe: float = 1.5,
 ) -> ExperimentRecord:
     return ExperimentRecord(
         strategy_name=strategy,
-        gate_id=gate,
+        phase_id=phase,
         timestamp=ts or datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC),
         params={"lookback": 60, "threshold": 0.5},
         asset_results=[_make_asset_result(sharpe=sharpe)],
@@ -71,7 +71,7 @@ class TestExperimentRecord:
     def test_creation_with_asset_results(self) -> None:
         record = _make_record()
         assert record.strategy_name == "ctrend"
-        assert record.gate_id == "G2"
+        assert record.phase_id == "P4"
         assert len(record.asset_results) == 1
         assert record.passed is True
 
@@ -121,43 +121,43 @@ class TestExperimentStore:
     def test_get_latest_filtered(self, tmp_path: Path) -> None:
         store = ExperimentStore(base_dir=tmp_path)
         r1 = _make_record(
-            gate="G1", ts=datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC)
+            phase="P4", ts=datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC)
         )
         r2 = _make_record(
-            gate="G2", ts=datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)
+            phase="P5", ts=datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)
         )
         r3 = _make_record(
-            gate="G1", ts=datetime(2026, 1, 20, 12, 0, 0, tzinfo=UTC)
+            phase="P4", ts=datetime(2026, 1, 20, 12, 0, 0, tzinfo=UTC)
         )
         store.save(r1)
         store.save(r2)
         store.save(r3)
 
-        latest_g1 = store.get_latest("ctrend", gate_id="G1")
-        assert latest_g1 is not None
-        assert latest_g1.gate_id == "G1"
-        assert latest_g1.timestamp == r3.timestamp
+        latest_p4 = store.get_latest("ctrend", phase_id="P4")
+        assert latest_p4 is not None
+        assert latest_p4.phase_id == "P4"
+        assert latest_p4.timestamp == r3.timestamp
 
-        latest_g2 = store.get_latest("ctrend", gate_id="G2")
-        assert latest_g2 is not None
-        assert latest_g2.gate_id == "G2"
+        latest_p5 = store.get_latest("ctrend", phase_id="P5")
+        assert latest_p5 is not None
+        assert latest_p5.phase_id == "P5"
 
     def test_analyze(self, tmp_path: Path) -> None:
         store = ExperimentStore(base_dir=tmp_path)
         r1 = _make_record(
-            gate="G1",
+            phase="P4",
             passed=True,
             sharpe=1.2,
             ts=datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC),
         )
         r2 = _make_record(
-            gate="G2",
+            phase="P5",
             passed=False,
             sharpe=0.8,
             ts=datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC),
         )
         r3 = _make_record(
-            gate="G3",
+            phase="P6",
             passed=True,
             sharpe=2.0,
             ts=datetime(2026, 1, 20, 12, 0, 0, tzinfo=UTC),
@@ -171,7 +171,7 @@ class TestExperimentStore:
         assert isinstance(analysis, ExperimentAnalysis)
         assert analysis.total_experiments == 3
         assert analysis.pass_rate == pytest.approx(2 / 3)
-        assert analysis.best_gate == "G3"
+        assert analysis.best_phase == "P6"
         assert analysis.best_sharpe == pytest.approx(2.0)
         assert analysis.avg_mdd == pytest.approx(0.15)
 

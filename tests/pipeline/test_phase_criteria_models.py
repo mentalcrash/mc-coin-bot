@@ -1,13 +1,16 @@
-"""Tests for src/pipeline/gate_models.py."""
+"""Tests for src/pipeline/phase_criteria_models.py."""
 
 from __future__ import annotations
 
-from src.pipeline.gate_models import (
+import pytest
+from pydantic import ValidationError
+
+from src.pipeline.phase_criteria_models import (
     ChecklistCriteria,
     ChecklistItem,
-    GateCriteria,
-    GateType,
     ImmediateFailRule,
+    PhaseCriteria,
+    PhaseType,
     ScoringCriteria,
     ScoringItem,
     Severity,
@@ -17,10 +20,10 @@ from src.pipeline.gate_models import (
 
 
 class TestEnums:
-    def test_gate_type_values(self) -> None:
-        assert GateType.SCORING == "scoring"
-        assert GateType.CHECKLIST == "checklist"
-        assert GateType.THRESHOLD == "threshold"
+    def test_phase_type_values(self) -> None:
+        assert PhaseType.SCORING == "scoring"
+        assert PhaseType.CHECKLIST == "checklist"
+        assert PhaseType.THRESHOLD == "threshold"
 
     def test_severity_values(self) -> None:
         assert Severity.CRITICAL == "critical"
@@ -42,11 +45,8 @@ class TestScoringModels:
 
     def test_scoring_item_frozen(self) -> None:
         item = ScoringItem(name="test", description="desc")
-        try:
+        with pytest.raises((ValidationError, TypeError)):
             item.name = "changed"  # type: ignore[misc]
-            raise AssertionError("Should be frozen")
-        except Exception:
-            pass
 
 
 class TestChecklistModels:
@@ -94,58 +94,55 @@ class TestThresholdModels:
         assert criteria.immediate_fail == []
 
 
-class TestGateCriteria:
-    def test_scoring_gate(self) -> None:
+class TestPhaseCriteria:
+    def test_scoring_phase(self) -> None:
         items = [ScoringItem(name="test", description="desc")]
-        gate = GateCriteria(
-            gate_id="G0A",
-            name="아이디어 검증",
-            gate_type=GateType.SCORING,
+        phase = PhaseCriteria(
+            phase_id="P1",
+            name="Alpha Research",
+            phase_type=PhaseType.SCORING,
             scoring=ScoringCriteria(items=items),
         )
-        assert gate.gate_id == "G0A"
-        assert gate.gate_type == GateType.SCORING
-        assert gate.scoring is not None
-        assert gate.checklist is None
-        assert gate.threshold is None
+        assert phase.phase_id == "P1"
+        assert phase.phase_type == PhaseType.SCORING
+        assert phase.scoring is not None
+        assert phase.checklist is None
+        assert phase.threshold is None
 
-    def test_threshold_gate(self) -> None:
+    def test_threshold_phase(self) -> None:
         metrics = [ThresholdMetric(name="Sharpe", operator=">", value=1.0)]
-        gate = GateCriteria(
-            gate_id="G1",
-            name="단일에셋 백테스트",
-            gate_type=GateType.THRESHOLD,
+        phase = PhaseCriteria(
+            phase_id="P4",
+            name="Backtest",
+            phase_type=PhaseType.THRESHOLD,
             threshold=ThresholdCriteria(pass_metrics=metrics),
         )
-        assert gate.gate_type == GateType.THRESHOLD
-        assert gate.threshold is not None
+        assert phase.phase_type == PhaseType.THRESHOLD
+        assert phase.threshold is not None
 
     def test_frozen(self) -> None:
-        gate = GateCriteria(
-            gate_id="G0A",
+        phase = PhaseCriteria(
+            phase_id="P1",
             name="test",
-            gate_type=GateType.SCORING,
+            phase_type=PhaseType.SCORING,
         )
-        try:
-            gate.gate_id = "G1"  # type: ignore[misc]
-            raise AssertionError("Should be frozen")
-        except Exception:
-            pass
+        with pytest.raises((ValidationError, TypeError)):
+            phase.phase_id = "P2"  # type: ignore[misc]
 
     def test_model_dump_roundtrip(self) -> None:
         metrics = [
             ThresholdMetric(name="Sharpe", operator=">", value=1.0),
             ThresholdMetric(name="CAGR", operator=">", value=20.0, unit="%"),
         ]
-        gate = GateCriteria(
-            gate_id="G1",
-            name="단일에셋 백테스트",
-            gate_type=GateType.THRESHOLD,
+        phase = PhaseCriteria(
+            phase_id="P4",
+            name="Backtest",
+            phase_type=PhaseType.THRESHOLD,
             cli_command="run {config}",
             threshold=ThresholdCriteria(pass_metrics=metrics),
         )
-        data = gate.model_dump(mode="json")
-        restored = GateCriteria(**data)
-        assert restored == gate
+        data = phase.model_dump(mode="json")
+        restored = PhaseCriteria(**data)
+        assert restored == phase
         assert restored.threshold is not None
         assert len(restored.threshold.pass_metrics) == 2

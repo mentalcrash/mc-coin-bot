@@ -1,7 +1,7 @@
-"""Gate 1 / Gate 3 runner logic for CLI integration.
+"""Phase 4 / Phase 5 stability runner logic for CLI integration.
 
-Gate 1: 5-coin x 6-year single-asset backtest (심볼 간 병렬 지원)
-Gate 3: Parameter stability validation (plateau + +/-20%)
+Phase 4: 5-coin x 6-year single-asset backtest (심볼 간 병렬 지원)
+Phase 5 stability: Parameter stability validation (plateau + +/-20%)
 """
 
 from __future__ import annotations
@@ -34,18 +34,18 @@ _DEFAULT_END = datetime(2025, 12, 31, tzinfo=UTC)
 _DEFAULT_CAPITAL = Decimal(100_000)
 _RESULTS_DIR = Path("results")
 
-# Gate 1 PASS thresholds
-_G1_MIN_SHARPE = 1.0
-_G1_MIN_CAGR = 20.0
-_G1_MAX_MDD = 40.0
-_G1_MIN_TRADES = 50
+# Phase 4 PASS thresholds
+_P4_MIN_SHARPE = 1.0
+_P4_MIN_CAGR = 20.0
+_P4_MAX_MDD = 40.0
+_P4_MIN_TRADES = 50
 
-# Gate 3 plateau detection
+# Phase 5 plateau detection
 _PLATEAU_MIN_COUNT = 3
 _PLATEAU_THRESHOLD_RATIO = 0.8
 
-# Gate 3 전략별 파라미터 설정 (G2 PASS strategies)
-GATE3_STRATEGIES: dict[str, dict[str, Any]] = {
+# Phase 5 전략별 파라미터 설정 (P4 PASS strategies)
+P5_STRATEGIES: dict[str, dict[str, Any]] = {
     "kama": {
         "best_asset": "DOGE/USDT",
         "baseline": {
@@ -159,7 +159,7 @@ GATE3_STRATEGIES: dict[str, dict[str, Any]] = {
 }
 
 # 가중치 쌍 (한쪽을 스윕하면 다른 쪽은 1 - value)
-GATE3_WEIGHT_PAIRS: dict[str, dict[str, str]] = {
+P5_WEIGHT_PAIRS: dict[str, dict[str, str]] = {
     "max-min": {"max_weight": "min_weight"},
     "bb-rsi": {"bb_weight": "rsi_weight"},
 }
@@ -214,13 +214,13 @@ def _create_portfolio(strategy_name: str, capital: Decimal) -> Any:
 
 
 # =============================================================================
-# Gate 1 Logic
+# Phase 4 Logic
 # =============================================================================
 
 _MAX_WORKERS = 4
 
 
-def _gate1_worker(
+def _phase4_worker(
     strategy_name: str,
     symbol: str,
     timeframe: str,
@@ -237,10 +237,10 @@ def _gate1_worker(
 
     engine = BacktestEngine()
     service = MarketDataService()
-    return _run_gate1_single(engine, service, strategy_name, symbol, timeframe, start, end, capital)
+    return _run_phase4_single(engine, service, strategy_name, symbol, timeframe, start, end, capital)
 
 
-def _run_gate1_single(
+def _run_phase4_single(
     engine: BacktestEngine,
     service: MarketDataService,
     strategy_name: str,
@@ -290,9 +290,9 @@ def _run_gate1_single(
         return entry
 
 
-def _update_yaml_g1(strategy_name: str, results: list[dict[str, Any]]) -> None:
-    """Gate 1 결과를 전략 YAML에 기록."""
-    from src.pipeline.models import AssetMetrics, GateId, GateVerdict, StrategyStatus
+def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
+    """Phase 4 결과를 전략 YAML에 기록."""
+    from src.pipeline.models import AssetMetrics, PhaseId, PhaseVerdict, StrategyStatus
     from src.pipeline.store import StrategyStore
 
     store = StrategyStore()
@@ -307,14 +307,14 @@ def _update_yaml_g1(strategy_name: str, results: list[dict[str, Any]]) -> None:
     best_trades = best.get("total_trades") or 0
 
     verdict = (
-        GateVerdict.PASS
+        PhaseVerdict.PASS
         if (
-            best_sharpe > _G1_MIN_SHARPE
-            and best_cagr > _G1_MIN_CAGR
-            and best_mdd < _G1_MAX_MDD
-            and best_trades > _G1_MIN_TRADES
+            best_sharpe > _P4_MIN_SHARPE
+            and best_cagr > _P4_MIN_CAGR
+            and best_mdd < _P4_MAX_MDD
+            and best_trades > _P4_MIN_TRADES
         )
-        else GateVerdict.FAIL
+        else PhaseVerdict.FAIL
     )
 
     details = {
@@ -328,7 +328,7 @@ def _update_yaml_g1(strategy_name: str, results: list[dict[str, Any]]) -> None:
         f"{best['symbol']} Sharpe {best_sharpe:.2f}, CAGR {best_cagr:+.1f}%, MDD -{best_mdd:.1f}%"
     )
 
-    store.record_gate(strategy_name, GateId.G1, verdict, details=details, rationale=rationale)
+    store.record_phase(strategy_name, PhaseId.P4, verdict, details=details, rationale=rationale)
 
     metrics = [
         AssetMetrics(
@@ -348,10 +348,10 @@ def _update_yaml_g1(strategy_name: str, results: list[dict[str, Any]]) -> None:
     ]
     store.set_asset_performance(strategy_name, metrics)
 
-    if verdict == GateVerdict.FAIL:
+    if verdict == PhaseVerdict.FAIL:
         store.update_status(strategy_name, StrategyStatus.RETIRED)
 
-    logger.info(f"  YAML updated: {strategy_name} G1 {verdict}")
+    logger.info(f"  YAML updated: {strategy_name} P4 {verdict}")
 
 
 def _run_symbols_parallel(
@@ -369,7 +369,7 @@ def _run_symbols_parallel(
     console.print(f"  [dim]Parallel mode: {n_workers} workers[/dim]")
     with ProcessPoolExecutor(max_workers=n_workers) as pool:
         futures = {
-            pool.submit(_gate1_worker, sname, sym, tf, start, end, capital_dec): sym
+            pool.submit(_phase4_worker, sname, sym, tf, start, end, capital_dec): sym
             for sym in symbols
         }
         for future in as_completed(futures):
@@ -403,7 +403,7 @@ def _run_symbols_sequential(
     service = MarketDataService()
     for sym in symbols:
         logger.info(f"  {sname} / {sym}")
-        entry = _run_gate1_single(engine, service, sname, sym, tf, start, end, capital_dec)
+        entry = _run_phase4_single(engine, service, sname, sym, tf, start, end, capital_dec)
         if entry:
             results.append(entry)
             msg = f"    Sharpe={entry['sharpe_ratio']:.2f} CAGR={entry['cagr']:.1f}% MDD={entry['max_drawdown']:.1f}% Trades={entry['total_trades']}"
@@ -411,7 +411,7 @@ def _run_symbols_sequential(
     return results
 
 
-def run_gate1(
+def run_phase4(
     strategies: list[str],
     symbols: list[str],
     start: datetime,
@@ -422,7 +422,7 @@ def run_gate1(
     *,
     parallel: bool = True,
 ) -> None:
-    """Gate 1 전체 실행: 전략별 x 심볼별 백테스트 + Rich 출력 + YAML 업데이트.
+    """Phase 4 전체 실행: 전략별 x 심볼별 백테스트 + Rich 출력 + YAML 업데이트.
 
     Args:
         parallel: True이면 심볼 간 ProcessPoolExecutor 병렬 실행.
@@ -450,7 +450,7 @@ def run_gate1(
 
     # Save JSON
     if save_json:
-        output_path = _RESULTS_DIR / "gate1_pipeline_results.json"
+        output_path = _RESULTS_DIR / "phase4_pipeline_results.json"
         output = {
             "meta": {
                 "run_date": datetime.now(tz=UTC).isoformat(),
@@ -467,11 +467,11 @@ def run_gate1(
     # Update YAML
     for sname, results in all_results.items():
         if results:
-            _update_yaml_g1(sname, results)
+            _update_yaml_p4(sname, results)
 
     # Rich Table output
     for sname, results in all_results.items():
-        table = Table(title=f"Gate 1: {sname}")
+        table = Table(title=f"Phase 4: {sname}")
         table.add_column("Symbol", style="cyan")
         table.add_column("Sharpe", justify="right")
         table.add_column("CAGR", justify="right")
@@ -501,7 +501,7 @@ def run_gate1(
 
 
 # =============================================================================
-# Gate 3 Logic
+# Phase 5 Logic
 # =============================================================================
 
 
@@ -589,7 +589,7 @@ def _run_one_at_a_time_sweep(
     from src.strategy import get_strategy
 
     results: list[dict[str, Any]] = []
-    weight_pair = GATE3_WEIGHT_PAIRS.get(strategy_name, {})
+    weight_pair = P5_WEIGHT_PAIRS.get(strategy_name, {})
 
     for value in param_values:
         params = dict(baseline)
@@ -637,7 +637,7 @@ def _print_sweep_table(
     console: Console, strategy_name: str, analyses: list[dict[str, Any]]
 ) -> None:
     """스윕 결과 요약 테이블."""
-    table = Table(title=f"Gate 3: {strategy_name}")
+    table = Table(title=f"Phase 5: {strategy_name}")
     table.add_column("Param", style="cyan")
     table.add_column("Baseline", justify="right")
     table.add_column("Base Sharpe", justify="right")
@@ -709,9 +709,9 @@ def _print_detail_table(
     console.print(table)
 
 
-def _update_yaml_g3(result: dict[str, Any]) -> None:
-    """Gate 3 결과를 YAML에 자동 기록."""
-    from src.pipeline.models import GateId, GateVerdict, StrategyStatus
+def _update_yaml_p5(result: dict[str, Any]) -> None:
+    """Phase 5 결과를 YAML에 자동 기록."""
+    from src.pipeline.models import PhaseId, PhaseVerdict, StrategyStatus
     from src.pipeline.store import StrategyStore
 
     store = StrategyStore()
@@ -719,7 +719,7 @@ def _update_yaml_g3(result: dict[str, Any]) -> None:
     if not store.exists(name):
         return
 
-    verdict = GateVerdict(result["verdict"])
+    verdict = PhaseVerdict(result["verdict"])
     details: dict[str, Any] = {
         "param_verdicts": result.get("param_verdicts", {}),
     }
@@ -729,20 +729,20 @@ def _update_yaml_g3(result: dict[str, Any]) -> None:
     fail_str = ", ".join(result["fail_params"]) if result.get("fail_params") else "all stable"
     rationale = f"{verdict}: {fail_str}"
 
-    store.record_gate(name, GateId.G3, verdict, details=details, rationale=rationale)
-    if verdict == GateVerdict.FAIL:
+    store.record_phase(name, PhaseId.P5, verdict, details=details, rationale=rationale)
+    if verdict == PhaseVerdict.FAIL:
         store.update_status(name, StrategyStatus.RETIRED)
 
 
-def _load_g2h_config(strategy_name: str) -> dict[str, Any] | None:
-    """G2H JSON 결과에서 Gate 3 sweep 설정을 로드.
+def _load_p5_opt_config(strategy_name: str) -> dict[str, Any] | None:
+    """P5 optimization JSON 결과에서 Phase 5 sweep 설정을 로드.
 
     Returns:
-        G3 config dict (best_asset, baseline, sweeps) or None if not found.
+        P5 config dict (best_asset, baseline, sweeps) or None if not found.
     """
     from src.pipeline.store import StrategyStore
 
-    json_path = _RESULTS_DIR / f"gate2h_{strategy_name}.json"
+    json_path = _RESULTS_DIR / f"phase5_opt_{strategy_name}.json"
     if not json_path.exists():
         return None
 
@@ -751,7 +751,7 @@ def _load_g2h_config(strategy_name: str) -> dict[str, Any] | None:
         g3_sweeps = raw.get("g3_sweeps")
         best_params = raw.get("optimization", {}).get("best_params")
     except Exception:
-        logger.warning(f"Failed to load G2H config for {strategy_name}")
+        logger.warning(f"Failed to load P5 optimization config for {strategy_name}")
         return None
 
     if not g3_sweeps or not best_params:
@@ -775,36 +775,36 @@ def _load_g2h_config(strategy_name: str) -> dict[str, Any] | None:
     }
 
 
-def run_gate3(
+def run_phase5_stability(
     strategies: list[str] | None,
     save_json: bool,
     console: Console,
 ) -> None:
-    """Gate 3 전체 실행: 파라미터 안정성 검증."""
+    """Phase 5 전체 실행: 파라미터 안정성 검증."""
     from src.backtest.engine import BacktestEngine
     from src.data.market_data import MarketDataRequest
     from src.data.service import MarketDataService
 
     _RESULTS_DIR.mkdir(exist_ok=True)
 
-    # Build strategies_to_run: G2H JSON fallback → GATE3_STRATEGIES dict
+    # Build strategies_to_run: P5 opt JSON fallback → P5_STRATEGIES dict
     strategies_to_run: dict[str, dict[str, Any]] = {}
-    target_names = strategies if strategies else list(GATE3_STRATEGIES.keys())
+    target_names = strategies if strategies else list(P5_STRATEGIES.keys())
 
     for name in target_names:
-        g2h_config = _load_g2h_config(name)
-        if g2h_config is not None:
-            strategies_to_run[name] = g2h_config
-            logger.info(f"  {name}: using G2H optimized params")
-        elif name in GATE3_STRATEGIES:
-            strategies_to_run[name] = GATE3_STRATEGIES[name]
+        p5_opt_config = _load_p5_opt_config(name)
+        if p5_opt_config is not None:
+            strategies_to_run[name] = p5_opt_config
+            logger.info(f"  {name}: using P5 optimized params")
+        elif name in P5_STRATEGIES:
+            strategies_to_run[name] = P5_STRATEGIES[name]
         elif strategies is not None:
-            # Explicit request for a strategy not in either source — try G2H
-            logger.warning(f"  {name}: not in GATE3_STRATEGIES and no G2H JSON found")
+            # Explicit request for a strategy not in either source — try P5 opt
+            logger.warning(f"  {name}: not in P5_STRATEGIES and no P5 optimization JSON found")
 
     if not strategies_to_run:
         console.print(
-            "[red]No matching strategies. Run gate2h-run first or check GATE3_STRATEGIES.[/]"
+            "[red]No matching strategies. Run phase5-run first or check P5_STRATEGIES.[/]"
         )
         return
 
@@ -874,7 +874,7 @@ def run_gate3(
         all_results[strategy_name] = strategy_results
 
         verdict_style = "[green bold]PASS[/]" if overall == "PASS" else "[red bold]FAIL[/]"
-        console.print(f"\n  Gate 3 Overall: {verdict_style}")
+        console.print(f"\n  Phase 5 Overall: {verdict_style}")
         if fail_params:
             console.print(f"  Failed params: {', '.join(fail_params)}")
         console.print()
@@ -892,8 +892,8 @@ def run_gate3(
     elapsed = time.perf_counter() - t0
 
     # Final summary table
-    console.rule("[bold]Gate 3 Summary[/]")
-    final_table = Table(title="Gate 3 Parameter Stability Results")
+    console.rule("[bold]Phase 5 Summary[/]")
+    final_table = Table(title="Phase 5 Parameter Stability Results")
     final_table.add_column("Strategy", style="cyan")
     final_table.add_column("Best Asset")
     final_table.add_column("Params Tested", justify="right")
@@ -917,7 +917,7 @@ def run_gate3(
 
     # Save JSON
     if save_json:
-        output_path = _RESULTS_DIR / "gate3_param_sweep.json"
+        output_path = _RESULTS_DIR / "phase5_param_sweep.json"
 
         def json_default(obj: Any) -> Any:
             if isinstance(obj, float) and math.isnan(obj):
@@ -940,4 +940,6 @@ def run_gate3(
 
     # Update YAML
     for s in summary:
-        _update_yaml_g3(s)
+        _update_yaml_p5(s)
+
+

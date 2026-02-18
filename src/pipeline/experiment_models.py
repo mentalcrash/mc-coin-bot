@@ -1,6 +1,6 @@
 """Experiment Tracking models.
 
-Gate 실행 시 에셋별 상세 결과를 기록하는 모델.
+Phase 실행 시 에셋별 상세 결과를 기록하는 모델.
 
 Rules Applied:
     - #11 Pydantic Modeling: frozen=True
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AssetResult(BaseModel):
-    """개별 에셋의 Gate 실행 결과."""
+    """개별 에셋의 Phase 실행 결과."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -30,12 +30,12 @@ class AssetResult(BaseModel):
 
 
 class ExperimentRecord(BaseModel):
-    """Gate 실행의 전체 기록 (에셋별 결과 포함)."""
+    """Phase 실행의 전체 기록 (에셋별 결과 포함)."""
 
     model_config = ConfigDict(frozen=True)
 
     strategy_name: str
-    gate_id: str
+    phase_id: str
     timestamp: datetime
     params: dict[str, Any]
     asset_results: list[AssetResult]
@@ -52,6 +52,6 @@ class ExperimentAnalysis(BaseModel):
     strategy_name: str
     total_experiments: int
     pass_rate: float
-    best_gate: str
+    best_phase: str
     best_sharpe: float
     avg_mdd: float = Field(description="전체 에셋 평균 MDD")

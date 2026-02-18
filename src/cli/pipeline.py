@@ -5,7 +5,7 @@ Commands:
     - list: 전략 목록 (필터링)
     - show: 전략 상세 정보
     - create: 새 전략 YAML 생성 (CANDIDATE 상태)
-    - record: Gate 결과 기록
+    - record: Phase 결과 기록
     - update-status: 전략 상태 변경
     - report: Dashboard 자동 생성
     - table: 모든 전략 현황 표
@@ -23,9 +23,9 @@ from rich.table import Table
 
 from src.pipeline.models import (
     Decision,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
@@ -43,15 +43,15 @@ _STATUS_COLORS: dict[StrategyStatus, str] = {
     StrategyStatus.RETIRED: "red",
 }
 
-_GATE_DISPLAY = ["G0A", "G0B", "G1", "G2", "G2H", "G3", "G4", "G5"]
+_PHASE_DISPLAY = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
 
 
-def _gate_badge_colored(record: StrategyRecord, gid: GateId) -> str:
-    """Gate 결과를 Rich 색상 문자로 변환."""
-    result = record.gates.get(gid)
+def _phase_badge_colored(record: StrategyRecord, pid: PhaseId) -> str:
+    """Phase 결과를 Rich 색상 문자로 변환."""
+    result = record.phases.get(pid)
     if result is None:
         return "[dim]-[/dim]"
-    if result.status == GateVerdict.PASS:
+    if result.status == PhaseVerdict.PASS:
         return "[green]P[/green]"
     return "[red]F[/red]"
 
@@ -90,14 +90,14 @@ def status() -> None:
 
     console.print(table)
 
-    # TESTING breakdown by next_gate
+    # TESTING breakdown by next_phase
     testing = [r for r in records if r.meta.status == StrategyStatus.TESTING]
     if testing:
         breakdown: dict[str, int] = {}
         for r in testing:
-            ng = r.next_gate or "DONE"
-            breakdown[ng] = breakdown.get(ng, 0) + 1
-        parts = [f"  {gate}: {cnt}" for gate, cnt in sorted(breakdown.items())]
+            np = r.next_phase or "DONE"
+            breakdown[np] = breakdown.get(np, 0) + 1
+        parts = [f"  {phase}: {cnt}" for phase, cnt in sorted(breakdown.items())]
         console.print("\n[yellow]TESTING Breakdown:[/yellow]")
         for part in parts:
             console.print(part)
@@ -108,9 +108,9 @@ def list_strategies(
     status_filter: Annotated[
         str | None, typer.Option("--status", "-s", help="Filter by status")
     ] = None,
-    gate: Annotated[str | None, typer.Option("--gate", "-g", help="Filter by current gate")] = None,
+    phase: Annotated[str | None, typer.Option("--phase", "-g", help="Filter by current phase")] = None,
     verdict: Annotated[
-        str | None, typer.Option("--verdict", "-v", help="PASS or FAIL at gate")
+        str | None, typer.Option("--verdict", "-v", help="PASS or FAIL at phase")
     ] = None,
     timeframe: Annotated[str | None, typer.Option("--tf", help="Filter by timeframe")] = None,
 ) -> None:
@@ -126,13 +126,13 @@ def list_strategies(
             raise typer.Exit(code=1) from None
         records = [r for r in records if r.meta.status == sf]
 
-    if gate and verdict:
-        gid = GateId(gate)
-        gv = GateVerdict(verdict)
-        records = [r for r in records if gid in r.gates and r.gates[gid].status == gv]
-    elif gate:
-        gid = GateId(gate)
-        records = [r for r in records if r.current_gate == gid]
+    if phase and verdict:
+        pid = PhaseId(phase)
+        pv = PhaseVerdict(verdict)
+        records = [r for r in records if pid in r.phases and r.phases[pid].status == pv]
+    elif phase:
+        pid = PhaseId(phase)
+        records = [r for r in records if r.current_phase == pid]
 
     if timeframe:
         records = [r for r in records if r.meta.timeframe == timeframe]
@@ -157,22 +157,22 @@ def show(name: Annotated[str, typer.Argument(help="Strategy name (kebab-case)")]
     _print_strategy_detail(record)
 
 
-_G0A_ITEM_MIN_SCORE = 1
-_G0A_ITEM_MAX_SCORE = 5
+_P1_ITEM_MIN_SCORE = 1
+_P1_ITEM_MAX_SCORE = 5
 
 
-def _load_g0a_criteria() -> tuple[int, int, list[str]]:
-    """criteria.yaml에서 G0A 기준 로드.
+def _load_p1_criteria() -> tuple[int, int, list[str]]:
+    """phase-criteria.yaml에서 P1 기준 로드.
 
     Returns:
         (pass_threshold, max_total, item_names) 튜플
     """
-    from src.pipeline.gate_store import GateCriteriaStore
+    from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 
     try:
-        store = GateCriteriaStore()
-        g0a = store.load("G0A")
-        scoring = g0a.scoring
+        store = PhaseCriteriaStore()
+        p1 = store.load("P1")
+        scoring = p1.scoring
         if scoring is None:
             return 21, 30, []
         return scoring.pass_threshold, scoring.max_total, [i.name for i in scoring.items]
@@ -180,15 +180,15 @@ def _load_g0a_criteria() -> tuple[int, int, list[str]]:
         return 21, 30, []
 
 
-def _validate_g0a_items(
+def _validate_p1_items(
     items_json: str,
     item_names: list[str],
 ) -> dict[str, int]:
-    """--g0a-items JSON 파싱 + 항목명/범위 검증.
+    """--p1-items JSON 파싱 + 항목명/범위 검증.
 
     Args:
         items_json: JSON 문자열
-        item_names: criteria.yaml에서 로드한 항목명 목록
+        item_names: phase-criteria.yaml에서 로드한 항목명 목록
 
     Returns:
         검증된 {항목명: 점수} 딕셔너리
@@ -201,7 +201,7 @@ def _validate_g0a_items(
     try:
         items: dict[str, object] = json.loads(items_json)
     except json.JSONDecodeError:
-        console.print("[red]Invalid JSON for --g0a-items[/red]")
+        console.print("[red]Invalid JSON for --p1-items[/red]")
         raise typer.Exit(code=1) from None
 
     # 항목명 검증
@@ -216,18 +216,18 @@ def _validate_g0a_items(
                 msg_parts.append(f"누락: {', '.join(sorted(missing))}")
             if extra:
                 msg_parts.append(f"불일치: {', '.join(sorted(extra))}")
-            console.print(f"[red]G0A 항목 불일치 — {'; '.join(msg_parts)}[/red]")
+            console.print(f"[red]P1 항목 불일치 — {'; '.join(msg_parts)}[/red]")
             raise typer.Exit(code=1)
 
     # 점수 범위 검증 (1-5)
     for item_name, item_score in items.items():
         if (
             not isinstance(item_score, int)
-            or item_score < _G0A_ITEM_MIN_SCORE
-            or item_score > _G0A_ITEM_MAX_SCORE
+            or item_score < _P1_ITEM_MIN_SCORE
+            or item_score > _P1_ITEM_MAX_SCORE
         ):
             console.print(
-                f"[red]Invalid score for '{item_name}': {item_score} (valid: {_G0A_ITEM_MIN_SCORE}~{_G0A_ITEM_MAX_SCORE})[/red]"
+                f"[red]Invalid score for '{item_name}': {item_score} (valid: {_P1_ITEM_MIN_SCORE}~{_P1_ITEM_MAX_SCORE})[/red]"
             )
             raise typer.Exit(code=1)
 
@@ -235,14 +235,14 @@ def _validate_g0a_items(
     return {k: int(v) for k, v in items.items()}  # type: ignore[arg-type]
 
 
-def _build_g0a_v2_details(
+def _build_p1_v2_details(
     items: dict[str, int],
     pass_threshold: int,
     max_total: int,
-) -> tuple[GateVerdict, dict[str, object], str]:
+) -> tuple[PhaseVerdict, dict[str, object], str]:
     """v2 항목별 점수 → verdict, details, rationale_text 생성."""
     total_score = sum(items.values())
-    verdict = GateVerdict.PASS if total_score >= pass_threshold else GateVerdict.FAIL
+    verdict = PhaseVerdict.PASS if total_score >= pass_threshold else PhaseVerdict.FAIL
     details: dict[str, object] = {
         "version": 2,
         "score": total_score,
@@ -255,8 +255,8 @@ def _build_g0a_v2_details(
     score_table.add_column("항목", min_width=16)
     score_table.add_column("점수", justify="right", width=6)
     for iname, iscore in items.items():
-        score_table.add_row(iname, f"{iscore}/{_G0A_ITEM_MAX_SCORE}")
-    verdict_str = "[green]PASS[/green]" if verdict == GateVerdict.PASS else "[red]FAIL[/red]"
+        score_table.add_row(iname, f"{iscore}/{_P1_ITEM_MAX_SCORE}")
+    verdict_str = "[green]PASS[/green]" if verdict == PhaseVerdict.PASS else "[red]FAIL[/red]"
     score_table.add_row(
         "[bold]합계[/bold]",
         f"[bold]{total_score}/{max_total}[/bold] ({verdict_str} ≥ {pass_threshold})",
@@ -274,11 +274,11 @@ def create(
     timeframe: Annotated[str, typer.Option("--timeframe", "--tf", help="타임프레임")],
     short_mode: Annotated[str, typer.Option("--short-mode", help="DISABLED|HEDGE_ONLY|FULL")],
     rationale: Annotated[str, typer.Option("--rationale", "-r", help="경제적 논거")] = "",
-    g0a_score: Annotated[int, typer.Option("--g0a-score", help="Gate 0A 점수 (v1 레거시)")] = 0,
-    g0a_items: Annotated[
+    p1_score: Annotated[int, typer.Option("--p1-score", help="Phase 1 점수 (v1 레거시)")] = 0,
+    p1_items: Annotated[
         str | None,
         typer.Option(
-            "--g0a-items",
+            "--p1-items",
             help='항목별 점수 JSON (e.g., \'{"경제적 논거 고유성":4,"IC 사전 검증":5,...}\')',
         ),
     ] = None,
@@ -292,20 +292,20 @@ def create(
         console.print(f"[red]Already exists: {name}[/red]")
         raise typer.Exit(code=1)
 
-    pass_threshold, max_total, item_names = _load_g0a_criteria()
+    pass_threshold, max_total, item_names = _load_p1_criteria()
 
-    if g0a_items is not None:
-        items = _validate_g0a_items(g0a_items, item_names)
-        verdict, details, rationale_text = _build_g0a_v2_details(items, pass_threshold, max_total)
+    if p1_items is not None:
+        items = _validate_p1_items(p1_items, item_names)
+        verdict, details, rationale_text = _build_p1_v2_details(items, pass_threshold, max_total)
         total_score = sum(items.values())
     else:
-        # v1 레거시: --g0a-score
-        if g0a_score < 0 or g0a_score > max_total:
-            console.print(f"[red]Invalid G0A score: {g0a_score} (valid range: 0~{max_total})[/red]")
+        # v1 레거시: --p1-score
+        if p1_score < 0 or p1_score > max_total:
+            console.print(f"[red]Invalid P1 score: {p1_score} (valid range: 0~{max_total})[/red]")
             raise typer.Exit(code=1)
 
-        total_score = g0a_score
-        verdict = GateVerdict.PASS if total_score >= pass_threshold else GateVerdict.FAIL
+        total_score = p1_score
+        verdict = PhaseVerdict.PASS if total_score >= pass_threshold else PhaseVerdict.FAIL
         details = {"score": total_score, "max_score": max_total}
         rationale_text = f"{total_score}/{max_total}점"
 
@@ -326,8 +326,8 @@ def create(
             economic_rationale=rationale,
             rationale_category=rationale_category,
         ),
-        gates={
-            GateId.G0A: GateResult(
+        phases={
+            PhaseId.P1: PhaseResult(
                 status=verdict,
                 date=today,
                 details=details,
@@ -336,7 +336,7 @@ def create(
         decisions=[
             Decision(
                 date=today,
-                gate=GateId.G0A,
+                phase=PhaseId.P1,
                 verdict=verdict,
                 rationale=rationale_text,
             ),
@@ -344,9 +344,9 @@ def create(
     )
     store.save(record_obj)
 
-    if verdict == GateVerdict.FAIL:
+    if verdict == PhaseVerdict.FAIL:
         console.print(
-            f"[yellow]Created: strategies/{name}.yaml (CANDIDATE) — G0A FAIL ({total_score}/{max_total})[/yellow]"
+            f"[yellow]Created: strategies/{name}.yaml (CANDIDATE) — P1 FAIL ({total_score}/{max_total})[/yellow]"
         )
     else:
         console.print(f"[green]Created: strategies/{name}.yaml (CANDIDATE)[/green]")
@@ -379,7 +379,7 @@ def _warn_low_category_success(store: StrategyStore, category: str) -> None:
 @app.command()
 def record(
     name: Annotated[str, typer.Argument(help="Strategy name")],
-    gate: Annotated[str, typer.Option("--gate", "-g", help="Gate ID (G0A, G1, ...)")],
+    phase: Annotated[str, typer.Option("--phase", "-g", help="Phase ID (P1, P2, ...)")],
     verdict: Annotated[str, typer.Option("--verdict", "-v", help="PASS or FAIL")],
     rationale: Annotated[str, typer.Option("--rationale", "-r", help="판정 사유")] = "",
     detail: Annotated[
@@ -389,7 +389,7 @@ def record(
         bool, typer.Option("--no-retire", help="FAIL 시 자동 RETIRED 방지")
     ] = False,
 ) -> None:
-    """Gate 결과 기록."""
+    """Phase 결과 기록."""
     store = StrategyStore()
     if not store.exists(name):
         console.print(f"[red]Strategy not found: {name}[/red]")
@@ -403,15 +403,15 @@ def record(
         except ValueError:
             details[key] = val
 
-    gid = GateId(gate)
-    gv = GateVerdict(verdict)
-    store.record_gate(name, gid, gv, details=details, rationale=rationale)
-    console.print(f"[green]Recorded {gate} {verdict} for {name}[/green]")
+    pid = PhaseId(phase)
+    pv = PhaseVerdict(verdict)
+    store.record_phase(name, pid, pv, details=details, rationale=rationale)
+    console.print(f"[green]Recorded {phase} {verdict} for {name}[/green]")
 
-    if gv == GateVerdict.FAIL and not no_retire:
+    if pv == PhaseVerdict.FAIL and not no_retire:
         store.update_status(name, StrategyStatus.RETIRED)
         console.print("[yellow]Status → RETIRED[/yellow]")
-    elif gv == GateVerdict.FAIL and no_retire:
+    elif pv == PhaseVerdict.FAIL and no_retire:
         console.print("[yellow]FAIL recorded (status unchanged — --no-retire)[/yellow]")
 
 
@@ -440,17 +440,17 @@ def report(
     """전략 상황판 출력. --output FILE 시 markdown 저장."""
     from pathlib import Path
 
-    from src.pipeline.gate_store import GateCriteriaStore
     from src.pipeline.lesson_store import LessonStore
+    from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 
     store = StrategyStore()
     lesson_store = LessonStore()
-    gate_store = GateCriteriaStore()
+    phase_store = PhaseCriteriaStore()
 
     if output:
         from src.pipeline.report import DashboardGenerator
 
-        generator = DashboardGenerator(store, lesson_store=lesson_store, gate_store=gate_store)
+        generator = DashboardGenerator(store, lesson_store=lesson_store, phase_store=phase_store)
         content = generator.generate()
         out_path = Path(output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -460,14 +460,14 @@ def report(
         from src.pipeline.report import ConsoleRenderer
 
         renderer = ConsoleRenderer(
-            store, lesson_store=lesson_store, gate_store=gate_store, console=console
+            store, lesson_store=lesson_store, phase_store=phase_store, console=console
         )
         renderer.render()
 
 
 @app.command(name="table")
 def full_table() -> None:
-    """모든 전략의 현황을 Gate 진행도 표로 출력."""
+    """모든 전략의 현황을 Phase 진행도 표로 출력."""
     store = StrategyStore()
     records = store.load_all()
 
@@ -493,8 +493,8 @@ def full_table() -> None:
     table.add_column("CAGR", justify="right", width=8)
     table.add_column("MDD", justify="right", width=7)
     table.add_column("Best Asset", width=11)
-    for gname in _GATE_DISPLAY:
-        table.add_column(gname, justify="center", width=3)
+    for pname in _PHASE_DISPLAY:
+        table.add_column(pname, justify="center", width=3)
     table.add_column("Next", justify="center", width=4)
 
     for i, r in enumerate(records, 1):
@@ -509,8 +509,8 @@ def full_table() -> None:
             cagr_str = f"+{best.cagr:.1f}%" if best.cagr > 0 else f"{best.cagr:.1f}%"
             mdd_str = f"-{best.mdd:.1f}%"
 
-        gate_cells = [_gate_badge_colored(r, GateId(g)) for g in _GATE_DISPLAY]
-        next_gate_str = r.next_gate if r.next_gate else "-"
+        phase_cells = [_phase_badge_colored(r, PhaseId(p)) for p in _PHASE_DISPLAY]
+        next_phase_str = r.next_phase if r.next_phase else "-"
 
         table.add_row(
             str(i),
@@ -521,8 +521,8 @@ def full_table() -> None:
             cagr_str,
             mdd_str,
             best_asset_str,
-            *gate_cells,
-            next_gate_str,
+            *phase_cells,
+            next_phase_str,
         )
 
     console.print()
@@ -547,26 +547,26 @@ def retired_analysis() -> None:
         console.print("[yellow]No RETIRED strategies found.[/yellow]")
         return
 
-    # 1) Gate별 FAIL 분포
-    gate_fail_counts: dict[str, int] = {}
+    # 1) Phase별 FAIL 분포
+    phase_fail_counts: dict[str, int] = {}
     for r in retired:
-        fg = r.fail_gate
-        if fg:
-            gate_fail_counts[fg] = gate_fail_counts.get(fg, 0) + 1
+        fp = r.fail_phase
+        if fp:
+            phase_fail_counts[fp] = phase_fail_counts.get(fp, 0) + 1
         else:
-            gate_fail_counts["N/A"] = gate_fail_counts.get("N/A", 0) + 1
+            phase_fail_counts["N/A"] = phase_fail_counts.get("N/A", 0) + 1
 
     total_retired = len(retired)
-    gate_table = Table(title=f"Gate별 FAIL 분포 ({total_retired} RETIRED)")
-    gate_table.add_column("Gate", style="bold")
-    gate_table.add_column("Count", justify="right")
-    gate_table.add_column("%", justify="right")
+    phase_table = Table(title=f"Phase별 FAIL 분포 ({total_retired} RETIRED)")
+    phase_table.add_column("Phase", style="bold")
+    phase_table.add_column("Count", justify="right")
+    phase_table.add_column("%", justify="right")
 
-    for gate, count in sorted(gate_fail_counts.items(), key=lambda x: -x[1]):
+    for phase, count in sorted(phase_fail_counts.items(), key=lambda x: -x[1]):
         pct = count / total_retired * 100
-        gate_table.add_row(gate, str(count), f"{pct:.0f}%")
+        phase_table.add_row(phase, str(count), f"{pct:.0f}%")
 
-    console.print(gate_table)
+    console.print(phase_table)
 
     # 2) 카테고리별 성공률
     cat_retired: dict[str, int] = {}
@@ -600,14 +600,14 @@ def retired_analysis() -> None:
     recent = by_date[:10]
     recent_table = Table(title="최근 RETIRED Top 10")
     recent_table.add_column("Name", style="bold")
-    recent_table.add_column("Gate", justify="center")
+    recent_table.add_column("Phase", justify="center")
     recent_table.add_column("Category")
     recent_table.add_column("Date")
 
     for r in recent:
         recent_table.add_row(
             r.meta.name,
-            r.fail_gate or "-",
+            r.fail_phase or "-",
             r.meta.rationale_category or "-",
             str(r.meta.retired_at or r.meta.created_at),
         )
@@ -740,93 +740,93 @@ def lessons_add(
     console.print(f"[green]Created: lessons/{new_id:03d}.yaml — {title}[/green]")
 
 
-# ─── Gate criteria commands ──────────────────────────────────────────
+# ─── Phase criteria commands ─────────────────────────────────────────
 
 
-@app.command(name="gates-list")
-def gates_list() -> None:
-    """Gate 평가 기준 요약 테이블."""
-    from src.pipeline.gate_store import GateCriteriaStore
+@app.command(name="phases-list")
+def phases_list() -> None:
+    """Phase 평가 기준 요약 테이블."""
+    from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 
-    store = GateCriteriaStore()
+    store = PhaseCriteriaStore()
     try:
-        gates = store.load_all()
+        phases = store.load_all()
     except FileNotFoundError:
-        console.print("[red]gates/criteria.yaml not found.[/red]")
+        console.print("[red]gates/phase-criteria.yaml not found.[/red]")
         raise typer.Exit(code=1) from None
 
     table = Table(
         show_header=True,
         header_style="bold",
-        title=f"Gate Criteria ({len(gates)} gates)",
+        title=f"Phase Criteria ({len(phases)} phases)",
     )
-    table.add_column("Gate", style="bold", width=5)
+    table.add_column("Phase", style="bold", width=6)
     table.add_column("Name", min_width=14)
     table.add_column("Type", width=10)
     table.add_column("CLI")
 
-    for g in gates:
-        cli = g.cli_command if g.cli_command else "-"
-        table.add_row(g.gate_id, g.name, g.gate_type.value, cli)
+    for p in phases:
+        cli = p.cli_command if p.cli_command else "-"
+        table.add_row(p.phase_id, p.name, p.phase_type.value, cli)
 
     console.print(table)
 
 
-@app.command(name="gates-show")
-def gates_show(
-    gate_id: Annotated[str, typer.Argument(help="Gate ID (G0A, G1, ...)")],
+@app.command(name="phases-show")
+def phases_show(
+    phase_id: Annotated[str, typer.Argument(help="Phase ID (P1, P2, ...)")],
 ) -> None:
-    """Gate 상세 기준 표시."""
-    from src.pipeline.gate_models import GateType, Severity
-    from src.pipeline.gate_store import GateCriteriaStore
+    """Phase 상세 기준 표시."""
+    from src.pipeline.phase_criteria_models import PhaseType, Severity
+    from src.pipeline.phase_criteria_store import PhaseCriteriaStore
 
-    store = GateCriteriaStore()
+    store = PhaseCriteriaStore()
     try:
-        g = store.load(gate_id)
+        p = store.load(phase_id)
     except (FileNotFoundError, KeyError):
-        console.print(f"[red]Gate not found: {gate_id}[/red]")
+        console.print(f"[red]Phase not found: {phase_id}[/red]")
         raise typer.Exit(code=1) from None
 
     lines = [
-        f"[bold]{g.gate_id}[/bold] — {g.name}",
+        f"[bold]{p.phase_id}[/bold] — {p.name}",
         "",
-        g.description,
+        p.description,
         "",
-        f"[bold]Type:[/bold] {g.gate_type.value}",
+        f"[bold]Type:[/bold] {p.phase_type.value}",
     ]
-    if g.cli_command:
-        lines.append(f"[bold]CLI:[/bold] {g.cli_command}")
+    if p.cli_command:
+        lines.append(f"[bold]CLI:[/bold] {p.cli_command}")
 
-    if g.gate_type == GateType.SCORING and g.scoring:
-        lines.append(f"\n[bold]PASS:[/bold] >= {g.scoring.pass_threshold}/{g.scoring.max_total}")
-        lines.extend(f"  - {item.name}: {item.description}" for item in g.scoring.items)
+    if p.phase_type == PhaseType.SCORING and p.scoring:
+        lines.append(f"\n[bold]PASS:[/bold] >= {p.scoring.pass_threshold}/{p.scoring.max_total}")
+        lines.extend(f"  - {item.name}: {item.description}" for item in p.scoring.items)
 
-    elif g.gate_type == GateType.CHECKLIST and g.checklist:
-        lines.append(f"\n[bold]PASS:[/bold] {g.checklist.pass_rule}")
-        for item in g.checklist.items:
+    elif p.phase_type == PhaseType.CHECKLIST and p.checklist:
+        lines.append(f"\n[bold]PASS:[/bold] {p.checklist.pass_rule}")
+        for item in p.checklist.items:
             c = "red" if item.severity == Severity.CRITICAL else "yellow"
             lines.append(f"  [{c}]{item.code}[/{c}] {item.name}: {item.description}")
 
-    elif g.gate_type == GateType.THRESHOLD and g.threshold:
+    elif p.phase_type == PhaseType.THRESHOLD and p.threshold:
         lines.append("\n[bold]PASS Metrics:[/bold]")
         lines.extend(
             f"  - {m.name} {m.operator} {int(m.value) if m.value == int(m.value) else m.value}{m.unit}"
-            for m in g.threshold.pass_metrics
+            for m in p.threshold.pass_metrics
         )
-        if g.threshold.immediate_fail:
+        if p.threshold.immediate_fail:
             lines.append("\n[bold]Immediate FAIL:[/bold]")
             lines.extend(
-                f"  - {rule.condition} → {rule.reason}" for rule in g.threshold.immediate_fail
+                f"  - {rule.condition} → {rule.reason}" for rule in p.threshold.immediate_fail
             )
 
-    console.print(Panel("\n".join(lines), title=f"Gate {g.gate_id}"))
+    console.print(Panel("\n".join(lines), title=f"Phase {p.phase_id}"))
 
 
-# ─── G0A check command ───────────────────────────────────────────────
+# ─── P1 check command ────────────────────────────────────────────────
 
 
-@app.command(name="g0a-check")
-def g0a_check(
+@app.command(name="p1-check")
+def p1_check(
     indicator_name: Annotated[
         str,
         typer.Argument(help="Indicator name (e.g., rsi, momentum, efficiency_ratio)"),
@@ -849,17 +849,17 @@ def g0a_check(
         typer.Option("--category", "-c", help="Rationale category for success rate scoring"),
     ] = None,
 ) -> None:
-    """G0A 데이터 기반 항목 자동 점수 계산 도우미.
+    """P1 데이터 기반 항목 자동 점수 계산 도우미.
 
     IC 사전 검증, 카테고리 성공률, 레짐 독립성 3개 항목의
     추천 점수를 자동 계산합니다.
 
     Example:
-        uv run mcbot pipeline g0a-check rsi BTC/USDT --tf 1D -p period=14 --category momentum
+        uv run mcbot pipeline p1-check rsi BTC/USDT --tf 1D -p period=14 --category momentum
     """
     import json
 
-    from src.pipeline.g0a_helpers import (
+    from src.pipeline.p1_helpers import (
         compute_category_success_score,
         compute_ic_score,
         compute_regime_independence_score,
@@ -880,7 +880,7 @@ def g0a_check(
     console.print(
         Panel(
             (
-                f"[bold]G0A Data-Based Score Check[/bold]\n"
+                f"[bold]P1 Data-Based Score Check[/bold]\n"
                 f"Indicator: {indicator_name}\n"
                 f"Symbol: {symbol} | TF: {timeframe}\n"
                 f"Params: {params or 'default'}"
@@ -951,7 +951,7 @@ def g0a_check(
     detector = RegimeDetector()
     regime_df = detector.classify_series(close_series)  # type: ignore[arg-type]
 
-    from src.pipeline.g0a_helpers import MIN_REGIME_SAMPLES
+    from src.pipeline.p1_helpers import MIN_REGIME_SAMPLES
 
     regime_ics: dict[str, float] = {}
     for label in RegimeLabel:
@@ -967,7 +967,7 @@ def g0a_check(
         scores.append(regime_score)
 
     # 결과 테이블
-    result_table = Table(title="G0A Data-Based Scores", show_header=True, header_style="bold")
+    result_table = Table(title="P1 Data-Based Scores", show_header=True, header_style="bold")
     result_table.add_column("항목", min_width=16)
     result_table.add_column("점수", justify="right", width=6)
     result_table.add_column("근거")
@@ -979,17 +979,17 @@ def g0a_check(
 
     console.print(result_table)
 
-    # --g0a-items 복사 가능 JSON
+    # --p1-items 복사 가능 JSON
     console.print(
-        f"\n[bold]--g0a-items JSON:[/bold]\n'{json.dumps(items_json, ensure_ascii=False)}'"
+        f"\n[bold]--p1-items JSON:[/bold]\n'{json.dumps(items_json, ensure_ascii=False)}'"
     )
 
 
-# ─── Gate runner commands ────────────────────────────────────────────
+# ─── Phase runner commands ───────────────────────────────────────────
 
 
-@app.command(name="gate1-run")
-def gate1_run(
+@app.command(name="phase4-run")
+def phase4_run(
     strategies: Annotated[list[str], typer.Argument(help="전략 이름 (복수)")],
     symbols: Annotated[
         str, typer.Option("--symbols", help="쉼표 구분 심볼")
@@ -1002,16 +1002,16 @@ def gate1_run(
         bool, typer.Option("--parallel/--no-parallel", help="심볼 간 병렬 실행")
     ] = True,
 ) -> None:
-    """Gate 1: 5-coin x 6-year 단일에셋 백테스트 + YAML 자동 갱신."""
+    """Phase 4: 5-coin x 6-year 단일에셋 백테스트 + YAML 자동 갱신."""
     from datetime import UTC, datetime
 
-    from src.cli._gate_runners import run_gate1
+    from src.cli._phase_runners import run_phase4
 
     symbol_list = [s.strip() for s in symbols.split(",")]
     start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
     end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
 
-    run_gate1(
+    run_phase4(
         strategies=strategies,
         symbols=symbol_list,
         start=start_dt,
@@ -1023,17 +1023,17 @@ def gate1_run(
     )
 
 
-@app.command(name="gate2h-run")
-def gate2h_run(
+@app.command(name="phase5-run")
+def phase5_run(
     strategies: Annotated[list[str], typer.Argument(help="전략 이름 (복수)")],
     n_trials: Annotated[int, typer.Option("--n-trials", "-n", help="Optuna trial 수")] = 100,
     seed: Annotated[int, typer.Option("--seed", help="재현성 seed")] = 42,
     save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
 ) -> None:
-    """Gate 2H: Optuna TPE 파라미터 최적화 (IS only, Always PASS)."""
-    from src.cli._gate_runners_g2h import run_gate2h
+    """Phase 5: Optuna TPE 파라미터 최적화 (IS only, Always PASS)."""
+    from src.cli._phase_runners_p5 import run_phase5
 
-    run_gate2h(
+    run_phase5(
         strategies=strategies,
         n_trials=n_trials,
         seed=seed,
@@ -1042,17 +1042,17 @@ def gate2h_run(
     )
 
 
-@app.command(name="gate3-run")
-def gate3_run(
+@app.command(name="phase5-stability")
+def phase5_stability(
     strategies: Annotated[
         list[str] | None, typer.Argument(help="전략 이름 (미지정 시 전체)")
     ] = None,
     save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
 ) -> None:
-    """Gate 3: 파라미터 안정성 검증 (plateau + ±20% stability) + YAML 자동 갱신."""
-    from src.cli._gate_runners import run_gate3
+    """Phase 5: 파라미터 안정성 검증 (plateau + ±20% stability) + YAML 자동 갱신."""
+    from src.cli._phase_runners import run_phase5_stability
 
-    run_gate3(strategies=strategies, save_json=save_json, console=console)
+    run_phase5_stability(strategies=strategies, save_json=save_json, console=console)
 
 
 # ─── Display helpers ─────────────────────────────────────────────────
@@ -1064,23 +1064,23 @@ def _print_strategy_table(records: list[StrategyRecord]) -> None:
     table.add_column("Name", style="bold")
     table.add_column("TF")
     table.add_column("Status")
-    table.add_column("Gate")
+    table.add_column("Phase")
     table.add_column("Sharpe", justify="right")
     table.add_column("Best Asset")
 
     for r in records:
         color = _STATUS_COLORS.get(r.meta.status, "white")
         sharpe = f"{r.best_sharpe:.2f}" if r.best_sharpe is not None else "-"
-        gate = str(r.current_gate) if r.current_gate else "-"
-        if r.fail_gate:
-            gate = f"{r.fail_gate} [red]FAIL[/red]"
-        elif r.current_gate and r.next_gate:
-            gate = f"{r.current_gate} → {r.next_gate}"
+        phase = str(r.current_phase) if r.current_phase else "-"
+        if r.fail_phase:
+            phase = f"{r.fail_phase} [red]FAIL[/red]"
+        elif r.current_phase and r.next_phase:
+            phase = f"{r.current_phase} → {r.next_phase}"
         table.add_row(
             r.meta.display_name,
             r.meta.timeframe,
             f"[{color}]{r.meta.status}[/{color}]",
-            gate,
+            phase,
             sharpe,
             r.best_asset or "-",
         )
@@ -1103,15 +1103,15 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
     ]
     console.print(Panel("\n".join(meta_lines), title=f"[bold]{r.meta.display_name}[/bold]"))
 
-    # Gate progress
-    gate_line = "  ".join(f"{g}: {_gate_badge_colored(r, GateId(g))}" for g in _GATE_DISPLAY)
-    console.print(f"\n[bold]Gate Progress:[/bold] {gate_line}")
+    # Phase progress
+    phase_line = "  ".join(f"{p}: {_phase_badge_colored(r, PhaseId(p))}" for p in _PHASE_DISPLAY)
+    console.print(f"\n[bold]Phase Progress:[/bold] {phase_line}")
 
-    # Next gate info
-    if r.fail_gate:
-        console.print(f"[red]Pipeline: BLOCKED at {r.fail_gate}[/red]\n")
-    elif r.next_gate:
-        console.print(f"[yellow]Next Gate: {r.next_gate}[/yellow]\n")
+    # Next phase info
+    if r.fail_phase:
+        console.print(f"[red]Pipeline: BLOCKED at {r.fail_phase}[/red]\n")
+    elif r.next_phase:
+        console.print(f"[yellow]Next Phase: {r.next_phase}[/yellow]\n")
     else:
         console.print("[green]Pipeline: COMPLETE[/green]\n")
 
@@ -1144,10 +1144,10 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
     if r.decisions:
         dt = Table(show_header=True, header_style="bold", title="Decision History")
         dt.add_column("Date")
-        dt.add_column("Gate")
+        dt.add_column("Phase")
         dt.add_column("Verdict")
         dt.add_column("Rationale")
         for d in r.decisions:
-            v_color = "green" if d.verdict == GateVerdict.PASS else "red"
-            dt.add_row(str(d.date), str(d.gate), f"[{v_color}]{d.verdict}[/{v_color}]", d.rationale)
+            v_color = "green" if d.verdict == PhaseVerdict.PASS else "red"
+            dt.add_row(str(d.date), str(d.phase), f"[{v_color}]{d.verdict}[/{v_color}]", d.rationale)
         console.print(dt)

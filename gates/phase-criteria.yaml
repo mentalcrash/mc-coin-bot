@@ -1,13 +1,13 @@
-# Gate Criteria — Single Source of Truth
-# 8개 Gate의 평가 기준을 YAML로 구조화.
+# Phase Criteria — Single Source of Truth
+# 7개 Phase의 평가 기준을 YAML로 구조화.
 # 수정 후 `pipeline report`로 확인, `--output FILE`로 파일 저장.
 
-gates:
-  # ─── Gate 0A: 아이디어 검증 ────────────────────────────────────
-  - gate_id: G0A
-    name: 아이디어 검증
+phases:
+  # ─── Phase 1: Alpha Research ────────────────────────────────────
+  - phase_id: P1
+    name: Alpha Research
     description: "코드 작성 전 데이터 기반 타당성 평가 (6항목, 각 1~5점)"
-    gate_type: scoring
+    phase_type: scoring
     cli_command: ""
     scoring:
       pass_threshold: 21
@@ -26,11 +26,37 @@ gates:
         - name: 수용 용량
           description: "5=$1M+ 운용, 1=$100K 미만"
 
-  # ─── Gate 0B: 코드 품질 검증 ───────────────────────────────────
-  - gate_id: G0B
-    name: 코드 품질 검증
-    description: "전략 코드 구현 완료 후, Gate 1 백테스트 실행 전 수행"
-    gate_type: checklist
+  # ─── Phase 2: Implementation ─────────────────────────────────────
+  - phase_id: P2
+    name: Implementation
+    description: "전략 코드 구현 (4-file 구조: strategy, config, tests, registry)"
+    phase_type: checklist
+    cli_command: "/p2-implement"
+    checklist:
+      pass_rule: "4-file 구조 완성 + registry 등록 + pytest PASS"
+      items:
+        - code: I1
+          name: Strategy File
+          description: "BaseStrategy 상속, generate_signal() 구현"
+          severity: critical
+        - code: I2
+          name: Config File
+          description: "Pydantic config + from_params() 지원"
+          severity: critical
+        - code: I3
+          name: Test File
+          description: "단위 테스트 작성 + PASS"
+          severity: critical
+        - code: I4
+          name: Registry
+          description: "strategy registry에 등록"
+          severity: critical
+
+  # ─── Phase 3: Code Audit ─────────────────────────────────────────
+  - phase_id: P3
+    name: Code Audit
+    description: "전략 코드 구현 완료 후, Phase 4 백테스트 실행 전 수행"
+    phase_type: checklist
     cli_command: "/p3-g0b-verify"
     checklist:
       pass_rule: "Critical 체크리스트 (C1~C7) 모두 결함 없음"
@@ -84,11 +110,11 @@ gates:
           description: "기존 활성 전략과의 수익률 상관계수 0.7 이하인가?"
           severity: warning
 
-  # ─── Gate 1: 단일에셋 백테스트 ─────────────────────────────────
-  - gate_id: G1
-    name: 단일에셋 백테스트
-    description: "5개 에셋 x 6년 백테스트 후 Best Asset + Best Timeframe 선정"
-    gate_type: threshold
+  # ─── Phase 4: Backtest ───────────────────────────────────────────
+  - phase_id: P4
+    name: Backtest
+    description: "5개 에셋 x 6년 백테스트 + IS/OOS 70/30 분할 검증"
+    phase_type: threshold
     cli_command: "run {config}"
     threshold:
       pass_metrics:
@@ -106,6 +132,14 @@ gates:
         - name: Trades
           operator: ">"
           value: 50
+        - name: OOS Sharpe
+          operator: ">="
+          value: 0.3
+        - name: Sharpe Decay
+          operator: "<"
+          value: 50.0
+          unit: "%"
+          description: "(IS Sharpe - OOS Sharpe) / IS Sharpe x 100%"
       auxiliary_metrics:
         - name: Profit Factor
           operator: ">"
@@ -135,51 +169,18 @@ gates:
           reason: "운으로 인한 성과 (concentration risk)"
       watch_rule: "PASS 조건 일부 미달이지만 Sharpe >= 0.5 AND CAGR > 0%"
 
-  # ─── Gate 2: IS/OOS 검증 ──────────────────────────────────────
-  - gate_id: G2
-    name: IS/OOS 검증
-    description: "Best Asset에 대해 IS/OOS 70/30 분할 검증. 과적합 여부 판단"
-    gate_type: threshold
-    cli_command: "validate -m quick"
-    threshold:
-      pass_metrics:
-        - name: OOS Sharpe
-          operator: ">="
-          value: 0.3
-        - name: Sharpe Decay
-          operator: "<"
-          value: 50.0
-          unit: "%"
-          description: "(IS Sharpe - OOS Sharpe) / IS Sharpe x 100%"
-        - name: OOS Total Return
-          operator: ">"
-          value: 0.0
-          unit: "%"
-        - name: OOS Trades
-          operator: ">="
-          value: 15
-
-  # ─── Gate 2H: 파라미터 최적화 ──────────────────────────────────
-  - gate_id: G2H
-    name: 파라미터 최적화
-    description: "IS 데이터에서 Optuna TPE로 최적 파라미터 탐색. Always PASS (정보 제공)"
-    gate_type: threshold
-    cli_command: "pipeline gate2h-run"
+  # ─── Phase 5: Robustness ─────────────────────────────────────────
+  - phase_id: P5
+    name: Robustness
+    description: "파라미터 최적화 + 안정성 검증 (Optuna TPE + plateau + ±20%)"
+    phase_type: threshold
+    cli_command: "pipeline phase5-run"
     threshold:
       pass_metrics:
         - name: Optimization Completed
           operator: "=="
           value: 1.0
           description: "최적화 정상 완료 여부"
-
-  # ─── Gate 3: 파라미터 안정성 ───────────────────────────────────
-  - gate_id: G3
-    name: 파라미터 안정성
-    description: "파라미터 변동에 대한 전략의 로버스트성 검증"
-    gate_type: threshold
-    cli_command: "sweep {config}"
-    threshold:
-      pass_metrics:
         - name: 파라미터 고원
           operator: ">="
           value: 60.0
@@ -190,11 +191,11 @@ gates:
           value: 0.0
           description: "핵심 파라미터 ±20% 변경 시 양의 Sharpe 유지"
 
-  # ─── Gate 4: 심층 검증 ────────────────────────────────────────
-  - gate_id: G4
-    name: 심층 검증
+  # ─── Phase 6: Deep Validation ────────────────────────────────────
+  - phase_id: P6
+    name: Deep Validation
     description: "WFA + CPCV + PBO + DSR 통계적 유의성 검증"
-    gate_type: threshold
+    phase_type: threshold
     cli_command: "validate -m milestone/final"
     threshold:
       pass_metrics:
@@ -217,11 +218,11 @@ gates:
           operator: "<"
           value: 0.05
 
-  # ─── Gate 5: EDA Parity ───────────────────────────────────────
-  - gate_id: G5
-    name: EDA Parity
+  # ─── Phase 7: Live Readiness ─────────────────────────────────────
+  - phase_id: P7
+    name: Live Readiness
     description: "VBT 백테스트와 EDA 이벤트 기반 백테스트의 수익 정합성 검증"
-    gate_type: threshold
+    phase_type: threshold
     cli_command: "eda run {config}"
     threshold:
       pass_metrics:
@@ -238,4 +239,3 @@ gates:
           operator: ">="
           value: 0.5
           description: "VBT 대비 EDA 거래 수 (0.5x~2.0x)"
-

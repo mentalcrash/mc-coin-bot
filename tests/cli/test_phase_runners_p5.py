@@ -1,4 +1,4 @@
-"""Tests for src/cli/_gate_runners_g2h.py — Gate 2H runner."""
+"""Tests for src/cli/_phase_runners_p5.py — Phase 5 Optimization runner."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 from src.pipeline.models import (
     AssetMetrics,
-    GateId,
-    GateResult,
-    GateVerdict,
+    PhaseId,
+    PhaseResult,
+    PhaseVerdict,
     StrategyMeta,
     StrategyRecord,
     StrategyStatus,
@@ -31,14 +31,13 @@ def _make_record(name: str = "kama") -> StrategyRecord:
             created_at=date(2026, 1, 1),
         ),
         parameters={"er_lookback": 10, "vol_target": 0.30},
-        gates={
-            GateId.G0A: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
-            GateId.G1: GateResult(
-                status=GateVerdict.PASS,
+        phases={
+            PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+            PhaseId.P4: PhaseResult(
+                status=PhaseVerdict.PASS,
                 date=date(2026, 1, 1),
                 details={"best_asset": "DOGE/USDT"},
             ),
-            GateId.G2: GateResult(status=GateVerdict.PASS, date=date(2026, 1, 1)),
         },
         asset_performance=[
             AssetMetrics(symbol="DOGE/USDT", sharpe=1.5, cagr=50.0, mdd=20.0, trades=100),
@@ -46,8 +45,8 @@ def _make_record(name: str = "kama") -> StrategyRecord:
     )
 
 
-class TestUpdateYamlG2h:
-    """_update_yaml_g2h YAML 갱신 테스트."""
+class TestUpdateYamlP5Opt:
+    """_update_yaml_p5_opt YAML 갱신 테스트."""
 
     def test_yaml_parameters_updated(self, tmp_path: Path) -> None:
         """YAML parameters 섹션에 optimized params 기록."""
@@ -63,16 +62,16 @@ class TestUpdateYamlG2h:
         mock_result.n_trials = 100
         mock_result.n_completed = 95
 
-        from src.cli._gate_runners_g2h import _update_yaml_g2h
+        from src.cli._phase_runners_p5 import _update_yaml_p5_opt
 
-        _update_yaml_g2h("kama", mock_result, 1.8, store)
+        _update_yaml_p5_opt("kama", mock_result, 1.8, store)
 
         updated = store.load("kama")
         assert updated.parameters["er_lookback"] == 15
         assert updated.parameters["vol_target"] == 0.40
 
     def test_gate_result_recorded(self, tmp_path: Path) -> None:
-        """G2H gate result YAML 기록."""
+        """P5 phase result YAML 기록."""
         store = StrategyStore(base_dir=tmp_path)
         record = _make_record()
         store.save(record)
@@ -85,16 +84,16 @@ class TestUpdateYamlG2h:
         mock_result.n_trials = 50
         mock_result.n_completed = 48
 
-        from src.cli._gate_runners_g2h import _update_yaml_g2h
+        from src.cli._phase_runners_p5 import _update_yaml_p5_opt
 
-        _update_yaml_g2h("kama", mock_result, 1.2, store)
+        _update_yaml_p5_opt("kama", mock_result, 1.2, store)
 
         # Force cache refresh
         store._cache.clear()
         updated = store.load("kama")
-        assert GateId.G2H in updated.gates
-        assert updated.gates[GateId.G2H].status == GateVerdict.PASS
-        assert updated.gates[GateId.G2H].details["best_sharpe_is"] == 1.8
+        assert PhaseId.P5 in updated.phases
+        assert updated.phases[PhaseId.P5].status == PhaseVerdict.PASS
+        assert updated.phases[PhaseId.P5].details["best_sharpe_is"] == 1.8
 
     def test_oos_sharpe_in_details(self, tmp_path: Path) -> None:
         """OOS 검증 결과가 details에 포함."""
@@ -110,13 +109,13 @@ class TestUpdateYamlG2h:
         mock_result.n_trials = 100
         mock_result.n_completed = 95
 
-        from src.cli._gate_runners_g2h import _update_yaml_g2h
+        from src.cli._phase_runners_p5 import _update_yaml_p5_opt
 
-        _update_yaml_g2h("kama", mock_result, 1.6, store)
+        _update_yaml_p5_opt("kama", mock_result, 1.6, store)
 
         store._cache.clear()
         updated = store.load("kama")
-        assert updated.gates[GateId.G2H].details["oos_sharpe"] == 1.6
+        assert updated.phases[PhaseId.P5].details["oos_sharpe"] == 1.6
 
     def test_always_pass(self, tmp_path: Path) -> None:
         """낮은 성과에도 Always PASS."""
@@ -132,13 +131,13 @@ class TestUpdateYamlG2h:
         mock_result.n_trials = 10
         mock_result.n_completed = 10
 
-        from src.cli._gate_runners_g2h import _update_yaml_g2h
+        from src.cli._phase_runners_p5 import _update_yaml_p5_opt
 
-        _update_yaml_g2h("kama", mock_result, 0.3, store)
+        _update_yaml_p5_opt("kama", mock_result, 0.3, store)
 
         store._cache.clear()
         updated = store.load("kama")
-        assert updated.gates[GateId.G2H].status == GateVerdict.PASS
+        assert updated.phases[PhaseId.P5].status == PhaseVerdict.PASS
 
 
 class TestSaveJsonResults:
@@ -147,7 +146,7 @@ class TestSaveJsonResults:
     def test_g3_sweeps_json_created(self, tmp_path: Path) -> None:
         """G3 sweep JSON 파일 생성."""
         from src.backtest.optimizer import OptimizationResult, ParamSpec
-        from src.cli._gate_runners_g2h import _save_json_results
+        from src.cli._phase_runners_p5 import _save_json_results
 
         result = OptimizationResult(
             best_params={"er_lookback": 12, "vol_target": 0.35},
@@ -164,10 +163,10 @@ class TestSaveJsonResults:
         g3_sweeps = {"er_lookback": [8, 10, 12, 14, 16]}
 
         # Patch _RESULTS_DIR
-        with patch("src.cli._gate_runners_g2h._RESULTS_DIR", tmp_path):
+        with patch("src.cli._phase_runners_p5._RESULTS_DIR", tmp_path):
             _save_json_results("kama", result, 1.8, g3_sweeps, seed=42)
 
-        json_path = tmp_path / "gate2h_kama.json"
+        json_path = tmp_path / "phase5_opt_kama.json"
         assert json_path.exists()
 
         data = json.loads(json_path.read_text(encoding="utf-8"))

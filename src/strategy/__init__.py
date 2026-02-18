@@ -68,8 +68,8 @@ import src.strategy.gk_breakout  # 전략 등록 side effect
 import src.strategy.har_vol  # 전략 등록 side effect
 import src.strategy.hd_mom_rev  # 전략 등록 side effect
 import src.strategy.hmm_regime  # 전략 등록 side effect
-import src.strategy.hurst_adaptive  # 전략 등록 side effect
 import src.strategy.hour_season  # 전략 등록 side effect
+import src.strategy.hurst_adaptive  # 전략 등록 side effect
 import src.strategy.jump_drift_mom  # 전략 등록 side effect
 import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect

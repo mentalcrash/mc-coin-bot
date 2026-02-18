@@ -1,9 +1,9 @@
-"""Gate criteria data models.
+"""Phase criteria data models.
 
-Gate 평가 기준을 구조화된 데이터로 관리:
-- GateType: Gate 유형 (SCORING, CHECKLIST, THRESHOLD)
+Phase 평가 기준을 구조화된 데이터로 관리:
+- PhaseType: Phase 유형 (SCORING, CHECKLIST, THRESHOLD)
 - Severity: 체크리스트 항목 심각도
-- GateCriteria: Gate별 평가 기준 (composition 패턴)
+- PhaseCriteria: Phase별 평가 기준 (composition 패턴)
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field
 # ─── Enums ───────────────────────────────────────────────────────────
 
 
-class GateType(StrEnum):
-    """Gate 평가 유형."""
+class PhaseType(StrEnum):
+    """Phase 평가 유형."""
 
     SCORING = "scoring"
     CHECKLIST = "checklist"
@@ -30,7 +30,7 @@ class Severity(StrEnum):
     WARNING = "warning"
 
 
-# ─── Scoring (G0A) ──────────────────────────────────────────────────
+# ─── Scoring (P1) ──────────────────────────────────────────────────
 
 
 class ScoringItem(BaseModel):
@@ -45,7 +45,7 @@ class ScoringItem(BaseModel):
 
 
 class ScoringCriteria(BaseModel):
-    """채점 기반 통과 기준 (G0A)."""
+    """채점 기반 통과 기준 (P1)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -54,7 +54,7 @@ class ScoringCriteria(BaseModel):
     max_total: int = Field(default=30, description="만점")
 
 
-# ─── Checklist (G0B) ────────────────────────────────────────────────
+# ─── Checklist (P3) ────────────────────────────────────────────────
 
 
 class ChecklistItem(BaseModel):
@@ -69,7 +69,7 @@ class ChecklistItem(BaseModel):
 
 
 class ChecklistCriteria(BaseModel):
-    """체크리스트 기반 통과 기준 (G0B)."""
+    """체크리스트 기반 통과 기준 (P3)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -77,7 +77,7 @@ class ChecklistCriteria(BaseModel):
     pass_rule: str = Field(description="PASS 조건 설명")
 
 
-# ─── Threshold (G1~G7) ──────────────────────────────────────────────
+# ─── Threshold (P4~P7) ──────────────────────────────────────────────
 
 
 class ThresholdMetric(BaseModel):
@@ -102,7 +102,7 @@ class ImmediateFailRule(BaseModel):
 
 
 class ThresholdCriteria(BaseModel):
-    """임계값 기반 통과 기준 (G1~G7)."""
+    """임계값 기반 통과 기준 (P4~P7)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -116,26 +116,26 @@ class ThresholdCriteria(BaseModel):
     watch_rule: str = Field(default="", description="WATCH 조건 설명")
 
 
-# ─── Gate Criteria (Composition) ────────────────────────────────────
+# ─── Phase Criteria (Composition) ────────────────────────────────────
 
 
-class GateCriteria(BaseModel):
-    """Gate별 평가 기준 — composition 패턴 (상속 대신)."""
+class PhaseCriteria(BaseModel):
+    """Phase별 평가 기준 — composition 패턴 (상속 대신)."""
 
     model_config = ConfigDict(frozen=True)
 
-    gate_id: str = Field(description="Gate 식별자 (G0A, G0B, G1, ...)")
-    name: str = Field(description="Gate 이름")
-    description: str = Field(default="", description="Gate 설명")
-    gate_type: GateType = Field(description="평가 유형")
+    phase_id: str = Field(description="Phase 식별자 (P1, P2, P3, ...)")
+    name: str = Field(description="Phase 이름")
+    description: str = Field(default="", description="Phase 설명")
+    phase_type: PhaseType = Field(description="평가 유형")
     cli_command: str = Field(default="", description="CLI 실행 명령")
 
     scoring: ScoringCriteria | None = Field(
-        default=None, description="채점 기준 (gate_type=scoring)"
+        default=None, description="채점 기준 (phase_type=scoring)"
     )
     checklist: ChecklistCriteria | None = Field(
-        default=None, description="체크리스트 기준 (gate_type=checklist)"
+        default=None, description="체크리스트 기준 (phase_type=checklist)"
     )
     threshold: ThresholdCriteria | None = Field(
-        default=None, description="임계값 기준 (gate_type=threshold)"
+        default=None, description="임계값 기준 (phase_type=threshold)"
     )
