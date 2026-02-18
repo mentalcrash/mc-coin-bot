@@ -27,6 +27,14 @@ orchestrator:
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
 
+      # Pod 내 에셋 배분 (생략 시 equal_weight)
+      asset_allocation:
+        method: inverse_volatility    # equal_weight | inverse_volatility | risk_parity | signal_weighted
+        vol_lookback: 60              # 변동성 계산 윈도우 (bars)
+        rebalance_bars: 5             # N bars마다 에셋 비중 재계산
+        min_weight: 0.10              # 에셋당 최소 비중
+        max_weight: 0.50              # 에셋당 최대 비중
+
     - pod_id: pod-donchian
       strategy_name: donchian-ensemble
       strategy_params:
@@ -34,6 +42,13 @@ orchestrator:
       symbols: [BTC/USDT, ETH/USDT, BNB/USDT]
       initial_fraction: 0.30
       max_fraction: 0.50
+
+      asset_allocation:
+        method: risk_parity            # 리스크 기여 균등화 (상관관계 반영)
+        vol_lookback: 60
+        rebalance_bars: 5
+        min_weight: 0.10
+        max_weight: 0.50
 
     - pod_id: pod-anchor
       strategy_name: anchor-mom
@@ -44,3 +59,4 @@ orchestrator:
       initial_fraction: 0.30
       max_fraction: 0.50
       max_drawdown: 0.20
+      # asset_allocation 생략 → equal_weight (1/N)

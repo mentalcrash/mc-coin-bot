@@ -110,6 +110,14 @@ orchestrator:
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
 
+      # Pod 내 에셋 배분: 4 에셋(SOL~90% vs BTC~45% vol) → IV로 리스크 균등화
+      asset_allocation:
+        method: inverse_volatility
+        vol_lookback: 60
+        rebalance_bars: 5
+        min_weight: 0.10
+        max_weight: 0.50
+
     # ────────────────────────────────────────────────────────
     # Pod 2: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
     # G2H IS=1.75, OOS=0.78 — 원본 12H TF + G2H 최적화 파라미터 적용
@@ -146,3 +154,4 @@ orchestrator:
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
+      # asset_allocation 생략 → equal_weight (2 에셋이면 EW 충분)

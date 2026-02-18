@@ -67,7 +67,7 @@ VBT 백테스트와 EDA 백테스트에서 동일한 설정을 공유합니다.
 ```yaml
 # config/my_strategy.yaml
 backtest:
-  symbols: [BTC/USDT, ETH/USDT]   # 1개: 단일에셋, 2개+: 멀티에셋 (Equal Weight)
+  symbols: [BTC/USDT, ETH/USDT]   # 1개: 단일에셋, 2개+: 멀티에셋 (기본 Equal Weight, 동적 배분 가능)
   timeframe: "1D"                   # 1D, 4h, 1h 등
   start: "2020-01-01"
   end: "2025-12-31"
@@ -153,15 +153,33 @@ pods:
   - pod_id: pod-tsmom-major
     strategy: tsmom
     params: { lookback: 30, vol_target: 0.35 }
-    symbols: [BTC/USDT, ETH/USDT]
+    symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
     initial_fraction: 0.15
     max_fraction: 0.40
+
+    # Pod 내 에셋 배분 (생략 시 equal_weight)
+    asset_allocation:
+      method: inverse_volatility
+      vol_lookback: 60
+      rebalance_bars: 5
+      min_weight: 0.10
+      max_weight: 0.50
 
   - pod_id: pod-donchian-alt
     strategy: donchian-ensemble
     symbols: [SOL/USDT, BNB/USDT]
     initial_fraction: 0.10
+    # asset_allocation 생략 → equal_weight (1/N)
 ```
+
+**Pod 내 에셋 배분 방법:**
+
+| 방법 | 설명 | 적합 상황 |
+|------|------|----------|
+| `equal_weight` | 1/N 균등 (기본값) | 에셋 수 적거나 변동성 유사 |
+| `inverse_volatility` | 저변동 에셋에 높은 비중 | BTC vs SOL 등 변동성 차이 큰 경우 |
+| `risk_parity` | 리스크 기여 균등화 | 상관관계까지 반영한 정밀 배분 |
+| `signal_weighted` | 시그널 강도 비례 | 전략의 확신도 차이 반영 |
 
 > 상세 설정 및 아키텍처: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
 
@@ -292,6 +310,45 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 - **System Heartbeat** (1시간): equity, drawdown, 레버리지, CB 상태
 - **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio → Regime Score
 - **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지
+
+---
+
+## 전략 철학: 1D Timeframe 집중
+
+### 왜 1D인가
+
+87개 전략을 6년간 검증한 결과, **1D(일봉) 앙상블이 개인 퀀트에게 최적**이라는 결론에 도달했습니다.
+
+| 근거 | 설명 |
+|------|------|
+| **실증 결과** | 4H 단일지표 전략은 전량 RETIRED. 1D 앙상블만 G5 도달 (CTREND Sharpe 2.05) |
+| **거래비용** | 4H는 6배 잦은 리밸런싱 → 수수료·슬리피지가 edge 잠식 |
+| **노이즈** | 4H intraday noise가 높아 단일지표로 신호 추출 곤란. 1D에서도 앙상블 필수 |
+| **OOS 안정성** | 4H 파라미터는 IS→OOS 붕괴 빈번 (G2 실패 패턴). 1D 모멘텀은 구조적으로 강건 |
+| **운영 효율** | 데이터 관리 간편, Rate Limit 여유, 본업 병행 가능 |
+
+### "느리지 않은가?" — SL/TS가 해결
+
+시그널은 1D로 판단하지만, 리스크 관리는 실시간입니다.
+
+```
+시그널 생성:  1D bar close 시 (하루 1회, 노이즈 없는 판단)
+리스크 방어:  1m bar마다 SL/TS 체크 (급락 시 수 분 내 청산)
+```
+
+- Trailing Stop (3.0x ATR): 1분마다 체크 → MDD 방어의 핵심
+- System Stop-Loss (5~10%): 포트폴리오 레벨 circuit breaker
+- Deferred Execution: 다음 bar open 체결 → look-ahead bias 차단
+
+### 성장 로드맵
+
+현재 시스템은 이미 멀티 전략(Orchestrator) + 멀티 에셋(Pod) 구조를 갖추고 있습니다.
+1D 프레임워크 안에서 다음 축으로 확장합니다.
+
+1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
+2. **자산 다각화**: 8종 → 15~20종 (Tier-2/3 altcoin 추가)
+3. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([상세](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
+4. **Derivatives 활용**: Funding Rate(8h), OI, LS Ratio를 1D 전략의 보조 필터로 활용
 
 ---
 

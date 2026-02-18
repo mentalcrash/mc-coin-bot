@@ -99,6 +99,7 @@ orchestrator.py ─── 메인 오케스트레이터
   │
   ├── pod.py ─── 전략 래퍼 (BaseStrategy + 포지션/P&L 추적)
   │    ├── strategy.base.BaseStrategy
+  │    ├── asset_allocator.py (IntraPodAllocator, AssetAllocationConfig)
   │    ├── models.py (PodPerformance, PodPosition, LifecycleState)
   │    └── config.py (PodConfig)
   │
@@ -255,7 +256,7 @@ pods:
     params:
       lookback: 30
       vol_target: 0.35
-    symbols: [BTC/USDT, ETH/USDT]
+    symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
     timeframe: "1D"
     initial_fraction: 0.15     # 초기 자본 비율
     max_fraction: 0.40         # 최대 허용
@@ -266,6 +267,14 @@ pods:
       system_stop_loss: 0.10
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
+
+    # Pod 내 에셋 배분 (생략 시 equal_weight)
+    asset_allocation:
+      method: inverse_volatility
+      vol_lookback: 60
+      rebalance_bars: 5
+      min_weight: 0.10
+      max_weight: 0.50
 ```
 
 ---
@@ -310,6 +319,79 @@ WARNING       allocated × 0.5, then clip             즉시 50% 감축
 PROBATION     min_fraction                           최소 고정
 RETIRED       0.0                                    청산
 ```
+
+### 5.4 Intra-Pod Asset Allocation
+
+Pod 간 배분(Capital Allocator)과 별개로, **Pod 내 에셋 간** 차등 배분을 지원한다.
+Equal Weight에서 SOL(vol ~90%) 같은 고변동 에셋이 포트폴리오 리스크의 ~40%를 차지하는 문제를 해결한다.
+
+#### 2단계 배분 구조
+
+```
+Level 1: Pod 간 배분 (Capital Allocator)
+  └─ equal_weight, inverse_volatility, risk_parity, adaptive_kelly
+
+Level 2: Pod 내 에셋 배분 (IntraPodAllocator)
+  └─ equal_weight, inverse_volatility, risk_parity, signal_weighted
+```
+
+#### 4가지 배분 알고리즘
+
+| 방법 | 수식 | 설명 |
+|------|------|------|
+| `equal_weight` | `w_i = 1/N` | 균등 배분 (기본값) |
+| `inverse_volatility` | `w_i = (1/σ_i) / Σ(1/σ_j)` | 저변동 에셋에 더 배분 |
+| `risk_parity` | `w_i σ_i = w_j σ_j ∀i,j` | 리스크 기여 균등화 (상관관계 반영) |
+| `signal_weighted` | `w_i = \|s_i\| / Σ\|s_j\|` | 시그널 강도에 비례 배분 |
+
+#### 적용 흐름
+
+```
+StrategyPod.compute_signal(symbol, bar_data)
+  │
+  ├─ strategy.run_incremental(df) → (direction, strength)
+  │
+  ├─ IntraPodAllocator.update(returns, strengths)
+  │    └─ rebalance_bars 주기마다 에셋 비중 재계산
+  │    └─ min_weight/max_weight clamp + normalize
+  │
+  └─ adjusted = strength × asset_weight × N
+       └─ EW일 때 (1/N × N = 1.0) 기존과 동일한 scale 유지
+```
+
+#### YAML 설정
+
+```yaml
+asset_allocation:
+  method: inverse_volatility    # equal_weight | inverse_volatility | risk_parity | signal_weighted
+  vol_lookback: 60              # 변동성 계산 윈도우 (bars)
+  rebalance_bars: 5             # N bars마다 비중 재계산
+  min_weight: 0.10              # 에셋당 최소 비중
+  max_weight: 0.50              # 에셋당 최대 비중
+```
+
+`asset_allocation` 생략 시 `equal_weight` (하위 호환). VBT 백테스트(`run_multi`)에서도 동일 allocator를 사용하여 EDA↔VBT parity를 유지한다.
+
+#### 설계 주의사항
+
+| 항목 | 내용 |
+|------|------|
+| Look-ahead bias | 변동성 계산에 `shift(1)` 적용 (현재 bar 미포함) |
+| PM 중복 적용 방지 | Orchestrator에서 배분 → PM의 asset_weights는 1.0 고정 |
+| 과도한 집중 방지 | min_weight/max_weight clamp로 단일 에셋 쏠림 차단 |
+| 하위 호환 | `asset_allocation` 생략 시 EW fallback |
+
+#### 배분 위치 결정: Pod 레벨
+
+**Pod 레벨을 선택한 이유:**
+- Pod이 이미 심볼별 버퍼(`_buffers`)를 관리 → 변동성 계산 히스토리 존재
+- Orchestrator나 PM을 변경하지 않아도 됨
+- VBT↔EDA parity 유지 용이
+
+**비채택 대안:**
+- **(A) Orchestrator 2D 배분 테이블** — Pod + Symbol 조합을 Orchestrator가 관리. Orchestrator 책임 비대화 + Pod 캡슐화 위반으로 비채택.
+- **(B) PM에서 에셋 배분** — PM은 실행 전담. 배분 로직 혼재 시 테스트 복잡도 증가 + net signal 중복 적용 위험으로 비채택.
+- **(C) 정적 YAML 비중** — 시장 환경 변화에 적응 불가. 변동성 레짐 전환 시 수동 조정 필요로 비채택.
 
 ---
 
@@ -627,7 +709,7 @@ pods:
     params:
       lookback: 30
       vol_target: 0.35
-    symbols: [BTC/USDT, ETH/USDT]
+    symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
     timeframe: "1D"
     initial_fraction: 0.15
     max_fraction: 0.40
@@ -638,6 +720,14 @@ pods:
       system_stop_loss: 0.10
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
+
+    # Pod 내 에셋 배분 (생략 시 equal_weight)
+    asset_allocation:
+      method: inverse_volatility
+      vol_lookback: 60
+      rebalance_bars: 5
+      min_weight: 0.10
+      max_weight: 0.50
 
   - pod_id: pod-donchian-alt
     strategy: donchian-ensemble
@@ -669,6 +759,7 @@ src/orchestrator/
 ├── config.py                # OrchestratorConfig, PodConfig, GraduationCriteria, RetirementCriteria
 ├── allocator.py             # CapitalAllocator (EW, InvVol, Risk Parity, Adaptive Kelly)
 ├── pod.py                   # StrategyPod (전략 래퍼 + 독립 P&L)
+├── asset_allocator.py       # IntraPodAllocator (Pod 내 에셋 배분: EW/IV/RP/SW)
 ├── orchestrator.py          # StrategyOrchestrator (EventBus 통합, 넷팅, 배치 처리)
 ├── lifecycle.py             # LifecycleManager (5-state machine, graduation, degradation)
 ├── degradation.py           # PageHinkleyDetector (CUSUM variant 열화 감지)
