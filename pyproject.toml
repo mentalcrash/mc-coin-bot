@@ -73,6 +73,9 @@ dev = [
     "ruff>=0.14.14",
     "pre-commit>=4.0.0",
     "pyright>=1.1.408",
+    "pytest-xdist>=3.8.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-split>=0.11.0",
 ]
 
 # 연구/분석용 도구 (노트북, 백테스팅) -> uv run --group research ...
@@ -268,20 +271,35 @@ enableTypeIgnoreComments = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["test_*.py"]
 python_functions = ["test_*"]
 python_classes = ["Test*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+norecursedirs = [
+    ".git", ".venv", "__pycache__", "*.egg-info",
+    "data", "logs", "lessons", "strategies",
+    "reports", "results", "audits", "scripts", "docs",
+]
 addopts = [
-    "-ra",           # 실패/스킵/에러 요약 표시
-    "-q",            # 간결한 출력
+    "-ra",               # 실패/스킵/에러 요약 표시
+    "-q",                # 간결한 출력
     "--strict-markers",  # 미등록 마커 사용 시 에러
-    "--tb=short",    # 짧은 트레이스백
+    "--tb=short",        # 짧은 트레이스백
+    "-n", "auto",        # xdist: CPU 코어 수 자동 감지
+    "--dist", "worksteal",  # 동적 작업 재분배
+    "--timeout=60",      # 60초 타임아웃 가드
 ]
 markers = [
     "slow: 느린 테스트 (회귀 테스트, 백테스트 등)",
     "chaos: 장애 주입 테스트 (edge case, fault injection)",
+    "smoke: 빠른 핵심 기능 검증",
+    "unit: 순수 단위 테스트 (외부 의존성 없음)",
+    "integration: 통합 테스트 (여러 컴포넌트 연동)",
+    "strategy: 전략 테스트 (preprocessor, signal, config)",
+    "eda: 이벤트 기반 아키텍처 테스트",
+    "data: 데이터 파이프라인 테스트",
+    "nightly: 야간 전체 검증에서만 실행",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
@@ -298,6 +316,8 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["src"]
 branch = true
+parallel = true
+concurrency = ["thread"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

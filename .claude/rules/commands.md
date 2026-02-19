@@ -31,8 +31,11 @@ uv run pyright src/
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (기본: -n auto 병렬 + 60s timeout)
 uv run pytest
+
+# 순차 실행 (디버깅, pdb 사용 시)
+uv run pytest -p no:xdist
 
 # With coverage
 uv run pytest --cov=src --cov-report=html
@@ -42,6 +45,12 @@ uv run pytest tests/unit/test_portfolio.py
 
 # Pattern matching
 uv run pytest -k "test_tsmom"
+
+# 마커 기반 필터링 (자동 마커: conftest.py 디렉토리 매핑)
+uv run pytest -m strategy          # 전략 테스트만
+uv run pytest -m unit              # 단위 테스트만
+uv run pytest -m "not slow"        # 느린 테스트 제외
+uv run pytest -m "unit or strategy" # 복합 필터
 ```
 
 ## Data Ingestion (Medallion Architecture)

@@ -87,6 +87,44 @@ def test_strategy_signals(market: str, expected: int):
     assert signal == expected
 ```
 
+## Parallel Execution (pytest-xdist)
+
+기본 설정 (`addopts`): `-n auto --dist worksteal --timeout=60`
+
+```bash
+# 순차 실행 (pdb, --pdb, -s 사용 시 필수)
+uv run pytest -p no:xdist
+
+# Worker 수 지정
+uv run pytest -n 4
+```
+
+**주의사항:**
+
+- `print()` / `--capture=no` 디버깅 시 `-p no:xdist` 필수
+- session-scoped fixture는 worker별 독립 생성됨 (공유 아님)
+- `tmp_path`는 worker별 격리 — 안전
+
+## Auto Markers (디렉토리 기반)
+
+`tests/conftest.py`의 `pytest_collection_modifyitems` 훅이 경로 기반으로 마커 자동 부여:
+
+| Directory | Marker |
+|-----------|--------|
+| `/strategy/` | `strategy` |
+| `/eda/` | `eda` |
+| `/core/`, `/models/`, `/config/`, `/market/`, `/regime/`, `/monitoring/`, `/catalog/`, `/portfolio/`, `/logging/` | `unit` |
+| `/backtest/`, `/orchestrator/`, `/notification/`, `/exchange/`, `/pipeline/`, `/cli/` | `integration` |
+| `/chaos/` | `chaos` |
+| `/data/` | `data` |
+| `/regression/` | `slow` |
+
+```bash
+uv run pytest -m strategy          # 전략만
+uv run pytest -m "not slow"        # 느린 테스트 제외
+uv run pytest -m unit --collect-only -q  # 마커 할당 확인
+```
+
 ## Coverage Target
 
 - **핵심 모듈 (execution, strategy, portfolio):** 90%+
@@ -108,11 +146,14 @@ async def test_real_exchange_connection():
 ```
 
 ```bash
-# Unit tests only (default)
-uv run pytest -m "not integration"
+# Unit tests only
+uv run pytest -m unit
 
-# Include integration
-uv run pytest
+# Integration only
+uv run pytest -m integration
+
+# Exclude slow regression tests
+uv run pytest -m "not slow"
 ```
 
 ## Fixture Organization
