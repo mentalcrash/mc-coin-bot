@@ -1,0 +1,70 @@
+version: 2
+meta:
+  name: carry-sent
+  display_name: Carry-Sentiment Gate
+  category: Crypto Carry
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: Funding Rate carry premium을 F&G sentiment gate로 타이밍 개선. 구조적
+    레버리지 불균형(BIS WP 1087) + 행동편향 극단 contrarian. FR per-asset + F&G global.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 23
+      max_score: 30
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 49.0
+      registry: carry-sent
+      files: 5.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sub_phase: P4A
+      best_sharpe: -0.47
+      best_cagr: 0.0
+      best_mdd: 1629.0
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. zone overlap 결함 발견 후 config validator + signal 상호배제 수정
+    완료. Warning 0건.
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료 (config/preprocessor/signal/strategy + tests 49개). Registry
+    등록 carry-sent. Ruff/Pyright 0 error.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe < 0 (BTC -0.87, ETH -0.50, BNB -0.49, SOL -0.47).
+    FR carry contrarian이 trending 시장에서 일관된 음의 수익'
