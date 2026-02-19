@@ -32,7 +32,9 @@ def generate_signals(df: pd.DataFrame, config: VolConfirmMomConfig) -> StrategyS
     """
     # --- Shift(1): use previous bar's indicators ---
     mom_return = df["mom_return"].shift(1)
-    vol_rising = df["vol_rising"].shift(1).fillna(value=False).astype(bool)
+    vol_rising = (
+        df["vol_rising"].shift(1).fillna(value=False).infer_objects(copy=False).astype(bool)
+    )
     vol_ratio = df["vol_ratio"].shift(1)
     vol_scalar = df["vol_scalar"].shift(1)
 

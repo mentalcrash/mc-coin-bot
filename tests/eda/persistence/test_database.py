@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -13,11 +14,12 @@ _APP_TABLES = {"bot_state", "equity_snapshots", "positions_history", "risk_event
 
 
 @pytest.fixture
-async def db() -> Database:
+async def db() -> AsyncIterator[Database]:
     """인메모리 DB fixture."""
     database = Database(":memory:")
     await database.connect()
-    return database
+    yield database
+    await database.close()
 
 
 class TestDatabase:

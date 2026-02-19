@@ -13,6 +13,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+# Opt-in to future pandas behavior: fillna/ffill/bfill won't auto-downcast
+pd.set_option("future.no_silent_downcasting", True)
+
 
 @pytest.fixture
 def sample_ohlcv_df() -> pd.DataFrame:

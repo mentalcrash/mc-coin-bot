@@ -34,7 +34,7 @@ def generate_signals(df: pd.DataFrame, config: HdMomRevConfig) -> StrategySignal
     # --- Shift(1): 전봉 기준 시그널 ---
     half_return_smooth = df["half_return_smooth"].shift(1)
     jump_score = df["jump_score"].shift(1)
-    is_jump = df["is_jump"].shift(1).fillna(value=False).astype(bool)
+    is_jump = df["is_jump"].shift(1).fillna(value=False).infer_objects(copy=False).astype(bool)
     vol_scalar = df["vol_scalar"].shift(1)
 
     # --- Signal Logic ---

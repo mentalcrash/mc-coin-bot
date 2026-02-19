@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from src.eda.persistence.database import Database
@@ -24,11 +26,12 @@ def _make_config() -> PortfolioManagerConfig:
 
 
 @pytest.fixture
-async def db() -> Database:
+async def db() -> AsyncIterator[Database]:
     """인메모리 DB fixture."""
     database = Database(":memory:")
     await database.connect()
-    return database
+    yield database
+    await database.close()
 
 
 @pytest.fixture

@@ -5,6 +5,7 @@ PageHinkley/Pod/Lifecycle/Orchestrator 직렬화 + E2E save→restore.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pandas as pd
@@ -123,10 +124,11 @@ def _make_orchestrator(
 
 
 @pytest.fixture
-async def db() -> Database:
+async def db() -> AsyncIterator[Database]:
     database = Database(":memory:")
     await database.connect()
-    return database
+    yield database
+    await database.close()
 
 
 @pytest.fixture

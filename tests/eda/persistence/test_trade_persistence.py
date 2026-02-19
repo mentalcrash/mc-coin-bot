@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
@@ -23,11 +24,12 @@ from src.models.types import Direction
 
 
 @pytest.fixture
-async def db() -> Database:
+async def db() -> AsyncIterator[Database]:
     """인메모리 DB fixture."""
     database = Database(":memory:")
     await database.connect()
-    return database
+    yield database
+    await database.close()
 
 
 @pytest.fixture

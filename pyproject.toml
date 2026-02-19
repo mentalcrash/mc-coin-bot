@@ -285,6 +285,11 @@ markers = [
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+    "ignore::FutureWarning:pandas",
+    "ignore::ResourceWarning:aiosqlite",
+    "ignore::sklearn.exceptions.ConvergenceWarning",
+    "ignore::RuntimeWarning:yaml",
+    "ignore::RuntimeWarning:click",
 ]
 
 # ============================================

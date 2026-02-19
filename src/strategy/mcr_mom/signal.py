@@ -32,7 +32,9 @@ def generate_signals(df: pd.DataFrame, config: McrMomConfig) -> StrategySignals:
     """
     # --- Shift(1): use previous bar's indicators ---
     mom_return = df["mom_return"].shift(1)
-    crash_filter = df["crash_filter"].shift(1).fillna(value=False).infer_objects(copy=False).astype(bool)
+    crash_filter = (
+        df["crash_filter"].shift(1).fillna(value=False).infer_objects(copy=False).astype(bool)
+    )
     vol_scalar = df["vol_scalar"].shift(1)
 
     # --- Signal Logic ---
