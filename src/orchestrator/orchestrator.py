@@ -675,6 +675,11 @@ class StrategyOrchestrator:
         ]
 
     @property
+    def initial_capital(self) -> float:
+        """초기 자본 (USD)."""
+        return self._initial_capital
+
+    @property
     def active_pod_count(self) -> int:
         """활성 Pod 수."""
         return sum(1 for pod in self._pods if pod.is_active)

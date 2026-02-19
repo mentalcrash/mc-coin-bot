@@ -131,9 +131,12 @@ class OrchestratorMetrics:
 
     def _update_pod_metrics(self) -> None:
         """Pod별 Gauge/Enum 업데이트."""
+        cap = self._orchestrator.initial_capital
         for pod in self._orchestrator.pods:
             pid = pod.pod_id
-            pod_equity_gauge.labels(pod_id=pid).set(pod.performance.current_equity)
+            # current_equity는 1.0 기준 상대값 → 달러 환산
+            pod_equity_usd = cap * pod.capital_fraction * pod.performance.current_equity
+            pod_equity_gauge.labels(pod_id=pid).set(pod_equity_usd)
             pod_allocation_gauge.labels(pod_id=pid).set(pod.capital_fraction)
             pod_sharpe_gauge.labels(pod_id=pid).set(pod.performance.sharpe_ratio)
             pod_drawdown_gauge.labels(pod_id=pid).set(pod.performance.current_drawdown)
