@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -73,6 +74,25 @@ def _inc_cache_refresh(status: str) -> None:
         from src.monitoring.metrics import onchain_cache_refresh_total
 
         onchain_cache_refresh_total.labels(status=status).inc()
+    except ImportError:
+        pass
+
+
+def _record_fetch(source: str, name: str, elapsed: float, status: str, row_count: int) -> None:
+    """Fetch 결과를 Prometheus 메트릭으로 기록 (monitoring 의존 선택적)."""
+    try:
+        from src.monitoring.metrics import (
+            onchain_fetch_latency_histogram,
+            onchain_fetch_rows_gauge,
+            onchain_fetch_total,
+            onchain_last_success_gauge,
+        )
+
+        onchain_fetch_total.labels(source=source, status=status).inc()
+        onchain_fetch_latency_histogram.labels(source=source).observe(elapsed)
+        if status == "success" and row_count > 0:
+            onchain_fetch_rows_gauge.labels(source=source, name=name).set(row_count)
+            onchain_last_success_gauge.labels(source=source).set(time.time())
     except ImportError:
         pass
 
@@ -289,8 +309,13 @@ class LiveOnchainFeed:
         any_success = False
 
         # Stablecoin Total
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_stablecoin_total()
+            _record_fetch(
+                "defillama", "stablecoin_total", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 self._set_global_cache(
                     "oc_stablecoin_total_usd",
@@ -298,24 +323,37 @@ class LiveOnchainFeed:
                 )
                 any_success = True
         except Exception as e:
+            _record_fetch("defillama", "stablecoin_total", time.monotonic() - t0, "failure", 0)
             logger.warning("DeFiLlama stablecoin polling error: {}", e)
 
         # TVL Total
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_tvl("")
+            _record_fetch(
+                "defillama", "tvl_total", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 self._set_global_cache("oc_tvl_usd", float(df.iloc[-1]["tvl_usd"]))
                 any_success = True
         except Exception as e:
+            _record_fetch("defillama", "tvl_total", time.monotonic() - t0, "failure", 0)
             logger.warning("DeFiLlama TVL polling error: {}", e)
 
         # DEX Volume
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_dex_volume()
+            _record_fetch(
+                "defillama", "dex_volume", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 self._set_global_cache("oc_dex_volume_usd", float(df.iloc[-1]["volume_usd"]))
                 any_success = True
         except Exception as e:
+            _record_fetch("defillama", "dex_volume", time.monotonic() - t0, "failure", 0)
             logger.warning("DeFiLlama DEX volume polling error: {}", e)
 
         _inc_cache_refresh("success" if any_success else "failure")
@@ -339,12 +377,18 @@ class LiveOnchainFeed:
         """Fear & Greed 단일 사이클."""
         assert self._fetcher is not None
 
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_fear_greed()
+            _record_fetch(
+                "alternative_me", "fear_greed", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 self._set_global_cache("oc_fear_greed", float(df.iloc[-1]["value"]))
             _inc_cache_refresh("success")
         except Exception as e:
+            _record_fetch("alternative_me", "fear_greed", time.monotonic() - t0, "failure", 0)
             logger.warning("Fear & Greed polling error: {}", e)
             _inc_cache_refresh("failure")
 
@@ -379,8 +423,13 @@ class LiveOnchainFeed:
             if sym is None:
                 continue
 
+            t0 = time.monotonic()
             try:
                 df = await self._fetcher.fetch_coinmetrics(asset_lower, start=start, end=end)
+                _record_fetch(
+                    "coinmetrics", f"{asset_lower}_metrics", time.monotonic() - t0,
+                    "empty" if df.empty else "success", len(df),
+                )
                 if not df.empty:
                     last = df.iloc[-1]
                     cache = self._cache.setdefault(sym, {})
@@ -391,6 +440,9 @@ class LiveOnchainFeed:
                             except (ValueError, TypeError):
                                 continue
             except Exception as e:
+                _record_fetch(
+                    "coinmetrics", f"{asset_lower}_metrics", time.monotonic() - t0, "failure", 0,
+                )
                 logger.warning("CoinMetrics {} polling error: {}", asset_upper, e)
                 any_failure = True
 
@@ -419,8 +471,13 @@ class LiveOnchainFeed:
         if sym is None:
             return
 
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_mempool_mining(interval="1m")
+            _record_fetch(
+                "mempool_space", "mining", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 cache = self._cache.setdefault(sym, {})
@@ -430,6 +487,7 @@ class LiveOnchainFeed:
                     cache["oc_difficulty"] = float(last["difficulty"])
             _inc_cache_refresh("success")
         except Exception as e:
+            _record_fetch("mempool_space", "mining", time.monotonic() - t0, "failure", 0)
             logger.warning("mempool.space mining polling error: {}", e)
             _inc_cache_refresh("failure")
 
@@ -461,8 +519,13 @@ class LiveOnchainFeed:
         if not api_key:
             return
 
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_eth_supply(api_key)
+            _record_fetch(
+                "etherscan", "eth_supply", time.monotonic() - t0,
+                "empty" if df.empty else "success", len(df),
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 cache = self._cache.setdefault(sym, {})
@@ -472,6 +535,7 @@ class LiveOnchainFeed:
                     cache["oc_eth2_staking"] = float(last["eth2_staking"])
             _inc_cache_refresh("success")
         except Exception as e:
+            _record_fetch("etherscan", "eth_supply", time.monotonic() - t0, "failure", 0)
             logger.warning("Etherscan ETH supply polling error: {}", e)
             _inc_cache_refresh("failure")
 
