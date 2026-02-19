@@ -22,6 +22,11 @@ if TYPE_CHECKING:
         RiskAlertEvent,
     )
     from src.models.backtest import PerformanceMetrics, TradeRecord
+    from src.notification.health_models import (
+        MarketRegimeReport,
+        StrategyHealthSnapshot,
+        SystemHealthSnapshot,
+    )
 
 # Discord Embed 색상 코드 (decimal)
 _COLOR_GREEN = 0x57F287
@@ -337,6 +342,149 @@ def format_safety_stop_stale_embed(symbol: str) -> dict[str, Any]:
         "fields": [
             {"name": "Symbol", "value": symbol, "inline": True},
         ],
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_enhanced_daily_report_embed(
+    metrics: PerformanceMetrics,
+    open_positions: int,
+    total_equity: float,
+    trades_today: list[TradeRecord],
+    system_health: SystemHealthSnapshot | None = None,
+    strategy_health: StrategyHealthSnapshot | None = None,
+    regime_report: MarketRegimeReport | None = None,
+) -> dict[str, Any]:
+    """Enhanced Daily Report -> Discord Embed dict.
+
+    기본 Daily Report에 시스템/전략/마켓 건강 데이터를 통합합니다.
+    health 데이터가 None이면 기본 Daily Report와 동일한 결과를 반환합니다.
+
+    Args:
+        metrics: 현재 성과 지표
+        open_positions: 오픈 포지션 수
+        total_equity: 현재 equity
+        trades_today: 오늘 거래 목록
+        system_health: 시스템 건강 스냅샷 (None이면 생략)
+        strategy_health: 전략 건강 스냅샷 (None이면 생략)
+        regime_report: 마켓 regime 리포트 (None이면 생략)
+
+    Returns:
+        Discord Embed dict
+    """
+    total_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+
+    # Alpha decay 감지 시 RED, 그 외 BLUE
+    alpha_decay = strategy_health.alpha_decay_detected if strategy_health else False
+    color = _COLOR_RED if alpha_decay else _COLOR_BLUE
+
+    fields: list[dict[str, Any]] = [
+        # Performance (inline 3)
+        {"name": "Today's PnL", "value": f"${total_pnl:+,.2f}", "inline": True},
+        {"name": "Total Equity", "value": f"${total_equity:,.2f}", "inline": True},
+        {"name": "Max Drawdown", "value": f"{metrics.max_drawdown:.2f}%", "inline": True},
+        # Stats (inline 3)
+        {"name": "Sharpe Ratio", "value": f"{metrics.sharpe_ratio:.2f}", "inline": True},
+        {"name": "Open Positions", "value": str(open_positions), "inline": True},
+        {"name": "Today's Trades", "value": str(len(trades_today)), "inline": True},
+    ]
+
+    # Strategy Breakdown (non-inline 1)
+    if strategy_health and strategy_health.strategy_breakdown:
+        _status_icons = {"HEALTHY": "+", "WATCH": "~", "DEGRADING": "-"}
+        breakdown_lines: list[str] = []
+        for sp in strategy_health.strategy_breakdown:
+            icon = _status_icons.get(sp.status, "?")
+            line = (
+                f"[{icon}] **{sp.strategy_name}** | "
+                + f"Sharpe {sp.rolling_sharpe:.2f} | "
+                + f"WR {sp.win_rate:.0%} | "
+                + f"PnL ${sp.total_pnl:+,.0f} | {sp.status}"
+            )
+            breakdown_lines.append(line)
+        fields.append(
+            {
+                "name": "Strategy Breakdown (30d)",
+                "value": "\n".join(breakdown_lines),
+                "inline": False,
+            }
+        )
+
+    # Market Regime (inline 2)
+    if regime_report is not None:
+        fields.append(
+            {
+                "name": "Market Regime",
+                "value": f"{regime_report.regime_label} ({regime_report.regime_score:+.2f})",
+                "inline": True,
+            }
+        )
+        # Top funding rates
+        if regime_report.symbols:
+            top_fr = sorted(regime_report.symbols, key=lambda s: abs(s.funding_rate), reverse=True)
+            fr_lines = [f"{s.symbol}: {s.funding_rate * 100:+.3f}%" for s in top_fr[:3]]
+            fields.append(
+                {
+                    "name": "Top Funding Rates",
+                    "value": "\n".join(fr_lines),
+                    "inline": True,
+                }
+            )
+
+    # Alpha Decay Warning (non-inline 1, 감지 시에만)
+    if alpha_decay and strategy_health:
+        fields.append(
+            {
+                "name": "Alpha Decay Warning",
+                "value": (
+                    f"Rolling Sharpe 3-period decline detected "
+                    f"(current: {strategy_health.rolling_sharpe_30d:.2f})"
+                ),
+                "inline": False,
+            }
+        )
+
+    # Open Position Detail (non-inline 1)
+    if strategy_health and strategy_health.open_positions:
+        pos_lines = [
+            f"{pos.direction} {pos.symbol}: ${pos.unrealized_pnl:+,.2f}"
+            for pos in strategy_health.open_positions
+        ]
+        fields.append(
+            {
+                "name": f"Position Detail ({len(strategy_health.open_positions)})",
+                "value": "\n".join(pos_lines),
+                "inline": False,
+            }
+        )
+
+    # System Status (inline 3)
+    if system_health is not None:
+        from src.notification.health_formatters import format_uptime
+
+        cb_label = "ACTIVE" if system_health.is_circuit_breaker_active else "OK"
+        ws_ok = system_health.total_symbols - system_health.stale_symbol_count
+        fields.extend(
+            [
+                {
+                    "name": "Uptime",
+                    "value": format_uptime(system_health.uptime_seconds),
+                    "inline": True,
+                },
+                {"name": "CB Status", "value": cb_label, "inline": True},
+                {
+                    "name": "WS Status",
+                    "value": f"{ws_ok}/{system_health.total_symbols} OK",
+                    "inline": True,
+                },
+            ]
+        )
+
+    return {
+        "title": "Daily Report",
+        "color": color,
+        "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

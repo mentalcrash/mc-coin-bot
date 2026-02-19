@@ -77,7 +77,7 @@ def _heartbeat_color(snapshot: SystemHealthSnapshot) -> int:
     return _COLOR_GREEN
 
 
-def _format_uptime(seconds: float) -> str:
+def format_uptime(seconds: float) -> str:
     """Uptime을 사람이 읽기 좋은 형식으로 변환."""
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
@@ -110,7 +110,7 @@ def format_heartbeat_embed(snapshot: SystemHealthSnapshot) -> dict[str, Any]:
     dd_pct = snapshot.current_drawdown * 100
 
     fields: list[dict[str, Any]] = [
-        {"name": "Uptime", "value": _format_uptime(snapshot.uptime_seconds), "inline": True},
+        {"name": "Uptime", "value": format_uptime(snapshot.uptime_seconds), "inline": True},
         {"name": "Equity", "value": f"${snapshot.total_equity:,.0f}", "inline": True},
         {"name": "Drawdown", "value": f"-{dd_pct:.1f}%", "inline": True},
         {"name": "WS Status", "value": ws_label, "inline": True},

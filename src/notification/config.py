@@ -43,10 +43,6 @@ class DiscordBotConfig(BaseSettings):
     alerts_channel_id: int | None = Field(default=None, description="리스크/CB 알림 채널 ID")
     daily_report_channel_id: int | None = Field(default=None, description="일일 보고서 채널 ID")
 
-    # Health Check 채널
-    heartbeat_channel_id: int | None = Field(default=None, description="Heartbeat 알림 채널 ID")
-    regime_channel_id: int | None = Field(default=None, description="Market Regime 알림 채널 ID")
-
     # Webhook 설정 (fallback -- 기존 DiscordChannelConfig 호환)
     trade_webhook_url: str | None = Field(default=None, description="거래 Webhook URL")
     error_webhook_url: str | None = Field(default=None, description="에러 Webhook URL")

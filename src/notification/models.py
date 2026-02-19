@@ -30,8 +30,6 @@ class ChannelRoute(StrEnum):
     TRADE_LOG = "trade_log"
     ALERTS = "alerts"
     DAILY_REPORT = "daily_report"
-    HEARTBEAT = "heartbeat"
-    MARKET_REGIME = "market_regime"
 
 
 class NotificationItem(BaseModel):

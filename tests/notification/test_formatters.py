@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.notification.formatters import (
     format_balance_embed,
     format_circuit_breaker_embed,
     format_daily_report_embed,
+    format_enhanced_daily_report_embed,
     format_fill_embed,
     format_fill_with_position_embed,
     format_position_embed,
@@ -220,3 +221,132 @@ class TestFormatWeeklyReportEmbed:
         embed = format_weekly_report_embed(metrics, trades_week=[])
         assert "timestamp" in embed
         assert len(embed["timestamp"]) > 0
+
+
+# ─── Enhanced Daily Report Embed 테스트 ──────────────────
+
+
+class TestFormatEnhancedDailyReportEmbed:
+    def _make_metrics(self) -> Any:
+        from unittest.mock import MagicMock
+
+        m = MagicMock()
+        m.max_drawdown = 5.2
+        m.sharpe_ratio = 1.35
+        return m
+
+    def test_enhanced_daily_basic_structure(self) -> None:
+        """기본 6 fields + 추가 sections."""
+        from unittest.mock import MagicMock
+
+        system_health = MagicMock()
+        system_health.uptime_seconds = 86400.0
+        system_health.is_circuit_breaker_active = False
+        system_health.total_symbols = 8
+        system_health.stale_symbol_count = 0
+
+        strategy_health = MagicMock()
+        strategy_health.alpha_decay_detected = False
+        strategy_health.strategy_breakdown = ()
+        strategy_health.open_positions = ()
+
+        embed = format_enhanced_daily_report_embed(
+            metrics=self._make_metrics(),
+            open_positions=3,
+            total_equity=10500.0,
+            trades_today=[],
+            system_health=system_health,
+            strategy_health=strategy_health,
+        )
+        assert embed["title"] == "Daily Report"
+        assert embed["color"] == _COLOR_BLUE
+        # 6 기본 + 3 system status = 9
+        assert len(embed["fields"]) >= 9
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Today's PnL" in field_names
+        assert "Uptime" in field_names
+
+    def test_enhanced_daily_strategy_breakdown(self) -> None:
+        """전략별 섹션 포맷."""
+        from unittest.mock import MagicMock
+
+        from src.notification.health_models import StrategyPerformanceSnapshot
+
+        sp = StrategyPerformanceSnapshot(
+            strategy_name="ctrend",
+            rolling_sharpe=1.2,
+            win_rate=0.55,
+            total_pnl=500.0,
+            trade_count=10,
+            status="HEALTHY",
+        )
+        strategy_health = MagicMock()
+        strategy_health.alpha_decay_detected = False
+        strategy_health.strategy_breakdown = (sp,)
+        strategy_health.open_positions = ()
+
+        embed = format_enhanced_daily_report_embed(
+            metrics=self._make_metrics(),
+            open_positions=0,
+            total_equity=10000.0,
+            trades_today=[],
+            strategy_health=strategy_health,
+        )
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Strategy Breakdown (30d)" in field_names
+        breakdown_field = next(
+            f for f in embed["fields"] if f["name"] == "Strategy Breakdown (30d)"
+        )
+        assert "ctrend" in breakdown_field["value"]
+
+    def test_enhanced_daily_regime_section(self) -> None:
+        """Market Regime 필드."""
+        from unittest.mock import MagicMock
+
+        regime = MagicMock()
+        regime.regime_label = "Extreme Greed"
+        regime.regime_score = 0.65
+        regime.symbols = ()
+
+        embed = format_enhanced_daily_report_embed(
+            metrics=self._make_metrics(),
+            open_positions=0,
+            total_equity=10000.0,
+            trades_today=[],
+            regime_report=regime,
+        )
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Market Regime" in field_names
+
+    def test_enhanced_daily_alpha_decay_color(self) -> None:
+        """alpha_decay 시 RED 색상."""
+        from unittest.mock import MagicMock
+
+        strategy_health = MagicMock()
+        strategy_health.alpha_decay_detected = True
+        strategy_health.rolling_sharpe_30d = 0.3
+        strategy_health.strategy_breakdown = ()
+        strategy_health.open_positions = ()
+
+        embed = format_enhanced_daily_report_embed(
+            metrics=self._make_metrics(),
+            open_positions=0,
+            total_equity=10000.0,
+            trades_today=[],
+            strategy_health=strategy_health,
+        )
+        assert embed["color"] == _COLOR_RED
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Alpha Decay Warning" in field_names
+
+    def test_enhanced_daily_all_none(self) -> None:
+        """모든 health 데이터 None → 기본 daily와 동일."""
+        embed = format_enhanced_daily_report_embed(
+            metrics=self._make_metrics(),
+            open_positions=0,
+            total_equity=10000.0,
+            trades_today=[],
+        )
+        assert embed["title"] == "Daily Report"
+        assert embed["color"] == _COLOR_BLUE
+        assert len(embed["fields"]) == 6

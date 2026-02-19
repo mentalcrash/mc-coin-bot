@@ -17,13 +17,18 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from src.notification.formatters import format_daily_report_embed, format_weekly_report_embed
+from src.notification.formatters import (
+    format_daily_report_embed,
+    format_enhanced_daily_report_embed,
+    format_weekly_report_embed,
+)
 from src.notification.models import ChannelRoute, NotificationItem, Severity
 
 if TYPE_CHECKING:
     from src.eda.analytics import AnalyticsEngine
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.monitoring.chart_generator import ChartGenerator
+    from src.notification.health_collector import HealthDataCollector
     from src.notification.queue import NotificationQueue
 
 # 월요일 = 0 (Python datetime.weekday())
@@ -46,11 +51,13 @@ class ReportScheduler:
         analytics: AnalyticsEngine,
         chart_gen: ChartGenerator,
         pm: EDAPortfolioManager,
+        health_collector: HealthDataCollector | None = None,
     ) -> None:
         self._queue = queue
         self._analytics = analytics
         self._chart_gen = chart_gen
         self._pm = pm
+        self._health_collector = health_collector
         self._daily_task: asyncio.Task[None] | None = None
         self._weekly_task: asyncio.Task[None] | None = None
 
@@ -96,7 +103,7 @@ class ReportScheduler:
                 logger.exception("Failed to send weekly report")
 
     async def _send_daily_report(self) -> None:
-        """일일 리포트 생성 + enqueue."""
+        """일일 리포트 생성 + enqueue (health 데이터 통합)."""
         equity_series = self._analytics.get_equity_series()
         trades = self._analytics.closed_trades
         metrics = self._analytics.compute_metrics()
@@ -105,13 +112,41 @@ class ReportScheduler:
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
 
-        # Embed
-        embed = format_daily_report_embed(
-            metrics=metrics,
-            open_positions=self._pm.open_position_count,
-            total_equity=self._pm.total_equity,
-            trades_today=trades_today,
-        )
+        # Health 데이터 수집 (collector 있을 때만)
+        system_health = None
+        strategy_health = None
+        regime_report = None
+        if self._health_collector is not None:
+            try:
+                system_health = self._health_collector.collect_system_health()
+                strategy_health = self._health_collector.collect_strategy_health()
+                regime_report = await self._health_collector.collect_regime_report()
+            except Exception:
+                logger.exception("Failed to collect health data for daily report")
+
+        # Embed — health 데이터가 하나라도 있으면 enhanced, 없으면 기존
+        if system_health is not None or strategy_health is not None or regime_report is not None:
+            embed = format_enhanced_daily_report_embed(
+                metrics=metrics,
+                open_positions=self._pm.open_position_count,
+                total_equity=self._pm.total_equity,
+                trades_today=trades_today,
+                system_health=system_health,
+                strategy_health=strategy_health,
+                regime_report=regime_report,
+            )
+        else:
+            embed = format_daily_report_embed(
+                metrics=metrics,
+                open_positions=self._pm.open_position_count,
+                total_equity=self._pm.total_equity,
+                trades_today=trades_today,
+            )
+
+        # Severity — alpha decay 시 WARNING
+        severity = Severity.INFO
+        if strategy_health is not None and strategy_health.alpha_decay_detected:
+            severity = Severity.WARNING
 
         # 차트 생성 (blocking → executor)
         loop = asyncio.get_running_loop()
@@ -121,13 +156,15 @@ class ReportScheduler:
 
         files = tuple(charts)
         item = NotificationItem(
-            severity=Severity.INFO,
+            severity=severity,
             channel=ChannelRoute.DAILY_REPORT,
             embed=embed,
             files=files,
         )
         await self._queue.enqueue(item)
-        logger.info("Daily report enqueued ({} charts)", len(files))
+        logger.info(
+            "Daily report enqueued ({} charts, enhanced={})", len(files), system_health is not None
+        )
 
     async def _send_weekly_report(self) -> None:
         """주간 리포트 생성 + enqueue."""

@@ -1,21 +1,16 @@
-"""HealthCheckScheduler — 주기적 시스템/마켓/전략 건강 상태 알림.
+"""HealthDataCollector -- 시스템/전략/마켓 데이터 수집기 (스케줄링 없음).
 
-3개 내부 asyncio 루프:
-- heartbeat_loop (1시간 주기): 시스템 생존 확인
-- regime_loop (4시간 주기): 마켓 regime 리포트
-- strategy_health_loop (8시간 주기): 전략 건강도 확인 + alpha decay 감지
-
-ReportScheduler 패턴을 미러링합니다.
+HealthCheckScheduler에서 3개 asyncio 스케줄링 루프를 제거하고
+데이터 수집 로직만 추출한 순수 수집기입니다.
+ReportScheduler (Daily Report)에서 호출합니다.
 
 Rules Applied:
-    - EDA 패턴: asyncio task lifecycle
+    - EDA 패턴: asyncio lifecycle (start/stop)
     - #10 Python Standards: Async patterns, type hints
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -24,11 +19,6 @@ from loguru import logger
 
 from src.data.derivatives_snapshot import DerivativesSnapshotFetcher
 from src.data.regime_score import classify_regime, compute_regime_score
-from src.notification.health_formatters import (
-    format_heartbeat_embed,
-    format_regime_embed,
-    format_strategy_health_embed,
-)
 from src.notification.health_models import (
     MarketRegimeReport,
     PositionStatus,
@@ -36,7 +26,6 @@ from src.notification.health_models import (
     StrategyPerformanceSnapshot,
     SystemHealthSnapshot,
 )
-from src.notification.models import ChannelRoute, NotificationItem, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -49,16 +38,11 @@ if TYPE_CHECKING:
     from src.exchange.binance_futures_client import BinanceFuturesClient
     from src.notification.queue import NotificationQueue
 
-# 루프 주기 (초)
-_HEARTBEAT_INTERVAL = 3600.0  # 1시간
-_REGIME_INTERVAL = 14400.0  # 4시간
-_STRATEGY_HEALTH_INTERVAL = 28800.0  # 8시간
-
 # Rolling Sharpe 계산 기간
 _ROLLING_SHARPE_DAYS = 30
 _RECENT_TRADES_COUNT = 20
 _ALPHA_DECAY_WINDOW = 3
-_ALPHA_DECAY_CONFIRMATIONS = 2
+_ALPHA_DECAY_CONFIRMATIONS = 1  # 24h 주기이므로 1회 확인으로 충분
 _MAX_SHARPE_HISTORY = 10
 _SHARPE_HEALTHY_THRESHOLD = 0.5
 
@@ -66,179 +50,63 @@ _SHARPE_HEALTHY_THRESHOLD = 0.5
 _ANNUALIZE_SQRT = 365.0**0.5
 
 
-class HealthCheckScheduler:
-    """주기적 Health Check 스케줄러.
+class HealthDataCollector:
+    """시스템/전략/마켓 데이터 수집기 (스케줄링 없음).
 
     Args:
-        queue: NotificationQueue (enqueue 대상)
         pm: EDAPortfolioManager
         rm: EDARiskManager
         analytics: AnalyticsEngine
         feed: LiveDataFeed
         bus: EventBus
+        queue: NotificationQueue
         futures_client: BinanceFuturesClient (None이면 내부 ccxt 생성)
         symbols: 모니터링 대상 심볼 리스트
+        exchange_stop_mgr: ExchangeStopManager (선택)
+        onchain_feed: LiveOnchainFeed (선택)
     """
 
     def __init__(
         self,
-        queue: NotificationQueue,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         analytics: AnalyticsEngine,
         feed: LiveDataFeed,
         bus: EventBus,
+        queue: NotificationQueue,
         futures_client: BinanceFuturesClient | None,
         symbols: list[str],
         exchange_stop_mgr: Any = None,
         onchain_feed: Any = None,
     ) -> None:
-        self._queue = queue
         self._pm = pm
         self._rm = rm
         self._analytics = analytics
         self._feed = feed
         self._bus = bus
+        self._queue = queue
         self._symbols = symbols
         self._exchange_stop_mgr = exchange_stop_mgr
         self._onchain_feed = onchain_feed
         self._snapshot_fetcher = DerivativesSnapshotFetcher(futures_client)
-
-        self._heartbeat_task: asyncio.Task[None] | None = None
-        self._regime_task: asyncio.Task[None] | None = None
-        self._strategy_health_task: asyncio.Task[None] | None = None
 
         self._start_time = time.monotonic()
         self._sharpe_history: list[float] = []
         self._alpha_decay_streak: int = 0
 
     async def start(self) -> None:
-        """스케줄 task 시작."""
+        """DerivativesSnapshotFetcher 시작."""
         await self._snapshot_fetcher.start()
-
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        self._regime_task = asyncio.create_task(self._regime_loop())
-        self._strategy_health_task = asyncio.create_task(self._strategy_health_loop())
-
-        logger.info("HealthCheckScheduler started (heartbeat/regime/strategy)")
+        logger.info("HealthDataCollector started")
 
     async def stop(self) -> None:
-        """Task 취소 + snapshot fetcher 정리."""
-        for task in (self._heartbeat_task, self._regime_task, self._strategy_health_task):
-            if task is not None:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-
+        """DerivativesSnapshotFetcher 정리."""
         await self._snapshot_fetcher.stop()
-        logger.info("HealthCheckScheduler stopped")
+        logger.info("HealthDataCollector stopped")
 
-    async def trigger_health_check(self) -> None:
-        """즉시 heartbeat 전송 (Discord /health 명령용)."""
-        try:
-            await self._send_heartbeat()
-            logger.info("Health check triggered manually")
-        except Exception:
-            logger.exception("Failed to trigger health check")
+    # ─── Public Collectors ─────────────────────────────────
 
-    # ─── Loops ────────────────────────────────────────────────
-
-    async def _heartbeat_loop(self) -> None:
-        """1시간 주기 System Heartbeat."""
-        while True:
-            await asyncio.sleep(_HEARTBEAT_INTERVAL)
-            try:
-                await self._send_heartbeat()
-            except Exception:
-                logger.exception("Failed to send heartbeat")
-
-    async def _regime_loop(self) -> None:
-        """4시간 주기 Market Regime."""
-        while True:
-            await asyncio.sleep(_REGIME_INTERVAL)
-            try:
-                await self._send_regime_report()
-            except Exception:
-                logger.exception("Failed to send regime report")
-
-    async def _strategy_health_loop(self) -> None:
-        """8시간 주기 Strategy Health."""
-        while True:
-            await asyncio.sleep(_STRATEGY_HEALTH_INTERVAL)
-            try:
-                await self._send_strategy_health()
-            except Exception:
-                logger.exception("Failed to send strategy health")
-
-    # ─── Data Collectors + Senders ────────────────────────────
-
-    async def _send_heartbeat(self) -> None:
-        """Tier 1: System Heartbeat 수집 + enqueue."""
-        snapshot = self._collect_system_health()
-        embed = format_heartbeat_embed(snapshot)
-
-        item = NotificationItem(
-            severity=Severity.INFO,
-            channel=ChannelRoute.HEARTBEAT,
-            embed=embed,
-            spam_key="heartbeat",
-        )
-        await self._queue.enqueue(item)
-
-    async def _send_regime_report(self) -> None:
-        """Tier 2: Market Regime 수집 + enqueue."""
-        symbol_snapshots = await self._snapshot_fetcher.fetch_all(self._symbols)
-
-        if not symbol_snapshots:
-            logger.warning("No derivatives data available for regime report")
-            return
-
-        # 평균 regime score 계산
-        scores: list[float] = []
-        for sym in symbol_snapshots:
-            score = compute_regime_score(
-                funding_rate=sym.funding_rate,
-                oi_change_pct=0.0,  # 단일 스냅샷이므로 변화율 계산 불가
-                ls_ratio=sym.ls_ratio,
-                taker_ratio=sym.taker_ratio,
-            )
-            scores.append(score)
-
-        avg_score = sum(scores) / len(scores)
-        label = classify_regime(avg_score)
-
-        report = MarketRegimeReport(
-            timestamp=datetime.now(UTC),
-            regime_score=avg_score,
-            regime_label=label,
-            symbols=tuple(symbol_snapshots),
-        )
-        embed = format_regime_embed(report)
-
-        item = NotificationItem(
-            severity=Severity.INFO,
-            channel=ChannelRoute.MARKET_REGIME,
-            embed=embed,
-            spam_key="regime_report",
-        )
-        await self._queue.enqueue(item)
-
-    async def _send_strategy_health(self) -> None:
-        """Tier 3: Strategy Health 수집 + enqueue."""
-        snapshot = self._collect_strategy_health()
-        embed = format_strategy_health_embed(snapshot)
-
-        item = NotificationItem(
-            severity=Severity.WARNING if snapshot.alpha_decay_detected else Severity.INFO,
-            channel=ChannelRoute.DAILY_REPORT,
-            embed=embed,
-            spam_key="strategy_health",
-        )
-        await self._queue.enqueue(item)
-
-    # ─── Snapshot Collectors ──────────────────────────────────
-
-    def _collect_system_health(self) -> SystemHealthSnapshot:
+    def collect_system_health(self) -> SystemHealthSnapshot:
         """PM/RM/Analytics/Feed/Bus에서 시스템 상태 수집."""
         uptime = time.monotonic() - self._start_time
 
@@ -292,7 +160,7 @@ class HealthCheckScheduler:
             onchain_cache_columns=onchain_cache_columns,
         )
 
-    def _collect_strategy_health(self) -> StrategyHealthSnapshot:
+    def collect_strategy_health(self) -> StrategyHealthSnapshot:
         """Analytics/PM/RM에서 전략 건강 상태 수집."""
         trades = self._analytics.closed_trades
         now = datetime.now(UTC)
@@ -300,18 +168,18 @@ class HealthCheckScheduler:
         # Rolling Sharpe (30d)
         cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
         recent_trades_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
-        rolling_sharpe = self._compute_rolling_sharpe(recent_trades_30d)
+        rolling_sharpe = self.compute_rolling_sharpe(recent_trades_30d)
 
         # Alpha decay 감지
         self._sharpe_history.append(rolling_sharpe)
         if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
             self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
 
-        alpha_decay = self._detect_alpha_decay()
+        alpha_decay = self.detect_alpha_decay()
 
         # 최근 20건 win rate / profit factor
         recent_n = trades[-_RECENT_TRADES_COUNT:] if trades else []
-        win_rate, profit_factor = self._compute_trade_stats(recent_n)
+        win_rate, profit_factor = self.compute_trade_stats(recent_n)
 
         # 오픈 포지션
         positions: list[PositionStatus] = []
@@ -328,7 +196,7 @@ class HealthCheckScheduler:
                 )
 
         # 전략별 breakdown (client_order_id에서 전략명 추출)
-        strategy_breakdown = self._build_strategy_breakdown(recent_trades_30d)
+        strategy_breakdown = self.build_strategy_breakdown(recent_trades_30d)
 
         return StrategyHealthSnapshot(
             timestamp=now,
@@ -342,31 +210,42 @@ class HealthCheckScheduler:
             strategy_breakdown=tuple(strategy_breakdown),
         )
 
-    def _count_onchain_sources(self) -> tuple[int, int]:
-        """Prometheus gauge에서 on-chain source staleness 판정.
+    async def collect_regime_report(self) -> MarketRegimeReport | None:
+        """Market Regime 데이터 수집.
 
         Returns:
-            (total, ok) 튜플. 48시간 이내 fetch = OK.
+            MarketRegimeReport 또는 None (데이터 없을 때)
         """
-        stale_threshold = 48 * 3600  # 48시간
-        try:
-            from src.monitoring.metrics import onchain_last_success_gauge
+        symbol_snapshots = await self._snapshot_fetcher.fetch_all(self._symbols)
 
-            metrics = list(onchain_last_success_gauge.collect())
-            if not metrics or not metrics[0].samples:
-                return 0, 0
+        if not symbol_snapshots:
+            logger.warning("No derivatives data available for regime report")
+            return None
 
-            now = time.time()
-            total = len(metrics[0].samples)
-            ok = sum(1 for s in metrics[0].samples if (now - s.value) < stale_threshold)
-        except ImportError:
-            return 0, 0
-        else:
-            return total, ok
+        # 평균 regime score 계산
+        scores: list[float] = []
+        for sym in symbol_snapshots:
+            score = compute_regime_score(
+                funding_rate=sym.funding_rate,
+                oi_change_pct=0.0,  # 단일 스냅샷이므로 변화율 계산 불가
+                ls_ratio=sym.ls_ratio,
+                taker_ratio=sym.taker_ratio,
+            )
+            scores.append(score)
+
+        avg_score = sum(scores) / len(scores)
+        label = classify_regime(avg_score)
+
+        return MarketRegimeReport(
+            timestamp=datetime.now(UTC),
+            regime_score=avg_score,
+            regime_label=label,
+            symbols=tuple(symbol_snapshots),
+        )
 
     # ─── Helper Functions ─────────────────────────────────────
 
-    def _build_strategy_breakdown(
+    def build_strategy_breakdown(
         self,
         trades_30d: Sequence[object],
     ) -> list[StrategyPerformanceSnapshot]:
@@ -390,8 +269,8 @@ class HealthCheckScheduler:
 
         result: list[StrategyPerformanceSnapshot] = []
         for strategy_name, strades in sorted(by_strategy.items()):
-            sharpe = self._compute_rolling_sharpe(strades)
-            win_rate, _ = self._compute_trade_stats(strades)
+            sharpe = self.compute_rolling_sharpe(strades)
+            win_rate, _ = self.compute_trade_stats(strades)
             total_pnl = sum(
                 float(t.pnl)  # type: ignore[union-attr]
                 for t in strades
@@ -420,7 +299,7 @@ class HealthCheckScheduler:
         return result
 
     @staticmethod
-    def _compute_rolling_sharpe(
+    def compute_rolling_sharpe(
         trades: Sequence[object],
     ) -> float:
         """거래 리스트에서 rolling Sharpe 계산.
@@ -447,10 +326,11 @@ class HealthCheckScheduler:
 
         return (mean / std) * _ANNUALIZE_SQRT
 
-    def _detect_alpha_decay(self) -> bool:
-        """직전 3개 Sharpe가 연속 _ALPHA_DECAY_CONFIRMATIONS 회 하강 추세인지 감지.
+    def detect_alpha_decay(self) -> bool:
+        """직전 3개 Sharpe가 연속 하강 추세인지 감지.
 
-        8h 주기 x 2회 확인 = 16h 지속해야 발동 (false positive 억제).
+        24h 주기 (Daily Report) x 1회 확인 = 즉시 발동.
+        3일 연속 Sharpe 하강이면 감지.
         """
         if len(self._sharpe_history) < _ALPHA_DECAY_WINDOW:
             self._alpha_decay_streak = 0
@@ -467,7 +347,7 @@ class HealthCheckScheduler:
         return self._alpha_decay_streak >= _ALPHA_DECAY_CONFIRMATIONS
 
     @staticmethod
-    def _compute_trade_stats(
+    def compute_trade_stats(
         trades: Sequence[object],
     ) -> tuple[float, float]:
         """거래 리스트에서 win rate과 profit factor 계산.
@@ -499,3 +379,27 @@ class HealthCheckScheduler:
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
         return win_rate, profit_factor
+
+    # ─── Private Helpers ──────────────────────────────────────
+
+    def _count_onchain_sources(self) -> tuple[int, int]:
+        """Prometheus gauge에서 on-chain source staleness 판정.
+
+        Returns:
+            (total, ok) 튜플. 48시간 이내 fetch = OK.
+        """
+        stale_threshold = 48 * 3600  # 48시간
+        try:
+            from src.monitoring.metrics import onchain_last_success_gauge
+
+            metrics = list(onchain_last_success_gauge.collect())
+            if not metrics or not metrics[0].samples:
+                return 0, 0
+
+            now = time.time()
+            total = len(metrics[0].samples)
+            ok = sum(1 for s in metrics[0].samples if (now - s.value) < stale_threshold)
+        except ImportError:
+            return 0, 0
+        else:
+            return total, ok
