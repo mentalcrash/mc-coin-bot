@@ -68,6 +68,11 @@ phases:
       g2h_n_trials: 100
       g2h_n_completed: 100
       g3_note: 4/4 파라미터 고원 + ±20% 안정
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 2.05
@@ -134,3 +139,7 @@ decisions:
   phase: P5
   verdict: PASS
   rationale: IS Sharpe 2.69→3.68 (+36.8%), OOS=2.54
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

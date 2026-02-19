@@ -36,6 +36,11 @@ phases:
     status: FAIL
     date: '2026-02-18'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -52,3 +57,7 @@ decisions:
   verdict: FAIL
   rationale: Best Sharpe 0.82 (ETH) < 1.0 기준. BTC 음수. BNB/SOL/DOGE on-chain 데이터 없어
     실행 불가 (2/5 에셋만 테스트). ETH 단독으로도 기준 미달
+- date: '2026-02-18'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -29,6 +29,11 @@ phases:
     date: '2026-02-10'
     details:
       note: 4H 재검증 확정. 전 에셋 Sharpe 음수 (-0.05 ~ -1.73)
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 0.48
@@ -69,3 +74,7 @@ decisions:
   phase: P3
   verdict: PASS
   rationale: Critical 7항목 결함 0개
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

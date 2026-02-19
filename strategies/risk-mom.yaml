@@ -19,6 +19,12 @@ phases:
     details:
       score: 24
       max_score: 30
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      best_sharpe: 0.77
+      best_mdd: 95.51
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 0.77
@@ -55,3 +61,8 @@ decisions:
   phase: P1
   verdict: PASS
   rationale: 24/30점
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: Best Sharpe 0.77이나 MDD 95.5% (P4 기준 40% 초과). 전 에셋 MDD 88%+. 초기 파이프라인
+    전략으로 비공식 백테스트 후 즉시 RETIRED.

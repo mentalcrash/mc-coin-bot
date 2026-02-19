@@ -30,6 +30,11 @@ phases:
     details:
       sharpe: 0.07
       cagr: -177.9%
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -44,3 +49,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: Best DOGE Sharpe 0.07 ≈ 0; 4/5 에셋 음수; vol ratio 기반 시그널이 4H 노이즈에 취약
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

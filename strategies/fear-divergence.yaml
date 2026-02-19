@@ -35,6 +35,11 @@ phases:
     status: FAIL
     date: '2026-02-18'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -51,3 +56,7 @@ decisions:
   verdict: FAIL
   rationale: Best Sharpe 0.10 (BNB). 4/5 에셋 Sharpe 음수. F&G Index는 BTC-specific인데 전
     코인 동일 적용 → 구조적 한계. 저빈도 (27~56 trades)
+- date: '2026-02-18'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

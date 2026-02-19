@@ -46,6 +46,11 @@ phases:
     status: FAIL
     date: '2026-02-13'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -71,3 +76,7 @@ decisions:
   verdict: FAIL
   rationale: 3/4 파라미터 PASS (atr_period 90%, entry_threshold 60%, vol_target 100%).
     sma_period 50% < 60% 기준 미달. baseline 30 근처에서만 peak, 넓은 고원 미형성
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

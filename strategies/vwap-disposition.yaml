@@ -33,6 +33,11 @@ phases:
       sharpe: 0.96
       cagr: 30.4
       mdd: 38.2
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: SOL/USDT
   sharpe: 0.96
@@ -73,3 +78,7 @@ decisions:
   phase: P3
   verdict: PASS
   rationale: 7/7 Critical 결함 0개, W2 (params=6), W4 (720-bar VWAP)
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

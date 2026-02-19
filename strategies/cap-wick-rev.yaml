@@ -41,6 +41,11 @@ phases:
       bnb_trades: 0.0
       sol_trades: 0.0
       doge_trades: 0.0
+  P2:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-12'
@@ -57,3 +62,7 @@ decisions:
   verdict: FAIL
   rationale: '전 에셋 0건 거래 (즉시 폐기 #3). 3중 필터(ATR spike+Vol surge+Wick ratio) AND 조건이
     6년 데이터에서 공집합. ATR 2x spike 시점에서 large wick bar가 존재하지 않는 구조적 문제.'
+- date: '2026-02-12'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -42,6 +42,11 @@ phases:
       best_mdd: 57.7
       best_asset: DOGE/USDT
       trades: 1950.0
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -57,3 +62,7 @@ decisions:
   verdict: FAIL
   rationale: DOGE Best Sharpe 0.73<1.0, MDD 57.7%>40%. BTC/ETH/BNB Sharpe<0, MDD>80%.
     FR agreement logic fails at 4H.
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

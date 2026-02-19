@@ -63,6 +63,11 @@ phases:
       sharpe_best: 1.14
       cagr_best: 7.9
       mdd_best: 5.4
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -79,3 +84,7 @@ decisions:
   verdict: FAIL
   rationale: Best SOL Sharpe 1.14이나 CAGR 7.9% < 20%. BNB/DOGE Sharpe 음수. regime-mf-mr
     서브전략 전멸이 앙상블 성과 잠식
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

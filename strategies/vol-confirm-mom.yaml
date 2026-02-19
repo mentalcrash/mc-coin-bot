@@ -54,6 +54,11 @@ phases:
       vol_short_window: 40pct_FAIL
       vol_long_window: 60pct_PASS
       vol_target: 90pct_PASS
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -79,3 +84,7 @@ decisions:
   verdict: FAIL
   rationale: vol_short_window plateau 40% < 60%. 10~20 범위만 유효, 25+ 급감. 단기 볼륨 SMA 윈도우가
     좁은 봉우리형 — 과적합 위험.
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -41,6 +41,11 @@ phases:
       bnb_sharpe: -1.33
       sol_sharpe: -0.38
       doge_sharpe: -0.35
+  P2:
+    status: PASS
+    date: '2026-02-12'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-12'
@@ -57,3 +62,7 @@ decisions:
   verdict: FAIL
   rationale: '전 에셋 Sharpe 음수 (즉시 폐기 #2). Best SOL -0.38, CAGR -8.5%, MDD -47.5%. 4H
     semivar ratio MR이 크립토 추세시장에서 역추세 손실'
+- date: '2026-02-12'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

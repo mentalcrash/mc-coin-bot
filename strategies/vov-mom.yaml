@@ -41,6 +41,11 @@ phases:
       best_mdd: 26.1
       best_asset: SOL/USDT
       trades: 167.0
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -56,3 +61,7 @@ decisions:
   verdict: FAIL
   rationale: SOL Best Sharpe 0.92<1.0. MDD 26.1% 우수하나 Sharpe 기준 미달. ETH MDD 72.2%
     취약.
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

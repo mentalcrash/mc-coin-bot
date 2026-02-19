@@ -30,6 +30,11 @@ phases:
     date: '2026-02-10'
     details:
       note: 1H 재검증 확정. 전 에셋 Sharpe 음수 (-0.40 ~ -2.52)
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: -1.67
@@ -74,3 +79,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: '1D 왜곡: 전 에셋 Sharpe 음수 (-1.67 ~ -3.49)'
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -32,6 +32,11 @@ phases:
       sharpe: 0.33
       cagr: 3.8
       mdd: 27.5
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: ETH/USDT
   sharpe: 0.33
@@ -73,3 +78,7 @@ decisions:
   verdict: PASS
   rationale: Critical 0개. HIGH 3건 발견 -> 2건 수정 완료 (isclose, clip), 1건 아키텍처 의존 (vol_scalar
     PM 클램핑)
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -30,9 +30,18 @@ phases:
     date: '2026-02-10'
     details:
       note: 전 에셋 거래 0건 — VPIN threshold 도달 불가 (1D 데이터 한계)
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-10'
   phase: P1
   verdict: PASS
   rationale: 22/30점 — 경제적 논거 4, 참신성 5, 데이터 3, 구현 3, 용량 3, 레짐독립 4
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

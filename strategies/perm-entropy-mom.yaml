@@ -31,6 +31,11 @@ phases:
     details:
       sharpe: 0.52
       cagr: 5.6
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: BNB/USDT
   sharpe: 0.52
@@ -71,3 +76,7 @@ decisions:
   phase: P3
   verdict: PASS
   rationale: Critical 7항목 결함 0개
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

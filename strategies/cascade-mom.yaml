@@ -36,6 +36,11 @@ phases:
     status: FAIL
     date: '2026-02-13'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -52,3 +57,7 @@ decisions:
   verdict: FAIL
   rationale: 전 에셋 CAGR 음수, Best DOGE Sharpe 0.05. 4H behavioral momentum cascade 신호가
     noise에 매몰
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

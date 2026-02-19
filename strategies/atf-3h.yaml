@@ -35,6 +35,11 @@ phases:
     status: FAIL
     date: '2026-02-13'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -51,3 +56,7 @@ decisions:
   verdict: FAIL
   rationale: Best SOL Sharpe 0.86, BTC/ETH/BNB MDD 60-64%. Anchor-Mom 12H->3H TF 축소
     시 앵커링 효과 희석 + 과빈번 거래(1000+건)
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

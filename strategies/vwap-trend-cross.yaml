@@ -41,6 +41,11 @@ phases:
       cagr: 18.2
       mdd: 27.0
       trades: 913.0
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -56,3 +61,7 @@ decisions:
   verdict: FAIL
   rationale: Best Asset(DOGE) Sharpe 0.78 < 1.0, CAGR +18.2% < 20%. BTC Sharpe -0.30,
     BTC MDD -56.5%. Rolling VWAP cross가 크립토 4H에서 방향 예측력 부족.
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

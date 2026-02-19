@@ -36,6 +36,11 @@ phases:
     date: '2026-02-10'
     details:
       note: 3/3 고원 + ±20% 안정
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 0.82
@@ -84,3 +89,7 @@ decisions:
   phase: P6
   verdict: FAIL
   rationale: WFA OOS 0.47 (<0.5), Fold 2 OOS -0.34
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

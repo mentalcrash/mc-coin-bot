@@ -30,6 +30,11 @@ phases:
     details:
       sharpe: -0.52
       cagr: -1695.3%
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -44,3 +49,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: 전 에셋 Sharpe 음수 — 즉시 폐기; OBV 2차 미분이 4H에서 과도한 노이즈 생성, 거래 3000회급
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

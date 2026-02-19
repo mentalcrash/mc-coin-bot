@@ -244,12 +244,20 @@ uv run pytest --tb=short -q  # 전체
 ## Step 9-10: YAML 갱신 + Dashboard
 
 ```bash
-# status: CANDIDATE → IMPLEMENTED
+# 1. P2 phase 결과 기록 (필수 — 누락 시 P1→P3 건너뛰기 발생)
+uv run mcbot pipeline record {strategy_name} --phase P2 --verdict PASS \
+  --rationale "4-file 구조 구현 완료. Registry 등록 {strategy_name}. Ruff/Pyright 0 error." \
+  -d "tests={N}" -d "registry={strategy_name}" -d "files=5"
+
+# 2. status: CANDIDATE → IMPLEMENTED
 uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
 
-# Dashboard 재생성
+# 3. Dashboard 재생성
 uv run mcbot pipeline report
 ```
+
+> **Critical**: `pipeline record --phase P2`를 반드시 `update-status` 이전에 실행.
+> 이 단계를 누락하면 phases에 P2가 빠지고 `pipeline table`에서 next=P2로 표시됨.
 
 ---
 

@@ -37,6 +37,11 @@ phases:
     date: '2026-02-10'
     details:
       note: 2/2 고원 + ±20% 안정
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: ETH/USDT
   sharpe: 0.99
@@ -89,3 +94,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: CAGR +10.8% < 20% 최소 기준 미달 (기준 변경에 의한 소급 적용)
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

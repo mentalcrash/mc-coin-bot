@@ -36,6 +36,11 @@ phases:
     status: FAIL
     date: '2026-02-13'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-13'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-13'
@@ -52,3 +57,7 @@ decisions:
   verdict: FAIL
   rationale: Best BNB/DOGE Sharpe 0.81, BTC 0.14. 6H realized skewness 신호가 추세 방향 예측에
     불충분
+- date: '2026-02-13'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

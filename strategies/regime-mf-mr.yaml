@@ -41,6 +41,11 @@ phases:
       sharpe_best: -0.59
       cagr_best: -12.0
       mdd_best: 63.8
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -56,3 +61,7 @@ decisions:
   verdict: FAIL
   rationale: '전 에셋 Sharpe 음수 (BTC:-0.79, ETH:-0.93, BNB:-1.57, SOL:-0.59, DOGE:-0.89).
     MDD 63~92%. 즉시 폐기 기준 #2 해당'
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
