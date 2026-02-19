@@ -73,7 +73,34 @@ def _make_bot_with_orchestrator(
 
     orch = orchestrator or _make_orchestrator()
     report_trigger = AsyncMock()
-    health_trigger = AsyncMock()
+
+    # Mock HealthDataCollector
+    health_collector = MagicMock()
+    system_health = MagicMock()
+    system_health.total_equity = 10000.0
+    system_health.available_cash = 8000.0
+    system_health.aggregate_leverage = 1.5
+    system_health.current_drawdown = 0.035
+    system_health.is_circuit_breaker_active = False
+    system_health.open_position_count = 2
+    system_health.total_symbols = 8
+    system_health.stale_symbol_count = 0
+    system_health.uptime_seconds = 3600.0
+    system_health.today_pnl = 50.0
+    system_health.today_trades = 3
+    system_health.max_queue_depth = 5
+    system_health.is_notification_degraded = False
+    system_health.safety_stop_count = 0
+    system_health.safety_stop_failures = 0
+    system_health.onchain_sources_ok = 0
+    system_health.onchain_sources_total = 0
+    system_health.onchain_cache_columns = 0
+    system_health.peak_equity = 10500.0
+    system_health.bars_emitted = 100
+    system_health.events_dropped = 0
+    system_health.timestamp = MagicMock()
+    system_health.timestamp.isoformat.return_value = "2026-01-01T00:00:00+00:00"
+    health_collector.collect_system_health.return_value = system_health
 
     ctx = TradingContext(
         pm=pm,
@@ -82,7 +109,7 @@ def _make_bot_with_orchestrator(
         runner_shutdown=MagicMock(),
         orchestrator=orch,
         report_trigger=report_trigger,
-        health_trigger=health_trigger,
+        health_collector=health_collector,
     )
     bot.set_trading_context(ctx)
     return bot, ctx
@@ -185,13 +212,37 @@ class TestReportCommand:
 class TestHealthMetrics:
     """``/health`` / ``/metrics`` 명령 테스트."""
 
-    async def test_health_triggers_check(self) -> None:
+    async def test_health_uses_collector(self) -> None:
+        """health_collector가 있으면 collect_system_health → embed 반환."""
         bot, ctx = _make_bot_with_orchestrator()
         interaction = AsyncMock()
         await bot._handle_health(interaction)
         interaction.response.send_message.assert_called_once()
-        assert ctx.health_trigger is not None
-        ctx.health_trigger.assert_called_once()
+        assert ctx.health_collector is not None
+        ctx.health_collector.collect_system_health.assert_called_once()
+
+    async def test_health_fallback_without_collector(self) -> None:
+        """health_collector=None → 간단 embed fallback."""
+        config = _make_config()
+        bot = DiscordBotService(config)
+        ctx = TradingContext(
+            pm=MagicMock(
+                total_equity=10000.0,
+                available_cash=8000.0,
+                aggregate_leverage=1.5,
+                open_position_count=2,
+            ),
+            rm=MagicMock(current_drawdown=3.5, is_circuit_breaker_active=False),
+            analytics=MagicMock(),
+            runner_shutdown=MagicMock(),
+        )
+        bot.set_trading_context(ctx)
+
+        interaction = AsyncMock()
+        await bot._handle_health(interaction)
+        interaction.response.send_message.assert_called_once()
+        call_kwargs = interaction.response.send_message.call_args
+        assert "embed" in call_kwargs.kwargs
 
     async def test_metrics_responds(self) -> None:
         bot, _ = _make_bot_with_orchestrator()
@@ -230,17 +281,17 @@ class TestTradingContextExtended:
 
     def test_trigger_fields(self) -> None:
         report = AsyncMock()
-        health = AsyncMock()
+        collector = MagicMock()
         ctx = TradingContext(
             pm=MagicMock(),
             rm=MagicMock(),
             analytics=MagicMock(),
             runner_shutdown=MagicMock(),
             report_trigger=report,
-            health_trigger=health,
+            health_collector=collector,
         )
         assert ctx.report_trigger is report
-        assert ctx.health_trigger is health
+        assert ctx.health_collector is collector
 
     def test_default_none(self) -> None:
         ctx = TradingContext(
@@ -251,4 +302,4 @@ class TestTradingContextExtended:
         )
         assert ctx.orchestrator is None
         assert ctx.report_trigger is None
-        assert ctx.health_trigger is None
+        assert ctx.health_collector is None

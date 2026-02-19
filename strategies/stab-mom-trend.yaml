@@ -38,6 +38,11 @@ phases:
       best_sharpe: 0.55
       best_cagr: 8.1%
       best_asset: SOL
+  P2:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -53,3 +58,7 @@ decisions:
   verdict: FAIL
   rationale: Best Asset SOL Sharpe 0.55 (< 1.0), CAGR +8.1% (< 20%). 전 에셋 Sharpe <
     1.0, MDD 27~39%
+- date: '2026-02-18'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

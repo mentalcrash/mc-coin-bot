@@ -31,6 +31,11 @@ phases:
     date: '2026-02-10'
     details:
       note: bb_period, kc_mult 고원 부재
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: BTC/USDT
   sharpe: 0.94
@@ -75,3 +80,7 @@ decisions:
   phase: P5
   verdict: FAIL
   rationale: bb_period, kc_mult 고원 부재 — 폐기
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

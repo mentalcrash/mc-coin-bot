@@ -19,6 +19,12 @@ phases:
     details:
       score: 21
       max_score: 30
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      best_sharpe: -0.16
+      best_mdd: 41.81
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: -0.16
@@ -55,3 +61,8 @@ decisions:
   phase: P1
   verdict: PASS
   rationale: 21/30점
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: '전 에셋 Sharpe 음수 (-0.16 ~ -0.77). MR 전략 크립토 부적합 (교훈 #36). 초기 파이프라인 전략으로
+    비공식 백테스트 후 즉시 RETIRED.'

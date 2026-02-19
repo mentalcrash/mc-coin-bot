@@ -75,8 +75,10 @@ def generate_signals(
     range_pctl_prev: pd.Series = df["range_pctl"].shift(1)  # type: ignore[assignment]
     vol_scalar_prev: pd.Series = df["vol_scalar"].shift(1)  # type: ignore[assignment]
     close_prev: pd.Series = df["close"].shift(1)  # type: ignore[assignment]
-    is_trade_prev = df["is_trade_window"].shift(1).fillna(False).astype(bool)
-    is_exit_prev = df["is_exit_hour"].shift(1).fillna(False).astype(bool)
+    is_trade_prev = (
+        df["is_trade_window"].shift(1).fillna(False).infer_objects(copy=False).astype(bool)
+    )
+    is_exit_prev = df["is_exit_hour"].shift(1).fillna(False).infer_objects(copy=False).astype(bool)
 
     # 2. Squeeze 감지: range percentile < threshold
     squeeze = range_pctl_prev < config.range_pctl_threshold

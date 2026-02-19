@@ -19,11 +19,13 @@ Rules Applied:
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 
 if TYPE_CHECKING:
     from numpy import floating
@@ -432,7 +434,9 @@ class EnsembleRegimeDetector:
                 solver="lbfgs",
                 random_state=42,
             )
-            lr.fit(x_valid, y_valid)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                lr.fit(x_valid, y_valid)
         except Exception:
             return None
         else:

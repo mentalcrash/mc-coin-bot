@@ -45,6 +45,11 @@ phases:
       g2_oos_sharpe: -0.19
       g2_decay: 110.4
       g2_oos_trades: 49.0
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -65,3 +70,7 @@ decisions:
   verdict: FAIL
   rationale: IS→OOS 심각한 과적합. IS Sharpe 1.81 → OOS -0.19 (Decay 110%). 2024-2025 시장
     구조 변화에 적응 실패.
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

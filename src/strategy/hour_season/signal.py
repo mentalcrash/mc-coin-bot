@@ -62,7 +62,9 @@ def generate_signals(
 
     # 1. Shift(1) 적용: 전봉 기준 시그널
     t_stat_prev: pd.Series = df["hour_t_stat"].shift(1)  # type: ignore[assignment]
-    vol_confirm_prev = df["vol_confirm"].shift(1).fillna(False).astype(bool)
+    vol_confirm_prev = (
+        df["vol_confirm"].shift(1).fillna(False).infer_objects(copy=False).astype(bool)
+    )
     vol_scalar_prev: pd.Series = df["vol_scalar"].shift(1)  # type: ignore[assignment]
 
     # 2. Hysteresis: entry at threshold, exit at exit_threshold, hold in between

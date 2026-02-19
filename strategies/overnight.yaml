@@ -25,6 +25,11 @@ phases:
     details:
       sharpe: 0.0
       mdd: 0.0
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-09'
@@ -35,3 +40,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: BTC/USDT Sharpe 0.00
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

@@ -38,6 +38,11 @@ phases:
     details:
       sharpe: 0.91
       cagr: 25.7
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -54,3 +59,7 @@ decisions:
   verdict: FAIL
   rationale: Best DOGE Sharpe 0.91 < 1.0. BTC/ETH/BNB MDD 77-81% 즉시폐기 수준. DOGE 외 에셋
     손실
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

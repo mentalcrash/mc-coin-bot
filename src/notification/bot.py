@@ -52,7 +52,7 @@ class TradingContext:
         runner_shutdown: LiveRunner.request_shutdown() 콜백
         orchestrator: StrategyOrchestrator (Orchestrator 모드 시)
         report_trigger: ReportScheduler.trigger_daily_report() 콜백
-        health_trigger: HealthCheckScheduler.trigger_health_check() 콜백
+        health_collector: HealthDataCollector (/health 명령에서 사용)
     """
 
     pm: EDAPortfolioManager
@@ -61,7 +61,7 @@ class TradingContext:
     runner_shutdown: Callable[[], None]
     orchestrator: StrategyOrchestrator | None = None
     report_trigger: Callable[[], Coroutine[object, object, None]] | None = None
-    health_trigger: Callable[[], Coroutine[object, object, None]] | None = None
+    health_collector: object | None = None
     exchange_stop_mgr: object | None = None
     onchain_feed: object | None = None
     _active: bool = field(default=True, init=False)
@@ -163,8 +163,6 @@ class DiscordBotService:
                 ChannelRoute.TRADE_LOG: self._config.trade_log_channel_id,
                 ChannelRoute.ALERTS: self._config.alerts_channel_id,
                 ChannelRoute.DAILY_REPORT: self._config.daily_report_channel_id,
-                ChannelRoute.HEARTBEAT: self._config.heartbeat_channel_id,
-                ChannelRoute.MARKET_REGIME: self._config.regime_channel_id,
             }
             for route, ch_id in channel_map.items():
                 if ch_id is not None:
@@ -518,7 +516,7 @@ class DiscordBotService:
         await ctx.report_trigger()
 
     async def _handle_health(self, interaction: discord.Interaction) -> None:
-        """``/health`` -- 시스템 건강 상태."""
+        """``/health`` -- 시스템 건강 상태 (HealthDataCollector 사용)."""
         ctx = self._trading_ctx
         if ctx is None:
             await interaction.response.send_message(
@@ -526,6 +524,17 @@ class DiscordBotService:
             )
             return
 
+        # HealthDataCollector가 있으면 상세 embed 반환
+        if ctx.health_collector is not None:
+            from src.notification.health_formatters import format_heartbeat_embed
+
+            snapshot = ctx.health_collector.collect_system_health()  # type: ignore[union-attr]
+            embed_dict = format_heartbeat_embed(snapshot)
+            embed = discord.Embed.from_dict(embed_dict)
+            await interaction.response.send_message(embed=embed)
+            return
+
+        # Fallback: 간단 embed
         pm = ctx.pm
         rm = ctx.rm
 
@@ -537,13 +546,7 @@ class DiscordBotService:
         cb_status = "ACTIVE" if rm.is_circuit_breaker_active else "OK"
         embed.add_field(name="Circuit Breaker", value=cb_status, inline=True)
         embed.add_field(name="Positions", value=str(pm.open_position_count), inline=True)
-
-        # Trigger health check if available
-        if ctx.health_trigger is not None:
-            await ctx.health_trigger()
-            embed.set_footer(text="Health check triggered | MC-Coin-Bot")
-        else:
-            embed.set_footer(text="MC-Coin-Bot")
+        embed.set_footer(text="MC-Coin-Bot")
 
         await interaction.response.send_message(embed=embed)
 

@@ -39,6 +39,7 @@ import src.strategy.candle_conv_mom  # 전략 등록 side effect
 import src.strategy.candle_reject  # 전략 등록 side effect
 import src.strategy.cap_wick_rev  # 전략 등록 side effect
 import src.strategy.carry_cond_mom  # 전략 등록 side effect
+import src.strategy.carry_sent  # 전략 등록 side effect
 import src.strategy.cascade_mom  # 전략 등록 side effect
 import src.strategy.cft_2h  # 전략 등록 side effect
 import src.strategy.cgo_mom  # 전략 등록 side effect
@@ -75,6 +76,7 @@ import src.strategy.kalman_trend  # 전략 등록 side effect
 import src.strategy.kama  # 전략 등록 side effect
 import src.strategy.kelt_eff_trend  # 전략 등록 side effect
 import src.strategy.liq_cascade_rev  # 전략 등록 side effect
+import src.strategy.liq_conf_trend  # 전략 등록 side effect
 import src.strategy.liq_momentum  # 전략 등록 side effect
 import src.strategy.max_min  # 전략 등록 side effect
 import src.strategy.mcr_mom  # 전략 등록 side effect

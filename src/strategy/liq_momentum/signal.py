@@ -65,7 +65,7 @@ def generate_signals(
     mom_signal_prev: pd.Series = df["mom_signal"].shift(1)  # type: ignore[assignment]
     vol_scalar_prev: pd.Series = df["vol_scalar"].shift(1)  # type: ignore[assignment]
     liq_state_prev: pd.Series = df["liq_state"].shift(1)  # type: ignore[assignment]
-    is_weekend_prev = df["is_weekend"].shift(1).fillna(False).astype(bool)
+    is_weekend_prev = df["is_weekend"].shift(1).fillna(False).infer_objects(copy=False).astype(bool)
 
     # 2. Base signal: momentum * vol_scalar
     base_signal = mom_signal_prev * vol_scalar_prev

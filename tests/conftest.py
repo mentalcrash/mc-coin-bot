@@ -7,11 +7,52 @@ Rules Applied:
     - #12 Data Engineering: Sample data generation
 """
 
+from __future__ import annotations
+
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# ---------------------------------------------------------------------------
+# 디렉토리 경로 → pytest 마커 자동 매핑
+# ---------------------------------------------------------------------------
+_DIR_MARKER_MAP: dict[str, str] = {
+    "/strategy/": "strategy",
+    "/eda/": "eda",
+    "/chaos/": "chaos",
+    "/data/": "data",
+    "/backtest/": "integration",
+    "/regression/": "slow",
+    "/orchestrator/": "integration",
+    "/notification/": "integration",
+    "/exchange/": "integration",
+    "/pipeline/": "integration",
+    "/cli/": "integration",
+    "/core/": "unit",
+    "/models/": "unit",
+    "/config/": "unit",
+    "/market/": "unit",
+    "/regime/": "unit",
+    "/monitoring/": "unit",
+    "/catalog/": "unit",
+    "/portfolio/": "unit",
+    "/logging/": "unit",
+}
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """디렉토리 경로 기반 자동 마커 부여."""
+    for item in items:
+        fspath = str(item.fspath)
+        for dir_pattern, marker_name in _DIR_MARKER_MAP.items():
+            if dir_pattern in fspath:
+                item.add_marker(getattr(pytest.mark, marker_name))
+                break
+
+# Opt-in to future pandas behavior: fillna/ffill/bfill won't auto-downcast
+pd.set_option("future.no_silent_downcasting", True)
 
 
 @pytest.fixture

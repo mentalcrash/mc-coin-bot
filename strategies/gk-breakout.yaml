@@ -26,6 +26,11 @@ phases:
       sharpe: 0.39
       oos_sharpe: 0.39
       decay: 59.0
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: DOGE/USDT
   sharpe: 0.77
@@ -66,3 +71,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: OOS Sharpe 0.39, Decay 59.0%
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

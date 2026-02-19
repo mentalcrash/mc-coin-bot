@@ -26,6 +26,11 @@ phases:
       sharpe: -0.66
       oos_sharpe: -0.66
       decay: 162.9
+  P2:
+    status: PASS
+    date: '2026-02-10'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance:
 - symbol: BTC/USDT
   sharpe: 0.75
@@ -65,3 +70,7 @@ decisions:
   phase: P4
   verdict: FAIL
   rationale: OOS Sharpe -0.66, Decay 162.9%
+- date: '2026-02-10'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

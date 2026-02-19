@@ -515,6 +515,184 @@ class TestPrecompute:
 # ---------------------------------------------------------------------------
 
 _INC_PATH = "src.eda.onchain_feed._inc_cache_refresh"
+_RECORD_PATH = "src.eda.onchain_feed._record_fetch"
+
+
+class TestFetchMetrics:
+    """_record_fetch() 호출 검증 — source/name/status 올바르게 기록되는지."""
+
+    @pytest.mark.asyncio
+    async def test_defillama_success_records_three(self) -> None:
+        """DeFiLlama 3개 sub-fetch 성공 시 _record_fetch 3번 호출."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(
+            return_value=pd.DataFrame(
+                {"total_circulating_usd": [150e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_tvl = AsyncMock(
+            return_value=pd.DataFrame(
+                {"tvl_usd": [50e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        mock_fetcher.fetch_dex_volume = AsyncMock(
+            return_value=pd.DataFrame(
+                {"volume_usd": [5e9]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_defillama()
+            assert mock_rec.call_count == 3
+            sources = [c.args[0] for c in mock_rec.call_args_list]
+            names = [c.args[1] for c in mock_rec.call_args_list]
+            statuses = [c.args[3] for c in mock_rec.call_args_list]
+            assert sources == ["defillama", "defillama", "defillama"]
+            assert names == ["stablecoin_total", "tvl_total", "dex_volume"]
+            assert statuses == ["success", "success", "success"]
+
+    @pytest.mark.asyncio
+    async def test_defillama_all_fail_records_failure(self) -> None:
+        """DeFiLlama 전부 실패 시 3번 failure 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_stablecoin_total = AsyncMock(side_effect=RuntimeError("err"))
+        mock_fetcher.fetch_tvl = AsyncMock(side_effect=RuntimeError("err"))
+        mock_fetcher.fetch_dex_volume = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_defillama()
+            assert mock_rec.call_count == 3
+            statuses = [c.args[3] for c in mock_rec.call_args_list]
+            assert statuses == ["failure", "failure", "failure"]
+
+    @pytest.mark.asyncio
+    async def test_sentiment_success_records(self) -> None:
+        """Sentiment 성공 시 1번 success 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fear_greed = AsyncMock(
+            return_value=pd.DataFrame(
+                {"value": [72]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_sentiment()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[0] == "alternative_me"
+            assert mock_rec.call_args.args[1] == "fear_greed"
+            assert mock_rec.call_args.args[3] == "success"
+
+    @pytest.mark.asyncio
+    async def test_sentiment_failure_records(self) -> None:
+        """Sentiment 실패 시 failure 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_fear_greed = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_sentiment()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[3] == "failure"
+
+    @pytest.mark.asyncio
+    async def test_coinmetrics_success_records_two(self) -> None:
+        """CoinMetrics BTC+ETH 성공 시 2번 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT", "ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_coinmetrics = AsyncMock(
+            return_value=pd.DataFrame(
+                {"CapMVRVCur": [1.5]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_coinmetrics()
+            assert mock_rec.call_count == 2
+            names = [c.args[1] for c in mock_rec.call_args_list]
+            assert names == ["btc_metrics", "eth_metrics"]
+            statuses = [c.args[3] for c in mock_rec.call_args_list]
+            assert statuses == ["success", "success"]
+
+    @pytest.mark.asyncio
+    async def test_btc_mining_success_records(self) -> None:
+        """BTC mining 성공 시 1번 success 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_mempool_mining = AsyncMock(
+            return_value=pd.DataFrame(
+                {"avg_hashrate": [500e18], "difficulty": [70e12]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_btc_mining()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[0] == "mempool_space"
+            assert mock_rec.call_args.args[1] == "mining"
+            assert mock_rec.call_args.args[3] == "success"
+
+    @pytest.mark.asyncio
+    async def test_btc_mining_failure_records(self) -> None:
+        """BTC mining 실패 시 failure 기록."""
+        feed = LiveOnchainFeed(["BTC/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_mempool_mining = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            await feed._fetch_btc_mining()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[3] == "failure"
+
+    @pytest.mark.asyncio
+    async def test_eth_supply_success_records(self) -> None:
+        """ETH supply 성공 시 1번 success 기록."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_eth_supply = AsyncMock(
+            return_value=pd.DataFrame(
+                {"eth_supply": [120e6], "eth2_staking": [30e6]},
+                index=[pd.Timestamp("2024-01-01", tz="UTC")],
+            )
+        )
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            with patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False):
+                await feed._fetch_eth_supply()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[0] == "etherscan"
+            assert mock_rec.call_args.args[1] == "eth_supply"
+            assert mock_rec.call_args.args[3] == "success"
+
+    @pytest.mark.asyncio
+    async def test_eth_supply_failure_records(self) -> None:
+        """ETH supply 실패 시 failure 기록."""
+        feed = LiveOnchainFeed(["ETH/USDT"])
+        mock_fetcher = AsyncMock()
+        mock_fetcher.fetch_eth_supply = AsyncMock(side_effect=RuntimeError("err"))
+        feed._fetcher = mock_fetcher
+
+        with patch(_RECORD_PATH) as mock_rec:
+            with patch.dict("os.environ", {"ETHERSCAN_API_KEY": "test-key"}, clear=False):
+                await feed._fetch_eth_supply()
+            mock_rec.assert_called_once()
+            assert mock_rec.call_args.args[3] == "failure"
 
 
 class TestCacheRefreshCounter:

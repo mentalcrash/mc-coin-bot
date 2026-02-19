@@ -48,16 +48,18 @@ def _make_mock_pod(
 
 def _make_mock_orchestrator(
     pods: list[MagicMock] | None = None,
+    initial_capital: float = 25000.0,
 ) -> MagicMock:
     """Mock StrategyOrchestrator 생성."""
     orch = MagicMock()
     if pods is None:
         pods = [
-            _make_mock_pod("pod-a", equity=15000.0, fraction=0.6, sharpe=1.8, drawdown=0.03),
-            _make_mock_pod("pod-b", equity=10000.0, fraction=0.4, sharpe=1.2, drawdown=0.07),
+            _make_mock_pod("pod-a", equity=1.0, fraction=0.6, sharpe=1.8, drawdown=0.03),
+            _make_mock_pod("pod-b", equity=1.0, fraction=0.4, sharpe=1.2, drawdown=0.07),
         ]
     type(orch).pods = PropertyMock(return_value=pods)
     type(orch).active_pod_count = PropertyMock(return_value=sum(1 for p in pods if p.is_active))
+    type(orch).initial_capital = PropertyMock(return_value=initial_capital)
     return orch
 
 
@@ -68,8 +70,9 @@ class TestPodEquityGauge:
         metrics = OrchestratorMetrics(orch)
         metrics.update()
 
-        assert _sample("mcbot_pod_equity_usdt", {"pod_id": "pod-a"}) == 15000.0
-        assert _sample("mcbot_pod_equity_usdt", {"pod_id": "pod-b"}) == 10000.0
+        # initial_capital(25000) * fraction * current_equity(1.0)
+        assert _sample("mcbot_pod_equity_usdt", {"pod_id": "pod-a"}) == pytest.approx(15000.0)
+        assert _sample("mcbot_pod_equity_usdt", {"pod_id": "pod-b"}) == pytest.approx(10000.0)
 
 
 class TestPodAllocationGauge:

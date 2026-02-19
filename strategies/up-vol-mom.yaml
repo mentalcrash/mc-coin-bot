@@ -42,6 +42,11 @@ phases:
       g2_is_sharpe: 1.27
       g2_oos_sharpe: 0.4
       g2_decay: 68.2
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -62,3 +67,7 @@ decisions:
   verdict: FAIL
   rationale: IS/OOS Decay 68.2% > 50%. IS 1.27 → OOS 0.40 급격 감쇠. Semivariance alpha가
     2020-2021 강세장에 과적합
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

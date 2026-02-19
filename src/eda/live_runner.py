@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
-    from src.notification.health_scheduler import HealthCheckScheduler
+    from src.notification.health_collector import HealthDataCollector
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
     from src.orchestrator.config import OrchestratorConfig
@@ -77,7 +77,7 @@ class _DiscordTasks:
     queue_task: asyncio.Task[None]
     bot_task: asyncio.Task[None]
     report_scheduler: ReportScheduler | None = None
-    health_scheduler: HealthCheckScheduler | None = None
+    health_collector: HealthDataCollector | None = None
 
 
 class LiveMode(StrEnum):
@@ -669,9 +669,7 @@ class LiveRunner:
             try:
                 from src.monitoring.metrics import errors_counter
 
-                errors_counter.labels(
-                    component="LiveRunner", error_type=type(exc).__name__
-                ).inc()
+                errors_counter.labels(component="LiveRunner", error_type=type(exc).__name__).inc()
             except Exception:  # noqa: S110
                 pass
             await self._send_lifecycle_crash(discord_tasks, exc, pm=pm)
@@ -920,7 +918,24 @@ class LiveRunner:
         queue_task = asyncio.create_task(notification_queue.start())
         bot_task = asyncio.create_task(bot_service.start())
 
-        # ReportScheduler 생성 + 시작
+        # HealthDataCollector 생성 + 시작
+        from src.notification.health_collector import HealthDataCollector
+
+        health_collector = HealthDataCollector(
+            pm=pm,
+            rm=rm,
+            analytics=analytics,
+            feed=self._feed,
+            bus=bus,
+            queue=notification_queue,
+            futures_client=self._futures_client,
+            symbols=self._symbols,
+            exchange_stop_mgr=exchange_stop_mgr,
+            onchain_feed=self._onchain_feed,
+        )
+        await health_collector.start()
+
+        # ReportScheduler 생성 + 시작 (health_collector 통합)
         from src.monitoring.chart_generator import ChartGenerator
         from src.notification.report_scheduler import ReportScheduler
 
@@ -930,29 +945,13 @@ class LiveRunner:
             analytics=analytics,
             chart_gen=chart_gen,
             pm=pm,
+            health_collector=health_collector,
         )
         await report_scheduler.start()
 
-        # HealthCheckScheduler 생성 + 시작
-        from src.notification.health_scheduler import HealthCheckScheduler
-
-        health_scheduler = HealthCheckScheduler(
-            queue=notification_queue,
-            pm=pm,
-            rm=rm,
-            analytics=analytics,
-            feed=self._feed,
-            bus=bus,
-            futures_client=self._futures_client,
-            symbols=self._symbols,
-            exchange_stop_mgr=exchange_stop_mgr,
-            onchain_feed=self._onchain_feed,
-        )
-        await health_scheduler.start()
-
-        # L3-3: TradingContext에 trigger 콜백 설정
+        # TradingContext에 trigger 콜백 + collector 설정
         trading_ctx.report_trigger = report_scheduler.trigger_daily_report
-        trading_ctx.health_trigger = health_scheduler.trigger_health_check
+        trading_ctx.health_collector = health_collector
 
         # OrchestratorNotificationEngine (Orchestrator 활성 시)
         if self._orchestrator is not None:
@@ -965,7 +964,7 @@ class LiveRunner:
             await orch_notification.start()
 
         logger.info(
-            "Discord Bot + NotificationEngine + ReportScheduler + HealthCheckScheduler enabled"
+            "Discord Bot + NotificationEngine + ReportScheduler + HealthDataCollector enabled"
         )
 
         return _DiscordTasks(
@@ -974,7 +973,7 @@ class LiveRunner:
             queue_task=queue_task,
             bot_task=bot_task,
             report_scheduler=report_scheduler,
-            health_scheduler=health_scheduler,
+            health_collector=health_collector,
         )
 
     @staticmethod
@@ -998,11 +997,11 @@ class LiveRunner:
 
     @staticmethod
     async def _shutdown_discord(tasks: _DiscordTasks | None) -> None:
-        """Discord Bot/Queue/ReportScheduler/HealthCheckScheduler 정리."""
+        """Discord Bot/Queue/ReportScheduler/HealthDataCollector 정리."""
         if tasks is None:
             return
-        if tasks.health_scheduler is not None:
-            await tasks.health_scheduler.stop()
+        if tasks.health_collector is not None:
+            await tasks.health_collector.stop()
         if tasks.report_scheduler is not None:
             await tasks.report_scheduler.stop()
         await tasks.notification_queue.stop()

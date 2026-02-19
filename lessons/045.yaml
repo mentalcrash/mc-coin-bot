@@ -1,0 +1,18 @@
+id: 45
+title: FR carry + F&G gate 조합도 alpha 불충분 — contrarian carry의 구조적 한계
+body: 'carry-sent: FR carry premium(양의FR→short, 음의FR→long)을 F&G gate로 타이밍 개선 시도했으나
+  전 에셋 Sharpe < 0. FR carry 시그널 자체가 trending 크립토 시장에서 역방향 포지션을 빈번하게 생성. F&G gate가
+  entry 빈도만 줄일 뿐 방향성 오류를 교정하지 못함. 기존 #33(FR 조건부 alpha 불충분)의 확장: sentiment gate 추가해도
+  근본적 alpha 소스 부재 해소 불가.'
+category: strategy-design
+tags:
+- funding-rate
+- carry
+- F-and-G
+- contrarian
+- 1D
+strategies:
+- carry-sent
+timeframes:
+- 1D
+added_at: '2026-02-19'

@@ -36,6 +36,11 @@ phases:
     status: FAIL
     date: '2026-02-18'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-18'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -52,3 +57,7 @@ decisions:
   verdict: FAIL
   rationale: 전 에셋 0건 거래. 시그널 미생성. squeeze_threshold/vol_exit_rank 조건이 6년간 한번도 충족되지
     않음. 설계 결함
+- date: '2026-02-18'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

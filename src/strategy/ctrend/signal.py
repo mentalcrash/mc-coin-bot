@@ -19,9 +19,11 @@ Rules Applied:
 from __future__ import annotations
 
 import logging
+import warnings
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet
 
 from src.strategy.ctrend.config import CTRENDConfig
@@ -127,7 +129,9 @@ def generate_signals(
         )
 
         try:
-            model.fit(x_valid, y_valid)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                model.fit(x_valid, y_valid)
         except Exception:
             logger.debug("ElasticNet fit failed at index %d", t)
             continue

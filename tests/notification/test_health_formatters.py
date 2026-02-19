@@ -12,12 +12,12 @@ from src.notification.health_formatters import (
     _COLOR_GREEN,
     _COLOR_RED,
     _COLOR_YELLOW,
-    _format_uptime,
     _heartbeat_color,
     format_heartbeat_embed,
     format_onchain_alert_embed,
     format_regime_embed,
     format_strategy_health_embed,
+    format_uptime,
 )
 from src.notification.health_models import (
     MarketRegimeReport,
@@ -137,13 +137,13 @@ class TestHeartbeatColor:
 
 class TestFormatUptime:
     def test_minutes_only(self) -> None:
-        assert _format_uptime(300) == "5m"
+        assert format_uptime(300) == "5m"
 
     def test_hours_and_minutes(self) -> None:
-        assert _format_uptime(3720) == "1h 2m"
+        assert format_uptime(3720) == "1h 2m"
 
     def test_days_hours_minutes(self) -> None:
-        result = _format_uptime(86400 + 3600 * 14)
+        result = format_uptime(86400 + 3600 * 14)
         assert result == "1d 14h 0m"
 
 

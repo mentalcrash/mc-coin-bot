@@ -37,6 +37,11 @@ phases:
     status: FAIL
     date: '2026-02-15'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -53,3 +58,7 @@ decisions:
   verdict: FAIL
   rationale: 전 에셋(5/5) trades=0. impact=|return|/volume에서 4H volume 스케일 문제로 impact_asymmetry
     z-score가 threshold 미달. 시그널 미생성
+- date: '2026-02-15'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

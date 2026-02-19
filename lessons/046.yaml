@@ -1,0 +1,21 @@
+id: 46
+title: On-chain liquidity confirmation(stablecoin+TVL) 1D 전략의 MDD 방어 실패 — 글로벌 지표의
+  per-asset 적용 한계
+body: 'liq-conf-trend: stablecoin supply ROC + TVL ROC로 가격 모멘텀 확인 후 진입하는 1D 전략. Best
+  asset(DOGE) Sharpe 0.48이나 MDD 81%. 전 에셋 MDD > 50%. 원인: (1) on-chain 유동성 지표가 글로벌(시장
+  전체)이므로 개별 에셋 가격과 lag 불일치, (2) 유동성 score가 +1/0 binary로 구조가 단순해 정밀한 포지션 사이징 불가, (3)
+  vol-target으로 high-vol 구간에서 leverage 축소하나 방향성 오류 시 MDD 축적. 기존 #41(on-chain 4H)의 1D
+  확장: TF를 올려도 글로벌 on-chain → per-asset 시그널 전환의 근본 한계.'
+category: strategy-design
+tags:
+- on-chain
+- liquidity
+- stablecoin
+- TVL
+- MDD
+- 1D
+strategies:
+- liq-conf-trend
+timeframes:
+- 1D
+added_at: '2026-02-19'

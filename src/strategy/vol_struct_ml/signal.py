@@ -7,10 +7,12 @@ Shift(1) Rule: ML 예측 + vol_scalar에 shift(1) 적용.
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet
 
 from src.strategy.types import StrategySignals
@@ -85,7 +87,9 @@ def generate_signals(
         )
 
         try:
-            model.fit(x_valid, y_valid)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                model.fit(x_valid, y_valid)
         except Exception:
             logger.debug("ElasticNet fit failed at index %d", t)
             continue

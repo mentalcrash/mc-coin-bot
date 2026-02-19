@@ -185,8 +185,13 @@ class OrchestratorNotificationEngine:
         pod_summaries = orch.get_pod_summary()
         active_pods = [p for p in orch.pods if p.is_active]
 
-        # Total equity
-        total_equity = sum(p.performance.current_equity for p in active_pods)
+        # Total equity: current_equity는 1.0 기준 상대값이므로
+        # initial_capital * capital_fraction * relative_equity로 달러 환산
+        cap = orch.initial_capital
+        total_equity = sum(
+            cap * p.capital_fraction * p.performance.current_equity
+            for p in active_pods
+        )
 
         # Pod returns + weights
         pod_returns_data: dict[str, list[float]] = {}

@@ -37,6 +37,11 @@ phases:
     status: FAIL
     date: '2026-02-15'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-15'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -53,3 +58,7 @@ decisions:
   verdict: FAIL
   rationale: 전 에셋(5/5) Sharpe 음수(-0.17~-0.78). Contrarian FR carry가 4H TF에서 비용 대비
     edge 부족. SOL worst(-0.78), DOGE best(-0.17)
+- date: '2026-02-15'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

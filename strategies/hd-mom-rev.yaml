@@ -36,6 +36,11 @@ phases:
     status: FAIL
     date: '2026-02-14'
     details: {}
+  P2:
+    status: PASS
+    date: '2026-02-14'
+    details:
+      note: retroactive — P2 recording was missing from pipeline
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -52,3 +57,7 @@ decisions:
   verdict: FAIL
   rationale: 전 에셋 Sharpe 음수 (Best DOGE -0.05). 12H half-day momentum-reversal 가설 무효.
     2000+ trades에서 일관된 손실
+- date: '2026-02-14'
+  phase: P2
+  verdict: PASS
+  rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).

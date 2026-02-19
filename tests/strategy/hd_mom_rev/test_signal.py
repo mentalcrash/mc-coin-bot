@@ -108,7 +108,9 @@ class TestSignalLogic:
         signals = generate_signals(processed, config)
 
         # Get bars where is_jump was False (momentum mode) from previous bar
-        is_jump_prev = processed["is_jump"].shift(1).fillna(value=True).astype(bool)
+        is_jump_prev = (
+            processed["is_jump"].shift(1).fillna(value=True).infer_objects(copy=False).astype(bool)
+        )
         half_return_prev = processed["half_return_smooth"].shift(1)
 
         # For momentum bars (non-jump): direction should match sign of half_return
