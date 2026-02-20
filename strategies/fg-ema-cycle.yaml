@@ -1,0 +1,60 @@
+version: 2
+meta:
+  name: fg-ema-cycle
+  display_name: F&G EMA Long-Cycle
+  category: Sentiment Cycle
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: F&G EMA-24w 장기 사이클 최강 예측변수. arXiv:2512.02029 480M 시뮬레이션 실증
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sub_phase: P4A
+      best_sharpe: 0.916
+      best_cagr: 15.62
+      best_asset: BTC/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests 32 PASS + ruff/pyright 0 errors. Registry fg-ema-cycle.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W5(F&G 상관) 1건 기록
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 PASS, 6 params, 깔끔한 벡터화
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe < 1.0 (Best BTC 0.92). SOL MDD 2428% 비정상. EMA
+    사이클 1.0 미달'

@@ -1,0 +1,64 @@
+version: 2
+meta:
+  name: rs-btc
+  display_name: Relative Strength vs BTC
+  category: Cross-Sectional Momentum
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: BTC 대비 상대 강도가 높은 altcoin = 독자적 alpha(프로젝트 카탈리스트, 생태계 성장). 상대
+    성과 지속 경향 활용. Jegadeesh-Titman(1993) cross-sectional momentum의 크립토 적용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.51
+      cagr: 13.1
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests PASS + ruff/pyright 0 errors
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 준수, shared indicators 활용, ShortMode
+    3-way 분기 완비.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.51. ETH/BNB/DOGE 음수 CAGR, MDD 90%+. Cross-sectional
+    RS가 단일에셋 매매에 부적합'

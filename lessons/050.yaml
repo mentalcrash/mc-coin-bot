@@ -1,0 +1,19 @@
+id: 50
+title: 'Conviction modifier / Regime-adaptive 전략: IS bull run 과적합 구조적 위험'
+body: 'conviction-trend-composite(Decay 88%), regime-adaptive-momentum(Decay 78%),
+  carry-mom-convergence(P4A FAIL) 3건 연속 실패. 공통 패턴: (1) 복합 conviction/regime 가중치가 2020-2024
+  강세장 패턴에 과적합 (2) OOS 2024-2025 횡보/약세에서 edge 소멸 (3) factor 수 증가(10-16개 params)가 자유도
+  소모. 대책: P1에서 IS/OOS 구간 대표성 사전 검증, param 수 <= 8 제한'
+category: strategy-design
+tags:
+- conviction
+- regime
+- decay
+- overfitting
+strategies:
+- conviction-trend-composite
+- regime-adaptive-momentum
+- carry-mom-convergence
+timeframes:
+- 1D
+added_at: '2026-02-19'

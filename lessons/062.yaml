@@ -1,0 +1,16 @@
+id: 62
+title: 자기 참조 factor model(Self-Proxy OLS)의 구조적 무효
+body: 단일 자산에서 자산 자체 EWM을 시장 factor proxy로 사용해 rolling OLS 잔차를 추출하면, 잔차에 알파가 아닌 noise만
+  남는다. 진정한 residual momentum은 독립적 외부 factor(e.g., BTC cross-asset return, 섹터 지수)가
+  필수. 5에셋 전체 Sharpe 음수(-0.12~-0.87), MDD 55-83%로 즉시 폐기.
+category: strategy-design
+tags:
+- factor-model
+- residual-momentum
+- self-proxy
+- OLS
+strategies:
+- residual-mom
+timeframes:
+- 1D
+added_at: '2026-02-20'

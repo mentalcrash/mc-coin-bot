@@ -15,6 +15,7 @@ from src.market.indicators.channels import (
 )
 from src.market.indicators.composite import (
     bb_position as bb_position,
+    count_consecutive as count_consecutive,
     drawdown as drawdown,
     ema_cross as ema_cross,
     fractal_dimension as fractal_dimension,
@@ -83,6 +84,7 @@ __all__ = [
     "bollinger_bands",
     "cci",
     "chaikin_money_flow",
+    "count_consecutive",
     "donchian_channel",
     "drawdown",
     "efficiency_ratio",

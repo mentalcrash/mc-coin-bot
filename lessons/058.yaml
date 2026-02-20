@@ -1,0 +1,19 @@
+id: 58
+title: F&G 비대칭(Fear=역발상, Greed=순응) 접근만 알파 생성
+body: 'F&G 3종 동시 검증 결과: persistence-break(0.22), EMA-cycle(0.92) P4A FAIL, 비대칭 모멘텀만
+  P4A PASS(SOL 1.56). 그러나 P4B IS/OOS에서 Decay 88.6% 극심한 과적합으로 최종 FAIL.
+  동일 지표라도 Fear/Greed 구간별 비대칭 로직이 IS에서는 우수하나 OOS 일반화 실패.
+  F&G 단독 지표 전략은 구조적으로 OOS alpha 유지 불가 — 앙상블 보조 신호로만 활용 가능.'
+category: strategy-design
+tags:
+- fear-greed
+- asymmetric
+- sentiment
+- contrarian
+strategies:
+- fg-asym-mom
+- fg-persist-break
+- fg-ema-cycle
+timeframes:
+- 1D
+added_at: '2026-02-20'

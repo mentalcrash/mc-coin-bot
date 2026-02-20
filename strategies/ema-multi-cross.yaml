@@ -1,0 +1,67 @@
+version: 2
+meta:
+  name: ema-multi-cross
+  display_name: EMA Multi-Cross
+  category: Trend Following
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 3쌍 EMA 크로스(8/21,20/50,50/100) 합의 투표 — 다중 시간축 noise 필터링
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 46.0
+      registry: ema-multi-cross
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.87
+      cagr: 26.8
+      mdd: 52.0
+      best_asset: SOL
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 ema-multi-cross. Ruff/Pyright 0 error.
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전수 검증 완료.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe < 1.0 (Best SOL 0.87), 4/5 에셋 MDD > 50%. EMA 합의
+    투표 noise 필터링 부족.'

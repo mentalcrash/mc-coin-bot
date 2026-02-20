@@ -1,0 +1,27 @@
+version: 2
+meta:
+  name: ema-cross-base
+  display_name: EMA Cross Base
+  category: Trend Following
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 순수 20/100 EMA 크로스오버 — 모멘텀 지속성 활용 베이스라인
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      score: 17
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: FAIL
+  rationale: 17/30점

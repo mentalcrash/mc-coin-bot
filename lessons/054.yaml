@@ -1,0 +1,20 @@
+id: 54
+title: Cross-asset 참조 전략(BTC-Lead, RS-BTC)의 단일에셋 VBT 백테스트 한계
+body: 'BTC-Lead Follower: BTC/ETH/BNB 음수 CAGR, SOL만 +9.3%(Sharpe 0.42, MDD 70.8%).
+  RS-BTC: ETH/BNB/DOGE 음수(-20~-37%), SOL +13.1%(Sharpe 0.51, MDD 48%). 교훈: 1) Cross-sectional
+  전략은 포트폴리오 레벨(다수 에셋 동시 롱/숏)에서 검증해야 함, 2) 단일에셋 VBT에서는 BTC 자체가 baseline(RS=0, lead=self)이므로
+  edge 측정 불가, 3) MDD 60-97%는 trend-following risk management 없이 cross-asset signal만으로는
+  drawdown 제어 불가능함을 시사.'
+category: strategy-design
+tags:
+- cross-asset
+- lead-lag
+- relative-strength
+- BTC
+- portfolio-level
+strategies:
+- btc-lead
+- rs-btc
+timeframes:
+- 1D
+added_at: '2026-02-19'

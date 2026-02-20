@@ -52,7 +52,9 @@ class TestNotificationQueue:
     async def test_enqueue_and_send(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=True)
-        queue = NotificationQueue(sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL
+        )
 
         item = _make_item()
         await queue.enqueue(item)
@@ -68,7 +70,10 @@ class TestNotificationQueue:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=True)
         queue = NotificationQueue(
-            sender, queue_size=10, cooldown_seconds=300.0, base_backoff=_FAST_BACKOFF,
+            sender,
+            queue_size=10,
+            cooldown_seconds=300.0,
+            base_backoff=_FAST_BACKOFF,
             poll_interval=_FAST_POLL,
         )
 
@@ -87,7 +92,9 @@ class TestNotificationQueue:
     async def test_no_spam_key_always_sent(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=True)
-        queue = NotificationQueue(sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL
+        )
 
         await queue.enqueue(_make_item())
         await queue.enqueue(_make_item())
@@ -102,7 +109,9 @@ class TestNotificationQueue:
     async def test_queue_full_drops(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=True)
-        queue = NotificationQueue(sender, queue_size=2, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender, queue_size=2, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL
+        )
 
         await queue.enqueue(_make_item())
         await queue.enqueue(_make_item())
@@ -118,7 +127,13 @@ class TestNotificationQueue:
     async def test_retry_on_failure(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(side_effect=[False, False, True])
-        queue = NotificationQueue(sender, max_retries=3, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=3,
+            queue_size=10,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
 
         await queue.enqueue(_make_item())
 
@@ -132,7 +147,13 @@ class TestNotificationQueue:
     async def test_retry_exhausted(self) -> None:
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=False)
-        queue = NotificationQueue(sender, max_retries=2, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=2,
+            queue_size=10,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
 
         await queue.enqueue(_make_item())
 
@@ -147,7 +168,9 @@ class TestNotificationQueue:
         """stop() 호출 후 큐 잔여 아이템을 drain."""
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=True)
-        queue = NotificationQueue(sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL
+        )
 
         # worker 시작 → 아이템 2개 enqueue → 즉시 stop
         worker = asyncio.create_task(queue.start())
@@ -170,7 +193,13 @@ class TestNotificationQueueDegradation:
         """연속 실패 시 degraded 모드 진입."""
         sender = AsyncMock()
         sender.send_embed = AsyncMock(return_value=False)
-        queue = NotificationQueue(sender, max_retries=1, queue_size=20, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=1,
+            queue_size=20,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
         assert queue.is_degraded is False
 
         # 5개 이상 연속 실패 시 degraded 진입
@@ -190,7 +219,13 @@ class TestNotificationQueueDegradation:
         sender = AsyncMock()
         results = [False] * 5 + [True]
         sender.send_embed = AsyncMock(side_effect=results)
-        queue = NotificationQueue(sender, max_retries=1, queue_size=20, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=1,
+            queue_size=20,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
 
         for _ in range(6):
             await queue.enqueue(_make_item())
@@ -208,7 +243,13 @@ class TestNotificationQueueDegradation:
         """전송 성공 시 연속 실패 카운터 리셋."""
         sender = AsyncMock()
         sender.send_embed = AsyncMock(side_effect=[False, True, False])
-        queue = NotificationQueue(sender, max_retries=1, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=1,
+            queue_size=10,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
 
         for _ in range(3):
             await queue.enqueue(_make_item())
@@ -226,7 +267,13 @@ class TestNotificationQueueDegradation:
         """total_dropped는 성공 후에도 유지."""
         sender = AsyncMock()
         sender.send_embed = AsyncMock(side_effect=[False, False, True])
-        queue = NotificationQueue(sender, max_retries=1, queue_size=10, base_backoff=_FAST_BACKOFF, poll_interval=_FAST_POLL)
+        queue = NotificationQueue(
+            sender,
+            max_retries=1,
+            queue_size=10,
+            base_backoff=_FAST_BACKOFF,
+            poll_interval=_FAST_POLL,
+        )
 
         for _ in range(3):
             await queue.enqueue(_make_item())

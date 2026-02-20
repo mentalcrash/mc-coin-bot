@@ -1,0 +1,67 @@
+version: 2
+meta:
+  name: ema-ribbon-momentum
+  display_name: EMA Ribbon Momentum
+  category: Trend Following
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 피보나치 EMA 리본 정렬도 + ROC 모멘텀 이중 확인 — 추세 성숙도 측정
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 21
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 46.0
+      registry: ema-ribbon-momentum
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.8
+      cagr: 22.6
+      mdd: 42.5
+      best_asset: ETH
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 21/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 ema-ribbon-momentum. Ruff/Pyright 0 error.
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전수 검증 완료.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe < 1.0 (Best ETH 0.80), 4/5 에셋 MDD > 50%. 리본 정렬도
+    시그널 edge 부족.'

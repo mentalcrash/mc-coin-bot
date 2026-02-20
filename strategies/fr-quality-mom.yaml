@@ -1,0 +1,69 @@
+version: 2
+meta:
+  name: fr-quality-mom
+  display_name: FR Quality Momentum
+  category: Derivatives Overlay
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-20'
+  economic_rationale: Funding Rate를 시그널이 아닌 crowding risk meter로 재정의. FR 극단 = 과밀 포지셔닝
+    → 모멘텀 품질 저하. 구조적 제약 — 8시간 펀딩 메커니즘 비용 구조 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 36.0
+      registry: fr-quality-mom
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sharpe: 0.35
+      cagr: 5.3
+      mdd: 41.8
+      trades: 299.0
+      best_asset: SOL/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 fr-quality-mom. Ruff/Pyright 0 error. Derivatives(funding_rate)
+    포함.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W6 derivatives NaN ffill() 처리 확인 OK. Warning 0건 (W6 OK).
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A 즉시폐기: MDD>50% 4/5, 전체 Sharpe<0.5. FR crowding 무효. 거래과다.'

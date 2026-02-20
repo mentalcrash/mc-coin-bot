@@ -1,0 +1,68 @@
+version: 2
+meta:
+  name: mom-accel
+  display_name: Momentum Acceleration
+  category: Second-Order Momentum
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-20'
+  economic_rationale: 모멘텀의 2차 미분(가속도)이 추세 성숙도를 측정. 속도와 가속도가 alignment될 때만 추종. 행동 편향
+    — velocity vs acceleration 미구분.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 33.0
+      registry: mom-accel
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sharpe: 0.46
+      cagr: 10.2
+      mdd: 64.1
+      trades: 146.0
+      best_asset: DOGE/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 mom-accel. Ruff/Pyright 0 error.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건.
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A 즉시폐기: 4/5 Sharpe 음수, MDD>50% 3개. Best=DOGE 노이즈매칭.'

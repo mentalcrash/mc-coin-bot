@@ -1,0 +1,20 @@
+id: 53
+title: 'On-chain 단독 지표(NVT, F&G, Flow) 전략: 1D 단일에셋에서 edge 부재'
+body: 'NVT-Cycle: BTC/ETH 전 에셋 음수 Sharpe(-0.79/-0.41). F&G Delta: Best BNB Sharpe
+  0.51. Exchange Flow Mom: BTC 0.16, ETH -0.47. 공통 원인: 1) on-chain 지표는 일간 업데이트 + publication
+  lag으로 가격 반영 지연, 2) 단독 사용 시 edge 부족, 3) BTC/ETH 한정 데이터로 5+에셋 범용 불가. lesson #46의 확장:
+  on-chain은 보조 필터 역할에 적합하며, 모멘텀 주 시그널과 결합해야 함.'
+category: strategy-design
+tags:
+- NVT
+- fear-greed
+- exchange-flow
+- on-chain
+- 1D
+strategies:
+- nvt-cycle
+- fg-delta
+- ex-flow-mom
+timeframes:
+- 1D
+added_at: '2026-02-19'

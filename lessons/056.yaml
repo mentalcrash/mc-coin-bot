@@ -1,0 +1,14 @@
+id: 56
+title: Funding Rate 단독 시그널의 edge 부재
+body: FR z-score 평균회귀 + FR MA crossover 이중 시그널이 5개 에셋 전부에서 Sharpe < 0.3. FR은 시장 센티먼트의
+  반영이지 선행지표가 아님. FR 기반 전략은 반드시 가격 모멘텀/추세 시그널과 결합해야 함.
+category: strategy-design
+tags:
+- funding-rate
+- derivatives
+- edge
+strategies:
+- fr-pred
+timeframes:
+- 1D
+added_at: '2026-02-20'

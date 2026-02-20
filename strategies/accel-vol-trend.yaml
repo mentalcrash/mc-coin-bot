@@ -1,0 +1,68 @@
+version: 2
+meta:
+  name: accel-vol-trend
+  display_name: Acceleration-Volatility Trend
+  category: 모멘텀 변형
+  timeframe: 1D
+  short_mode: '1'
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: '2차 미분(가속도)으로 모멘텀 품질 캡처 + GK vol 정규화. 학술근거: FRL 2025 risk-managed
+    momentum Sharpe 27% 향상.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      tests: 43.0
+      registry: accel-vol-trend
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sub_phase: P4A
+      best_asset: DOGE
+      best_sharpe: 0.1
+      best_cagr: -1.5
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 accel-vol-trend. Ruff/Pyright 0 error.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 43 tests all passed.
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe 음수 (best DOGE 0.10, CAGR -1.5%). 가속도 기반 시그널이 crypto
+    1D에서 edge 부재.'

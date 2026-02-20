@@ -1,0 +1,77 @@
+version: 2
+meta:
+  name: fr-pred
+  display_name: FR-Pred
+  category: Derivatives (Funding Rate Prediction)
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: FR z-score 기반 이중 시그널. 극단 FR(|z|>2)에서 contrarian 평균회귀 + FR MA
+    crossover로 추세 추종. 두 시그널 가중 합산으로 regime 적응. Derivatives 데이터(funding_rate) 필수.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  fr_ma_window: 7
+  fr_zscore_window: 60
+  fr_mr_threshold: 2.0
+  fr_mom_fast: 7
+  fr_mom_slow: 21
+  mr_weight: 0.5
+  mom_weight: 0.5
+  vol_target: 0.35
+  vol_window: 30
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      note: 4-file 구조 구현 완료 (config/preprocessor/signal/strategy + tests 4파일). Registry
+        등록. Derivatives 전략 (funding_rate 필수).
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sharpe: 0.26
+      cagr: 3.3
+      mdd: 52.0
+      trades: 323.0
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점. FR 기반 dual signal로 regime 적응형 alpha.
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 구현 완료. ruff/pyright 0 errors. 199 tests passed (5 strategies).
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. W6(Derivatives NaN): funding_rate ffill 처리 확인. Warning
+    1건'
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 전 에셋 Sharpe<1.0 (Best SOL 0.26). BTC/BNB 음수 Sharpe. 전 에셋 MDD>35%. FR
+    기반 dual signal에 edge 없음

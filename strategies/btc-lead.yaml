@@ -1,0 +1,64 @@
+version: 2
+meta:
+  name: btc-lead
+  display_name: BTC-Lead Follower Signal
+  category: Cross-Asset Information
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: BTC의 t-1 수익률이 altcoin의 t 수익률 방향을 예측. 제한된 주의력(limited attention)으로
+    인한 정보 전파 지연이 alpha 원천. J.Econ.Dyn.Control(2024) 학술 실증.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.42
+      cagr: 9.3
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests PASS + ruff/pyright 0 errors
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 준수, shared indicators 활용, ShortMode
+    3-way 분기 완비.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.42, MDD 70.8%. BTC/ETH/BNB 음수 CAGR. Lead-lag
+    효과 1D TF에서 비유효'

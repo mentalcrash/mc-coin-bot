@@ -1,0 +1,68 @@
+version: 2
+meta:
+  name: residual-mom
+  display_name: Residual Momentum
+  category: Factor Model Residual
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: 시장 factor(BTC return)와 변동성 factor를 제거한 잔차의 모멘텀으로 자산 고유 정보의 느린
+    확산(slow diffusion)을 포착. JFQA 2026 DS3 모델 실증. CTREND와 정의상 orthogonal → 앙상블 분산 가치
+    극대화
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      tests: 47.0
+      registry: residual-mom
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      best_sharpe: -0.12
+      best_cagr: -19.5
+      worst_mdd: 83.3
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 residual-mom. Ruff/Pyright 0 error.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. W1 warmup 보수적 조정 권장 (실질 영향 없음)
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe 음수 (Best SOL -0.12) + 전 에셋 MDD>50% (Worst SOL
+    83.3%). 자체 EWM 시장 proxy 회귀 잔차가 noise만 포착'

@@ -1,0 +1,17 @@
+id: 49
+title: Entropy-adaptive weighting은 단독 alpha 생성 불충분
+body: Shannon entropy로 regime 분류(low=momentum, high=carry) 후 adaptive weight 결합. Best
+  Sharpe 0.03(SOL). FR carry와 momentum 각각이 약한 alpha를 가지므로, adaptive 결합도 약한 alpha의
+  가중평균에 불과. Entropy rank 자체는 regime filter로 참고 가치 있으나, 주 시그널 소스로는 부족.
+category: strategy-design
+tags:
+- entropy
+- adaptive
+- carry
+- momentum
+- multi-factor
+strategies:
+- entropy-carry-mom
+timeframes:
+- 1D
+added_at: '2026-02-19'

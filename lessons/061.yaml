@@ -1,0 +1,17 @@
+id: 61
+title: '정보이론 복잡도 필터(Hurst/Fractal/ER): 추세 필터로는 유효하나 단독 alpha 불충분'
+body: 'Hurst>0.55+Fractal<1.45+ER>0.15 복잡도 필터: Best Sharpe 0.77(BNB), 전 에셋 양수이나 1.0
+  미달. MDD 16-41%로 리스크 관리 양호. 필터가 비추세 구간 회피에 효과적이나 alpha 소스 자체가 단순 SMA 크로스이므로 edge
+  한계. 복잡도 필터를 CTREND/Anchor-Mom의 보조 레이어로 활용이 더 적합.'
+category: strategy-design
+tags:
+- information-theory
+- complexity
+- hurst
+- fractal
+- filter-vs-alpha
+strategies:
+- complexity-trend
+timeframes:
+- 1D
+added_at: '2026-02-20'

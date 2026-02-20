@@ -1,0 +1,17 @@
+id: 51
+title: EMA 크로스 계열 단독 전략의 구조적 한계
+body: 3쌍 합의 투표(8/21,20/50,50/100)와 피보나치 리본 정렬도(8,13,21,34,55) 모두 Best Sharpe 0.8대,
+  MDD 50%+. EMA 크로스는 추세추종 빌딩블록으로는 유효하나, 단독 시그널로는 whipsaw 비용을 상쇄할 edge 부족. vol-target
+  0.35에서도 MDD 방어 실패. CTREND(Sharpe 2.05) 대비 압도적 열세.
+category: strategy-design
+tags:
+- EMA
+- crossover
+- whipsaw
+- MDD
+strategies:
+- ema-multi-cross
+- ema-ribbon-momentum
+timeframes:
+- 1D
+added_at: '2026-02-19'

@@ -1,0 +1,16 @@
+id: 57
+title: 'Vol Term Structure ML: IS 우수→OOS 완전 붕괴 (Decay 147%)'
+body: RV term structure(5/10/20/40/60) + Vol Ratio + Parkinson/GK Vol 등 12개 vol feature로
+  Ridge 회귀. IS Sharpe 2.82이나 OOS -1.32. 변동성 regime은 비정상적이며 short-term 패턴이 지속되지 않음.
+  Vol feature만으로는 방향 예측 불가 — 반드시 가격 추세 feature와 결합 필요.
+category: strategy-design
+tags:
+- volatility
+- ML
+- overfitting
+- vol-term-structure
+strategies:
+- vol-term-ml
+timeframes:
+- 1D
+added_at: '2026-02-20'

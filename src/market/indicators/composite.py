@@ -2,9 +2,43 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+
+
+def count_consecutive(mask: np.ndarray[Any, np.dtype[np.bool_]]) -> npt.NDArray[np.intp]:
+    """Boolean mask에서 연속 True 횟수를 벡터화 계산.
+
+    True가 연속되면 1,2,3,... 증가. False에서 0으로 리셋.
+
+    Args:
+        mask: boolean numpy 배열.
+
+    Returns:
+        연속 True 카운트 배열 (False 위치는 0).
+
+    Example:
+        >>> count_consecutive(np.array([False, True, True, True, False, True]))
+        array([0, 1, 2, 3, 0, 1])
+    """
+    if len(mask) == 0:
+        return np.array([], dtype=np.intp)
+    if not mask.any():
+        return np.zeros(len(mask), dtype=np.intp)
+
+    # F→T 전환점에서 새 그룹 시작
+    transitions = np.diff(mask.astype(int), prepend=0) > 0
+    group_ids = np.cumsum(transitions)
+    # False 위치는 그룹 0으로 마스킹
+    group_ids = np.where(mask, group_ids, 0)
+
+    # 각 True 그룹 내 누적 카운트
+    s = pd.Series(group_ids)
+    cumcount = s.groupby(s).cumcount() + 1
+    return np.where(mask, cumcount.to_numpy(), 0).astype(np.intp)
 
 
 def drawdown(close: pd.Series) -> pd.Series:

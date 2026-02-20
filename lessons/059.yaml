@@ -1,0 +1,15 @@
+id: 59
+title: '가속도(2차 미분) 기반 모멘텀: crypto 1D에서 edge 완전 부재'
+body: 'ROC의 ROC(가속도)를 GK vol로 정규화한 시그널: 전 에셋 Sharpe 음수(-0.49~0.10). 2차 미분은 잡음 증폭 효과로
+  crypto의 높은 변동성 환경에서 노이즈 과적합. 1차 모멘텀(ROC, SMA) 대비 정보 추가 없이 시그널 품질만 하락.'
+category: strategy-design
+tags:
+- acceleration
+- second-derivative
+- momentum
+- noise-amplification
+strategies:
+- accel-vol-trend
+timeframes:
+- 1D
+added_at: '2026-02-20'

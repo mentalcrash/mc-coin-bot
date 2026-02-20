@@ -1,0 +1,70 @@
+version: 2
+meta:
+  name: macro-liq-trend
+  display_name: Macro-Liquidity Adaptive Trend
+  category: Macro-Enhanced Trend
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 글로벌 유동성(DXY↓+VIX↓+Stablecoin↑+SPY↑)과 가격 모멘텀의 정렬로 크립토 방향 예측.
+    Macro-crypto 참여자 분절의 정보 비대칭 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 55.0
+      registry: macro-liq-trend
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sub_phase: P4A
+      best_sharpe: 0.6
+      best_cagr: 14.3
+      best_mdd: 26.5
+      best_asset: DOGE/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 macro-liq-trend. Ruff/Pyright 0 error.
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. Warning 1건(W1: warmup_periods=100, roc+zscore 체인 ~110
+    필요. NaN 전파로 안전하나 여유 부족).'
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best DOGE Sharpe 0.60 (기준 >1.0), CAGR +14.3% (기준 >20%). Macro
+    liquidity composite가 크립토 alpha에 부분적 기여하나 threshold 미달'

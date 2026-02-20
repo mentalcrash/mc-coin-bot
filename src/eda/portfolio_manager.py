@@ -763,6 +763,8 @@ class EDAPortfolioManager:
             # 포지션 없어도 per-bar rebalancing 체크 (단일에셋 모드만)
             if not self._batch_mode and bar.symbol in self._last_target_weights:
                 await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
+            # 포지션 없어도 equity(=cash) 메트릭 갱신
+            await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
             return
 
         # 1. ATR 업데이트 (last_price 변경 전에 prev_close 사용)

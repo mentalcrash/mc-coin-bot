@@ -825,8 +825,8 @@ class TestBalanceUpdateOnBar:
         # fill 1개 + bar 3개 = 총 4개
         assert len(bal_events) == fill_bal_count + 3
 
-    async def test_balance_update_not_emitted_no_position(self) -> None:
-        """포지션 없으면 bar에서 BalanceUpdateEvent 미발행."""
+    async def test_balance_update_emitted_no_position(self) -> None:
+        """포지션 없어도 TF bar에서 BalanceUpdateEvent 발행 (equity 메트릭 갱신)."""
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
             rebalance_threshold=0.01,
@@ -851,7 +851,9 @@ class TestBalanceUpdateOnBar:
         await bus.stop()
         await task
 
-        assert len(bal_events) == 0
+        assert len(bal_events) == 1
+        assert bal_events[0].total_equity == 10000.0
+        assert bal_events[0].open_position_count == 0
 
 
 # =========================================================================

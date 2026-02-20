@@ -1,0 +1,16 @@
+id: 60
+title: 'Range-based vol ratio(GK/PK/YZ) 미시구조 시그널: 1D TF에서 정보 소실'
+body: 'GK/Parkinson/Yang-Zhang vol 추정치 비율로 미시구조 정보를 캡처 시도: 전 에셋 Sharpe 음수(-0.62~-0.20).
+  1D candle에서 intrabar 미시구조 정보가 aggregation으로 소실. Range-based vol 차이는 HFT/intraday에서
+  유의미하나 daily TF에서는 noise. Beta < 0(역방향 포지션)은 반대 시그널 생성 시사.'
+category: strategy-design
+tags:
+- vol-surface
+- microstructure
+- range-vol
+- TF-mismatch
+strategies:
+- vol-surface-mom
+timeframes:
+- 1D
+added_at: '2026-02-20'

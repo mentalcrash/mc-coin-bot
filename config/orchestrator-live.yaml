@@ -101,7 +101,7 @@ orchestrator:
         - ETH/USDT
       timeframe: "1D"
       initial_fraction: 0.25            # 4-Pod EW
-      max_fraction: 0.40
+      max_fraction: 0.35
       min_fraction: 0.10
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -146,7 +146,7 @@ orchestrator:
         - SOL/USDT
       timeframe: "12H"
       initial_fraction: 0.25            # 4-Pod EW
-      max_fraction: 0.40
+      max_fraction: 0.35
       min_fraction: 0.10
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -185,7 +185,7 @@ orchestrator:
         - DOGE/USDT
       timeframe: "1D"
       initial_fraction: 0.25             # 4-Pod EW, 인큐베이팅
-      max_fraction: 0.40
+      max_fraction: 0.35
       min_fraction: 0.10
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -230,7 +230,7 @@ orchestrator:
         - DOGE/USDT
       timeframe: "1D"
       initial_fraction: 0.25             # 4-Pod EW, 인큐베이팅
-      max_fraction: 0.40
+      max_fraction: 0.35
       min_fraction: 0.10
       max_drawdown: 0.20
       drawdown_warning: 0.15

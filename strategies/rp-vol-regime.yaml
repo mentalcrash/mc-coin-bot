@@ -1,0 +1,64 @@
+version: 2
+meta:
+  name: rp-vol-regime
+  display_name: Realized-Parkinson Vol Regime
+  category: Volatility Structure
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: Realized Vol과 Parkinson Vol의 비율로 시장 미시구조 상태를 측정. PV/RV 높음=장중
+    변동 크나 종가 변화 작음=축적/분배 단계. 기존 Vol Regime(vol 수준)과 근본 차이(vol 구조).
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.85
+      cagr: 21.1
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests PASS + ruff/pyright 0 errors
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 준수, shared indicators 활용, ShortMode
+    3-way 분기 완비.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.85(CAGR 21.1%, MDD 36.9%). Sharpe<1.0 미달.
+    BTC -0.27%, BNB -3.16% 음수 CAGR'

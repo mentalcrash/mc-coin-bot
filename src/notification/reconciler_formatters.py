@@ -61,9 +61,7 @@ def format_position_drift_embed(drifts: list[DriftDetail]) -> dict[str, Any]:
     Returns:
         Discord Embed dict (ORANGE 일반 / RED orphan 또는 10%+ drift)
     """
-    has_critical = any(
-        d.is_orphan or d.drift_pct >= _CRITICAL_DRIFT_PCT for d in drifts
-    )
+    has_critical = any(d.is_orphan or d.drift_pct >= _CRITICAL_DRIFT_PCT for d in drifts)
     color = _COLOR_RED if has_critical else _COLOR_ORANGE
 
     fields: list[dict[str, Any]] = []

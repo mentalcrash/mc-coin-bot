@@ -78,7 +78,7 @@
       "type": "state-timeline",
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 10 },
       "targets": [
-        { "expr": "mcbot_exchange_ws_connected{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+        { "expr": "mcbot_exchange_ws_connected{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A", "instant": false, "range": true, "format": "time_series" }
       ],
       "fieldConfig": {
         "defaults": {

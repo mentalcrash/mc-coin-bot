@@ -87,9 +87,7 @@ def format_startup_embed(
     ]
 
     if pod_summaries is not None:
-        fields.append(
-            {"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False}
-        )
+        fields.append({"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False})
 
     return {
         "title": "MC Coin Bot Started",
@@ -144,9 +142,7 @@ def format_shutdown_embed(
     ]
 
     if pod_summaries is not None:
-        fields.append(
-            {"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False}
-        )
+        fields.append({"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False})
 
     return {
         "title": "MC Coin Bot Stopped",
@@ -193,13 +189,9 @@ def format_crash_embed(
     ]
 
     if final_equity is not None:
-        fields.append(
-            {"name": "Final Equity", "value": f"${final_equity:,.0f}", "inline": True}
-        )
+        fields.append({"name": "Final Equity", "value": f"${final_equity:,.0f}", "inline": True})
     if open_positions is not None:
-        fields.append(
-            {"name": "Open Positions", "value": str(open_positions), "inline": True}
-        )
+        fields.append({"name": "Open Positions", "value": str(open_positions), "inline": True})
     if unrealized_pnl is not None:
         fields.append(
             {"name": "Unrealized PnL", "value": f"${unrealized_pnl:+,.2f}", "inline": True}

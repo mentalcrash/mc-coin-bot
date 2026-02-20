@@ -1,0 +1,77 @@
+version: 2
+meta:
+  name: regime-adaptive-momentum
+  display_name: Regime-Adaptive Multi-Lookback Momentum
+  category: Adaptive Momentum
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: '다중 lookback(20d/60d/120d) 모멘텀을 RegimeService 확률 기반으로 연속 가중
+    혼합. Trending→빠른 반응, Volatile→안정적 장기 추세. 레짐은 방향이 아닌 시간 스케일 선택만 담당(안티패턴 #9 회피).
+    Enhanced-TSMOM(Decay 85%) 대비 실시간 적응형 가중치'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 49.0
+      registry: regime-adaptive-momentum
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      p4a_best_asset: ETH
+      p4a_sharpe: 1.004
+      is_sharpe: 1.42
+      oos_sharpe: 0.318
+      decay: 77.6
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 regime-adaptive-momentum. Ruff/Pyright 0
+    error.
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W2(params=16) WARNING 파라미터 과다 주의. Warning 0건 FAIL 사유
+    없음
+- date: '2026-02-19'
+  phase: P4
+  verdict: PASS
+  rationale: P4A PASS — ETH Sharpe 1.004, CAGR +22.23%, MDD 25.0%. DOGE(0.719/34.58%)
+    SOL(0.837/23.61%) 양호
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: P4B FAIL — IS/OOS Decay 77.6% (기준 <50%). 레짐 적응형 가중치가 IS 패턴에 과적합. OOS
+    Sharpe 0.318 경계값이나 Decay 심각

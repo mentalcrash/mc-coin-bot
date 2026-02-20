@@ -1,0 +1,64 @@
+version: 2
+meta:
+  name: disp-breakout
+  display_name: Disposition Breakout
+  category: Behavioral Finance
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 처분 효과(disposition effect) — 투자자가 ATH/rolling high 근처에서 구조적 매도
+    압력 생성. 돌파 시 후회 회피(regret aversion)로 추격 매수 발생. George-Hwang(2004) 크립토 적용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.11
+      cagr: 0.2
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests PASS + ruff/pyright 0 errors
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 준수, shared indicators 활용, ShortMode
+    3-way 분기 완비.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best BTC Sharpe 0.11, Trades 2~8개 극소. 고정 threshold 기반 breakout이
+    1D에서 작동 불가'

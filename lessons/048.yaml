@@ -1,0 +1,16 @@
+id: 48
+title: DVOL(IV) 기반 전략은 BTC/ETH 전용 + 2021-03 이후만 가능
+body: Deribit DVOL(Implied Volatility)은 BTC/ETH에만 존재하고, 2021-03-24부터 시작. 5에셋 유니버스
+  중 3개(BNB/SOL/DOGE) 테스트 불가. BTC Sharpe 0.37, ETH 0.23으로 VRP 단독 alpha 부족. Options
+  데이터 의존 전략은 에셋 범위 구조적 한계.
+category: data-resolution
+tags:
+- DVOL
+- options
+- asset-coverage
+- VRP
+strategies:
+- vrp-trend
+timeframes:
+- 1D
+added_at: '2026-02-19'

@@ -1,0 +1,17 @@
+id: 52
+title: 조건부 시그널 전략(anti-corr, disp-breakout)의 극저빈도 문제
+body: 'Anti-Correlation Momentum: 1D TF에서 상관관계 threshold를 초과하는 경우가 거의 없어 전 에셋 Trades=0.
+  Disposition Breakout: 극소 거래(2~8건)로 통계적 유의성 없음. 교훈: 백테스트 전 IC 검증 단계에서 연간 최소 시그널 빈도(>=10건)
+  사전 확인 필수. Multi-state FSM 극저빈도 패턴과 동일 원인.'
+category: strategy-design
+tags:
+- anti-correlation
+- disposition
+- signal-frequency
+- 1D
+strategies:
+- anti-corr-mom
+- disp-breakout
+timeframes:
+- 1D
+added_at: '2026-02-19'

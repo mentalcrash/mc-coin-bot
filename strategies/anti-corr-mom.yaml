@@ -1,0 +1,63 @@
+version: 2
+meta:
+  name: anti-corr-mom
+  display_name: Anti-Correlation Momentum
+  category: Cross-Asset Dynamics
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 에셋-BTC 상관이 낮아지면(decorrelation) 독자적 정보/카탈리스트 존재 → 모멘텀 시그널 신뢰도
+    상승. 상관 급등 시 시스템적 움직임 → 자동 방어. 동적 상관을 시그널 품질 지표로 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 26
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      sharpe: 0.0
+      cagr: 0.0
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests PASS + ruff/pyright 0 errors
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 준수, shared indicators 활용, ShortMode
+    3-way 분기 완비.
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Trades=0 — 시그널 미생성 (anti-correlation 조건이 1D TF에서 충족 불가)'

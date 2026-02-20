@@ -529,7 +529,7 @@ class MultiAssetConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     strategy_name: str
-    symbols: tuple[str, ...] = Field(..., min_length=2, description="심볼 목록")
+    symbols: tuple[str, ...] = Field(..., min_length=1, description="심볼 목록")
     timeframe: str
     start_date: datetime
     end_date: datetime

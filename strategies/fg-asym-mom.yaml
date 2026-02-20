@@ -1,0 +1,67 @@
+version: 2
+meta:
+  name: fg-asym-mom
+  display_name: F&G Asymmetric Momentum
+  category: Sentiment Hybrid
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: Fear=역발상 Greed=순응 비대칭 접근. FRL 2024 비대칭 herding 학술 실증
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sub_phase: P4B
+      is_sharpe: 1.952
+      oos_sharpe: 0.222
+      decay: 88.6
+      oos_trades: 36.0
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file impl + tests 33 PASS + ruff/pyright 0 errors. Registry fg-asym-mom.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W2(params 9개), W5(F&G 상관), W7(_count_consecutive 중복)
+    3건 기록
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 PASS, W2 9params, W7 shared indicator 이관, iloc→numpy 최적화
+- date: '2026-02-20'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS: SOL Sharpe 1.56, CAGR +55.2%, MDD 30.3%, Trades 134. 4/5 에셋
+    Sharpe > 1.0'
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4B FAIL: SOL/USDT IS Sharpe 1.95→OOS 0.22, Decay 88.6% (극심한 과적합). OOS
+    Sharpe < 0.3, Decay > 50%'

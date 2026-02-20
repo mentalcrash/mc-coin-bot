@@ -1,0 +1,17 @@
+id: 47
+title: Macro composite lead-lag이 크립토에 약함
+body: DXY/VIX/SPY/Stablecoin 4-factor composite z-score로 크립토 방향 예측 시도. Best Sharpe
+  0.60(DOGE), BTC -0.18. Macro-crypto 간 정보 전파 시차가 불규칙하여 daily 리밸런싱으로는 안정적 alpha 확보
+  불가. 하위 팩터 단독(DXY, VIX)은 regime filter로는 가치 있으나 단독 시그널로는 부족.
+category: strategy-design
+tags:
+- macro
+- composite
+- lead-lag
+- DXY
+- VIX
+strategies:
+- macro-liq-trend
+timeframes:
+- 1D
+added_at: '2026-02-19'

@@ -1,0 +1,68 @@
+version: 2
+meta:
+  name: complexity-trend
+  display_name: Complexity-Filtered Trend
+  category: 정보이론
+  timeframe: 1D
+  short_mode: '1'
+  status: RETIRED
+  created_at: '2026-02-20'
+  retired_at: '2026-02-20'
+  economic_rationale: 'Fractal dimension + Hurst exponent + efficiency ratio로 시장 복잡도/예측가능성
+    정량화. CTREND과 직교하는 정보이론 기반. 학술근거: MDPI Entropy 2025.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      tests: 44.0
+      registry: complexity-trend
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-20'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-20'
+    details:
+      sub_phase: P4A
+      best_asset: BNB
+      best_sharpe: 0.77
+      best_cagr: 18.9
+asset_performance: []
+decisions:
+- date: '2026-02-20'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-20'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 complexity-trend. Ruff/Pyright 0 error.
+- date: '2026-02-20'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. W5 WARNING: Anchor-Mom과 trend 구조 유사 가능성 — P4A 검증 필요.'
+- date: '2026-02-20'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best Sharpe 0.77 (BNB) < 1.0 기준 미달. CAGR 18.9% < 20%. Hurst/Fractal
+    복잡도 필터의 alpha 생성력 부족.'

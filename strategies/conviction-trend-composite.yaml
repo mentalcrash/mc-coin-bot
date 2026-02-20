@@ -1,0 +1,76 @@
+version: 2
+meta:
+  name: conviction-trend-composite
+  display_name: Conviction Trend Composite
+  category: Multi-Source Conviction
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-19'
+  retired_at: '2026-02-19'
+  economic_rationale: 가격 모멘텀 PRIMARY + OBV 거래량 구조/RV 변동성 비율을 conviction modifier로
+    활용. 독립 데이터 소스의 합의가 높을 때만 진입. 레짐 확률 가중 사이징. Multi-Factor(Decay 83%) 대비 factor 역할
+    분리(방향 vs 강도)로 과적합 완화
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      tests: 56.0
+      registry: conviction-trend-composite
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-19'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-19'
+    details:
+      p4a_best_asset: SOL
+      p4a_sharpe: 1.212
+      is_sharpe: 1.593
+      oos_sharpe: 0.186
+      decay: 88.3
+asset_performance: []
+decisions:
+- date: '2026-02-19'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-19'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 conviction-trend-composite. Ruff/Pyright
+    0 error.
+- date: '2026-02-19'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W2(params=14) 주의 필요. Warning 0건 FAIL 사유 없음
+- date: '2026-02-19'
+  phase: P4
+  verdict: PASS
+  rationale: P4A PASS — SOL Sharpe 1.212, CAGR +43.17%, MDD 32.96%. DOGE(0.935/38.48%)
+    양호. BTC/ETH/BNB MDD>50% 주의
+- date: '2026-02-19'
+  phase: P4
+  verdict: FAIL
+  rationale: P4B FAIL — IS/OOS Decay 88.3% (기준 <50%). OOS Sharpe 0.186 < 0.3. SOL
+    IS기간(2020-2024) 강세장 과적합
