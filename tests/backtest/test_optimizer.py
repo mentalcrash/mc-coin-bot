@@ -372,3 +372,76 @@ class TestGenerateG3Sweeps:
         sweeps = generate_g3_sweeps(result, _SampleConfig)
         assert "vol_target" in sweeps
         assert len(sweeps["vol_target"]) > 0
+
+    def test_small_int_minimum_points(self) -> None:
+        """소규모 정수 (max_depth=3, [1,8]) → 최소 3개 sweep point."""
+        result = OptimizationResult(
+            best_params={"er_lookback": 3},
+            best_sharpe=2.0,
+            default_sharpe=1.5,
+            improvement_pct=33.3,
+            n_trials=50,
+            n_completed=50,
+            search_space=[
+                ParamSpec(name="er_lookback", param_type="int", low=1, high=8, default=3),
+            ],
+        )
+        sweeps = generate_g3_sweeps(result, _SampleConfig)
+        values = sweeps["er_lookback"]
+        assert len(values) >= 3
+        assert 3 in values
+
+    def test_small_int_near_lower_bound(self) -> None:
+        """하한 경계 (best=1, [1,8]) → 최소 3개, 1 포함."""
+        result = OptimizationResult(
+            best_params={"er_lookback": 1},
+            best_sharpe=2.0,
+            default_sharpe=1.5,
+            improvement_pct=33.3,
+            n_trials=50,
+            n_completed=50,
+            search_space=[
+                ParamSpec(name="er_lookback", param_type="int", low=1, high=8, default=3),
+            ],
+        )
+        sweeps = generate_g3_sweeps(result, _SampleConfig)
+        values = sweeps["er_lookback"]
+        assert len(values) >= 3
+        assert 1 in values
+
+    def test_small_int_near_upper_bound(self) -> None:
+        """상한 경계 (best=8, [1,8]) → 최소 3개, 8 포함."""
+        result = OptimizationResult(
+            best_params={"er_lookback": 8},
+            best_sharpe=2.0,
+            default_sharpe=1.5,
+            improvement_pct=33.3,
+            n_trials=50,
+            n_completed=50,
+            search_space=[
+                ParamSpec(name="er_lookback", param_type="int", low=1, high=8, default=3),
+            ],
+        )
+        sweeps = generate_g3_sweeps(result, _SampleConfig)
+        values = sweeps["er_lookback"]
+        assert len(values) >= 3
+        assert 8 in values
+
+    def test_tiny_int_range(self) -> None:
+        """극소 범위 (best=1, [1,2]) → 2개 (가용 전체), 에러 없음."""
+        result = OptimizationResult(
+            best_params={"er_lookback": 1},
+            best_sharpe=2.0,
+            default_sharpe=1.5,
+            improvement_pct=33.3,
+            n_trials=50,
+            n_completed=50,
+            search_space=[
+                ParamSpec(name="er_lookback", param_type="int", low=1, high=2, default=1),
+            ],
+        )
+        sweeps = generate_g3_sweeps(result, _SampleConfig)
+        values = sweeps["er_lookback"]
+        assert len(values) == 2
+        assert 1 in values
+        assert 2 in values
