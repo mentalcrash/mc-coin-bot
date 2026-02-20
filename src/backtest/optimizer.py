@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 # Minimum margin for sweep range (avoid degenerate sweeps)
 _MIN_MARGIN = 1e-9
 
+# Minimum number of sweep points for integer parameters
+_MIN_INT_SWEEP_POINTS = 3
+
 # Fields to always skip during optimization
 _SKIP_FIELDS: frozenset[str] = frozenset(
     {
@@ -252,6 +255,46 @@ def optimize_strategy(
     )
 
 
+def _generate_int_sweep(
+    spec: ParamSpec,
+    best_val: float,
+    raw_low: float,
+    raw_high: float,
+    n_points: int,
+) -> list[int]:
+    """정수 파라미터용 sweep 값을 생성 (최소 _MIN_INT_SWEEP_POINTS 보장)."""
+    low_i = math.ceil(raw_low)
+    high_i = max(math.floor(raw_high), low_i)
+    # Generate int range
+    if high_i - low_i + 1 <= n_points:
+        values = list(range(low_i, high_i + 1))
+    else:
+        step = max(1, (high_i - low_i) // (n_points - 1))
+        values = list(range(low_i, high_i + 1, step))
+        if high_i not in values:
+            values.append(high_i)
+    # Ensure best value is included
+    best_int = round(best_val)
+    if best_int not in values and spec.low <= best_int <= spec.high:
+        values.append(best_int)
+        values.sort()
+    # Expand small integer sweeps to minimum points
+    if len(values) < _MIN_INT_SWEEP_POINTS:
+        available = list(range(int(spec.low), int(spec.high) + 1))
+        if len(available) >= _MIN_INT_SWEEP_POINTS:
+            expanded = set(values)
+            delta = 1
+            while len(expanded) < _MIN_INT_SWEEP_POINTS:
+                for candidate in (best_int - delta, best_int + delta):
+                    if spec.low <= candidate <= spec.high:
+                        expanded.add(candidate)
+                delta += 1
+            values = sorted(expanded)
+        else:
+            values = available
+    return values
+
+
 def generate_g3_sweeps(
     result: OptimizationResult,
     config_class: type[BaseModel],
@@ -289,21 +332,7 @@ def generate_g3_sweeps(
         raw_high = min(spec.high, best_val + margin)
 
         if spec.param_type == "int":
-            low_i = math.ceil(raw_low)
-            high_i = max(math.floor(raw_high), low_i)
-            # Generate int range
-            if high_i - low_i + 1 <= n_points:
-                values: list[Any] = list(range(low_i, high_i + 1))
-            else:
-                step = max(1, (high_i - low_i) // (n_points - 1))
-                values = list(range(low_i, high_i + 1, step))
-                if high_i not in values:
-                    values.append(high_i)
-            # Ensure best value is included
-            best_int = round(best_val)
-            if best_int not in values and spec.low <= best_int <= spec.high:
-                values.append(best_int)
-                values.sort()
+            values: list[Any] = _generate_int_sweep(spec, best_val, raw_low, raw_high, n_points)
         else:
             step = (raw_high - raw_low) / max(n_points - 1, 1)
             values = [round(raw_low + i * step, 6) for i in range(n_points)]

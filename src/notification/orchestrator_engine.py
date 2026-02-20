@@ -27,6 +27,7 @@ from src.notification.orchestrator_formatters import (
 )
 
 if TYPE_CHECKING:
+    from src.eda.portfolio_manager import EDAPortfolioManager
     from src.notification.queue import NotificationQueue
     from src.orchestrator.models import RiskAlert
     from src.orchestrator.orchestrator import StrategyOrchestrator
@@ -71,9 +72,11 @@ class OrchestratorNotificationEngine:
         self,
         queue: NotificationQueue,
         orchestrator: StrategyOrchestrator,
+        pm: EDAPortfolioManager | None = None,
     ) -> None:
         self._queue = queue
         self._orchestrator = orchestrator
+        self._pm = pm
         self._report_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -185,13 +188,16 @@ class OrchestratorNotificationEngine:
         pod_summaries = orch.get_pod_summary()
         active_pods = [p for p in orch.pods if p.is_active]
 
-        # Total equity: current_equity는 1.0 기준 상대값이므로
-        # initial_capital * capital_fraction * relative_equity로 달러 환산
-        cap = orch.initial_capital
-        total_equity = sum(
-            cap * p.capital_fraction * p.performance.current_equity
-            for p in active_pods
-        )
+        # Total equity: PM이 주입되면 실시간 MTM 사용 (Daily Report와 동일)
+        if self._pm is not None:
+            total_equity = self._pm.total_equity
+        else:
+            # Fallback: Pod daily-return 누적 곱으로 간접 환산
+            cap = orch.initial_capital
+            total_equity = sum(
+                cap * p.capital_fraction * p.performance.current_equity
+                for p in active_pods
+            )
 
         # Pod returns + weights
         pod_returns_data: dict[str, list[float]] = {}

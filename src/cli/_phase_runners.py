@@ -237,7 +237,9 @@ def _phase4_worker(
 
     engine = BacktestEngine()
     service = MarketDataService()
-    return _run_phase4_single(engine, service, strategy_name, symbol, timeframe, start, end, capital)
+    return _run_phase4_single(
+        engine, service, strategy_name, symbol, timeframe, start, end, capital
+    )
 
 
 def _run_phase4_single(
@@ -438,9 +440,7 @@ def run_phase4(
         console.rule(f"[bold]{sname}[/] (TF={tf})")
 
         if parallel and len(symbols) > 1:
-            results = _run_symbols_parallel(
-                sname, symbols, tf, start, end, capital_dec, console
-            )
+            results = _run_symbols_parallel(sname, symbols, tf, start, end, capital_dec, console)
         else:
             results = _run_symbols_sequential(sname, symbols, tf, start, end, capital_dec)
 
@@ -633,6 +633,122 @@ def _run_one_at_a_time_sweep(
     return results
 
 
+def _phase5_sweep_worker(
+    strategy_name: str,
+    baseline: dict[str, Any],
+    param_name: str,
+    value: Any,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    capital: Decimal,
+) -> dict[str, Any]:
+    """프로세스 풀 워커 — 단일 sweep point 백테스트 (pickling 가능).
+
+    프로세스별 새로운 Engine/Service 인스턴스 생성.
+    """
+    from src.backtest.engine import BacktestEngine
+    from src.backtest.request import BacktestRequest
+    from src.data.market_data import MarketDataRequest
+    from src.data.service import MarketDataService
+    from src.strategy import get_strategy
+
+    engine = BacktestEngine()
+    service = MarketDataService()
+
+    params = dict(baseline)
+    params[param_name] = value
+
+    weight_pair = P5_WEIGHT_PAIRS.get(strategy_name, {})
+    if param_name in weight_pair:
+        complement_name = weight_pair[param_name]
+        params[complement_name] = round(1.0 - value, 6)
+
+    try:
+        data = service.get(
+            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=start, end=end)
+        )
+        strategy_cls = get_strategy(strategy_name)
+        strategy = strategy_cls.from_params(**params)
+        portfolio = _create_portfolio(strategy_name, capital)
+        request = BacktestRequest(data=data, strategy=strategy, portfolio=portfolio)
+        result = engine.run(request)
+    except Exception as e:
+        logger.warning(f"  {param_name}={value}: {e}")
+        return {
+            "value": value,
+            "sharpe_ratio": float("nan"),
+            "total_return": float("nan"),
+            "max_drawdown": float("nan"),
+            "cagr": float("nan"),
+            "total_trades": 0,
+            "error": str(e),
+        }
+    else:
+        return {
+            "value": value,
+            "sharpe_ratio": result.metrics.sharpe_ratio,
+            "total_return": result.metrics.total_return,
+            "max_drawdown": result.metrics.max_drawdown,
+            "cagr": result.metrics.cagr,
+            "total_trades": result.metrics.total_trades,
+            "error": None,
+        }
+
+
+def _run_one_at_a_time_sweep_parallel(
+    strategy_name: str,
+    baseline: dict[str, Any],
+    param_name: str,
+    param_values: list[Any],
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    capital: Decimal,
+) -> list[dict[str, Any]]:
+    """sweep point 간 병렬 실행 (ProcessPoolExecutor)."""
+    n_workers = min(_MAX_WORKERS, len(param_values))
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = {
+            pool.submit(
+                _phase5_sweep_worker,
+                strategy_name,
+                baseline,
+                param_name,
+                value,
+                symbol,
+                timeframe,
+                start,
+                end,
+                capital,
+            ): value
+            for value in param_values
+        }
+        results: list[dict[str, Any]] = []
+        for future in as_completed(futures):
+            val = futures[future]
+            try:
+                results.append(future.result())
+            except Exception as e:
+                logger.warning(f"  {param_name}={val} worker error: {e}")
+                results.append(
+                    {
+                        "value": val,
+                        "sharpe_ratio": float("nan"),
+                        "total_return": float("nan"),
+                        "max_drawdown": float("nan"),
+                        "cagr": float("nan"),
+                        "total_trades": 0,
+                        "error": str(e),
+                    }
+                )
+    # Sort by value for deterministic ordering
+    results.sort(key=lambda r: r["value"])
+    return results
+
+
 def _print_sweep_table(
     console: Console, strategy_name: str, analyses: list[dict[str, Any]]
 ) -> None:
@@ -775,10 +891,79 @@ def _load_p5_opt_config(strategy_name: str) -> dict[str, Any] | None:
     }
 
 
+def _run_strategy_sweeps(
+    engine: BacktestEngine,
+    strategy_name: str,
+    config: dict[str, Any],
+    data: Any,
+    timeframe: str,
+    capital: Decimal,
+    *,
+    use_parallel: bool,
+    console: Console,
+) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+    """단일 전략에 대해 모든 파라미터 sweep을 실행."""
+    baseline = config["baseline"]
+    sweeps = config["sweeps"]
+
+    strategy_results: dict[str, Any] = {
+        "best_asset": config["best_asset"],
+        "baseline": baseline,
+        "analyses": {},
+        "raw_sweeps": {},
+    }
+    analyses: list[dict[str, Any]] = []
+    n_runs = 0
+
+    if use_parallel and len(sweeps) > 0:
+        console.print("  [dim]Parallel sweep mode enabled[/dim]")
+
+    for param_name, param_values in sweeps.items():
+        logger.info(f"  Sweeping {param_name}: {param_values}")
+
+        if use_parallel and len(param_values) > 1:
+            sweep_results = _run_one_at_a_time_sweep_parallel(
+                strategy_name=strategy_name,
+                baseline=baseline,
+                param_name=param_name,
+                param_values=param_values,
+                symbol=config["best_asset"],
+                timeframe=timeframe,
+                start=_DEFAULT_START,
+                end=_DEFAULT_END,
+                capital=capital,
+            )
+        else:
+            sweep_results = _run_one_at_a_time_sweep(
+                engine=engine,
+                strategy_name=strategy_name,
+                baseline=baseline,
+                param_name=param_name,
+                param_values=param_values,
+                data=data,
+                capital=capital,
+            )
+        n_runs += len(param_values)
+
+        baseline_val = baseline.get(param_name)
+        analysis = analyze_sweep(param_name, baseline_val, sweep_results)
+        analyses.append(analysis)
+
+        _print_detail_table(console, param_name, sweep_results, baseline_val)
+
+        strategy_results["analyses"][param_name] = analysis
+        strategy_results["raw_sweeps"][param_name] = sweep_results
+
+    _print_sweep_table(console, strategy_name, analyses)
+    return strategy_results, analyses, n_runs
+
+
 def run_phase5_stability(
     strategies: list[str] | None,
     save_json: bool,
     console: Console,
+    *,
+    parallel: bool = True,
 ) -> None:
     """Phase 5 전체 실행: 파라미터 안정성 검증."""
     from src.backtest.engine import BacktestEngine
@@ -829,41 +1014,17 @@ def run_phase5_stability(
                 end=_DEFAULT_END,
             )
         )
-        baseline = config["baseline"]
-        sweeps = config["sweeps"]
-
-        strategy_results: dict[str, Any] = {
-            "best_asset": config["best_asset"],
-            "baseline": baseline,
-            "analyses": {},
-            "raw_sweeps": {},
-        }
-        analyses: list[dict[str, Any]] = []
-
-        for param_name, param_values in sweeps.items():
-            logger.info(f"  Sweeping {param_name}: {param_values}")
-
-            sweep_results = _run_one_at_a_time_sweep(
-                engine=engine,
-                strategy_name=strategy_name,
-                baseline=baseline,
-                param_name=param_name,
-                param_values=param_values,
-                data=data,
-                capital=capital,
-            )
-            total_runs += len(param_values)
-
-            baseline_val = baseline.get(param_name)
-            analysis = analyze_sweep(param_name, baseline_val, sweep_results)
-            analyses.append(analysis)
-
-            _print_detail_table(console, param_name, sweep_results, baseline_val)
-
-            strategy_results["analyses"][param_name] = analysis
-            strategy_results["raw_sweeps"][param_name] = sweep_results
-
-        _print_sweep_table(console, strategy_name, analyses)
+        strategy_results, analyses, n_runs = _run_strategy_sweeps(
+            engine=engine,
+            strategy_name=strategy_name,
+            config=config,
+            data=data,
+            timeframe=timeframe,
+            capital=capital,
+            use_parallel=parallel,
+            console=console,
+        )
+        total_runs += n_runs
 
         all_pass = all(a["verdict"] == "PASS" for a in analyses)
         overall = "PASS" if all_pass else "FAIL"
@@ -941,5 +1102,3 @@ def run_phase5_stability(
     # Update YAML
     for s in summary:
         _update_yaml_p5(s)
-
-
