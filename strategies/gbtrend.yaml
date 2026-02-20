@@ -5,7 +5,7 @@ meta:
   category: ML 앙상블 (Momentum GradientBoosting)
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: ACTIVE
   created_at: '2026-02-20'
   economic_rationale: 모멘텀 중심 12개 feature를 GradientBoosting으로 결합. CTREND(28 feat) 대비
     feature 축소 + 모멘텀 특화로 상관도 차별화. ROC 4종, EMA Cross 2종, RSI, ADX, ATR Ratio, Vol Ratio,
