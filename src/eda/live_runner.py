@@ -958,7 +958,7 @@ class LiveRunner:
             from src.notification.orchestrator_engine import OrchestratorNotificationEngine
 
             orch_notification = OrchestratorNotificationEngine(
-                notification_queue, self._orchestrator
+                notification_queue, self._orchestrator, pm=pm
             )
             self._orchestrator.set_notification_engine(orch_notification)
             await orch_notification.start()
