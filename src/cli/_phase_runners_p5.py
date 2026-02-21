@@ -90,7 +90,7 @@ def run_phase5_optimize(
                 timeframe=timeframe,
                 start=_DEFAULT_START,
                 end=_DEFAULT_END,
-            )
+            ),
         )
         data_is, data_oos = split_is_oos(data, ratio=0.7)
         console.print(f"  IS: {data_is.periods} bars, OOS: {data_oos.periods} bars")

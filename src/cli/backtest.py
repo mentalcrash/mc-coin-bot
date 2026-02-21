@@ -786,7 +786,7 @@ def optimize(
                 timeframe="1D",
                 start=start_date,
                 end=end_date,
-            )
+            ),
         )
         logger.success(f"Loaded {data.periods:,} daily candles")
     except DataNotFoundError as e:
@@ -923,7 +923,7 @@ def _diagnose_breakout(
                 timeframe="1D",
                 start=start_date,
                 end=end_date,
-            )
+            ),
         )
         logger.success(
             f"Loaded {data.symbol}: {data.periods:,} daily candles "
@@ -1503,7 +1503,7 @@ def ic_check(
                 timeframe=timeframe,
                 start=start_date,
                 end=end_date,
-            )
+            ),
         )
     except DataNotFoundError as e:
         console.print(f"[red]Data load failed: {e}[/red]")
@@ -1653,7 +1653,7 @@ def ic_batch(
                 timeframe=timeframe,
                 start=start_date,
                 end=end_date,
-            )
+            ),
         )
     except DataNotFoundError as e:
         console.print(f"[red]Data load failed: {e}[/red]")

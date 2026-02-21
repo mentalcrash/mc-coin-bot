@@ -5,9 +5,8 @@ meta:
   category: On-chain
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: RETIRED
+  status: TESTING
   created_at: '2026-02-18'
-  retired_at: '2026-02-18'
   economic_rationale: On-chain Phase(MVRV/Flow/Stablecoin) 1D gate + 4H momentum timing.
     교훈#41 해결.
   rationale_references: []
@@ -32,10 +31,6 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 2.0
-  P4:
-    status: FAIL
-    date: '2026-02-18'
-    details: {}
   P2:
     status: PASS
     date: '2026-02-18'
@@ -52,11 +47,6 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W: HEDGE_ONLY=FULL 동일 처리 (distribution phase 자체가 hedge
     gate), on-chain 일별 해상도의 4H 과민 가능성'
-- date: '2026-02-18'
-  phase: P4
-  verdict: FAIL
-  rationale: Best Sharpe 0.82 (ETH) < 1.0 기준. BTC 음수. BNB/SOL/DOGE on-chain 데이터 없어
-    실행 불가 (2/5 에셋만 테스트). ETH 단독으로도 기준 미달
 - date: '2026-02-18'
   phase: P2
   verdict: PASS

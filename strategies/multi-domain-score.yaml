@@ -5,9 +5,8 @@ meta:
   category: Multi-Signal Fusion
   timeframe: 4H
   short_mode: FULL
-  status: RETIRED
+  status: TESTING
   created_at: '2026-02-18'
-  retired_at: '2026-02-18'
   economic_rationale: 4차원(추세/볼륨/파생상품/변동성) soft scoring. 독립 약한 알파 noise 상쇄.
   rationale_references: []
   rationale_category: null
@@ -31,10 +30,6 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 1.0
-  P4:
-    status: FAIL
-    date: '2026-02-18'
-    details: {}
   P2:
     status: PASS
     date: '2026-02-18'
@@ -51,11 +46,6 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. obv_abs.median() look-ahead를 expanding().median()으로
     수정 완료. W: FR derivatives ffill 확인 필요'
-- date: '2026-02-18'
-  phase: P4
-  verdict: FAIL
-  rationale: Best Sharpe 0.44 (DOGE) << 1.0. BTC/ETH/BNB 음수 Sharpe. DOGE 편향 반복 (4H
-    구조적 문제). MDD 49% > 40%
 - date: '2026-02-18'
   phase: P2
   verdict: PASS

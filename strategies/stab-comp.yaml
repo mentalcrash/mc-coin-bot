@@ -1,0 +1,52 @@
+version: 2
+meta:
+  name: stab-comp
+  display_name: Stablecoin Composition Shift
+  category: On-chain Sentiment
+  timeframe: 1D
+  short_mode: FULL
+  status: TESTING
+  created_at: '2026-02-21'
+  economic_rationale: USDT/USDC 구성비 변화 기반 리스크 선호도 시그널. USDT 비중 상승 = 리테일 risk-on, USDC
+    비중 상승 = 기관 cautious.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-21'
+    details:
+      score: 19
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-21'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-21'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 3.0
+asset_performance: []
+decisions:
+- date: '2026-02-21'
+  phase: P1
+  verdict: PASS
+  rationale: 19/30점 — USDT/USDC 개별 구성비는 미시도 (총 공급량 5개 퇴역과 차별화)
+- date: '2026-02-21'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료 (config/preprocessor/signal/strategy + tests 25개). Registry
+    stab-comp 등록. Ruff/Pyright 0 error.
+- date: '2026-02-21'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 3건 (W1 warmup 충분, W2 전략파라미터 2개, W5 on-chain 독립소스)

@@ -66,8 +66,6 @@ class MarketDataService:
     def get(
         self,
         request: MarketDataRequest,
-        *,
-        include_derivatives: bool = False,
     ) -> MarketDataSet:
         """데이터 요청 처리.
 
@@ -168,8 +166,12 @@ class MarketDataService:
             logger.debug("[5/6] 리샘플링: 불필요 (이미 1m)")
             resampled = filtered
 
-        # 5.5. Derivatives enrichment (선택적)
-        resampled = self._maybe_enrich_derivatives(resampled, request, include_derivatives)
+        # 5.5. Data enrichment (always-on, graceful degradation)
+        resampled = self._maybe_enrich_derivatives(resampled, request)
+        resampled = self._maybe_enrich_onchain(resampled, request)
+        resampled = self._maybe_enrich_macro(resampled, request)
+        resampled = self._maybe_enrich_options(resampled, request)
+        resampled = self._maybe_enrich_deriv_ext(resampled, request)
 
         # 6. 실제 데이터 범위 추출
         logger.debug("[6/6] MarketDataSet 생성...")
@@ -208,26 +210,148 @@ class MarketDataService:
         self,
         df: pd.DataFrame,
         request: MarketDataRequest,
-        include: bool,
     ) -> pd.DataFrame:
-        """Derivatives enrichment (선택적).
+        """Derivatives enrichment (always-on, graceful degradation).
 
         Args:
             df: 리샘플링된 OHLCV DataFrame
             request: 데이터 요청
-            include: True면 enrichment 수행
 
         Returns:
             원본 또는 enriched DataFrame
         """
-        if not include:
-            return df
-        from src.data.derivatives_service import DerivativesDataService
+        try:
+            from src.data.derivatives_service import DerivativesDataService
 
-        deriv_service = DerivativesDataService(self.settings)
-        result = deriv_service.enrich(df, request.symbol, request.start, request.end)
-        logger.debug("Derivatives enrichment applied")
-        return result
+            deriv_service = DerivativesDataService(self.settings)
+            result = deriv_service.enrich(df, request.symbol, request.start, request.end)
+        except Exception:
+            logger.debug("Derivatives data not available — skipping enrichment")
+            return df
+        else:
+            logger.debug("Derivatives enrichment applied")
+            return result
+
+    def _maybe_enrich_onchain(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+    ) -> pd.DataFrame:
+        """On-chain enrichment (always-on, graceful degradation).
+
+        OnchainDataService.precompute()를 사용하여 catalog 기반
+        oc_* 컬럼을 OHLCV DataFrame에 merge_asof로 주입한다.
+        Publication lag가 자동 적용되어 lookahead bias가 방지된다.
+        """
+        try:
+            from src.data.onchain.service import OnchainDataService
+
+            onchain_service = OnchainDataService(settings=self.settings)
+            enriched = onchain_service.precompute(
+                symbol=request.symbol,
+                ohlcv_index=df.index,
+            )
+        except Exception:
+            logger.debug("On-chain data not available — skipping enrichment")
+            return df
+        else:
+            if enriched.columns.empty:
+                logger.debug("No on-chain data available — skipping enrichment")
+                return df
+            result = df.join(enriched, how="left")
+            oc_cols = [c for c in enriched.columns if c.startswith("oc_")]
+            logger.debug(
+                f"On-chain enrichment applied: {len(oc_cols)} columns ({', '.join(oc_cols[:5])}...)"
+            )
+            return result
+
+    def _maybe_enrich_macro(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+    ) -> pd.DataFrame:
+        """Macro enrichment (always-on, graceful degradation).
+
+        MacroDataService.precompute()를 사용하여 macro_* 컬럼 주입.
+        GLOBAL scope — 모든 자산 동일.
+        """
+        try:
+            from src.data.macro.service import MacroDataService
+
+            macro_service = MacroDataService(settings=self.settings)
+            enriched = macro_service.precompute(ohlcv_index=df.index)
+        except Exception:
+            logger.debug("Macro data not available — skipping enrichment")
+            return df
+        else:
+            if enriched.columns.empty:
+                logger.debug("No macro data available — skipping enrichment")
+                return df
+            result = df.join(enriched, how="left")
+            macro_cols = [c for c in enriched.columns if c.startswith("macro_")]
+            logger.debug(
+                f"Macro enrichment applied: {len(macro_cols)} columns ({', '.join(macro_cols[:5])}...)"
+            )
+            return result
+
+    def _maybe_enrich_options(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+    ) -> pd.DataFrame:
+        """Options enrichment (always-on, graceful degradation).
+
+        OptionsDataService.precompute()를 사용하여 opt_* 컬럼 주입.
+        GLOBAL scope — 모든 자산 동일.
+        """
+        try:
+            from src.data.options.service import OptionsDataService
+
+            options_service = OptionsDataService(settings=self.settings)
+            enriched = options_service.precompute(ohlcv_index=df.index)
+        except Exception:
+            logger.debug("Options data not available — skipping enrichment")
+            return df
+        else:
+            if enriched.columns.empty:
+                logger.debug("No options data available — skipping enrichment")
+                return df
+            result = df.join(enriched, how="left")
+            opt_cols = [c for c in enriched.columns if c.startswith("opt_")]
+            logger.debug(
+                f"Options enrichment applied: {len(opt_cols)} columns ({', '.join(opt_cols[:5])}...)"
+            )
+            return result
+
+    def _maybe_enrich_deriv_ext(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+    ) -> pd.DataFrame:
+        """Extended derivatives enrichment (always-on, graceful degradation).
+
+        DerivExtDataService.precompute()를 사용하여 dext_* 컬럼 주입.
+        PER-ASSET scope — symbol에서 asset 추출.
+        """
+        try:
+            from src.data.deriv_ext.service import DerivExtDataService
+
+            asset = request.symbol.split("/")[0]
+            deriv_ext_service = DerivExtDataService(settings=self.settings)
+            enriched = deriv_ext_service.precompute(ohlcv_index=df.index, asset=asset)
+        except Exception:
+            logger.debug("Deriv-ext data not available — skipping enrichment")
+            return df
+        else:
+            if enriched.columns.empty:
+                logger.debug("No deriv-ext data available — skipping enrichment")
+                return df
+            result = df.join(enriched, how="left")
+            dext_cols = [c for c in enriched.columns if c.startswith("dext_")]
+            logger.debug(
+                f"Deriv-ext enrichment applied: {len(dext_cols)} columns ({', '.join(dext_cols[:5])}...)"
+            )
+            return result
 
     def _resample(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """OHLCV 데이터 리샘플링.
@@ -283,8 +407,6 @@ class MarketDataService:
         timeframe: str,
         start: datetime,
         end: datetime,
-        *,
-        include_derivatives: bool = False,
     ) -> MultiSymbolData:
         """여러 심볼의 Silver 데이터를 일괄 로드.
 
@@ -312,7 +434,7 @@ class MarketDataService:
                 start=start,
                 end=end,
             )
-            data = self.get(request, include_derivatives=include_derivatives)
+            data = self.get(request)
             ohlcv[symbol] = data.ohlcv
 
         # 실제 데이터의 공통 시작/종료 시각 결정

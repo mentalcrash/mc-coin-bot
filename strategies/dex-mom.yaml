@@ -1,0 +1,82 @@
+version: 2
+meta:
+  name: dex-mom
+  display_name: DEX Activity Momentum
+  category: On-chain Activity
+  timeframe: 1D
+  short_mode: FULL
+  status: TESTING
+  created_at: '2026-02-21'
+  economic_rationale: DEX 거래량 7D/30D 변화율 기반 on-chain 활동 모멘텀. stablecoin 무관 독립 데이터
+    소스.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  roc_short_window: 13
+  roc_long_window: 27
+  vol_target: 0.3582258567546224
+  vol_window: 57
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-21'
+    details:
+      score: 18
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-21'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-21'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 3.0
+  P4:
+    status: PASS
+    date: '2026-02-21'
+    details:
+      sub_phase: P4B
+      best_asset: DOGE/USDT
+      best_sharpe: 1.11
+      best_cagr: 37.3
+      best_mdd: 33.2
+      trades: 567.0
+      is_sharpe: 1.1659
+      oos_sharpe: 0.9417
+      decay_pct: 19.2
+      oos_trades: 163
+      oos_cagr: 23.07
+      oos_mdd: 27.31
+asset_performance: []
+decisions:
+- date: '2026-02-21'
+  phase: P1
+  verdict: PASS
+  rationale: 18/30점 — DEX volume 전략 0개 (미탐색 데이터셋), auto-enrich 완비
+- date: '2026-02-21'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료 (config/preprocessor/signal/strategy + tests 26개). Registry
+    dex-mom 등록. Ruff/Pyright 0 error.
+- date: '2026-02-21'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 3건 (W1 warmup 충분, W2 전략파라미터 2개, W5 on-chain 독립소스)
+- date: '2026-02-21'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS: Best DOGE Sharpe 1.11, CAGR +37.3%, MDD 33.2%. 단 4/5 에셋 Sharpe<=0.07
+    — 단일에셋 의존 경고'
+- date: '2026-02-21'
+  phase: P4
+  verdict: PASS
+  rationale: P4B IS/OOS 70/30 PASS — IS Sharpe 1.17, OOS Sharpe 0.94, Decay 19.2%.
+    OOS CAGR +23.1%, MDD 27.3%. DOGE 단일에셋 의존 주의.

@@ -259,7 +259,7 @@ def _run_phase4_single(
 
     try:
         data = service.get(
-            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=start, end=end)
+            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=start, end=end),
         )
         strategy_cls = get_strategy(strategy_name)
         strategy = strategy_cls()
@@ -667,7 +667,7 @@ def _phase5_sweep_worker(
 
     try:
         data = service.get(
-            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=start, end=end)
+            MarketDataRequest(symbol=symbol, timeframe=timeframe, start=start, end=end),
         )
         strategy_cls = get_strategy(strategy_name)
         strategy = strategy_cls.from_params(**params)
@@ -1012,7 +1012,7 @@ def run_phase5_stability(
                 timeframe=timeframe,
                 start=_DEFAULT_START,
                 end=_DEFAULT_END,
-            )
+            ),
         )
         strategy_results, analyses, n_runs = _run_strategy_sweeps(
             engine=engine,

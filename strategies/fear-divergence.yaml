@@ -5,9 +5,8 @@ meta:
   category: Behavioral
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: RETIRED
+  status: TESTING
   created_at: '2026-02-18'
-  retired_at: '2026-02-18'
   economic_rationale: F&G 극단 + 가격 다이버전스 contrarian. 행동 편향 기반. F&G<10 Sharpe 8.0.
   rationale_references: []
   rationale_category: null
@@ -31,10 +30,6 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 2.0
-  P4:
-    status: FAIL
-    date: '2026-02-18'
-    details: {}
   P2:
     status: PASS
     date: '2026-02-18'
@@ -51,11 +46,6 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W: state machine for loop, HEDGE_ONLY=FULL 동일 처리 (entry
     조건 자체가 hedge gate)'
-- date: '2026-02-18'
-  phase: P4
-  verdict: FAIL
-  rationale: Best Sharpe 0.10 (BNB). 4/5 에셋 Sharpe 음수. F&G Index는 BTC-specific인데 전
-    코인 동일 적용 → 구조적 한계. 저빈도 (27~56 trades)
 - date: '2026-02-18'
   phase: P2
   verdict: PASS

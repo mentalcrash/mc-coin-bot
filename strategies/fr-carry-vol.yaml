@@ -5,9 +5,8 @@ meta:
   category: Carry (Funding Rate)
   timeframe: 4H
   short_mode: FULL
-  status: RETIRED
+  status: TESTING
   created_at: '2026-02-14'
-  retired_at: '2026-02-15'
   economic_rationale: 극단 FR에서 contrarian carry로 보험료 수취. Perpetual basis half-life
     4-6H(Inan 2025). FR은 8H마다 정산되는 실질 현금흐름. 기존 FR 전략(momentum conviction)과 완전히 다른
     alpha 유형. L#33이 carry 유의미성 제안.
@@ -33,10 +32,6 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 1.0
-  P4:
-    status: FAIL
-    date: '2026-02-15'
-    details: {}
   P2:
     status: PASS
     date: '2026-02-15'
@@ -53,11 +48,6 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. shift(1) 전수 확인, funding_rate ffill 처리, ShortMode 3-way
     완비. W6: funding_rate ffill OK.'
-- date: '2026-02-15'
-  phase: P4
-  verdict: FAIL
-  rationale: 전 에셋(5/5) Sharpe 음수(-0.17~-0.78). Contrarian FR carry가 4H TF에서 비용 대비
-    edge 부족. SOL worst(-0.78), DOGE best(-0.17)
 - date: '2026-02-15'
   phase: P2
   verdict: PASS

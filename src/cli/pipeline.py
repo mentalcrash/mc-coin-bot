@@ -911,7 +911,7 @@ def p1_check(
                 timeframe=timeframe,
                 start=start_date,
                 end=end_date,
-            )
+            ),
         )
     except DataNotFoundError as e:
         console.print(f"[red]Data load failed: {e}[/red]")
