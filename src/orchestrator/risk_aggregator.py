@@ -31,6 +31,8 @@ _MIN_VARIANCE = 1e-12
 _WARNING_RATIO = 0.8  # 임계값의 80%에서 warning 발행
 _MIN_PODS_FOR_CORRELATION = 2
 _MIN_COV_ROWS = 3  # cov()/corr() 계산 최소 행 수
+_MIN_VARIANCE_PER_POD = 1e-10  # Pod별 분산 임계값 (immature 판별)
+_MIN_MATURE_PODS = 2  # PRC 의미 있는 계산 최소 mature pod 수
 
 
 # ── Pure Functions ────────────────────────────────────────────────
@@ -58,6 +60,13 @@ def compute_risk_contributions(
 
     n = len(pod_ids)
     if len(pod_returns) < _MIN_COV_ROWS:
+        equal = 1.0 / n if n > 0 else 0.0
+        return dict.fromkeys(pod_ids, equal)
+
+    # Immature pod 필터링: 분산이 극소인 Pod가 대다수면 equal fallback
+    variances: pd.Series = pod_returns[pod_ids].var()  # type: ignore[assignment]
+    mature_count = sum(1 for pid in pod_ids if float(variances[pid]) > _MIN_VARIANCE_PER_POD)
+    if mature_count < _MIN_MATURE_PODS:
         equal = 1.0 / n if n > 0 else 0.0
         return dict.fromkeys(pod_ids, equal)
 
@@ -335,6 +344,14 @@ class RiskAggregator:
         pod_weights: dict[str, float],
         alerts: list[RiskAlert],
     ) -> None:
+        # Mature pod 부족 시 PRC 체크 무의미 → skip
+        pod_ids = [pid for pid in pod_weights if pid in pod_returns.columns]
+        if pod_ids:
+            variances: pd.Series = pod_returns[pod_ids].var()  # type: ignore[assignment]
+            mature = sum(1 for pid in pod_ids if float(variances[pid]) > _MIN_VARIANCE_PER_POD)
+            if mature < _MIN_MATURE_PODS:
+                return
+
         prc = compute_risk_contributions(pod_returns, pod_weights)
         threshold = self._config.max_single_pod_risk_pct
 

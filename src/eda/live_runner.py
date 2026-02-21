@@ -374,6 +374,11 @@ class LiveRunner:
             target_timeframe=None if multi_tf else target_timeframe,
         )
 
+        runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
+
         return runner
 
     @classmethod
@@ -465,6 +470,10 @@ class LiveRunner:
         from src.eda.derivatives_feed import LiveDerivativesFeed
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
+        runner._init_onchain_feed(symbols)
+        runner._init_macro_feed()
+        runner._init_options_feed()
+        runner._init_deriv_ext_feed(symbols)
         return runner
 
     async def _init_capital_and_db(self) -> tuple[float, Any]:

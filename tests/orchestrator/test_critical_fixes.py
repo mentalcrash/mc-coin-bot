@@ -655,8 +655,8 @@ class TestC5RiskDefense:
         assert pod_b.capital_fraction == pytest.approx(original_b)
         assert orch._risk_breached is False
 
-    def test_consecutive_critical_compounds(self) -> None:
-        """연속 CRITICAL 시 capital 지속 감소."""
+    def test_consecutive_critical_no_compound(self) -> None:
+        """연속 CRITICAL 시 이미 breached면 추가 축소 방지."""
         orch, pod_a, pod_b, ra = self._make_orch_with_risk()
         pod_a.record_daily_return(0.01)
         pod_b.record_daily_return(0.01)
@@ -671,15 +671,15 @@ class TestC5RiskDefense:
 
         pod_returns = pd.DataFrame({"pod-a": [0.01], "pod-b": [0.01]})
 
-        # First critical
+        # First critical → 축소 발동
         with patch.object(ra, "check_portfolio_limits", return_value=[critical_alert]):
             orch._check_risk_limits(pod_returns, net_weights={"BTC/USDT": 0.5})
         assert pod_a.capital_fraction == pytest.approx(0.25)
 
-        # Second critical
+        # Second critical → already breached, 추가 축소 없음
         with patch.object(ra, "check_portfolio_limits", return_value=[critical_alert]):
             orch._check_risk_limits(pod_returns, net_weights={"BTC/USDT": 0.5})
-        assert pod_a.capital_fraction == pytest.approx(0.125)
+        assert pod_a.capital_fraction == pytest.approx(0.25)
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -672,7 +672,7 @@ class StrategyOrchestrator:
 
         # Risk defense: critical alert → capital 축소
         critical_alerts = [a for a in alerts if a.severity == "critical"]
-        if critical_alerts:
+        if critical_alerts and not self._risk_breached:
             self._apply_risk_defense(critical_alerts)
         elif self._risk_breached:
             # 위기 해제 → 점진 복원 시작

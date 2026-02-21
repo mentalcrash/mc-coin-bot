@@ -510,3 +510,60 @@ class TestAssetCorrelationStress:
         )
         asset_alerts = [a for a in alerts if a.alert_type == "asset_correlation_stress"]
         assert len(asset_alerts) >= 1
+
+
+# ── TestImmaturePodFiltering ──────────────────────────────────
+
+
+class TestImmaturePodFiltering:
+    """P0-A: Immature pod(분산 ≈ 0) 필터링 → equal PRC fallback."""
+
+    def test_single_mature_among_immature_equal_fallback(self) -> None:
+        """4 Pod 중 1개만 비제로 분산 → mature < 2 → equal PRC."""
+        rng = np.random.default_rng(42)
+        returns = pd.DataFrame(
+            {
+                "pod-a": rng.normal(0.001, 0.02, 60),  # mature
+                "pod-b": [0.0] * 60,  # immature (zero variance)
+                "pod-c": [0.0] * 60,  # immature
+                "pod-d": [0.0] * 60,  # immature
+            }
+        )
+        weights = {"pod-a": 0.25, "pod-b": 0.25, "pod-c": 0.25, "pod-d": 0.25}
+        prc = compute_risk_contributions(returns, weights)
+
+        # mature_count=1 < 2 → equal fallback (0.25 each)
+        assert len(prc) == 4
+        for pid in weights:
+            assert prc[pid] == pytest.approx(0.25)
+
+    def test_all_zero_variance_equal_fallback(self) -> None:
+        """모든 Pod 분산 0 → equal PRC."""
+        returns = pd.DataFrame(
+            {
+                "pod-a": [0.0] * 60,
+                "pod-b": [0.0] * 60,
+            }
+        )
+        weights = {"pod-a": 0.5, "pod-b": 0.5}
+        prc = compute_risk_contributions(returns, weights)
+
+        assert len(prc) == 2
+        assert prc["pod-a"] == pytest.approx(0.5)
+        assert prc["pod-b"] == pytest.approx(0.5)
+
+    def test_all_mature_unchanged(self) -> None:
+        """모든 Pod mature → 기존 동작 동일 (회귀 확인)."""
+        rng = np.random.default_rng(42)
+        returns = pd.DataFrame(
+            {
+                "pod-a": rng.normal(0.001, 0.02, 100),
+                "pod-b": rng.normal(0.001, 0.02, 100),
+            }
+        )
+        weights = {"pod-a": 0.5, "pod-b": 0.5}
+        prc = compute_risk_contributions(returns, weights)
+
+        # 모두 mature → 기존 PRC 로직 적용, 합산 ≈ 1.0
+        assert len(prc) == 2
+        assert sum(prc.values()) == pytest.approx(1.0, abs=0.01)
