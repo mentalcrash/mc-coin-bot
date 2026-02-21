@@ -11,6 +11,7 @@ Rules Applied:
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -64,12 +65,19 @@ class AnalyticsEngine:
         initial_capital: 초기 자본 (USD)
     """
 
-    def __init__(self, initial_capital: float) -> None:
+    def __init__(
+        self,
+        initial_capital: float,
+        *,
+        max_equity_points: int = 10_000,
+        max_closed_trades: int = 50_000,
+        max_bar_timestamps: int = 10_000,
+    ) -> None:
         self._initial_capital = initial_capital
-        self._equity_curve: list[EquityPoint] = []
-        self._closed_trades: list[TradeRecord] = []
+        self._equity_curve: deque[EquityPoint] = deque(maxlen=max_equity_points)
+        self._closed_trades: deque[TradeRecord] = deque(maxlen=max_closed_trades)
         self._open_trades: dict[str, OpenTrade] = {}
-        self._bar_timestamps: list[datetime] = []
+        self._bar_timestamps: deque[datetime] = deque(maxlen=max_bar_timestamps)
         self._total_fills = 0
         # M-003: bar 단위 equity 정규화 — 같은 bar 내 마지막 업데이트만 유지
         self._last_equity_ts: datetime | None = None
@@ -81,12 +89,12 @@ class AnalyticsEngine:
         bus.subscribe(EventType.BAR, self._on_bar)
 
     @property
-    def equity_curve(self) -> list[EquityPoint]:
+    def equity_curve(self) -> deque[EquityPoint]:
         """Equity curve 데이터."""
         return self._equity_curve
 
     @property
-    def closed_trades(self) -> list[TradeRecord]:
+    def closed_trades(self) -> deque[TradeRecord]:
         """종결된 거래 목록."""
         return self._closed_trades
 

@@ -36,6 +36,9 @@ Executor = ExecutorPort
 """Backward-compatible alias for ExecutorPort."""
 
 
+_MAX_PROCESSED_IN_MEMORY = 100_000
+
+
 class OMS:
     """Order Management System.
 
@@ -55,7 +58,8 @@ class OMS:
         self._executor = executor
         self._pm = portfolio_manager
         self._bus: EventBus | None = None
-        self._processed_orders: set[str] = set()
+        # dict[str, None]로 삽입 순서 보장 (FIFO eviction용)
+        self._processed_orders: dict[str, None] = {}
         self._total_fills = 0
         self._total_rejected = 0
 
@@ -78,7 +82,7 @@ class OMS:
     @property
     def processed_orders(self) -> set[str]:
         """처리된 주문 ID 집합 (StateManager 접근용)."""
-        return self._processed_orders
+        return set(self._processed_orders)
 
     def restore_processed_orders(self, order_ids: set[str]) -> None:
         """저장된 주문 ID를 복원 (재시작 시 중복 방지).
@@ -86,7 +90,7 @@ class OMS:
         Args:
             order_ids: StateManager에서 로드한 주문 ID 집합
         """
-        self._processed_orders = order_ids
+        self._processed_orders = dict.fromkeys(order_ids)
         logger.info(
             "OMS: restored {} processed order IDs from persistence",
             len(order_ids),
@@ -123,7 +127,10 @@ class OMS:
             await bus.publish(rejected)
             return
 
-        self._processed_orders.add(order.client_order_id)
+        self._processed_orders[order.client_order_id] = None
+        if len(self._processed_orders) > _MAX_PROCESSED_IN_MEMORY:
+            oldest = next(iter(self._processed_orders))
+            del self._processed_orders[oldest]
 
         # OrderAck 발행
         ack = OrderAckEvent(

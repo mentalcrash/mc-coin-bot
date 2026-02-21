@@ -217,8 +217,8 @@ class TestShutdownSavesOms:
         async def patched_register(self_oms: OMS, bus: object) -> None:
             await original_register(self_oms, bus)
             # 처리된 주문 시뮬레이션
-            self_oms._processed_orders.add("shutdown-order-1")
-            self_oms._processed_orders.add("shutdown-order-2")
+            self_oms._processed_orders["shutdown-order-1"] = None
+            self_oms._processed_orders["shutdown-order-2"] = None
 
         async def trigger_shutdown() -> None:
             await asyncio.sleep(0.15)

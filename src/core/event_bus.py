@@ -11,6 +11,7 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+import bisect
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -97,7 +98,9 @@ class EventBus:
         queue_size: int = 10000,
         event_log_path: str | None = None,
     ) -> None:
-        self._handlers: dict[EventType, list[EventHandler]] = defaultdict(list)
+        # (priority, seq, handler) 튜플 리스트 — bisect.insort로 정렬 유지
+        self._handlers: dict[EventType, list[tuple[int, int, EventHandler]]] = defaultdict(list)
+        self._handler_seq: int = 0
         self._queue: asyncio.Queue[AnyEvent | None] = asyncio.Queue(maxsize=queue_size)
         self._running = False
         self._event_log_path = event_log_path
@@ -105,14 +108,26 @@ class EventBus:
         self._consumer_task: asyncio.Task[None] | None = None
         self.metrics = EventBusMetrics()
 
-    def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
+    def subscribe(
+        self,
+        event_type: EventType,
+        handler: EventHandler,
+        *,
+        priority: int = 100,
+    ) -> None:
         """이벤트 타입에 핸들러를 등록합니다.
+
+        낮은 priority 값이 먼저 실행됩니다.
+        동일 priority 시 등록 순서(seq) 보장.
 
         Args:
             event_type: 구독할 이벤트 타입
             handler: async 핸들러 함수
+            priority: 핸들러 우선순위 (기본 100, 낮을수록 먼저 실행)
         """
-        self._handlers[event_type].append(handler)
+        entry = (priority, self._handler_seq, handler)
+        self._handler_seq += 1
+        bisect.insort(self._handlers[event_type], entry)
 
     async def publish(self, event: AnyEvent) -> None:
         """이벤트를 큐에 발행합니다.
@@ -206,14 +221,14 @@ class EventBus:
             event: dispatch할 이벤트
         """
         event_type = event.event_type
-        handlers = self._handlers.get(event_type, [])
+        handler_entries = self._handlers.get(event_type, [])
 
         # JSONL 로그 기록
         if self._log_file:
             self._log_file.write(event.model_dump_json() + "\n")
             self._log_file.flush()
 
-        for handler in handlers:
+        for _priority, _seq, handler in handler_entries:
             try:
                 await handler(event)
             except Exception as exc:

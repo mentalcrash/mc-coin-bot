@@ -63,7 +63,7 @@ class StrategyEngine:
         target_timeframe: str = "1D",
         *,
         incremental: bool = False,
-        max_buffer_size: int | None = None,
+        max_buffer_size: int | None = 5000,
         precomputed_signals: dict[str, object] | None = None,
         regime_service: RegimeService | None = None,
         derivatives_provider: DerivativesProviderPort | None = None,

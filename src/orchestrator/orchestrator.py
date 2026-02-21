@@ -299,16 +299,21 @@ class StrategyOrchestrator:
             full_net = {sym: w * fraction for sym, w in full_net.items()}
 
         # Netting 상쇄 모니터링
-        _offset_warning_threshold = 0.5
         if self._last_pod_targets:
             netting_stats = compute_netting_stats(self._last_pod_targets)
-            if netting_stats.offset_ratio > _offset_warning_threshold:
-                logger.warning(
-                    "High netting offset: {:.1%} (gross={:.4f}, net={:.4f})",
-                    netting_stats.offset_ratio,
-                    netting_stats.gross_sum,
-                    netting_stats.net_sum,
+            threshold = self._config.netting_offset_warning_threshold
+            if netting_stats.offset_ratio > threshold:
+                msg = (
+                    f"High netting offset: {netting_stats.offset_ratio:.1%} "
+                    f"(gross={netting_stats.gross_sum:.4f}, net={netting_stats.net_sum:.4f})"
                 )
+                logger.warning(msg)
+                alert = RiskAlertEvent(
+                    alert_level="WARNING",
+                    message=msg,
+                    source=_ORCHESTRATOR_SOURCE,
+                )
+                await bus.publish(alert)
 
         # 레버리지 한도 적용
         scaled = scale_weights_to_leverage(

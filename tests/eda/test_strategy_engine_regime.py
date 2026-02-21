@@ -272,6 +272,6 @@ class TestRegimeServiceIntegration:
         handlers = bus._handlers[EventType.BAR]
         # RegimeService._on_bar가 StrategyEngine._on_bar 앞에 등록됨
         assert len(handlers) >= 2
-        # 첫 번째는 regime, 두 번째는 strategy
-        assert handlers[0] == regime_service._on_bar
-        assert handlers[1] == engine._on_bar
+        # 튜플 구조: (priority, seq, handler)
+        assert handlers[0][2] == regime_service._on_bar
+        assert handlers[1][2] == engine._on_bar

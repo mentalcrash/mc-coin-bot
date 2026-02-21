@@ -392,6 +392,14 @@ class OrchestratorConfig(BaseModel):
         description="Risk defense 해제 후 자본 복원 단계 수",
     )
 
+    # Netting
+    netting_offset_warning_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="넷팅 상쇄 비율 경고 임계값",
+    )
+
     # Cost
     cost_bps: float = Field(
         default=4.0,

@@ -173,6 +173,11 @@ class MarketDataService:
         resampled = self._maybe_enrich_options(resampled, request)
         resampled = self._maybe_enrich_deriv_ext(resampled, request)
 
+        # 5.6. Enrichment NaN 비율 검사
+        self._check_enrichment_nan_ratios(
+            resampled, ohlcv_cols={"open", "high", "low", "close", "volume"}
+        )
+
         # 6. 실제 데이터 범위 추출
         logger.debug("[6/6] MarketDataSet 생성...")
         actual_start: datetime = resampled.index[0].to_pydatetime()  # type: ignore[union-attr]
@@ -258,6 +263,12 @@ class MarketDataService:
             if enriched.columns.empty:
                 logger.debug("No on-chain data available — skipping enrichment")
                 return df
+            # Drop columns already present in df to avoid overlap errors
+            overlap = set(enriched.columns) & set(df.columns)
+            if overlap:
+                enriched = enriched.drop(columns=list(overlap))
+            if enriched.columns.empty:
+                return df
             result = df.join(enriched, how="left")
             oc_cols = [c for c in enriched.columns if c.startswith("oc_")]
             logger.debug(
@@ -287,6 +298,12 @@ class MarketDataService:
             if enriched.columns.empty:
                 logger.debug("No macro data available — skipping enrichment")
                 return df
+            # Drop columns already present in df to avoid overlap errors
+            overlap = set(enriched.columns) & set(df.columns)
+            if overlap:
+                enriched = enriched.drop(columns=list(overlap))
+            if enriched.columns.empty:
+                return df
             result = df.join(enriched, how="left")
             macro_cols = [c for c in enriched.columns if c.startswith("macro_")]
             logger.debug(
@@ -315,6 +332,12 @@ class MarketDataService:
         else:
             if enriched.columns.empty:
                 logger.debug("No options data available — skipping enrichment")
+                return df
+            # Drop columns already present in df to avoid overlap errors
+            overlap = set(enriched.columns) & set(df.columns)
+            if overlap:
+                enriched = enriched.drop(columns=list(overlap))
+            if enriched.columns.empty:
                 return df
             result = df.join(enriched, how="left")
             opt_cols = [c for c in enriched.columns if c.startswith("opt_")]
@@ -346,12 +369,74 @@ class MarketDataService:
             if enriched.columns.empty:
                 logger.debug("No deriv-ext data available — skipping enrichment")
                 return df
+            # Drop columns already present in df to avoid overlap errors
+            overlap = set(enriched.columns) & set(df.columns)
+            if overlap:
+                enriched = enriched.drop(columns=list(overlap))
+            if enriched.columns.empty:
+                return df
             result = df.join(enriched, how="left")
             dext_cols = [c for c in enriched.columns if c.startswith("dext_")]
             logger.debug(
                 f"Deriv-ext enrichment applied: {len(dext_cols)} columns ({', '.join(dext_cols[:5])}...)"
             )
             return result
+
+    def _check_enrichment_nan_ratios(
+        self,
+        df: pd.DataFrame,
+        ohlcv_cols: set[str],
+    ) -> None:
+        """Enrichment 컬럼의 NaN 비율을 검사하여 경고를 로깅합니다.
+
+        enriched 컬럼(oc_*, macro_*, opt_*, dext_*, funding_rate 등)만 대상으로
+        NaN 비율이 높은 컬럼에 대해 경고를 출력합니다.
+
+        Args:
+            df: enrichment이 적용된 DataFrame
+            ohlcv_cols: OHLCV 기본 컬럼 (검사 제외)
+        """
+        enrichment_prefixes = ("oc_", "macro_", "opt_", "dext_", "funding_rate", "open_interest")
+        enriched_cols = [
+            c
+            for c in df.columns
+            if c not in ohlcv_cols and any(c.startswith(p) for p in enrichment_prefixes)
+        ]
+        if not enriched_cols:
+            return
+
+        n_rows = len(df)
+        if n_rows == 0:
+            return
+
+        warn_threshold = 0.3
+        drop_threshold = 0.8
+
+        high_nan_cols: list[tuple[str, float]] = []
+        drop_candidate_cols: list[tuple[str, float]] = []
+
+        for col in enriched_cols:
+            nan_ratio = float(df[col].isna().sum()) / n_rows
+            if nan_ratio > drop_threshold:
+                drop_candidate_cols.append((col, nan_ratio))
+            elif nan_ratio > warn_threshold:
+                high_nan_cols.append((col, nan_ratio))
+
+        if high_nan_cols:
+            col_details = ", ".join(f"{c}={r:.0%}" for c, r in high_nan_cols)
+            logger.warning(
+                "Enrichment NaN > {:.0%}: {}",
+                warn_threshold,
+                col_details,
+            )
+
+        if drop_candidate_cols:
+            col_details = ", ".join(f"{c}={r:.0%}" for c, r in drop_candidate_cols)
+            logger.warning(
+                "Enrichment NaN > {:.0%} (consider dropping): {}",
+                drop_threshold,
+                col_details,
+            )
 
     def _resample(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """OHLCV 데이터 리샘플링.

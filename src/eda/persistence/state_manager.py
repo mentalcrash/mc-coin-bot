@@ -26,7 +26,7 @@ _KEY_EXCHANGE_STOPS = "exchange_stops_state"
 _KEY_LAST_SAVE = "last_save_timestamp"
 
 # OMS processed orders: 최대 보관 개수 (메모리 절약)
-_MAX_PROCESSED_ORDERS = 10000
+_MAX_PROCESSED_ORDERS = 100_000
 
 
 class StateManager:
