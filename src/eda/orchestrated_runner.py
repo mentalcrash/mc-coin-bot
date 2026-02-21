@@ -235,7 +235,7 @@ class OrchestratedRunner:
         )
         executor = BacktestExecutor(cost_model=pm_config.cost_model)
 
-        # asset_weights: Orchestrator가 capital_fraction으로 관리 → PM은 uniform
+        # asset_weights: Pod이 1/N 정규화 완료 → PM은 uniform 1.0
         all_symbols = list(orch_config.all_symbols)
         asset_weights = dict.fromkeys(all_symbols, 1.0)
 

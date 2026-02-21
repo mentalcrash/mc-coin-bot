@@ -117,7 +117,8 @@ def attribute_fill(
 ) -> dict[str, tuple[float, float, float]]:
     """Fill을 Pod별 타겟 비율에 따라 비례 귀속합니다.
 
-    BUY fill은 target > 0(long) pods에만, SELL fill은 target < 0(short) pods에만 귀속합니다.
+    모든 non-zero target pods에 절대 비중 비례로 귀속합니다.
+    Trailing stop 등 반대 방향 close fill도 올바르게 귀속됩니다.
 
     Args:
         symbol: 체결 심볼
@@ -134,11 +135,11 @@ def attribute_fill(
     if not pod_targets:
         return {}
 
-    # 방향 필터: BUY → long pods, SELL → short pods
+    # 절대 비중 기반 필터: non-zero target pods 전체 귀속
     matching = {
         pid: t
         for pid, t in pod_targets.items()
-        if (is_buy and t > _MIN_WEIGHT) or (not is_buy and t < -_MIN_WEIGHT)
+        if abs(t) > _MIN_WEIGHT
     }
 
     if not matching:

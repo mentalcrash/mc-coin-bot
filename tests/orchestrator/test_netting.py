@@ -112,33 +112,36 @@ class TestAttributeFill:
         result = attribute_fill("BTC/USDT", 2.0, 42000.0, 8.0, {"pod-a": 0.5}, is_buy=True)
         assert result["pod-a"][1] == 42000.0
 
-    def test_buy_fill_only_long_pods(self) -> None:
-        """H-1: BUY fill → long pods(target > 0)만 귀속."""
+    def test_buy_fill_all_nonzero_pods(self) -> None:
+        """BUY fill → non-zero target pods 전체에 abs 비례 귀속."""
         result = attribute_fill(
             "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.3, "pod-b": -0.1}, is_buy=True
         )
-        # BUY → pod-a(0.3) only
+        # abs(0.3)/(0.3+0.1)=0.75, abs(-0.1)/(0.3+0.1)=0.25
         assert "pod-a" in result
-        assert "pod-b" not in result
-        assert result["pod-a"][0] == pytest.approx(1.0)
+        assert "pod-b" in result
+        assert result["pod-a"][0] == pytest.approx(0.75)
+        assert result["pod-b"][0] == pytest.approx(0.25)
 
-    def test_sell_fill_only_short_pods(self) -> None:
-        """H-1: SELL fill → short pods(target < 0)만 귀속."""
+    def test_sell_fill_all_nonzero_pods(self) -> None:
+        """SELL fill → non-zero target pods 전체에 abs 비례 귀속."""
         result = attribute_fill(
             "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": 0.3, "pod-b": -0.1}, is_buy=False
         )
-        # SELL → pod-b(-0.1) only
+        # abs(0.3)/(0.3+0.1)=0.75, abs(-0.1)/(0.3+0.1)=0.25
+        assert "pod-a" in result
         assert "pod-b" in result
-        assert "pod-a" not in result
-        assert result["pod-b"][0] == pytest.approx(1.0)
+        assert result["pod-a"][0] == pytest.approx(0.75)
+        assert result["pod-b"][0] == pytest.approx(0.25)
 
-    def test_direction_mismatch_empty(self) -> None:
-        """H-1: 방향 불일치 시 빈 dict."""
-        # BUY fill but only short pods
+    def test_direction_mismatch_still_attributed(self) -> None:
+        """BUY fill + short-only pods → abs 비례 귀속 (close fill 지원)."""
         result = attribute_fill(
             "BTC/USDT", 1.0, 50000.0, 10.0, {"pod-a": -0.3, "pod-b": -0.1}, is_buy=True
         )
-        assert result == {}
+        # abs(-0.3)/(0.3+0.1)=0.75, abs(-0.1)/(0.3+0.1)=0.25
+        assert result["pod-a"][0] == pytest.approx(0.75)
+        assert result["pod-b"][0] == pytest.approx(0.25)
 
     def test_sell_fill_two_short_pods_proportional(self) -> None:
         """H-1: SELL fill + 2 short pods → |target| 비례 배분."""

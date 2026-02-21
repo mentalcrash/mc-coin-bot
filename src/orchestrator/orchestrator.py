@@ -127,6 +127,8 @@ class StrategyOrchestrator:
         self._initial_capital: float = 0.0
         self._last_day_date: date | None = None
         self._last_close_prices: dict[str, float] = {}
+        self._pending_day_change: bool = False
+        self._day_end_close_prices: dict[str, float] = {}  # day boundary snapshot
 
         # Asset close price history for correlation (Pod < 3 보완)
         self._close_price_history: dict[str, list[float]] = {}
@@ -167,13 +169,16 @@ class StrategyOrchestrator:
 
         symbol = bar.symbol
 
-        # Day boundary detection — 전일 close price로 MTM 계산
+        # Day boundary detection — MTM은 signal flush 시점으로 지연
+        # (모든 심볼의 close price가 갱신된 후 기록)
         bar_date = bar.bar_timestamp.date()
         if self._last_day_date is not None and bar_date != self._last_day_date:
-            self._record_pod_daily_returns()
+            self._pending_day_change = True
+            # Snapshot: 전일 모든 심볼의 close price (day boundary 직전 상태)
+            self._day_end_close_prices = dict(self._last_close_prices)
         self._last_day_date = bar_date
 
-        # Close price 저장 (day boundary 체크 이후)
+        # Close price 저장 (snapshot 이후 갱신)
         self._last_close_prices[symbol] = bar.close
 
         # Close price history for asset-level correlation
@@ -279,6 +284,11 @@ class StrategyOrchestrator:
         bus = self._bus
         if bus is None or self._pending_bar_ts is None:
             return
+
+        # Day change MTM: 전일 close price snapshot으로 기록
+        if self._pending_day_change:
+            self._record_pod_daily_returns(self._day_end_close_prices)
+            self._pending_day_change = False
 
         # 이번 배치에서 변경된 심볼
         changed_symbols = set(self._pending_net_weights.keys())
@@ -731,16 +741,23 @@ class StrategyOrchestrator:
         """
         if self._last_day_date is None:
             return
+        self._pending_day_change = False
         self._record_pod_daily_returns()
 
-    def _record_pod_daily_returns(self) -> None:
-        """활성 Pod에 record_daily_return_mtm()을 호출합니다."""
+    def _record_pod_daily_returns(
+        self,
+        close_prices: dict[str, float] | None = None,
+    ) -> None:
+        """활성 Pod에 record_daily_return_mtm()을 호출합니다.
+
+        Args:
+            close_prices: 사용할 close price dict (None이면 _last_close_prices 사용)
+        """
+        prices = close_prices if close_prices is not None else self._last_close_prices
         for pod in self._pods:
             if not pod.is_active:
                 continue
-            pod_prices = {
-                s: self._last_close_prices[s] for s in pod.symbols if s in self._last_close_prices
-            }
+            pod_prices = {s: prices[s] for s in pod.symbols if s in prices}
             pod.record_daily_return_mtm(pod_prices)
 
     # ── Query ────────────────────────────────────────────────────

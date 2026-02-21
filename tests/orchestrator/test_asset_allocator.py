@@ -407,8 +407,8 @@ class TestPodIntegration:
         pod = StrategyPod(config=config, strategy=strategy, capital_fraction=0.5)
         assert pod._asset_allocator is None
 
-    def test_ew_config_no_change(self) -> None:
-        """EW 설정 시 strength * 0.5 * 2 = strength (불변)."""
+    def test_ew_config_per_symbol_weight(self) -> None:
+        """EW 설정 시 strength * (1/N) = per-symbol weight."""
         alloc_config = AssetAllocationConfig(
             method=AssetAllocationMethod.EQUAL_WEIGHT,
             rebalance_bars=1,
@@ -441,8 +441,8 @@ class TestPodIntegration:
         assert result is not None
         direction, strength = result
         assert direction == 1
-        # EW: strength * 0.5 * 2 = strength
-        assert pytest.approx(0.8, abs=0.01) == strength
+        # EW 2 symbols: strength * (1/2) = 0.4 per symbol
+        assert pytest.approx(0.4, abs=0.01) == strength
 
     def test_iv_adjusts_strength(self) -> None:
         """IV 설정 시 고변동성 에셋은 strength 축소."""

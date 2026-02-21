@@ -783,13 +783,16 @@ class StrategyPod:
         )
 
     def _apply_asset_weight(self, symbol: str, strength: float) -> float:
-        """에셋별 비중을 strength에 적용.
+        """에셋별 비중을 strength에 적용 (1/N 정규화 포함).
+
+        Pod 내 심볼 수(N)로 나누어 전체 합이 strength를 초과하지 않도록 보장.
+        regular EDA의 asset_weights=1/N 패턴과 동일한 결과.
 
         (1) AssetSelector multiplier (WHO) — 제외된 에셋은 0
-        (2) IntraPodAllocator weight (HOW MUCH) — 비중 조정
-
-        adjusted_strength = strength * selector_mult * asset_weight * N
+        (2) 1/N 정규화 또는 IntraPodAllocator weight (HOW MUCH)
         """
+        n = len(self._config.symbols)
+
         # (1) AssetSelector multiplier
         selector_mult = 1.0
         if self._asset_selector is not None:
@@ -797,14 +800,14 @@ class StrategyPod:
         if selector_mult < _MIN_WEIGHT_THRESHOLD:
             return 0.0  # 제외된 에셋
 
-        # (2) IntraPodAllocator weight
+        # (2) No allocator → equal weight (1/N)
         if self._asset_allocator is None:
-            return strength * selector_mult
+            return strength * selector_mult / n
 
+        # (3) With allocator → allocator weights (sum~=1.0, no *N)
         weights = self._asset_allocator.weights
-        n = len(self._config.symbols)
         asset_w = weights.get(symbol, 1.0 / n)
-        return strength * asset_w * n * selector_mult
+        return strength * asset_w * selector_mult
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지."""

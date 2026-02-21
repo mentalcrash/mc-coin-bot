@@ -363,9 +363,11 @@ class TestPodAssetSelector:
         result = pod._apply_asset_weight("BTC/USDT", 0.8)
         assert result == 0.0
 
-        # ETH still active → non-zero
+        # ETH still active → non-zero (1/N normalized)
         result_eth = pod._apply_asset_weight("ETH/USDT", 0.8)
         assert result_eth > 0.0
+        # 3 symbols, no allocator, selector_mult=1.0 → 0.8 / 3
+        assert result_eth == pytest.approx(0.8 / 3)
 
     def test_serialization_round_trip(self) -> None:
         """Pod + selector 직렬화 왕복."""
@@ -385,3 +387,61 @@ class TestPodAssetSelector:
         assert pod2._asset_selector is not None
         assert pod2._asset_selector._states["BTC/USDT"].state == AssetLifecycleState.COOLDOWN
         assert pod2._asset_selector._states["BTC/USDT"].multiplier == 0.0
+
+
+class TestApplyAssetWeightNormalization:
+    """_apply_asset_weight 1/N 정규화 테스트."""
+
+    def test_no_allocator_divides_by_n(self) -> None:
+        """No allocator → strength / N 반환."""
+        symbols = ("BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT")
+        pod = _make_pod(symbols=symbols)
+        # No allocator, no selector → strength / 4
+        result = pod._apply_asset_weight("BTC/USDT", 0.8)
+        assert result == pytest.approx(0.8 / 4)
+
+    def test_no_allocator_single_symbol(self) -> None:
+        """1-symbol pod → strength / 1 = strength."""
+        pod = _make_pod(symbols=("BTC/USDT",))
+        result = pod._apply_asset_weight("BTC/USDT", 0.8)
+        assert result == pytest.approx(0.8)
+
+    def test_no_allocator_total_sums_to_strength(self) -> None:
+        """전 심볼 합산 = strength (equal weight)."""
+        symbols = ("BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT")
+        pod = _make_pod(symbols=symbols)
+        strength = 0.8
+        total = sum(pod._apply_asset_weight(s, strength) for s in symbols)
+        assert total == pytest.approx(strength)
+
+    def test_with_allocator_no_n_multiply(self) -> None:
+        """Allocator weight * strength (no *N multiply)."""
+        from src.orchestrator.asset_allocator import (
+            AssetAllocationConfig,
+            IntraPodAllocator,
+        )
+
+        symbols = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
+        pod = _make_pod(symbols=symbols)
+        alloc_config = AssetAllocationConfig()
+        allocator = IntraPodAllocator(config=alloc_config, symbols=symbols)
+        pod._asset_allocator = allocator
+        # equal_weight allocator → each weight = 1/3
+        result = pod._apply_asset_weight("BTC/USDT", 0.9)
+        assert result == pytest.approx(0.9 / 3)
+
+    def test_with_allocator_total_sums_to_strength(self) -> None:
+        """Allocator 사용 시에도 전 심볼 합산 ≈ strength."""
+        from src.orchestrator.asset_allocator import (
+            AssetAllocationConfig,
+            IntraPodAllocator,
+        )
+
+        symbols = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
+        pod = _make_pod(symbols=symbols)
+        alloc_config = AssetAllocationConfig()
+        allocator = IntraPodAllocator(config=alloc_config, symbols=symbols)
+        pod._asset_allocator = allocator
+        strength = 0.6
+        total = sum(pod._apply_asset_weight(s, strength) for s in symbols)
+        assert total == pytest.approx(strength)
