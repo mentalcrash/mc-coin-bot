@@ -18,6 +18,7 @@ import pandas as pd
 from loguru import logger
 
 from src.orchestrator.asset_allocator import IntraPodAllocator
+from src.orchestrator.asset_selector import AssetSelector
 from src.orchestrator.models import LifecycleState, PodPerformance, PodPosition
 
 if TYPE_CHECKING:
@@ -89,6 +90,14 @@ class StrategyPod:
         if config.asset_allocation is not None:
             self._asset_allocator = IntraPodAllocator(
                 config=config.asset_allocation,
+                symbols=config.symbols,
+            )
+
+        # Asset selector (WHO participates)
+        self._asset_selector: AssetSelector | None = None
+        if config.asset_selector is not None and config.asset_selector.enabled:
+            self._asset_selector = AssetSelector(
+                config=config.asset_selector,
                 symbols=config.symbols,
             )
 
@@ -174,6 +183,11 @@ class StrategyPod:
     def config(self) -> PodConfig:
         """Pod 설정."""
         return self._config
+
+    @property
+    def asset_selector(self) -> AssetSelector | None:
+        """에셋 선별 FSM (None=비활성)."""
+        return self._asset_selector
 
     # ── Core Methods ────────────────────────────────────────────────
 
@@ -535,6 +549,11 @@ class StrategyPod:
         if self._asset_allocator is not None:
             asset_allocator_data = self._asset_allocator.to_dict()
 
+        # Asset selector state
+        asset_selector_data: dict[str, object] | None = None
+        if self._asset_selector is not None:
+            asset_selector_data = self._asset_selector.to_dict()
+
         return {
             "state": self._state.value,
             "capital_fraction": self._capital_fraction,
@@ -545,6 +564,7 @@ class StrategyPod:
             "base_equity": self._base_equity,
             "prev_equity": self._prev_equity,
             "asset_allocator": asset_allocator_data,
+            "asset_selector": asset_selector_data,
             "asset_returns": {s: list(r) for s, r in self._asset_returns.items()},
         }
 
@@ -604,10 +624,19 @@ class StrategyPod:
         if isinstance(perf_val, dict):
             self._restore_performance(perf_val)
 
+        self._restore_allocators_and_returns(data)
+
+    def _restore_allocators_and_returns(self, data: dict[str, object]) -> None:
+        """Restore asset allocator, selector, and returns (PLR0912 sub-method)."""
         # Asset allocator
         alloc_val = data.get("asset_allocator")
         if isinstance(alloc_val, dict) and self._asset_allocator is not None:
             self._asset_allocator.restore_from_dict(alloc_val)
+
+        # Asset selector
+        selector_val = data.get("asset_selector")
+        if isinstance(selector_val, dict) and self._asset_selector is not None:
+            self._asset_selector.restore_from_dict(selector_val)
 
         # Asset returns
         returns_val = data.get("asset_returns")
@@ -726,31 +755,56 @@ class StrategyPod:
         symbol: str,
         strength: float,
     ) -> None:
-        """주기적으로 allocator를 호출하여 에셋 비중 재계산."""
+        """AssetSelector 평가 후 allocator를 호출하여 에셋 비중 재계산."""
+        # AssetSelector 평가 (매 bar, allocator보다 먼저)
+        if self._asset_selector is not None:
+            close_prices = {s: buf[-1]["close"] for s, buf in self._buffers.items() if buf}
+            self._asset_selector.on_bar(
+                returns=self._asset_returns,
+                close_prices=close_prices,
+            )
+
         if self._asset_allocator is None:
             return
+
+        # Active symbols만 allocator에 전달
+        if self._asset_selector is not None:
+            active_set = set(self._asset_selector.active_symbols)
+            filtered_returns = {s: r for s, r in self._asset_returns.items() if s in active_set}
+        else:
+            filtered_returns = self._asset_returns
 
         strengths = dict.fromkeys(self._config.symbols, 0.0)
         strengths[symbol] = strength
 
         self._asset_allocator.on_bar(
-            returns=self._asset_returns,
+            returns=filtered_returns,
             strengths=strengths,
         )
 
     def _apply_asset_weight(self, symbol: str, strength: float) -> float:
         """에셋별 비중을 strength에 적용.
 
-        adjusted_strength = strength * asset_weight[symbol] * N
-        EW: 0.25 * 4 = 1.0 (변화 없음, 하위 호환)
+        (1) AssetSelector multiplier (WHO) — 제외된 에셋은 0
+        (2) IntraPodAllocator weight (HOW MUCH) — 비중 조정
+
+        adjusted_strength = strength * selector_mult * asset_weight * N
         """
+        # (1) AssetSelector multiplier
+        selector_mult = 1.0
+        if self._asset_selector is not None:
+            selector_mult = self._asset_selector.multipliers.get(symbol, 1.0)
+        if selector_mult < _MIN_WEIGHT_THRESHOLD:
+            return 0.0  # 제외된 에셋
+
+        # (2) IntraPodAllocator weight
         if self._asset_allocator is None:
-            return strength
+            return strength * selector_mult
 
         weights = self._asset_allocator.weights
         n = len(self._config.symbols)
         asset_w = weights.get(symbol, 1.0 / n)
-        return strength * asset_w * n
+        return strength * asset_w * n * selector_mult
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지."""

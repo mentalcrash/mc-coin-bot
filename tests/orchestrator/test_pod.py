@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import pytest
 
-from src.orchestrator.config import PodConfig
-from src.orchestrator.models import LifecycleState
+from src.orchestrator.config import AssetSelectorConfig, PodConfig
+from src.orchestrator.models import AssetLifecycleState, LifecycleState
 from src.orchestrator.pod import _MAX_BUFFER_SIZE, StrategyPod
 from src.strategy.base import BaseStrategy
 from src.strategy.types import StrategySignals
@@ -304,3 +304,84 @@ class TestPodHelpers:
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         result = pod.compute_signal("ETH/USDT", _make_bar_data(100, 101), ts)
         assert result is None
+
+
+# ── TestPodAssetSelector ─────────────────────────────────────────
+
+
+class TestPodAssetSelector:
+    """Pod + AssetSelector 통합 테스트."""
+
+    def _make_selector_pod(
+        self,
+        symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+        warmup: int = 3,
+    ) -> StrategyPod:
+        asc = AssetSelectorConfig(
+            enabled=True,
+            exclude_score_threshold=0.20,
+            include_score_threshold=0.35,
+            exclude_confirmation_bars=2,
+            include_confirmation_bars=2,
+            ramp_steps=3,
+            min_active_assets=1,
+            sharpe_lookback=20,
+            return_lookback=10,
+        )
+        config = _make_pod_config(symbols=symbols, asset_selector=asc)
+        strategy = SimpleTestStrategy()
+        pod = StrategyPod(config=config, strategy=strategy, capital_fraction=0.5)
+        pod._warmup = warmup
+        return pod
+
+    def test_selector_initialized(self) -> None:
+        pod = self._make_selector_pod()
+        assert pod.asset_selector is not None
+        assert len(pod.asset_selector.active_symbols) == 3
+
+    def test_no_selector_when_disabled(self) -> None:
+        asc = AssetSelectorConfig(enabled=False)
+        config = _make_pod_config(asset_selector=asc)
+        strategy = SimpleTestStrategy()
+        pod = StrategyPod(config=config, strategy=strategy, capital_fraction=0.5)
+        assert pod.asset_selector is None
+
+    def test_no_selector_when_none(self) -> None:
+        pod = _make_pod()
+        assert pod.asset_selector is None
+
+    def test_excluded_asset_returns_zero_strength(self) -> None:
+        """제외된 에셋은 strength=0 반환."""
+        pod = self._make_selector_pod(symbols=("BTC/USDT", "ETH/USDT", "SOL/USDT"))
+        assert pod._asset_selector is not None
+
+        # Force BTC to COOLDOWN (multiplier=0)
+        pod._asset_selector._states["BTC/USDT"].state = AssetLifecycleState.COOLDOWN
+        pod._asset_selector._states["BTC/USDT"].multiplier = 0.0
+
+        # _apply_asset_weight should return 0 for excluded asset
+        result = pod._apply_asset_weight("BTC/USDT", 0.8)
+        assert result == 0.0
+
+        # ETH still active → non-zero
+        result_eth = pod._apply_asset_weight("ETH/USDT", 0.8)
+        assert result_eth > 0.0
+
+    def test_serialization_round_trip(self) -> None:
+        """Pod + selector 직렬화 왕복."""
+        pod = self._make_selector_pod()
+        assert pod._asset_selector is not None
+
+        # Modify selector state
+        pod._asset_selector._states["BTC/USDT"].state = AssetLifecycleState.COOLDOWN
+        pod._asset_selector._states["BTC/USDT"].multiplier = 0.0
+
+        data = pod.to_dict()
+        assert data.get("asset_selector") is not None
+
+        # Restore
+        pod2 = self._make_selector_pod()
+        pod2.restore_from_dict(data)
+        assert pod2._asset_selector is not None
+        assert pod2._asset_selector._states["BTC/USDT"].state == AssetLifecycleState.COOLDOWN
+        assert pod2._asset_selector._states["BTC/USDT"].multiplier == 0.0

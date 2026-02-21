@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pandas as pd
 
 from src.eda.live_runner import LiveMode, LiveRunner
+from src.eda.portfolio_manager import EDAPortfolioManager
+from src.models.types import Direction
 from src.orchestrator.allocator import CapitalAllocator
 from src.orchestrator.config import OrchestratorConfig, PodConfig
-from src.orchestrator.models import AllocationMethod
+from src.orchestrator.models import AllocationMethod, LifecycleState
 from src.orchestrator.orchestrator import StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod
 from src.portfolio.config import PortfolioManagerConfig
@@ -324,3 +326,101 @@ class TestStartupSummary:
 
         # _log_startup_summary 호출이 에러 없이 완료되어야 함
         runner._log_startup_summary(100_000.0)
+
+
+class TestCleanupOrphanedPositions:
+    """Phase 5: RETIRED Pod 후 orphaned position 정리 테스트."""
+
+    def _make_runner_with_orchestrator(
+        self,
+        pods: list[StrategyPod],
+        orch_config: OrchestratorConfig,
+    ) -> LiveRunner:
+        """Orchestrator 포함 LiveRunner 생성."""
+        allocator = CapitalAllocator(config=orch_config)
+        orchestrator = StrategyOrchestrator(
+            config=orch_config,
+            pods=pods,
+            allocator=allocator,
+            target_timeframe="1D",
+        )
+
+        strategy = SimpleTestStrategy()
+        client = _mock_client()
+        runner = LiveRunner.paper(
+            strategy=strategy,
+            symbols=["BTC/USDT", "ETH/USDT"],
+            target_timeframe="1D",
+            config=PortfolioManagerConfig(),
+            client=client,
+        )
+        runner._orchestrator = orchestrator
+        return runner
+
+    async def test_retired_pod_orphan_position_cleaned(self) -> None:
+        """RETIRED Pod의 고아 포지션이 PM에서 정리됨."""
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 0.5)
+        pod_b_cfg = _make_pod_config("pod-b", ("ETH/USDT",), 0.5)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=0.5)
+        pod_b = StrategyPod(config=pod_b_cfg, strategy=SimpleTestStrategy(), capital_fraction=0.5)
+
+        # pod-b → RETIRED (ETH 전용)
+        pod_b.state = LifecycleState.RETIRED
+
+        orch_config = _make_orch_config((pod_a_cfg, pod_b_cfg))
+        runner = self._make_runner_with_orchestrator([pod_a, pod_b], orch_config)
+
+        # PM에 ETH 포지션 설정
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+        )
+        pm._positions["ETH/USDT"] = Position(
+            symbol="ETH/USDT",
+            size=1.0,
+            direction=Direction.LONG,
+            avg_entry_price=3000.0,
+            last_price=3100.0,
+        )
+        assert pm._positions["ETH/USDT"].is_open
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        assert "ETH/USDT" in cleaned
+        assert pm._positions["ETH/USDT"].size == 0.0
+
+    async def test_shared_symbol_not_cleaned(self) -> None:
+        """활성 Pod와 공유하는 심볼은 정리하지 않음."""
+        # 두 Pod 모두 BTC 관리
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 0.5)
+        pod_b_cfg = _make_pod_config("pod-b", ("BTC/USDT",), 0.5)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=0.5)
+        pod_b = StrategyPod(config=pod_b_cfg, strategy=SimpleTestStrategy(), capital_fraction=0.5)
+
+        # pod-b RETIRED but BTC is also managed by active pod-a
+        pod_b.state = LifecycleState.RETIRED
+
+        orch_config = _make_orch_config((pod_a_cfg, pod_b_cfg))
+        runner = self._make_runner_with_orchestrator([pod_a, pod_b], orch_config)
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+        )
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            size=0.5,
+            direction=Direction.LONG,
+            avg_entry_price=50_000.0,
+            last_price=51_000.0,
+        )
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        # BTC는 pod-a가 활성이므로 정리 안 됨
+        assert len(cleaned) == 0
+        assert pm._positions["BTC/USDT"].size == 0.5

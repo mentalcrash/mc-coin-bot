@@ -537,6 +537,9 @@ class LiveRunner:
             # 3.6. 거래소 기준 PM reconciliation (sync_capital 전에 실행!)
             await self._reconcile_positions(pm)
 
+            # 3.6.5. Orchestrator Pod 제거 후 orphaned position 정리
+            await self._cleanup_orphaned_positions(pm)
+
             # 3.7. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
             if self._mode == LiveMode.LIVE:
                 pm.sync_capital(capital)
@@ -1304,6 +1307,84 @@ class LiveRunner:
                     removed,
                 )
             return removed
+
+    async def _cleanup_orphaned_positions(self, pm: EDAPortfolioManager) -> list[str]:
+        """Pod 제거(RETIRED) 후 orphaned position을 PM에서 정리합니다.
+
+        Orchestrator 활성 시:
+        - RETIRED 상태 Pod의 심볼 중 활성 Pod에서 관리되지 않는 심볼을 수집
+        - 해당 심볼의 PM 포지션을 0으로 리셋
+        - LIVE 모드에서는 실제 거래소 청산은 PM → SignalEvent → OMS 경유
+
+        Non-orchestrator 모드: 즉시 반환.
+
+        Returns:
+            정리된 심볼 리스트
+        """
+        if self._orchestrator is None:
+            return []
+
+        from src.models.types import Direction
+        from src.orchestrator.models import LifecycleState
+
+        retired_pods = [p for p in self._orchestrator.pods if p.state == LifecycleState.RETIRED]
+        if not retired_pods:
+            return []
+
+        # 활성 Pod가 관리하는 심볼 집합
+        active_symbols: set[str] = set()
+        for pod in self._orchestrator.pods:
+            if pod.is_active:
+                active_symbols.update(pod.symbols)
+
+        # 고아 심볼 = RETIRED Pod 전용 (활성 Pod에 없는) 심볼
+        orphan_symbols: set[str] = set()
+        for pod in retired_pods:
+            orphan_symbols.update(set(pod.symbols) - active_symbols)
+
+        if not orphan_symbols:
+            return []
+
+        cleaned: list[str] = []
+        for symbol in orphan_symbols:
+            pos = pm._positions.get(symbol)
+            if pos is None or not pos.is_open:
+                continue
+
+            logger.info(
+                "Cleanup orphaned position: {} (size={:.6f}) from retired pod(s)",
+                symbol,
+                pos.size,
+            )
+
+            # PM 포지션 리셋 (reconcile_with_exchange 패턴과 동일)
+            pos.size = 0.0
+            pos.direction = Direction.NEUTRAL
+            pos.avg_entry_price = 0.0
+            pos.unrealized_pnl = 0.0
+            pos.current_weight = 0.0
+            pos.last_price = 0.0
+            pos.peak_price_since_entry = 0.0
+            pos.trough_price_since_entry = 0.0
+            pos.atr_values = []
+
+            # 부가 상태 정리
+            pm._last_target_weights.pop(symbol, None)
+            pm._last_executed_targets.pop(symbol, None)
+            pm._pending_signals.pop(symbol, None)
+            pm._pending_close.discard(symbol)
+            pm._deferred_close_targets.pop(symbol, None)
+
+            cleaned.append(symbol)
+
+        if cleaned:
+            logger.warning(
+                "Cleaned {} orphaned positions from retired pods: {}",
+                len(cleaned),
+                cleaned,
+            )
+
+        return cleaned
 
     async def _setup_reconciler(
         self,

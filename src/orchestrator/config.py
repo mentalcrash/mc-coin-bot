@@ -16,6 +16,160 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
 
+# ── Constants ────────────────────────────────────────────────────
+
+_WEIGHT_SUM_TOLERANCE = 1e-6
+
+# ── Asset Selector Config ────────────────────────────────────────
+
+
+class AssetSelectorConfig(BaseModel):
+    """Pod 내 에셋 선별 FSM 설정.
+
+    성과 미달 에셋을 자동으로 제외/재진입하는 AssetSelector의 설정입니다.
+
+    Attributes:
+        enabled: 활성화 여부 (False → 기존 동작 유지)
+        sharpe_weight: 복합 점수 Sharpe 비중
+        return_weight: 복합 점수 Return 비중
+        drawdown_weight: 복합 점수 Drawdown 비중
+        sharpe_lookback: Sharpe 계산 lookback (bars)
+        return_lookback: Return 계산 lookback (bars)
+        exclude_score_threshold: 제외 프로세스 시작 점수 하한
+        include_score_threshold: 재진입 프로세스 시작 점수 상한
+        hard_exclude_sharpe: Hard exclusion Sharpe 임계값
+        hard_exclude_drawdown: Hard exclusion drawdown 임계값
+        exclude_confirmation_bars: 제외 확인 기간 (연속 bars)
+        include_confirmation_bars: 재진입 확인 기간 (연속 bars)
+        min_exclusion_bars: 최소 제외 기간 (cooldown)
+        ramp_steps: 점진적 전환 단계 수
+        min_active_assets: 최소 활성 에셋 수 (전 에셋 탈락 방지)
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = Field(default=False, description="활성화 여부")
+
+    # Scoring weights (합 = 1.0)
+    sharpe_weight: float = Field(default=0.4, ge=0.0, le=1.0, description="Sharpe 비중")
+    return_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="Return 비중")
+    drawdown_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="Drawdown 비중")
+
+    # Lookback
+    sharpe_lookback: int = Field(default=60, ge=10, description="Sharpe lookback (bars)")
+    return_lookback: int = Field(default=30, ge=5, description="Return lookback (bars)")
+
+    # Hysteresis thresholds
+    exclude_score_threshold: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        description="제외 시작 점수 하한",
+    )
+    include_score_threshold: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description="재진입 시작 점수 상한",
+    )
+
+    # Hard exclusion
+    hard_exclude_sharpe: float = Field(
+        default=-1.0,
+        description="Hard exclusion Sharpe 임계값",
+    )
+    hard_exclude_drawdown: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description="Hard exclusion drawdown 임계값",
+    )
+
+    # Confirmation
+    exclude_confirmation_bars: int = Field(
+        default=5,
+        ge=1,
+        description="제외 확인 기간 (연속 bars)",
+    )
+    include_confirmation_bars: int = Field(
+        default=3,
+        ge=1,
+        description="재진입 확인 기간 (연속 bars)",
+    )
+
+    # Cooldown
+    min_exclusion_bars: int = Field(
+        default=30,
+        ge=1,
+        description="최소 제외 기간 (cooldown)",
+    )
+
+    # Ramp
+    ramp_steps: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="점진적 전환 단계 수",
+    )
+
+    # Safety
+    min_active_assets: int = Field(
+        default=2,
+        ge=1,
+        description="최소 활성 에셋 수",
+    )
+
+    @model_validator(mode="after")
+    def validate_thresholds_and_weights(self) -> Self:
+        """Hysteresis 갭 + scoring weights 합 검증.
+
+        Raises:
+            ValueError: include <= exclude, 또는 weights 합 != 1.0
+        """
+        if self.include_score_threshold <= self.exclude_score_threshold:
+            msg = (
+                f"include_score_threshold ({self.include_score_threshold}) must be "
+                f"greater than exclude_score_threshold ({self.exclude_score_threshold})"
+            )
+            raise ValueError(msg)
+
+        weight_sum = self.sharpe_weight + self.return_weight + self.drawdown_weight
+        if abs(weight_sum - 1.0) > _WEIGHT_SUM_TOLERANCE:
+            msg = f"Scoring weights must sum to 1.0, got {weight_sum:.6f}"
+            raise ValueError(msg)
+
+        return self
+
+
+# ── Turnover Constraint Config ───────────────────────────────────
+
+
+class TurnoverConstraintConfig(BaseModel):
+    """리밸런싱 턴오버 제약 설정.
+
+    리밸런스 시 Pod간 자본 이동 속도를 제한하여
+    급격한 배분 변경을 방지합니다.
+
+    Attributes:
+        max_pod_turnover_per_rebalance: Pod당 최대 변동폭 (±)
+        max_total_turnover_per_rebalance: 전체 최대 턴오버
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    max_pod_turnover_per_rebalance: float = Field(
+        default=0.10,
+        gt=0.0,
+        le=1.0,
+        description="Pod당 최대 변동폭 (±)",
+    )
+    max_total_turnover_per_rebalance: float = Field(
+        default=0.30,
+        gt=0.0,
+        le=2.0,
+        description="전체 최대 턴오버",
+    )
+
 
 class PodConfig(BaseModel):
     """개별 Pod(전략 슬롯) 설정.
@@ -123,6 +277,12 @@ class PodConfig(BaseModel):
     asset_allocation: AssetAllocationConfig | None = Field(
         default=None,
         description="Pod 내 에셋 배분 설정 (None=균등분배)",
+    )
+
+    # Asset selector (WHO participates)
+    asset_selector: AssetSelectorConfig | None = Field(
+        default=None,
+        description="에셋 선별 FSM 설정 (None 또는 enabled=false → 비활성)",
     )
 
     @model_validator(mode="after")
@@ -405,6 +565,12 @@ class OrchestratorConfig(BaseModel):
         default=4.0,
         ge=0.0,
         description="거래 비용 (bps)",
+    )
+
+    # Turnover constraint
+    turnover_constraint: TurnoverConstraintConfig | None = Field(
+        default=None,
+        description="리밸런싱 턴오버 제약 (None → 제약 없음)",
     )
 
     @model_validator(mode="after")

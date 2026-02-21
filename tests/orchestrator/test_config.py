@@ -6,10 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from src.orchestrator.config import (
+    AssetSelectorConfig,
     GraduationCriteria,
     OrchestratorConfig,
     PodConfig,
     RetirementCriteria,
+    TurnoverConstraintConfig,
 )
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
 
@@ -226,3 +228,126 @@ class TestOrchestratorConfig:
         assert isinstance(cfg.retirement, RetirementCriteria)
         assert cfg.graduation.min_live_days == 30
         assert cfg.retirement.probation_days == 30
+
+    def test_turnover_constraint_none_default(self) -> None:
+        cfg = OrchestratorConfig(pods=(_make_pod(),))
+        assert cfg.turnover_constraint is None
+
+    def test_turnover_constraint_from_dict(self) -> None:
+        tc = TurnoverConstraintConfig(
+            max_pod_turnover_per_rebalance=0.15,
+            max_total_turnover_per_rebalance=0.40,
+        )
+        cfg = OrchestratorConfig(pods=(_make_pod(),), turnover_constraint=tc)
+        assert cfg.turnover_constraint is not None
+        assert cfg.turnover_constraint.max_pod_turnover_per_rebalance == 0.15
+
+
+# ── AssetSelectorConfig ──────────────────────────────────────────
+
+
+class TestAssetSelectorConfig:
+    def test_defaults(self) -> None:
+        asc = AssetSelectorConfig()
+        assert asc.enabled is False
+        assert asc.sharpe_weight == 0.4
+        assert asc.return_weight == 0.3
+        assert asc.drawdown_weight == 0.3
+        assert asc.sharpe_lookback == 60
+        assert asc.return_lookback == 30
+        assert asc.exclude_score_threshold == 0.20
+        assert asc.include_score_threshold == 0.35
+        assert asc.exclude_confirmation_bars == 5
+        assert asc.include_confirmation_bars == 3
+        assert asc.min_exclusion_bars == 30
+        assert asc.ramp_steps == 3
+        assert asc.min_active_assets == 2
+
+    def test_frozen(self) -> None:
+        asc = AssetSelectorConfig()
+        with pytest.raises(ValidationError):
+            asc.enabled = True  # type: ignore[misc]
+
+    def test_include_must_exceed_exclude(self) -> None:
+        with pytest.raises(ValidationError, match="include_score_threshold"):
+            AssetSelectorConfig(
+                exclude_score_threshold=0.40,
+                include_score_threshold=0.30,
+            )
+
+    def test_include_equal_exclude_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="include_score_threshold"):
+            AssetSelectorConfig(
+                exclude_score_threshold=0.30,
+                include_score_threshold=0.30,
+            )
+
+    def test_scoring_weights_must_sum_one(self) -> None:
+        with pytest.raises(ValidationError, match=r"sum to 1\.0"):
+            AssetSelectorConfig(
+                sharpe_weight=0.5,
+                return_weight=0.5,
+                drawdown_weight=0.5,
+            )
+
+    def test_custom_valid_config(self) -> None:
+        asc = AssetSelectorConfig(
+            enabled=True,
+            sharpe_weight=0.5,
+            return_weight=0.25,
+            drawdown_weight=0.25,
+            exclude_score_threshold=0.15,
+            include_score_threshold=0.40,
+            ramp_steps=5,
+            min_active_assets=3,
+        )
+        assert asc.enabled is True
+        assert asc.ramp_steps == 5
+
+    def test_json_round_trip(self) -> None:
+        asc = AssetSelectorConfig(enabled=True)
+        data = asc.model_dump(mode="json")
+        restored = AssetSelectorConfig.model_validate(data)
+        assert restored == asc
+
+
+# ── TurnoverConstraintConfig ─────────────────────────────────────
+
+
+class TestTurnoverConstraintConfig:
+    def test_defaults(self) -> None:
+        tc = TurnoverConstraintConfig()
+        assert tc.max_pod_turnover_per_rebalance == 0.10
+        assert tc.max_total_turnover_per_rebalance == 0.30
+
+    def test_frozen(self) -> None:
+        tc = TurnoverConstraintConfig()
+        with pytest.raises(ValidationError):
+            tc.max_pod_turnover_per_rebalance = 0.20  # type: ignore[misc]
+
+    def test_json_round_trip(self) -> None:
+        tc = TurnoverConstraintConfig(max_pod_turnover_per_rebalance=0.15)
+        data = tc.model_dump(mode="json")
+        restored = TurnoverConstraintConfig.model_validate(data)
+        assert restored == tc
+
+
+# ── PodConfig Asset Selector ─────────────────────────────────────
+
+
+class TestPodConfigAssetSelector:
+    def test_asset_selector_none_default(self) -> None:
+        pod = _make_pod()
+        assert pod.asset_selector is None
+
+    def test_asset_selector_attached(self) -> None:
+        asc = AssetSelectorConfig(enabled=True)
+        pod = _make_pod(asset_selector=asc)
+        assert pod.asset_selector is not None
+        assert pod.asset_selector.enabled is True
+
+    def test_asset_selector_disabled(self) -> None:
+        asc = AssetSelectorConfig(enabled=False)
+        pod = _make_pod(asset_selector=asc)
+        assert pod.asset_selector is not None
+        assert pod.asset_selector.enabled is False

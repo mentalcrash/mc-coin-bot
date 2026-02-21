@@ -32,6 +32,22 @@ class LifecycleState(StrEnum):
     RETIRED = "retired"
 
 
+class AssetLifecycleState(StrEnum):
+    """에셋 라이프사이클 상태 (AssetSelector FSM).
+
+    Attributes:
+        ACTIVE: 정상 참여 (multiplier=1.0)
+        UNDERPERFORMING: 성과 미달 → ramp-down 진행 중
+        COOLDOWN: 제외 완료 → 최소 기간 대기 (multiplier=0.0)
+        RE_ENTRY: 재진입 → ramp-up 진행 중
+    """
+
+    ACTIVE = "active"
+    UNDERPERFORMING = "underperforming"
+    COOLDOWN = "cooldown"
+    RE_ENTRY = "re_entry"
+
+
 class AllocationMethod(StrEnum):
     """자본 배분 방법.
 

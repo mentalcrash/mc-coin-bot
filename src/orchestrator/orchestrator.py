@@ -423,6 +423,9 @@ class StrategyOrchestrator:
             pod_live_days=pod_live_days,
         )
 
+        # Apply turnover constraints (clamp per-pod and total delta)
+        new_weights = self._apply_turnover_constraints(new_weights)
+
         # Turnover filter: skip if total turnover is below threshold
         total_turnover = sum(
             abs(new_weights.get(pod.pod_id, 0.0) - pod.capital_fraction)
@@ -477,6 +480,64 @@ class StrategyOrchestrator:
         net_weights = self._compute_current_net_weights()
         self._check_risk_limits(pod_returns, net_weights=net_weights)
 
+    def _apply_turnover_constraints(self, new_weights: dict[str, float]) -> dict[str, float]:
+        """Pod별/전체 턴오버를 제약합니다.
+
+        1. RETIRED Pod은 bypass (즉시 0)
+        2. Pod별 |delta| <= max_pod_turnover_per_rebalance 클램프
+        3. 전체 sum(|delta|) <= max_total_turnover_per_rebalance 초과 시 비례 축소
+
+        Args:
+            new_weights: allocator가 산출한 새 가중치 {pod_id: fraction}
+
+        Returns:
+            제약 적용된 가중치 {pod_id: fraction}
+        """
+        from src.orchestrator.models import LifecycleState
+
+        tc = self._config.turnover_constraint
+        if tc is None:
+            return new_weights
+
+        constrained: dict[str, float] = {}
+        for pod in self._pods:
+            pid = pod.pod_id
+            target = new_weights.get(pid)
+            if target is None:
+                continue
+
+            # RETIRED → bypass (즉시 0)
+            if pod.state == LifecycleState.RETIRED:
+                constrained[pid] = target
+                continue
+
+            # Per-pod delta clamp
+            current = pod.capital_fraction
+            delta = target - current
+            max_delta = tc.max_pod_turnover_per_rebalance
+            clamped_delta = max(-max_delta, min(delta, max_delta))
+            constrained[pid] = current + clamped_delta
+
+        # Total turnover check
+        total_abs_delta = sum(
+            abs(constrained.get(pod.pod_id, pod.capital_fraction) - pod.capital_fraction)
+            for pod in self._pods
+            if pod.state != LifecycleState.RETIRED and pod.pod_id in constrained
+        )
+
+        max_total = tc.max_total_turnover_per_rebalance
+        if total_abs_delta > max_total and total_abs_delta > _MIN_FRACTION_EPSILON:
+            scale = max_total / total_abs_delta
+            for pod in self._pods:
+                pid = pod.pod_id
+                if pid not in constrained or pod.state == LifecycleState.RETIRED:
+                    continue
+                current = pod.capital_fraction
+                delta = constrained[pid] - current
+                constrained[pid] = current + delta * scale
+
+        return constrained
+
     def _evaluate_lifecycle(self) -> None:
         """Lifecycle 평가 → 상태 전이 감지 → lifecycle_events 기록 → GBM alerts."""
         if self._lifecycle is None:
@@ -492,6 +553,10 @@ class StrategyOrchestrator:
             self._lifecycle.evaluate(
                 pod, portfolio_returns_series, bar_timestamp=self._pending_bar_ts
             )
+
+            # AssetSelector: all-excluded → WARNING 전이
+            self._check_all_excluded_warning(pod)
+
             if pod.state.value != pre_state:
                 self._lifecycle_events.append(
                     {
@@ -513,6 +578,21 @@ class StrategyOrchestrator:
 
             # GBM drawdown alert
             self._check_gbm_alert(pod, DrawdownSeverity)
+
+    @staticmethod
+    def _check_all_excluded_warning(pod: StrategyPod) -> None:
+        """AssetSelector의 모든 에셋이 제외되면 WARNING으로 전이."""
+        from src.orchestrator.models import LifecycleState
+
+        selector = pod.asset_selector
+        if selector is None:
+            return
+        if selector.all_excluded and pod.state == LifecycleState.PRODUCTION:
+            pod.state = LifecycleState.WARNING
+            logger.warning(
+                "Pod [{}]: all assets excluded by AssetSelector → WARNING",
+                pod.pod_id,
+            )
 
     def _check_gbm_alert(self, pod: StrategyPod, drawdown_severity: type) -> None:
         """GBM drawdown 결과가 비정상이면 RiskAlertEvent 발행."""

@@ -15,6 +15,7 @@ from src.eda.persistence.database import Database
 from src.eda.persistence.state_manager import StateManager
 from src.orchestrator.allocator import CapitalAllocator
 from src.orchestrator.config import (
+    AssetSelectorConfig,
     GraduationCriteria,
     OrchestratorConfig,
     PodConfig,
@@ -22,7 +23,12 @@ from src.orchestrator.config import (
 )
 from src.orchestrator.degradation import PageHinkleyDetector
 from src.orchestrator.lifecycle import LifecycleManager
-from src.orchestrator.models import AllocationMethod, LifecycleState, PodPosition
+from src.orchestrator.models import (
+    AllocationMethod,
+    AssetLifecycleState,
+    LifecycleState,
+    PodPosition,
+)
 from src.orchestrator.orchestrator import StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod
 from src.orchestrator.state_persistence import (
@@ -719,3 +725,88 @@ class TestHistoriesPersistence:
         result = await persistence.restore(orch2)
         assert result is True
         assert len(orch2.allocation_history) == 0
+
+
+# ══════════════════════════════════════════════════════════════════
+# 7. AssetSelector State Persistence
+# ══════════════════════════════════════════════════════════════════
+
+
+def _make_selector_pod(
+    pod_id: str = "pod-sel",
+    symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+    capital_fraction: float = 0.5,
+) -> StrategyPod:
+    """AssetSelector 활성화된 Pod 생성."""
+    asc = AssetSelectorConfig(
+        enabled=True,
+        exclude_score_threshold=0.20,
+        include_score_threshold=0.35,
+        exclude_confirmation_bars=2,
+        include_confirmation_bars=2,
+        ramp_steps=3,
+        min_active_assets=1,
+        sharpe_lookback=20,
+        return_lookback=10,
+    )
+    config = _make_pod_config(pod_id=pod_id, symbols=symbols, asset_selector=asc)
+    strategy = SimpleTestStrategy()
+    pod = StrategyPod(config=config, strategy=strategy, capital_fraction=capital_fraction)
+    pod._warmup = 3
+    return pod
+
+
+def _make_selector_orchestrator() -> StrategyOrchestrator:
+    """AssetSelector Pod 포함 Orchestrator 생성."""
+    pod = _make_selector_pod(pod_id="pod-sel", symbols=("BTC/USDT", "ETH/USDT", "SOL/USDT"))
+    config = _make_orchestrator_config(pod_configs=(pod.config,))
+    allocator = CapitalAllocator(config)
+    return StrategyOrchestrator(config, [pod], allocator)
+
+
+class TestAssetSelectorPersistence:
+    """AssetSelector 상태가 Pod를 통해 영속화되는지 검증."""
+
+    @pytest.mark.asyncio
+    async def test_asset_selector_state_round_trip(
+        self, persistence: OrchestratorStatePersistence
+    ) -> None:
+        """AssetSelector FSM 상태가 save→restore 왕복 보존."""
+        orch = _make_selector_orchestrator()
+        pod = orch.pods[0]
+        assert pod.asset_selector is not None
+
+        # BTC를 COOLDOWN으로 변경
+        pod._asset_selector._states["BTC/USDT"].state = AssetLifecycleState.COOLDOWN
+        pod._asset_selector._states["BTC/USDT"].multiplier = 0.0
+        pod._asset_selector._states["BTC/USDT"].confirmation_count = 3
+
+        await persistence.save(orch)
+
+        # 새 orchestrator로 복원
+        orch2 = _make_selector_orchestrator()
+        result = await persistence.restore(orch2)
+        assert result is True
+
+        pod2 = orch2.pods[0]
+        assert pod2.asset_selector is not None
+        assert pod2._asset_selector._states["BTC/USDT"].state == AssetLifecycleState.COOLDOWN
+        assert pod2._asset_selector._states["BTC/USDT"].multiplier == pytest.approx(0.0)
+        # ETH, SOL은 ACTIVE 유지
+        assert pod2._asset_selector._states["ETH/USDT"].state == AssetLifecycleState.ACTIVE
+        assert pod2._asset_selector._states["SOL/USDT"].state == AssetLifecycleState.ACTIVE
+
+    @pytest.mark.asyncio
+    async def test_asset_selector_none_backward_compat(
+        self, persistence: OrchestratorStatePersistence
+    ) -> None:
+        """AssetSelector 없는 Pod → save/restore 기존 동작 유지."""
+        orch = _make_orchestrator()  # 기본: asset_selector=None
+        orch.pods[0].state = LifecycleState.PRODUCTION
+        await persistence.save(orch)
+
+        orch2 = _make_orchestrator()
+        result = await persistence.restore(orch2)
+        assert result is True
+        assert orch2.pods[0].state == LifecycleState.PRODUCTION
+        assert orch2.pods[0].asset_selector is None

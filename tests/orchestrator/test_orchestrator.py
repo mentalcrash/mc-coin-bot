@@ -13,8 +13,13 @@ from src.core.event_bus import EventBus
 from src.core.events import AnyEvent, BarEvent, EventType, FillEvent, SignalEvent
 from src.models.types import Direction
 from src.orchestrator.allocator import CapitalAllocator
-from src.orchestrator.config import OrchestratorConfig, PodConfig
-from src.orchestrator.models import AllocationMethod, LifecycleState
+from src.orchestrator.config import (
+    AssetSelectorConfig,
+    OrchestratorConfig,
+    PodConfig,
+    TurnoverConstraintConfig,
+)
+from src.orchestrator.models import AllocationMethod, AssetLifecycleState, LifecycleState
 from src.orchestrator.orchestrator import _ORCHESTRATOR_SOURCE, StrategyOrchestrator
 from src.orchestrator.pod import StrategyPod
 from src.orchestrator.risk_aggregator import RiskAggregator
@@ -1001,3 +1006,159 @@ class TestRebalanceTurnoverFilter:
         # min_rebalance_turnover=0.0 → 턴오버가 0이상이면 항상 실행
         orch._execute_rebalance()
         assert len(orch._allocation_history) == 1
+
+
+# ── TestTurnoverConstraint ────────────────────────────────────────
+
+
+class TestTurnoverConstraint:
+    """Turnover constraint clamp 로직 테스트."""
+
+    def test_per_pod_delta_clamped(self) -> None:
+        """Pod별 delta가 max_pod_turnover로 클램프됨."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.8, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.2, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        tc = TurnoverConstraintConfig(
+            max_pod_turnover_per_rebalance=0.10,
+            max_total_turnover_per_rebalance=1.0,  # total 제약 느슨
+        )
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            turnover_constraint=tc,
+            min_rebalance_turnover=0.0,
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        for _ in range(5):
+            pod_a.record_daily_return(0.01)
+            pod_b.record_daily_return(0.01)
+
+        orch._execute_rebalance()
+
+        # EW → 0.5/0.5 → clamp 0.40/0.40
+        # 0.8 → 0.40: delta -0.40, clamped to -0.10 → 0.70
+        # 0.2 → 0.40: delta +0.20, clamped to +0.10 → 0.30
+        assert pod_a.capital_fraction == pytest.approx(0.70)
+        assert pod_b.capital_fraction == pytest.approx(0.30)
+
+    def test_total_turnover_proportionally_scaled(self) -> None:
+        """전체 turnover > max_total → 비례 축소."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.7, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.3, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        tc = TurnoverConstraintConfig(
+            max_pod_turnover_per_rebalance=0.50,  # per-pod 느슨
+            max_total_turnover_per_rebalance=0.10,  # total 타이트
+        )
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            turnover_constraint=tc,
+            min_rebalance_turnover=0.0,
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        for _ in range(5):
+            pod_a.record_daily_return(0.01)
+            pod_b.record_daily_return(0.01)
+
+        orch._execute_rebalance()
+
+        # 비례 축소 후 total turnover <= 0.10
+        delta_a = abs(pod_a.capital_fraction - 0.7)
+        delta_b = abs(pod_b.capital_fraction - 0.3)
+        total = delta_a + delta_b
+        assert total <= 0.10 + 1e-6
+
+    def test_no_constraint_backward_compat(self) -> None:
+        """turnover_constraint=None → 기존 동작 유지."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.8, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.2, warmup=3)
+        pod_a.state = LifecycleState.PRODUCTION
+        pod_b.state = LifecycleState.PRODUCTION
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            turnover_constraint=None,
+            min_rebalance_turnover=0.0,
+            rebalance_calendar_days=1,
+        )
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+
+        for _ in range(5):
+            pod_a.record_daily_return(0.01)
+            pod_b.record_daily_return(0.01)
+
+        orch._execute_rebalance()
+
+        # 제약 없음 → EW clamp (0.40/0.40) 바로 적용
+        assert pod_a.capital_fraction == pytest.approx(0.40)
+        assert pod_b.capital_fraction == pytest.approx(0.40)
+
+
+# ── TestAllExcludedWarning ────────────────────────────────────
+
+
+class TestAllExcludedWarning:
+    """Phase 4: AssetSelector all-excluded → WARNING 전이 통합 테스트."""
+
+    def _make_selector_pod(
+        self,
+        pod_id: str = "pod-sel",
+        symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+        capital_fraction: float = 0.5,
+    ) -> StrategyPod:
+        """AssetSelector 활성화된 Pod 생성."""
+        asc = AssetSelectorConfig(
+            enabled=True,
+            exclude_score_threshold=0.20,
+            include_score_threshold=0.35,
+            exclude_confirmation_bars=2,
+            include_confirmation_bars=2,
+            ramp_steps=3,
+            min_active_assets=1,
+            sharpe_lookback=20,
+            return_lookback=10,
+        )
+        config = _make_pod_config(pod_id=pod_id, symbols=symbols, asset_selector=asc)
+        strategy = SimpleTestStrategy()
+        pod = StrategyPod(config=config, strategy=strategy, capital_fraction=capital_fraction)
+        pod._warmup = 3
+        return pod
+
+    def test_all_excluded_triggers_warning(self) -> None:
+        """PRODUCTION Pod + all-excluded → WARNING 전이."""
+        pod = self._make_selector_pod()
+        pod.state = LifecycleState.PRODUCTION
+        assert pod.asset_selector is not None
+
+        # Force all assets to COOLDOWN (multiplier=0)
+        for sym in ("BTC/USDT", "ETH/USDT", "SOL/USDT"):
+            pod._asset_selector._states[sym].state = AssetLifecycleState.COOLDOWN
+            pod._asset_selector._states[sym].multiplier = 0.0
+
+        assert pod.asset_selector.all_excluded is True
+
+        # _check_all_excluded_warning should transition to WARNING
+        StrategyOrchestrator._check_all_excluded_warning(pod)
+        assert pod.state == LifecycleState.WARNING
+
+    def test_non_production_not_affected(self) -> None:
+        """INCUBATION Pod + all-excluded → 상태 변경 없음."""
+        pod = self._make_selector_pod()
+        pod.state = LifecycleState.INCUBATION
+        assert pod.asset_selector is not None
+
+        # Force all assets to COOLDOWN
+        for sym in ("BTC/USDT", "ETH/USDT", "SOL/USDT"):
+            pod._asset_selector._states[sym].state = AssetLifecycleState.COOLDOWN
+            pod._asset_selector._states[sym].multiplier = 0.0
+
+        StrategyOrchestrator._check_all_excluded_warning(pod)
+        assert pod.state == LifecycleState.INCUBATION  # 변경 없음

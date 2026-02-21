@@ -19,6 +19,12 @@
 #   - CTREND-X:   SOL BNB ETH BTC DOGE (전 에셋 Sharpe ≥ 3.3)
 #   - GBTrend:    ETH SOL BTC BNB DOGE (전 에셋 Sharpe ≥ 2.8)
 #
+# Adaptive Allocation (2026-02-21):
+#   - Turnover Constraint: Pod당 ±15%, 전체 ±30% per rebalance
+#   - AssetSelector: 4+ 에셋 Pod에 FSM 기반 동적 에셋 선별
+#     (점수 < 0.20 → 5일 확인 → 5단계 ramp-down → 10일 cooldown)
+#   - Anchor-Mom (2 에셋)은 비활성 (분산 여유 부족)
+#
 # 배포 전 필수 검증:
 #   1. uv run mcbot orchestrate backtest config/orchestrator-live.yaml --report
 #   2. uv run mcbot orchestrate paper config/orchestrator-live.yaml -V
@@ -57,6 +63,14 @@ orchestrator:
   # ── Correlation ─────────────────────────────────────────────
   correlation_lookback: 90
   correlation_stress_threshold: 0.70
+
+  # ── Turnover Constraint ────────────────────────────────────
+  # 리밸런스 시 급격한 배분 변경 방지
+  # Pod당 ±15%: 0.25 → 0.10~0.40 범위 내에서 최대 3회 리밸런스로 도달
+  # 전체 ±30%: 4-Pod 대칭이동(±7.5% each) 시 sum=30% 허용
+  turnover_constraint:
+    max_pod_turnover_per_rebalance: 0.15
+    max_total_turnover_per_rebalance: 0.30
 
   # ── Lifecycle: Graduation ───────────────────────────────────
   graduation:
@@ -118,6 +132,20 @@ orchestrator:
         rebalance_bars: 5
         min_weight: 0.10
         max_weight: 0.50
+
+      # AssetSelector: 4 에셋 중 성과 미달 에셋 동적 제외/재진입
+      # min_active=2: 최소 2개 유지 (최대 2개 제외 가능)
+      asset_selector:
+        enabled: true
+        sharpe_lookback: 60           # 60일 Sharpe window
+        return_lookback: 30           # 30일 수익률 window
+        exclude_score_threshold: 0.20 # 하위 20% → 제외 후보
+        include_score_threshold: 0.35 # 상위 35% → 재진입 후보
+        exclude_confirmation_bars: 5  # 5일 연속 확인 후 제외
+        include_confirmation_bars: 3  # 3일 연속 확인 후 재진입
+        min_exclusion_bars: 10        # 10일 최소 cooldown
+        ramp_steps: 5                 # 5단계 점진적 전환
+        min_active_assets: 2          # 최소 2개 활성 유지
 
     # ────────────────────────────────────────────────────────
     # Pod 2: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
@@ -202,8 +230,22 @@ orchestrator:
         min_weight: 0.10
         max_weight: 0.40
 
+      # AssetSelector: 5 에셋 중 성과 미달 에셋 동적 제외/재진입
+      # min_active=3: 최소 3개 유지 (최대 2개 제외 가능)
+      asset_selector:
+        enabled: true
+        sharpe_lookback: 60
+        return_lookback: 30
+        exclude_score_threshold: 0.20
+        include_score_threshold: 0.35
+        exclude_confirmation_bars: 5
+        include_confirmation_bars: 3
+        min_exclusion_bars: 10
+        ramp_steps: 5
+        min_active_assets: 3
+
     # ────────────────────────────────────────────────────────
-    # Pod 4: GBTrend — Momentum GradientBoosting (인큐베이팅)
+    # Pod 4: GBTrend — Momentum GradientBoosting (인큐베이팅) — Momentum GradientBoosting (인큐베이팅)
     # P4 ETH Sharpe 4.18, CAGR +325.3%, MDD 17.3%, OOS=3.80
     # 모멘텀 중심 12개 feature, CTREND 대비 low correlation
     # 에셋: 전 에셋 Sharpe ≥ 2.8 → 5개 전체 투입
@@ -246,3 +288,17 @@ orchestrator:
         rebalance_bars: 5
         min_weight: 0.10
         max_weight: 0.40
+
+      # AssetSelector: 5 에셋 중 성과 미달 에셋 동적 제외/재진입
+      # min_active=3: 최소 3개 유지 (최대 2개 제외 가능)
+      asset_selector:
+        enabled: true
+        sharpe_lookback: 60
+        return_lookback: 30
+        exclude_score_threshold: 0.20
+        include_score_threshold: 0.35
+        exclude_confirmation_bars: 5
+        include_confirmation_bars: 3
+        min_exclusion_bars: 10
+        ramp_steps: 5
+        min_active_assets: 3
