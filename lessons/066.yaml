@@ -1,0 +1,14 @@
+id: 66
+title: 데이터 컬럼명 불일치 — catalog enrichment vs strategy required_columns
+body: fr-stab-conf, macro-liq-trend, onchain-bias-4h 세 전략이 컬럼명 불일치로 백테스트 불가. oc_stablecoin_total_circulating_usd(전략
+  기대) vs oc_stablecoin_total_usd(실제), macro_spy(전략) vs macro_spy_close(실제). Catalog
+  enrichment의 rename_map과 전략의 required_columns 간 동기화 필수. 구현 시 실제 enriched DataFrame
+  컬럼 확인 후 required_columns 설정해야 함.
+category: data-resolution
+tags:
+- column-mismatch
+- catalog
+- enrichment
+strategies: []
+timeframes: []
+added_at: '2026-02-21'

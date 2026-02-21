@@ -5,8 +5,9 @@ meta:
   category: Derivatives
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-14'
+  retired_at: '2026-02-21'
   economic_rationale: 가격 모멘텀과 funding rate 추세의 divergence가 추세 지속 가능성을 예측. FR 하락+가격
     상승=유기적 수요(지속), FR 급등+가격 상승=투기과열(청산위험). 크립토 영구선물 고유 edge.
   rationale_references: []
@@ -36,6 +37,14 @@ phases:
     date: '2026-02-14'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.17
+      best_cagr: 1.5
+      best_mdd: 37.5
+      best_asset: ETH/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -51,3 +60,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best ETH Sharpe 0.17. 4H FR divergence 시그널 노이즈 과다'

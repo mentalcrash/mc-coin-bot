@@ -5,8 +5,9 @@ meta:
   category: Carry
   timeframe: 4H
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-18'
+  retired_at: '2026-02-21'
   economic_rationale: FR 극단 구간에서만 캐리 수취 + vol 필터로 캐스케이드 회피. BIS 논문 검증 연 15-25%.
   rationale_references: []
   rationale_category: null
@@ -35,6 +36,14 @@ phases:
     date: '2026-02-18'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.19
+      best_cagr: 1.7
+      best_mdd: 37.7
+      best_asset: BTC/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -50,3 +59,8 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe<1.0. Best BTC 0.19, CAGR+1.7%. 4H FR carry edge
+    부족, 거래비용 잠식'

@@ -5,8 +5,9 @@ meta:
   category: Behavioral
   timeframe: 4H
   short_mode: HEDGE_ONLY
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-18'
+  retired_at: '2026-02-21'
   economic_rationale: F&G 극단 + 가격 다이버전스 contrarian. 행동 편향 기반. F&G<10 Sharpe 8.0.
   rationale_references: []
   rationale_category: null
@@ -35,6 +36,14 @@ phases:
     date: '2026-02-18'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.16
+      best_cagr: 1.1
+      best_mdd: 18.9
+      best_asset: BNB/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -50,3 +59,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best BNB Sharpe 0.16 Trades 39. 극저빈도 F&G divergence'

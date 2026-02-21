@@ -1,0 +1,15 @@
+id: 64
+title: USDT/USDC 구성비 시그널의 구조적 실패 — 전 에셋 Sharpe 음수 + MDD 60-92%
+body: 'stab-comp 전략 P4A 결과: USDT/USDC 개별 stablecoin 비중 변화 기반 risk-on/off 시그널은 실제 크립토
+  가격과 인과관계 없음. 5개 에셋 전부 Sharpe 음수(-0.40~-1.19), MDD 62-92%. 구성비 shift는 체인 간 유동성 이동
+  등 비투자 요인이 지배적이며, 리스크 선호 proxy로 부적합.'
+category: strategy-design
+tags:
+- stablecoin-composition
+- on-chain
+- 1D
+strategies:
+- stab-comp
+timeframes:
+- 1D
+added_at: '2026-02-21'

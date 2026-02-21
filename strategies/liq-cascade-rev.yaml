@@ -5,8 +5,9 @@ meta:
   category: Structural
   timeframe: 4H
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-18'
+  retired_at: '2026-02-21'
   economic_rationale: 레버리지 캐스케이드 후 가격 오버슈트 평균회귀. BIS/SSRN 2025 실증.
   rationale_references: []
   rationale_category: null
@@ -35,6 +36,15 @@ phases:
     date: '2026-02-18'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.75
+      best_cagr: 1.0
+      best_mdd: 1.7
+      best_asset: ETH/USDT
+      trades: 4.0
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -50,3 +60,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: ETH Sharpe 0.75 Trades 4. 극저빈도(4~21회) 통계 무의미'

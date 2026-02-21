@@ -14,7 +14,6 @@ from typing import Any
 # project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.backtest.analyzer import PerformanceAnalyzer
 from src.backtest.engine import BacktestEngine
 from src.backtest.request import BacktestRequest
 from src.config.settings import get_settings

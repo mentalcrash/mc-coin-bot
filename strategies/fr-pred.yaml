@@ -5,8 +5,9 @@ meta:
   category: Derivatives (Funding Rate Prediction)
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-20'
+  retired_at: '2026-02-21'
   economic_rationale: FR z-score 기반 이중 시그널. 극단 FR(|z|>2)에서 contrarian 평균회귀 + FR MA
     crossover로 추세 추종. 두 시그널 가중 합산으로 regime 적응. Derivatives 데이터(funding_rate) 필수.
   rationale_references: []
@@ -46,6 +47,14 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.27
+      best_cagr: 3.4
+      best_mdd: 52.4
+      best_asset: SOL/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-20'
@@ -61,3 +70,7 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. W6(Derivatives NaN): funding_rate ffill 처리 확인. Warning
     1건'
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.27 MDD 52.4%. FR 예측 이중시그널 노이즈 과다'

@@ -84,7 +84,7 @@ class TestVolTermMLStrategy:
     def test_custom_config(self) -> None:
         config = VolTermMLConfig(ridge_alpha=5.0)
         strategy = VolTermMLStrategy(config=config)
-        assert strategy._config.ridge_alpha == 5.0  # noqa: SLF001
+        assert strategy._config.ridge_alpha == 5.0
 
     def test_params_property(self) -> None:
         strategy = VolTermMLStrategy()

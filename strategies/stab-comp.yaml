@@ -5,8 +5,9 @@ meta:
   category: On-chain Sentiment
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-21'
+  retired_at: '2026-02-21'
   economic_rationale: USDT/USDC 구성비 변화 기반 리스크 선호도 시그널. USDT 비중 상승 = 리테일 risk-on, USDC
     비중 상승 = 기관 cautious.
   rationale_references: []
@@ -35,6 +36,14 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 3.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: -0.4
+      best_cagr: -12.9
+      best_mdd: 62.8
+      best_asset: SOL/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-21'
@@ -50,3 +59,7 @@ decisions:
   phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 3건 (W1 warmup 충분, W2 전략파라미터 2개, W5 on-chain 독립소스)
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe 음수+MDD 50%+ 즉시 폐기. USDT/USDC 구성비 무의미'

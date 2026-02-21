@@ -5,8 +5,9 @@ meta:
   category: Crypto Carry
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-19'
+  retired_at: '2026-02-21'
   economic_rationale: Funding Rate carry premium을 F&G sentiment gate로 타이밍 개선. 구조적
     레버리지 불균형(BIS WP 1087) + 행동편향 극단 contrarian. FR per-asset + F&G global.
   rationale_references: []
@@ -38,6 +39,14 @@ phases:
       tests: 49.0
       registry: carry-sent
       files: 5.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: -0.37
+      best_cagr: -5.1
+      best_mdd: 39.1
+      best_asset: DOGE/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-19'
@@ -54,3 +63,11 @@ decisions:
   verdict: PASS
   rationale: 4-file 구조 구현 완료 (config/preprocessor/signal/strategy + tests 49개). Registry
     등록 carry-sent. Ruff/Pyright 0 error.
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe 음수. 즉시 폐기. FR carry + F&G gate 조합 무효'
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 전 에셋 Sharpe 음수 즉시 폐기. FR carry + F&G gate 조합 무효'

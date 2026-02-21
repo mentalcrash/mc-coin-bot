@@ -86,7 +86,7 @@ class TestMHMStrategy:
     def test_custom_config(self) -> None:
         config = MHMConfig(agreement_threshold=5)
         strategy = MHMStrategy(config=config)
-        assert strategy._config.agreement_threshold == 5  # noqa: SLF001
+        assert strategy._config.agreement_threshold == 5
 
     def test_params_property(self) -> None:
         strategy = MHMStrategy()

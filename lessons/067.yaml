@@ -1,0 +1,18 @@
+id: 67
+title: 단일에셋 의존 on-chain 전략의 WFA 붕괴 — P4B Decay 19% vs WFA Decay 50% CV 방법론 민감도
+body: 'dex-mom: DOGE 단일에셋 의존(4/5 에셋 Sharpe<=0.07). P4B 70/30 단순 split에서 Decay 19%로
+  양호했으나, WFA 3-fold expanding window에서 Decay 50%, Consistency 33%로 FAIL. 3 fold 중
+  Fold 1(DOGE 급등기)만 OOS 양수(3.26). 밈코인의 비정상적 급등-급락 사이클이 특정 fold에 집중되어 CV 방법에 따라 결과가
+  극단적으로 달라짐. 교훈: 단일에셋 의존 전략은 P4B Decay가 낮아도 WFA에서 붕괴 가능. multi-asset breadth가 없는 전략은
+  WFA Consistency를 사전 예측 지표로 주의.'
+category: pipeline-process
+tags:
+- WFA
+- decay
+- single-asset
+- on-chain
+strategies:
+- dex-mom
+timeframes:
+- 1D
+added_at: '2026-02-21'

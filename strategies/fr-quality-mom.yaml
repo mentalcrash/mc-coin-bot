@@ -5,8 +5,9 @@ meta:
   category: Derivatives Overlay
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-19'
+  retired_at: '2026-02-21'
   economic_rationale: Funding Rate를 시그널이 아닌 crowding risk meter로 재정의. FR 극단 = 과밀 포지셔닝
     → 모멘텀 품질 저하. 구조적 제약 — 8시간 펀딩 메커니즘 비용 구조 활용.
   rationale_references: []
@@ -38,6 +39,14 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.25
+      best_cagr: 3.1
+      best_mdd: 42.1
+      best_asset: SOL/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-19'
@@ -53,3 +62,7 @@ decisions:
   phase: P3
   verdict: PASS
   rationale: C1-C7 전항목 PASS. W6 derivatives NaN ffill() 처리 확인 OK. Warning 0건 (W6 OK).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.25 MDD 42.1%. FR crowding filter 효과 부족'

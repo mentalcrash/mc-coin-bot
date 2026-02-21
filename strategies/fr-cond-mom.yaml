@@ -5,8 +5,9 @@ meta:
   category: Derivatives
   timeframe: 6H
   short_mode: HEDGE_ONLY
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-14'
+  retired_at: '2026-02-21'
   economic_rationale: FR z-score 극단치=과밀 포지셔닝 → 모멘텀 conviction 조건부 조절. BIS WP 1087
     + Inan 2025.
   rationale_references: []
@@ -36,6 +37,14 @@ phases:
     date: '2026-02-14'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.77
+      best_cagr: 18.6
+      best_mdd: 29.0
+      best_asset: SOL/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-14'
@@ -50,3 +59,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.77 CAGR 18.6%. 6H TF 비용 잠식 BTC Sharpe 음수'

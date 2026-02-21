@@ -1,0 +1,17 @@
+id: 63
+title: On-chain 의존 전략의 VBT 파이프라인 구조적 비호환 — enrichment 미주입으로 P5 전면 Sharpe=0
+body: 'dex-mom 전략은 EDA 엔진의 _enrich_onchain()으로 oc_dex_volume_usd를 주입받아야 시그널 생성. VBT
+  백테스트(P5A/P5B)는 순수 OHLCV만 제공하므로 dex_roc=NaN → trades=0. P4 EDA에서 Sharpe 1.11이었으나
+  P5 VBT에서 전 파라미터 Sharpe=0.00. 해결: VBT 엔진에 on-chain enrichment 추가 또는 on-chain 전략은
+  EDA-only P5 경로 필요.'
+category: pipeline-process
+tags:
+- on-chain
+- VBT
+- DEX
+- enrichment
+strategies:
+- dex-mom
+timeframes:
+- 1D
+added_at: '2026-02-21'

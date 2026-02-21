@@ -90,7 +90,7 @@ class TestCTRENDXStrategy:
     def test_custom_config(self) -> None:
         config = CTRENDXConfig(n_estimators=50)
         strategy = CTRENDXStrategy(config=config)
-        assert strategy._config.n_estimators == 50  # noqa: SLF001
+        assert strategy._config.n_estimators == 50
 
     def test_params_property(self) -> None:
         strategy = CTRENDXStrategy()

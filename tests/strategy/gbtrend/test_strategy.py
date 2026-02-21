@@ -89,7 +89,7 @@ class TestGBTrendStrategy:
     def test_custom_config(self) -> None:
         config = GBTrendConfig(n_estimators=50)
         strategy = GBTrendStrategy(config=config)
-        assert strategy._config.n_estimators == 50  # noqa: SLF001
+        assert strategy._config.n_estimators == 50
 
     def test_params_property(self) -> None:
         strategy = GBTrendStrategy()

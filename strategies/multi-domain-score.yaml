@@ -5,8 +5,9 @@ meta:
   category: Multi-Signal Fusion
   timeframe: 4H
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-18'
+  retired_at: '2026-02-21'
   economic_rationale: 4차원(추세/볼륨/파생상품/변동성) soft scoring. 독립 약한 알파 noise 상쇄.
   rationale_references: []
   rationale_category: null
@@ -35,6 +36,14 @@ phases:
     date: '2026-02-18'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.26
+      best_cagr: 2.8
+      best_mdd: 35.9
+      best_asset: DOGE/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -50,3 +59,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best DOGE Sharpe 0.26. 4차원 soft scoring 노이즈 상쇄 실패'

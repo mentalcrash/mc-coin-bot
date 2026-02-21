@@ -5,8 +5,9 @@ meta:
   category: Macro-Enhanced Trend
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-19'
+  retired_at: '2026-02-21'
   economic_rationale: 글로벌 유동성(DXY↓+VIX↓+Stablecoin↑+SPY↑)과 가격 모멘텀의 정렬로 크립토 방향 예측.
     Macro-crypto 참여자 분절의 정보 비대칭 활용.
   rationale_references: []
@@ -38,6 +39,11 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: N/A
 asset_performance: []
 decisions:
 - date: '2026-02-19'
@@ -53,3 +59,8 @@ decisions:
   verdict: PASS
   rationale: 'C1-C7 전항목 PASS. Warning 1건(W1: warmup_periods=100, roc+zscore 체인 ~110
     필요. NaN 전파로 안전하나 여유 부족).'
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 컬럼명 불일치(macro_spy/oc_stablecoin_total_circulating_usd). 전
+    에셋 데이터 누락'

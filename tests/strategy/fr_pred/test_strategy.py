@@ -94,7 +94,7 @@ class TestFRPredStrategy:
     def test_custom_config(self) -> None:
         config = FRPredConfig(fr_mr_threshold=1.5)
         strategy = FRPredStrategy(config=config)
-        assert strategy._config.fr_mr_threshold == 1.5  # noqa: SLF001
+        assert strategy._config.fr_mr_threshold == 1.5
 
     def test_params_property(self) -> None:
         strategy = FRPredStrategy()

@@ -5,8 +5,9 @@ meta:
   category: Multi-Factor Adaptive
   timeframe: 1D
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-19'
+  retired_at: '2026-02-21'
   economic_rationale: Shannon entropy로 시장 예측 가능성 측정 → 모멘텀과 FR carry의 가중치 적응적 조절. 낮은
     entropy=momentum 우위, 높은 entropy=carry 우위.
   rationale_references: []
@@ -38,6 +39,14 @@ phases:
       C6: PASS
       C7: PASS
       warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: 0.44
+      best_cagr: 3.6
+      best_mdd: 15.1
+      best_asset: SOL/USDT
 asset_performance: []
 decisions:
 - date: '2026-02-19'
@@ -53,3 +62,7 @@ decisions:
   verdict: PASS
   rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전수 확인, 벡터화 완전, vol-target 정확, ShortMode
     3-way 완전 구현.
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best SOL Sharpe 0.44 CAGR 3.6%. Entropy 적응 가중치 효과 미미'

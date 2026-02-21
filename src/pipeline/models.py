@@ -160,11 +160,18 @@ class StrategyRecord(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def best_asset(self) -> str | None:
-        """Sharpe 기준 최고 에셋."""
-        if not self.asset_performance:
-            return None
-        best = max(self.asset_performance, key=lambda a: a.sharpe)
-        return best.symbol
+        """Sharpe 기준 최고 에셋.
+
+        Fallback: asset_performance가 비어있으면 P4 phase details에서 best_asset 조회.
+        """
+        if self.asset_performance:
+            best = max(self.asset_performance, key=lambda a: a.sharpe)
+            return best.symbol
+        # Fallback: P4 details에서 best_asset 조회
+        p4_result = self.phases.get(PhaseId.P4)
+        if p4_result and p4_result.details.get("best_asset"):
+            return str(p4_result.details["best_asset"])
+        return None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -5,8 +5,9 @@ meta:
   category: Structural + Information Asymmetry
   timeframe: 4H
   short_mode: FULL
-  status: TESTING
+  status: RETIRED
   created_at: '2026-02-18'
+  retired_at: '2026-02-21'
   economic_rationale: FR 극단값은 레버리지 불균형의 구조적 신호. Stablecoin flow로 투기 vs 실수요 판별. 이중
     비효율(구조적 제약 + 정보 비대칭). SSRN 5576424 실증.
   rationale_references: []
@@ -35,6 +36,12 @@ phases:
     date: '2026-02-18'
     details:
       note: retroactive — P2 recording was missing from pipeline
+  P4:
+    status: FAIL
+    date: '2026-02-21'
+    details:
+      best_sharpe: N/A
+      best_cagr: N/A
 asset_performance: []
 decisions:
 - date: '2026-02-18'
@@ -50,3 +57,7 @@ decisions:
   phase: P2
   verdict: PASS
   rationale: Retroactive P2 기록. 구현 완료 확인 (코드 + Registry 등록).
+- date: '2026-02-21'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 컬럼명 불일치(oc_stablecoin_total_circulating_usd). 전 에셋 데이터 누락'

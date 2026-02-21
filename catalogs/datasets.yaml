@@ -322,6 +322,11 @@ datasets:
     strategy_hints:
       - "USDT 발행량 변화 → 시장 유입/유출"
       - "USDT dominance 변화 → 시장 선호도"
+    enrichment:
+      scope: global
+      columns: [circulating_usd]
+      rename_map:
+        circulating_usd: oc_stablecoin_usdt_usd
 
   - id: stablecoin_usdc
     name: USDC Supply
@@ -337,6 +342,11 @@ datasets:
     strategy_hints:
       - "기관 자금 프록시 (USDC = 규제 준수)"
       - "USDT/USDC 비율 → 기관 vs 리테일 자금"
+    enrichment:
+      scope: global
+      columns: [circulating_usd]
+      rename_map:
+        circulating_usd: oc_stablecoin_usdc_usd
 
   # ─── On-chain: TVL ──────────────────────────────────────────────────
   - id: tvl_total
