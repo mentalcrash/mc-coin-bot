@@ -108,7 +108,9 @@ def list_strategies(
     status_filter: Annotated[
         str | None, typer.Option("--status", "-s", help="Filter by status")
     ] = None,
-    phase: Annotated[str | None, typer.Option("--phase", "-g", help="Filter by current phase")] = None,
+    phase: Annotated[
+        str | None, typer.Option("--phase", "-g", help="Filter by current phase")
+    ] = None,
     verdict: Annotated[
         str | None, typer.Option("--verdict", "-v", help="PASS or FAIL at phase")
     ] = None,
@@ -822,6 +824,45 @@ def phases_show(
     console.print(Panel("\n".join(lines), title=f"Phase {p.phase_id}"))
 
 
+def _compute_extended_p1_scores(
+    scores: list,
+    include_decay: bool,
+    trades_year: float | None,
+    cost_ratio: float | None,
+    data_sources: str | None,
+    corr_active: float | None,
+    indicator_series: object,
+    forward_returns: object,
+) -> None:
+    """확장 P1 항목 점수를 scores 리스트에 추가."""
+    from src.pipeline.p1_helpers import (
+        compute_active_correlation_score,
+        compute_data_source_diversity_score,
+        compute_signal_decay_score,
+        compute_turnover_score,
+    )
+
+    if include_decay:
+        from src.backtest.ic_analyzer import ICAnalyzer
+
+        rolling = ICAnalyzer.rolling_ic(indicator_series, forward_returns)
+        decay_score = compute_signal_decay_score(rolling)
+        scores.append(decay_score)
+
+    if trades_year is not None and cost_ratio is not None:
+        turnover_s = compute_turnover_score(trades_year, cost_ratio)
+        scores.append(turnover_s)
+
+    if data_sources is not None:
+        sources_list = [s.strip() for s in data_sources.split(",")]
+        diversity_s = compute_data_source_diversity_score(sources_list)
+        scores.append(diversity_s)
+
+    if corr_active is not None:
+        corr_s = compute_active_correlation_score(corr_active)
+        scores.append(corr_s)
+
+
 # ─── P1 check command ────────────────────────────────────────────────
 
 
@@ -848,11 +889,32 @@ def p1_check(
         str | None,
         typer.Option("--category", "-c", help="Rationale category for success rate scoring"),
     ] = None,
+    include_decay: Annotated[
+        bool,
+        typer.Option("--include-decay", help="Include signal decay score"),
+    ] = False,
+    trades_year: Annotated[
+        float | None,
+        typer.Option("--trades-year", help="Estimated trades per year"),
+    ] = None,
+    cost_ratio: Annotated[
+        float | None,
+        typer.Option("--cost-ratio", help="Cost ratio (annual cost / annual return)"),
+    ] = None,
+    data_sources: Annotated[
+        str | None,
+        typer.Option("--data-sources", help="Data sources used (comma-separated)"),
+    ] = None,
+    corr_active: Annotated[
+        float | None,
+        typer.Option("--corr-active", help="Expected correlation with active strategies"),
+    ] = None,
 ) -> None:
     """P1 데이터 기반 항목 자동 점수 계산 도우미.
 
     IC 사전 검증, 카테고리 성공률, 레짐 독립성 3개 항목의
-    추천 점수를 자동 계산합니다.
+    추천 점수를 자동 계산합니다. --include-decay, --trades-year,
+    --cost-ratio, --data-sources, --corr-active 옵션으로 확장 항목 추가 가능.
 
     Example:
         uv run mcbot pipeline p1-check rsi BTC/USDT --tf 1D -p period=14 --category momentum
@@ -966,6 +1028,18 @@ def p1_check(
         regime_score = compute_regime_independence_score(regime_ics)
         scores.append(regime_score)
 
+    # 4) Extended scores
+    _compute_extended_p1_scores(
+        scores=scores,
+        include_decay=include_decay,
+        trades_year=trades_year,
+        cost_ratio=cost_ratio,
+        data_sources=data_sources,
+        corr_active=corr_active,
+        indicator_series=indicator_series,
+        forward_returns=forward_returns,
+    )
+
     # 결과 테이블
     result_table = Table(title="P1 Data-Based Scores", show_header=True, header_style="bold")
     result_table.add_column("항목", min_width=16)
@@ -982,6 +1056,167 @@ def p1_check(
     # --p1-items 복사 가능 JSON
     console.print(
         f"\n[bold]--p1-items JSON:[/bold]\n'{json.dumps(items_json, ensure_ascii=False)}'"
+    )
+
+
+# ─── P1 scan command ─────────────────────────────────────────────────
+
+
+@app.command(name="p1-scan")
+def p1_scan(
+    symbol: Annotated[
+        list[str] | None,
+        typer.Option("-s", "--symbol", help="Symbols (default: 5 major)"),
+    ] = None,
+    timeframe: Annotated[str, typer.Option("--tf", help="Timeframe")] = "1D",
+    source: Annotated[
+        str,
+        typer.Option(
+            "--source", help="Data source filter: ohlcv/derivatives/onchain/macro/options/all"
+        ),
+    ] = "all",
+    top: Annotated[int, typer.Option("--top", help="Top N results")] = 20,
+    forward_period: Annotated[
+        list[int] | None,
+        typer.Option("--fwd", help="Forward return periods"),
+    ] = None,
+    year: Annotated[
+        list[int],
+        typer.Option("--year", "-y", help="Year(s)"),
+    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+) -> None:
+    """P1 IC Batch Scanner — 다중 지표 x 다중 에셋 IC 일괄 스캔.
+
+    OHLCV 기반 기술적 지표(DEFAULT_SPECS)와 enriched 데이터 컬럼의
+    예측력을 일괄 측정하여 유망한 알파 후보를 탐색합니다.
+
+    Example:
+        uv run mcbot pipeline p1-scan
+        uv run mcbot pipeline p1-scan -s BTC/USDT -s ETH/USDT --source ohlcv --top 10
+        uv run mcbot pipeline p1-scan --fwd 1 --fwd 5 --tf 1D
+    """
+    from datetime import UTC, datetime
+
+    from src.config.settings import get_settings
+    from src.core.exceptions import DataNotFoundError
+    from src.core.logger import setup_logger
+    from src.data.market_data import MarketDataRequest
+    from src.data.service import MarketDataService
+    from src.pipeline.ic_scanner import ICBatchScanner, ScanConfig
+
+    setup_logger(console_level="WARNING")
+
+    # Config
+    default_symbols = ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT")
+    symbols_tuple = tuple(symbol) if symbol else default_symbols
+    fwd_periods = tuple(forward_period) if forward_period else (1,)
+
+    scan_config = ScanConfig(
+        symbols=symbols_tuple,
+        timeframe=timeframe,
+        years=tuple(year),
+        forward_periods=fwd_periods,
+    )
+    scanner = ICBatchScanner(scan_config)
+
+    console.print(
+        Panel(
+            (
+                f"[bold]P1 IC Batch Scanner[/bold]\n"
+                f"Symbols: {', '.join(symbols_tuple)}\n"
+                f"TF: {timeframe} | Source: {source}\n"
+                f"Forward periods: {fwd_periods} | Top: {top}"
+            ),
+            border_style="cyan",
+        )
+    )
+
+    # Load data
+    settings = get_settings()
+    data_service = MarketDataService(settings)
+    start_date = datetime(min(year), 1, 1, tzinfo=UTC)
+    end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
+
+    ohlcv_data: dict[str, object] = {}
+    enriched_data: dict[str, object] = {}
+
+    for sym in symbols_tuple:
+        try:
+            data = data_service.get(
+                MarketDataRequest(
+                    symbol=sym,
+                    timeframe=timeframe,
+                    start=start_date,
+                    end=end_date,
+                ),
+            )
+            ohlcv_data[sym] = data.ohlcv
+            # enriched_data도 ohlcv로 사용 (enriched 컬럼이 있는 경우 자동 감지)
+            enriched_data[sym] = data.ohlcv
+            console.print(f"  [green]Loaded {sym}: {len(data.ohlcv)} bars[/green]")
+        except DataNotFoundError as e:
+            console.print(f"  [yellow]Skipped {sym}: {e}[/yellow]")
+
+    if not ohlcv_data:
+        console.print("[red]No data loaded. Exiting.[/red]")
+        raise typer.Exit(code=1)
+
+    # Scan
+    if source == "ohlcv":
+        report = scanner.scan_all(ohlcv_data)  # type: ignore[arg-type]
+    elif source == "all":
+        report = scanner.scan_all(ohlcv_data, enriched_data)  # type: ignore[arg-type]
+    else:
+        # enriched only, filtered by source
+        report = scanner.scan_all({}, enriched_data)  # type: ignore[arg-type]
+
+    # Filter by source if needed
+    if source not in ("all", "ohlcv"):
+        report.entries = [e for e in report.entries if e.source == source]
+
+    # Display results
+    top_entries = report.top_n(top)
+
+    result_table = Table(
+        title=f"IC Batch Scan Results (Top {min(top, len(top_entries))} / {report.total} total)",
+        show_header=True,
+        header_style="bold",
+    )
+    result_table.add_column("#", style="dim", width=4)
+    result_table.add_column("Indicator", style="bold", min_width=16)
+    result_table.add_column("Source", width=12)
+    result_table.add_column("Symbol", width=10)
+    result_table.add_column("Fwd", justify="right", width=4)
+    result_table.add_column("Rank IC", justify="right", width=8)
+    result_table.add_column("IC IR", justify="right", width=7)
+    result_table.add_column("Hit Rate", justify="right", width=8)
+    result_table.add_column("Verdict", justify="center", width=7)
+
+    for i, entry in enumerate(top_entries, 1):
+        if entry.ic_result is None:
+            continue
+        ic = entry.ic_result
+        verdict_str = "[green]PASS[/green]" if ic.verdict.value == "PASS" else "[red]FAIL[/red]"
+        result_table.add_row(
+            str(i),
+            entry.indicator_name,
+            entry.source,
+            entry.symbol,
+            str(entry.forward_period),
+            f"{ic.rank_ic:+.4f}",
+            f"{ic.ic_ir:+.3f}",
+            f"{ic.hit_rate:.1f}%",
+            verdict_str,
+        )
+
+    console.print(result_table)
+
+    # Summary
+    console.print(
+        f"\n  [green]PASS: {report.passed}[/green] | "
+        f"[red]FAIL: {report.failed}[/red] | "
+        f"[yellow]Skipped: {report.skipped}[/yellow] | "
+        f"Total: {report.total}"
     )
 
 
@@ -1149,5 +1384,7 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
         dt.add_column("Rationale")
         for d in r.decisions:
             v_color = "green" if d.verdict == PhaseVerdict.PASS else "red"
-            dt.add_row(str(d.date), str(d.phase), f"[{v_color}]{d.verdict}[/{v_color}]", d.rationale)
+            dt.add_row(
+                str(d.date), str(d.phase), f"[{v_color}]{d.verdict}[/{v_color}]", d.rationale
+            )
         console.print(dt)

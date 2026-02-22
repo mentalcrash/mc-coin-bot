@@ -442,7 +442,7 @@ TF 적합: 1D
              Stablecoin flow + MVRV + Fear&Greed 합의 시 high-conviction signal.
 접근법:
   - A~E 중 2~3개 지표의 z-score 합산 또는 majority vote
-  - 기존 CTREND/Anchor-Mom에 on-chain filter overlay
+  - 기존 Anchor-Mom에 on-chain filter overlay
   - RegimeService + on-chain → 이중 필터 (market regime + macro regime)
 구현 난이도: 중간 (개별 지표 구현 후 결합)
 TF 적합: 1D
@@ -533,6 +533,14 @@ GitHub: shep-analytics/gt_score
 > Microstructure/Session/Seasonality/Liquidity 영역은 실패 확인됨.
 > RegimeService 공유 인프라 구축 완료 — 레짐 적응형 전략 설계 가능.
 
+### IC Scanner 연동
+
+`uv run mcbot pipeline p1-scan --source all --top 20` 실행 결과를 아이디어 소스로 활용:
+
+- Cross-asset stable (3+ 에셋 PASS) 지표 → 강건한 alpha 후보
+- On-chain/Macro/Options IC PASS → Multi-source 전략 SubSignalSpec 후보
+- IC Scanner 결과 + 미탐색 영역 교차 확인으로 체계적 발굴
+
 ```
 0.8순위: On-chain Macro Signal ★ 블루오션 (전략 0개 사용 중)
        — ✅ 22개 데이터셋 + 12개 CoinMetrics 인프라 완비, EDA auto-enrich
@@ -565,10 +573,10 @@ GitHub: shep-analytics/gt_score
        — 처분 효과: 크립토 retail 지배 시장에서 효과 극대화 가능성
        — 레짐 적응 가능: volatile 레짐에서 disposition effect 강화
 
-2순위: ML 앙상블 변형 (CTREND 외 다른 모델/피처셋)
-       — 유일한 성공 패턴(CTREND) 확장
+2순위: ML 앙상블 변형 (다른 모델/피처셋)
+       — 주의: CTREND는 look-ahead bias로 전량 RETIRED (교훈 #068)
        — Random Forest, XGBoost, 다른 feature 조합 탐색
-       — 주의: CTREND와 높은 상관 시 포트폴리오 가치 제한
+       — resolved_end 패턴 필수, 활성 전략과 높은 상관 시 포트폴리오 가치 제한
        — 레짐 적응 가능: regime feature를 ML 입력에 추가
 
 3순위: Information Theory (Transfer Entropy, Sample Entropy)

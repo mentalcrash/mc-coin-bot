@@ -59,7 +59,7 @@ def aggregator(
 
 | 필드 | 타입 | 기본값 | 설명 |
 |------|------|--------|------|
-| `name` | `str` | 필수 | Registry 등록명 (예: `"ctrend"`, `"tsmom"`) |
+| `name` | `str` | 필수 | Registry 등록명 (예: `"anchor-mom"`, `"tsmom"`) |
 | `params` | `dict[str, Any]` | `{}` | `from_params(**params)` 전달 |
 | `weight` | `float` | `1.0` | 정적 가중치 (`gt=0.0`) |
 
@@ -183,17 +183,17 @@ timeframe: "1D"
 short_mode: 0
 
 rationale: |
-  추세추종(CTREND) + 변동성구조(VoV-Mom) 결합.
+  추세추종(Anchor-Mom) + 변동성구조(VoV-Mom) 결합.
   상관 0.15 → 분산 효과 극대화.
   Sharpe_ens ≈ sqrt(2) * 0.8 * sqrt(1-0.15) ≈ 1.04
 
 parameters:
   strategy_name: ensemble
   sub_strategies:
-    - name: "ctrend"
+    - name: "anchor-mom"
       params:
-        lookback_long: 60
-        lookback_short: 20
+        nearness_lookback: 60
+        mom_lookback: 30
       weight: 1.0
     - name: "vov-mom"
       params:
@@ -222,10 +222,10 @@ strategy:
   name: ensemble
   config:
     strategies:
-      - name: "ctrend"
+      - name: "anchor-mom"
         params:
-          lookback_long: 60
-          lookback_short: 20
+          nearness_lookback: 60
+          mom_lookback: 30
         weight: 1.0
       - name: "vov-mom"
         params:

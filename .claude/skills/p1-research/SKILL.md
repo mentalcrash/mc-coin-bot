@@ -74,7 +74,7 @@ allowed-tools:
    ShortMode.FULL/HEDGE_ONLY를 기본 검토하며, 하락장 alpha를 적극 추구한다.
    DISABLED는 명확한 근거가 있을 때만 선택
 1. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
-1. **CTREND 상관 최소화**: 유일한 활성 전략과 낮은 상관이 포트폴리오 가치 극대화
+1. **활성 전략 상관 최소화**: `pipeline list --status ACTIVE`로 동적 확인, 낮은 상관이 포트폴리오 가치 극대화
 1. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
 1. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
 1. **On-chain 데이터 우선 탐색**: OHLCV-only 전략보다 edge 감쇠 느림 (수월~수분기).
@@ -120,6 +120,11 @@ allowed-tools:
    # → idea-sources.md § 6.5 참조: Stablecoin Flow, MVRV, Exchange Flow,
    #   Fear&Greed, Network Activity 등 구체적 전략 후보 목록
    # → 현재 전략 0개 사용 중 — OHLCV-only 전략보다 edge 감쇠 느림
+
+7. IC Batch Scanner 실행 (선택)
+   uv run mcbot pipeline p1-scan --top 20
+   uv run mcbot pipeline p1-scan --source onchain --top 10
+   → Cross-asset stable 지표 우선, 비-OHLCV IC PASS 지표 우선
 ```
 
 #### 0-Z. 탐색 모드 선택
@@ -236,6 +241,13 @@ allowed-tools:
   [선택] 앙상블 기여도 평가
   기존 활성 전략과의 상관: 낮음(<0.3) / 중간(0.3~0.6) / 높음(>0.6)
   → 상관 < 0.3이면 단독 Sharpe 0.5+ 수준에서도 앙상블 PASS 고려
+
+  [확장 스코어카드] (--extended 옵션)
+  [7] 시그널 감쇠 안정성: _/5  (--include-decay)
+  [8] 거래 비용 효율: _/5  (--trades-year + --cost-ratio)
+  [9] 데이터 소스 다양성: _/5  (--data-sources)
+  [10] 활성 전략 독립성: _/5  (--corr-active)
+  확장 TOTAL: __/50 (PASS ≥ 30)
 ══════════════════════════════════════════════════════
 ```
 
@@ -339,19 +351,21 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 5. 경제적 논거                6. 사용 지표 (라이브러리에서 선택)
 7. 시그널 생성 로직 (수식)    8. ShortMode: DISABLED/HEDGE_ONLY/FULL
 9. 타임프레임: 1D/4H/1H      10. 예상 거래 빈도 (건/년)
-11. 예상 Sharpe 범위          12. CTREND 상관 예측: 낮음/중간/높음
+11. 예상 Sharpe 범위          12. 활성 전략 상관 예측: 낮음/중간/높음 (`pipeline list --status ACTIVE`)
 13. 비용 추정: 연간 거래비용 / 예상 총수익 비율 (< 30% 필수)
 14. 레짐 활용: 없음/패턴A/B/C (활용 시 컬럼+파라미터 명시)
 15. 데이터 요구사항: OHLCV only / Derivatives / On-chain / Sentiment
     (On-chain 주요 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
      oc_stablecoin_total_circulating_usd, oc_tvl_usd, oc_fear_greed,
      oc_adractcnt, oc_txcnt, oc_mktcap_usd — 전체 목록: docs/data-collection.md)
+    (Multi-source 전략 시 SubSignalSpec 목록 기재:
+     - column, transform, window, weight, invert)
 16. 백테스팅 데이터 가용성: 전 기간/30일 제한/미확보
     (On-chain: 2018~2020+ 소스별 상이, publication lag T+1 자동 적용)
 17. 앙상블 활용: 단독/서브 전략 후보/앙상블 전용
 ```
 
-**CTREND와 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
+**활성 전략(Anchor-Mom 등)과 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
 
 ### Step 4.5–4.6: YAML 파이프라인 등록 (Phase 1 PASS 시 필수)
 
@@ -399,7 +413,7 @@ uv run mcbot pipeline create {strategy-name} \
 
 4. 유형 구분
    - 메타 앙상블: EnsembleStrategy + 여러 BaseStrategy (이 모드의 대상)
-   - 내부 앙상블: 단일 전략 내부 다중 TF/파라미터 (CTREND/Donchian 패턴)
+   - 내부 앙상블: 단일 전략 내부 다중 TF/파라미터 (Anchor-Mom/Donchian 패턴)
 ```
 
 ### Step 2E: 앙상블 Phase 1E 스코어카드
@@ -666,6 +680,8 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 | 12 | 비효율 원천 불명 | "왜 돈을 버는지" 설명 불가 → 과적합. 비효율 원천 5가지 중 미해당 |
 | 13 | 비용 비율 > 30% | edge가 거래 비용에 잠식됨. 빈도 감소 또는 TF 상향 필요 |
 | 14 | OHLCV만으로 알파 기대 | 가격/거래량은 가장 빠르게 감쇠. Derivatives/On-chain/Sentiment 우선 (✅ 인프라 구축 완료) |
+| 15 | OHLCV-only + IC < 0.02 | On-chain/Macro/Options 인프라 활용 없이 약한 IC는 시간 낭비 |
+| 16 | ML 전략 look-ahead | forward_return 학습 시 `resolved_end = t - prediction_horizon + 1` 패턴 필수. CTREND 교훈 #068 참조 |
 
 전체 목록: [references/discarded-strategies.md](references/discarded-strategies.md) + `uv run mcbot pipeline lessons-list`
 
@@ -678,11 +694,14 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 - [ ] 비효율 원천 + 지속 이유 1문단 이상
 - [ ] 비용 추정: 연간 거래비용/총수익 < 30%
 - [ ] ShortMode + TF 적합성 확인
-- [ ] CTREND 예상 상관관계 평가됨
+- [ ] 활성 전략 상관관계 평가됨 (`pipeline list --status ACTIVE`)
 - [ ] 지표 `src/market/indicators/`에서 선택
 - [ ] 설계 문서 17개 항목 작성됨
 - [ ] Derivatives 필요 시 Silver _deriv 가용성 확인
 - [ ] On-chain/Sentiment 데이터 활용 여부 검토 (22개 데이터셋 가용)
+- [ ] IC Scanner 실행 여부 (p1-scan)
+- [ ] 데이터 소스 다양성 검토 (3+ 소스 우선)
+- [ ] Multi-source 시 SubSignalSpec 정의됨
 - [ ] 앙상블 기여도 평가됨 (약한 alpha + 낮은 상관 → 편입 후보 판정)
 - [ ] `pipeline create` → YAML 생성됨
 - [ ] `pipeline report` → dashboard 갱신됨

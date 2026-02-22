@@ -114,6 +114,7 @@ import src.strategy.ms_vol_ratio  # 전략 등록 side effect
 import src.strategy.mtf_macd  # 전략 등록 side effect
 import src.strategy.multi_domain_score  # 전략 등록 side effect
 import src.strategy.multi_factor  # 전략 등록 side effect
+import src.strategy.multi_source  # 전략 등록 side effect
 import src.strategy.nvt_cycle  # 전략 등록 side effect
 import src.strategy.obv_accel  # 전략 등록 side effect
 import src.strategy.oi_diverge  # 전략 등록 side effect
