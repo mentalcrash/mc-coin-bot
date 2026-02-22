@@ -103,15 +103,23 @@ def generate_signals(
     # NOTE: Rolling ML training requires loop -- cannot vectorize
     # predict_last_only=True: 마지막 시그널에 필요한 fits만 수행 (EDA incremental 최적화)
     # shift(1)로 인해 마지막 시그널은 n-2 인덱스의 prediction을 사용
+    prediction_horizon = config.prediction_horizon
     loop_start = max(training_window, n - 2) if predict_last_only else training_window
     for t in range(loop_start, n):
         # Training window: [t - training_window, t)
         start_idx = t - training_window
 
-        x_train = feature_matrix[start_idx:t]
-        y_train = forward_returns[start_idx:t]
+        # Look-ahead bias 방지: forward_return[i]는 close[i + prediction_horizon]이 필요.
+        # 시점 t에서 close[j]는 j <= t만 알 수 있으므로,
+        # forward_return[i]가 확정된 인덱스는 i <= t - prediction_horizon.
+        resolved_end = t - prediction_horizon + 1  # exclusive upper bound
+        if resolved_end <= start_idx:
+            continue
 
-        # NaN이 아닌 행만 사용 (forward_return은 마지막 prediction_horizon개가 NaN)
+        x_train = feature_matrix[start_idx:resolved_end]
+        y_train = forward_returns[start_idx:resolved_end]
+
+        # NaN이 아닌 행만 사용 (feature NaN 등 edge case)
         valid_mask = ~(np.isnan(y_train) | np.any(np.isnan(x_train), axis=1))
 
         if valid_mask.sum() < _MIN_TRAIN_SAMPLES:

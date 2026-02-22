@@ -63,11 +63,19 @@ def generate_signals(
 
     predictions = np.full(n, np.nan)
 
+    prediction_horizon = config.prediction_horizon
     loop_start = max(training_window, n - 2) if predict_last_only else training_window
     for t in range(loop_start, n):
         start_idx = t - training_window
-        x_train = feature_matrix[start_idx:t]
-        y_train = forward_returns[start_idx:t]
+
+        # Look-ahead bias 방지: forward_return[i]는 close[i + prediction_horizon]이 필요.
+        # 시점 t에서 확정된 인덱스만 사용: i <= t - prediction_horizon.
+        resolved_end = t - prediction_horizon + 1
+        if resolved_end <= start_idx:
+            continue
+
+        x_train = feature_matrix[start_idx:resolved_end]
+        y_train = forward_returns[start_idx:resolved_end]
 
         valid_mask = ~(np.isnan(y_train) | np.any(np.isnan(x_train), axis=1))
         if valid_mask.sum() < _MIN_TRAIN_SAMPLES:

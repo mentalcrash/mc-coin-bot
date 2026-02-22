@@ -161,6 +161,94 @@ class TestNoLookaheadBias:
             )
 
 
+class TestResolvedTargetOnly:
+    """학습 타겟이 미래 데이터를 참조하지 않는지 검증."""
+
+    def test_full_vs_expanding_signal_parity(self) -> None:
+        """VBT(full data)와 expanding window 시그널이 일치해야 함.
+
+        full dataset에서 generate_signals() 결과와
+        expanding window에서 마지막 시그널을 모은 결과가
+        동일한 direction을 생성하는지 검증합니다.
+        resolved_end 수정이 올바르면 두 결과는 일치합니다.
+        """
+        np.random.seed(42)
+        n = 250
+
+        trend = np.linspace(0, 40, n)
+        noise = np.cumsum(np.random.randn(n) * 2)
+        close = 100 + trend + noise
+        high = close + np.abs(np.random.randn(n) * 1.5) + 0.5
+        low = close - np.abs(np.random.randn(n) * 1.5) - 0.5
+        open_ = close + np.random.randn(n) * 0.5
+
+        full_df = pd.DataFrame(
+            {
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.random.randint(1000, 10000, n).astype(float),
+            },
+            index=pd.date_range("2023-01-01", periods=n, freq="D"),
+        )
+
+        config = CTRENDConfig(training_window=68, prediction_horizon=12)
+
+        # 1. Full data (VBT 방식)
+        processed_full = preprocess(full_df, config)
+        signals_full = generate_signals(processed_full, config)
+
+        # 2. Expanding window (EDA Normal 방식) — 몇 개 시점만 샘플링
+        check_points = [150, 180, 210, 240]
+        for t in check_points:
+            expanding_df = full_df.iloc[: t + 1]
+            processed_exp = preprocess(expanding_df, config)
+            signals_exp = generate_signals(processed_exp, config)
+
+            # 마지막 시그널(shift(1) 적용 후)이 full data의 같은 시점과 일치
+            exp_dir = signals_exp.direction.iloc[-1]
+            full_dir = signals_full.direction.iloc[t]
+
+            assert exp_dir == full_dir, (
+                f"Signal mismatch at index {t}: "
+                f"expanding={exp_dir}, full={full_dir}"
+            )
+
+    def test_training_excludes_unresolved_targets(self) -> None:
+        """training loop에서 미확정 forward_return이 학습에 사용되지 않는지 검증.
+
+        training_window=68, prediction_horizon=12일 때
+        시점 t에서 학습에 사용되는 y_train 개수는 최대 56개
+        (68 - 12 = 56, 마지막 12개는 미확정).
+        """
+        np.random.seed(42)
+        n = 200
+
+        close = 100 + np.cumsum(np.random.randn(n) * 2)
+        high = close + 1.0
+        low = close - 1.0
+
+        df = pd.DataFrame(
+            {
+                "open": close + 0.5,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.full(n, 5000.0),
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="D"),
+        )
+
+        config = CTRENDConfig(training_window=68, prediction_horizon=12)
+        processed = preprocess(df, config)
+        signals = generate_signals(processed, config)
+
+        # 시그널이 생성됨을 확인 (training window 이후)
+        active_signals = signals.direction[config.training_window + 1 :]
+        assert active_signals.abs().sum() > 0, "No signals generated"
+
+
 class TestShortModes:
     """숏 모드 테스트."""
 

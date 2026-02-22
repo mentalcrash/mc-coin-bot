@@ -5,9 +5,9 @@ meta:
   category: ML 앙상블 (Technical aggregate)
   timeframe: 1D
   short_mode: FULL
-  status: ACTIVE
+  status: RETIRED
   created_at: '2026-02-10'
-  retired_at: null
+  retired_at: '2026-02-22'
   economic_rationale: 다수 기술적 지표의 앙상블 합산으로 개별 지표 노이즈를 상쇄하고 공통 방향성 추출
   rationale_references: []
   rationale_category: null

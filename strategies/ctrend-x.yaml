@@ -5,9 +5,9 @@ meta:
   category: ML 앙상블 (GradientBoosting)
   timeframe: 1D
   short_mode: FULL
-  status: ACTIVE
+  status: RETIRED
   created_at: '2026-02-20'
-  retired_at: null
+  retired_at: '2026-02-22'
   economic_rationale: CTREND의 ElasticNet을 GradientBoosting으로 교체하여 비선형 feature 상호작용
     캡처. 동일 28개 기술적 지표 사용, 트리 기반 모델로 변수간 interaction 자동 학습.
   rationale_references: []

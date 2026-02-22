@@ -1,0 +1,18 @@
+id: 68
+title: ML 전략 forward_return 학습 시 Look-Ahead Bias
+body: 'Rolling ML 전략(CTREND, CTREND-X, GBTrend, Vol-Term ML)의 training loop에서 forward_return[i]
+  = (close[i+ph] - close[i])/close[i]를 사용할 때, 시점 t에서 아직 확정되지 않은 미래 close를 참조하는 타겟까지
+  학습에 포함. 수정 전: y_train = forward_returns[start_idx:t], 수정 후: resolved_end = t - prediction_horizon
+  + 1; y_train = forward_returns[start_idx:resolved_end]. CTREND SOL Sharpe 2.88→-0.41,
+  CTREND-X SOL 4.15→-0.73, GBTrend ETH 4.18→-0.31. 4개 전략 전량 RETIRED. 방지책: (1) resolved_end
+  패턴 강제, (2) Expanding Window Parity Test로 VBT vs 점진적 시그널 일치 검증, (3) p2-implement
+  스킬에 체크리스트 추가.'
+category: strategy-design
+tags:
+- ML
+- look-ahead-bias
+- forward-return
+- training-loop
+strategies: []
+timeframes: []
+added_at: '2026-02-22'

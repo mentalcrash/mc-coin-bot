@@ -159,6 +159,33 @@ OHLCV 외 Derivatives 데이터 필요 시: [references/derivatives-implementati
 
 **금지**: `shift(-N)` (미래 참조), 동시 long+short 미처리, strength NaN에서 entries=True.
 
+### ML Rolling Training Loop — forward_return Look-Ahead Bias 방지 (Critical)
+
+`forward_return[i] = (close[i + prediction_horizon] - close[i]) / close[i]`를 학습 타겟으로 사용하는 전략은
+시점 t에서 **확정된 타겟만** 학습에 사용해야 한다.
+
+```python
+# ✅ 올바른 패턴 (resolved_end)
+prediction_horizon = config.prediction_horizon
+for t in range(loop_start, n):
+    start_idx = t - training_window
+    # 시점 t에서 close[j]는 j <= t만 알 수 있으므로,
+    # forward_return[i]가 확정된 인덱스는 i <= t - prediction_horizon.
+    resolved_end = t - prediction_horizon + 1  # exclusive upper bound
+    if resolved_end <= start_idx:
+        continue
+    x_train = feature_matrix[start_idx:resolved_end]
+    y_train = forward_returns[start_idx:resolved_end]
+
+# ❌ 금지 패턴 (미확정 타겟 포함 — 교훈 #068)
+for t in range(loop_start, n):
+    x_train = feature_matrix[start_idx:t]
+    y_train = forward_returns[start_idx:t]  # t-1..t-ph+1은 미확정!
+```
+
+**검증 필수**: `TestResolvedTargetOnly` — VBT(full data) vs expanding window 시그널 일치 테스트.
+이 테스트가 없으면 P3 C1 FAIL 처리.
+
 ---
 
 ## Step 5: strategy.py 구현
@@ -294,6 +321,8 @@ uv run mcbot pipeline report
 | 9 | 매직 넘버 (config 파라미터로 추출) |
 | 10 | annualization_factor 하드코딩 |
 | 11 | `# noqa`, `# type: ignore` 남용 |
+| 12 | ML training loop에서 `forward_returns[start_idx:t]` (미확정 타겟 포함 — resolved_end 패턴 필수) |
+| 13 | forward_return 사용 전략에 Expanding Window Parity Test 누락 |
 
 ---
 
