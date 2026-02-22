@@ -8,13 +8,10 @@
 #     - resolved_end 패턴 적용 후 Sharpe 전부 음수
 #   유일한 ACTIVE 전략: Anchor-Mom (12H, P7 PASS)
 #
-# 에셋 선별:
-#   - Anchor-Mom: DOGE(1.36) SOL(1.01) — Sharpe ≥ 1.0
-#
-# 단일 Pod 운영:
-#   - Orchestrator 프레임워크는 유지 (새 전략 추가 시 즉시 확장 가능)
-#   - Allocation/Correlation/Turnover는 단일 Pod에서 무관하나 기본값 유지
-#   - initial_fraction: 1.0 (전체 자본 투입)
+# Surveillance:
+#   - 주간 시장 스캔으로 유동성 기준 에셋 자동 선별
+#   - symbols는 부팅 시 보장되는 seed 심볼 (surveillance가 런타임에 추가)
+#   - 탈락 에셋은 AssetSelector permanently_excluded 처리
 #
 # 배포 전 필수 검증:
 #   1. uv run mcbot orchestrate backtest config/orchestrator-live.yaml --report
@@ -39,7 +36,7 @@ orchestrator:
   kelly_confidence_ramp: 180
 
   # ── Rebalance ───────────────────────────────────────────────
-  rebalance_trigger: hybrid             # calendar + drift
+  rebalance_trigger: hybrid
   rebalance_calendar_days: 7
   rebalance_drift_threshold: 0.10
 
@@ -67,48 +64,60 @@ orchestrator:
 
   # ── Lifecycle: Retirement ───────────────────────────────────
   retirement:
-    max_drawdown_breach: 0.25           # MDD > 25% → 즉시 RETIRED
+    max_drawdown_breach: 0.25
     consecutive_loss_months: 6
     rolling_sharpe_floor: 0.3
     probation_days: 30
+
+  # ── Surveillance ────────────────────────────────────────────
+  # 주간 시장 스캔으로 유동성/거래량 기준 에셋 자동 선별
+  # symbols는 seed (부팅 보장), surveillance가 런타임에 에셋 추가
+  surveillance:
+    enabled: true
+    scan_interval_hours: 168            # 7일 주기
+    min_24h_volume_usd: 50000000        # 최소 $50M 24h 거래대금
+    min_listing_age_days: 90            # 최소 90일 상장
+    exclude_stablecoins: true
+    max_assets_per_pod: 8               # Pod당 최대 8 에셋
+    max_total_assets: 20
 
   # ── Pods ────────────────────────────────────────────────────
   pods:
     # ────────────────────────────────────────────────────────
     # Pod 1: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
     # 유일한 ACTIVE 전략 (P7 PASS)
-    # G2H IS=1.75, OOS=0.78 — 원본 12H TF + G2H 최적화 파라미터
-    # 에셋: Sharpe ≥ 1.0 — DOGE(1.36) SOL(1.01)
-    # 제외: BNB(0.90) ETH(0.84) BTC(0.58)
+    # G2H IS=1.75, OOS=0.78
+    # Seed 에셋: DOGE(1.36) SOL(1.01) — Sharpe ≥ 1.0
+    # Surveillance가 추가 에셋 주입 (max_assets: 8)
     # ────────────────────────────────────────────────────────
     - pod_id: pod-anchor-mom
       strategy_name: anchor-mom
       strategy_params:
-        nearness_lookback: 29            # G2H 최적화 (기본 60)
-        mom_lookback: 51                 # G2H 최적화 (기본 30)
-        strong_nearness: 0.9692          # G2H 최적화 (기본 0.95)
-        weak_nearness: 0.8555           # G2H 최적화 (기본 0.85)
-        short_nearness: 0.5293          # G2H 최적화 (기본 0.80)
+        nearness_lookback: 29
+        mom_lookback: 51
+        strong_nearness: 0.9692
+        weak_nearness: 0.8555
+        short_nearness: 0.5293
         vol_target: 0.35
-        vol_window: 12                   # G2H 최적화 (기본 30)
+        vol_window: 12
         min_volatility: 0.05
         annualization_factor: 730.0      # 12H (하루 2봉)
-        atr_period: 22                   # G2H 최적화 (기본 14)
+        atr_period: 22
         short_mode: 1                    # HEDGE_ONLY
         hedge_threshold: -0.07
         hedge_strength_ratio: 0.8
-      symbols:
+      symbols:                           # Seed 심볼 (부팅 시 보장)
         - DOGE/USDT
         - SOL/USDT
       timeframe: "12H"
-      initial_fraction: 1.0             # 단일 Pod → 전체 자본
+      initial_fraction: 1.0
       max_fraction: 1.0
       min_fraction: 0.50
       max_drawdown: 0.20
       drawdown_warning: 0.15
       max_leverage: 2.0
+      max_assets: 8                      # Surveillance 에셋 상한
       system_stop_loss: 0.10
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
-      # asset_allocation 생략 → equal_weight (2 에셋이면 EW 충분)
