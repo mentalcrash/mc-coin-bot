@@ -200,6 +200,30 @@ onchain_cache_refresh_total = Counter(
 )
 
 # ==========================================================================
+# Layer 10: Surveillance
+# ==========================================================================
+surveillance_active_assets = Gauge(
+    "mcbot_surveillance_active_assets",
+    "Number of assets in current universe",
+)
+surveillance_last_scan_ts = Gauge(
+    "mcbot_surveillance_last_scan_timestamp",
+    "Last scan timestamp (unix epoch)",
+)
+surveillance_scan_duration = Gauge(
+    "mcbot_surveillance_scan_duration_seconds",
+    "Last scan duration",
+)
+surveillance_assets_added = Counter(
+    "mcbot_surveillance_assets_added_total",
+    "Total assets added by surveillance",
+)
+surveillance_assets_dropped = Counter(
+    "mcbot_surveillance_assets_dropped_total",
+    "Total assets dropped by surveillance",
+)
+
+# ==========================================================================
 # Meta
 # ==========================================================================
 bot_info = Info("mcbot", "Bot metadata")

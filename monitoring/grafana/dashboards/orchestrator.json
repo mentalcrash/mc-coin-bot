@@ -242,6 +242,97 @@
         },
         "overrides": []
       }
+    },
+    {
+      "title": "Row: Surveillance",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "collapsed": false
+    },
+    {
+      "title": "Universe Size",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 51 },
+      "targets": [
+        {
+          "expr": "mcbot_surveillance_active_assets",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "green", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Last Scan Age",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 51 },
+      "targets": [
+        {
+          "expr": "time() - mcbot_surveillance_last_scan_timestamp",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 691200 },
+              { "color": "red", "value": 950400 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Scan Duration",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 51 },
+      "targets": [
+        {
+          "expr": "mcbot_surveillance_scan_duration_seconds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Assets Added / Dropped",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 55 },
+      "targets": [
+        {
+          "expr": "rate(mcbot_surveillance_assets_added_total[1d])",
+          "legendFormat": "Added",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mcbot_surveillance_assets_dropped_total[1d])",
+          "legendFormat": "Dropped",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,

@@ -23,12 +23,14 @@ from loguru import logger
 if TYPE_CHECKING:
     from src.eda.persistence.database import Database
     from src.orchestrator.orchestrator import StrategyOrchestrator
+    from src.orchestrator.surveillance import MarketSurveillanceService
 
 # ── Constants ─────────────────────────────────────────────────────
 
 _KEY_STATE = "orchestrator_state"
 _KEY_DAILY_RETURNS = "orchestrator_daily_returns"
 _KEY_HISTORIES = "orchestrator_histories"
+_KEY_SURVEILLANCE = "surveillance_state"
 _STATE_VERSION = 1
 _MAX_DAILY_RETURNS = 270
 _MAX_ALLOCATION_HISTORY = 500
@@ -274,6 +276,45 @@ class OrchestratorStatePersistence:
             lifecycle_events=lifecycle if isinstance(lifecycle, list) else [],
             risk_contributions_history=risk if isinstance(risk, list) else [],
         )
+
+    # ── Surveillance ────────────────────────────────────────────
+
+    async def save_surveillance(self, service: MarketSurveillanceService) -> None:
+        """Surveillance 상태를 bot_state에 저장.
+
+        Args:
+            service: MarketSurveillanceService 인스턴스
+        """
+        payload = json.dumps(service.to_dict())
+        await self._save_key(_KEY_SURVEILLANCE, payload)
+        logger.debug("Surveillance state saved")
+
+    async def restore_surveillance(self, service: MarketSurveillanceService) -> bool:
+        """Surveillance 상태를 bot_state에서 복구.
+
+        Args:
+            service: MarketSurveillanceService 인스턴스
+
+        Returns:
+            True if restored, False if no saved state.
+        """
+        raw = await self._load_key(_KEY_SURVEILLANCE)
+        if raw is None:
+            logger.info("No saved surveillance state found — starting fresh")
+            return False
+
+        try:
+            data: Any = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Surveillance state: corrupted JSON — starting fresh")
+            return False
+
+        if isinstance(data, dict):
+            service.restore_from_dict(data)
+            logger.info("Surveillance state restored")
+            return True
+
+        return False
 
     # ── Internal ─────────────────────────────────────────────────
 

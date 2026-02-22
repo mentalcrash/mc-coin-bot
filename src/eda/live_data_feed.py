@@ -86,6 +86,9 @@ class LiveDataFeed:
         # EventBus 참조 (stale alert 발행용, start() 시 설정)
         self._bus: EventBus | None = None
 
+        # Dynamic tasks (런타임 추가 스트림)
+        self._dynamic_tasks: list[asyncio.Task[None]] = []
+
         # Multi-TF aggregator
         from src.eda.candle_aggregator import MultiTimeframeCandleAggregator
 
@@ -140,6 +143,10 @@ class LiveDataFeed:
     async def stop(self) -> None:
         """데이터 피드 중지."""
         self._shutdown_event.set()
+        # 동적 스트림 task 취소
+        for task in self._dynamic_tasks:
+            task.cancel()
+        self._dynamic_tasks.clear()
 
     @property
     def symbols(self) -> list[str]:
@@ -163,6 +170,28 @@ class LiveDataFeed:
             callback: WsStatusCallback 구현체
         """
         self._ws_callback = callback
+
+    async def add_symbol(self, symbol: str, bus: EventBus) -> bool:
+        """런타임에 WebSocket 스트림 추가.
+
+        Args:
+            symbol: 추가할 심볼
+            bus: EventBus 인스턴스
+
+        Returns:
+            True if added, False if already streaming.
+        """
+        if symbol in self._symbols:
+            return False
+
+        import time
+
+        self._symbols.append(symbol)
+        self._last_received[symbol] = time.monotonic()
+        task = asyncio.create_task(self._stream_symbol(symbol, bus))
+        self._dynamic_tasks.append(task)
+        logger.info("LiveDataFeed: added runtime stream for {}", symbol)
+        return True
 
     def _record_heartbeat(self, symbol: str) -> None:
         """심볼 데이터 수신 시 heartbeat 기록."""

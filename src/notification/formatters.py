@@ -488,3 +488,69 @@ def format_enhanced_daily_report_embed(
         "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
+
+
+def format_surveillance_scan_embed(
+    scan_result: Any,
+    pod_additions: dict[str, list[str]],
+) -> dict[str, Any]:
+    """Surveillance 스캔 결과 Discord Embed.
+
+    Args:
+        scan_result: ScanResult 인스턴스
+        pod_additions: Pod별 추가된 심볼 {pod_id: [symbol, ...]}
+
+    Returns:
+        Discord Embed dict
+    """
+    has_dropped = len(scan_result.dropped) > 0
+    color = _COLOR_YELLOW if has_dropped else _COLOR_GREEN
+
+    fields: list[dict[str, Any]] = [
+        {
+            "name": "Universe",
+            "value": f"{len(scan_result.qualified_symbols)} assets",
+            "inline": True,
+        },
+        {
+            "name": "Scan Duration",
+            "value": f"{scan_result.scan_duration_seconds:.1f}s",
+            "inline": True,
+        },
+        {
+            "name": "Total Scanned",
+            "value": str(scan_result.total_scanned),
+            "inline": True,
+        },
+    ]
+
+    max_display = 10
+    if scan_result.added:
+        added_str = ", ".join(scan_result.added[:max_display])
+        if len(scan_result.added) > max_display:
+            added_str += f" (+{len(scan_result.added) - max_display} more)"
+        fields.append({"name": "Added", "value": added_str, "inline": False})
+
+    if scan_result.dropped:
+        dropped_str = ", ".join(scan_result.dropped[:max_display])
+        if len(scan_result.dropped) > max_display:
+            dropped_str += f" (+{len(scan_result.dropped) - max_display} more)"
+        fields.append({"name": "Dropped", "value": dropped_str, "inline": False})
+
+    if pod_additions:
+        pod_lines = [f"{pid}: +{len(syms)}" for pid, syms in pod_additions.items()]
+        fields.append(
+            {
+                "name": "Pod Assignments",
+                "value": ", ".join(pod_lines),
+                "inline": False,
+            }
+        )
+
+    return {
+        "title": "Market Surveillance Scan",
+        "color": color,
+        "fields": fields,
+        "timestamp": scan_result.timestamp.isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }

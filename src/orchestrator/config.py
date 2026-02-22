@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
+from src.orchestrator.surveillance import SurveillanceConfig
 
 # ── Constants ────────────────────────────────────────────────────
 
@@ -288,6 +289,13 @@ class PodConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="리밸런스 이탈 임계값",
+    )
+
+    # Dynamic asset limit (surveillance용)
+    max_assets: int | None = Field(
+        default=None,
+        ge=1,
+        description="Pod 최대 에셋 수 (surveillance 추가 상한, None=무제한)",
     )
 
     # Asset allocation
@@ -594,6 +602,12 @@ class OrchestratorConfig(BaseModel):
     risk_defense_bypass_turnover: bool = Field(
         default=True,
         description="Risk defense 시 turnover 제약 우회 (기본: True)",
+    )
+
+    # Surveillance
+    surveillance: SurveillanceConfig | None = Field(
+        default=None,
+        description="Market Surveillance 설정 (None=비활성)",
     )
 
     @model_validator(mode="after")

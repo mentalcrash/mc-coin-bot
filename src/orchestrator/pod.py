@@ -102,6 +102,9 @@ class StrategyPod:
                 symbols=config.symbols,
             )
 
+        # Runtime symbols — 동적 에셋 관리 (surveillance용)
+        self._runtime_symbols: set[str] = set(config.symbols)
+
         # warmup 감지
         self._warmup = self._detect_warmup()
 
@@ -114,7 +117,12 @@ class StrategyPod:
 
     @property
     def symbols(self) -> tuple[str, ...]:
-        """거래 대상 심볼 목록."""
+        """거래 대상 심볼 목록 (runtime 포함)."""
+        return tuple(sorted(self._runtime_symbols))
+
+    @property
+    def config_symbols(self) -> tuple[str, ...]:
+        """Config에 정의된 원본 심볼 목록."""
         return self._config.symbols
 
     @property
@@ -550,7 +558,72 @@ class StrategyPod:
 
     def accepts_symbol(self, symbol: str) -> bool:
         """이 Pod이 해당 심볼을 처리하는지 여부."""
-        return symbol in self._config.symbols
+        return symbol in self._runtime_symbols
+
+    # ── Dynamic Asset Management ─────────────────────────────────
+
+    def add_asset(self, symbol: str) -> bool:
+        """런타임 에셋 추가.
+
+        Args:
+            symbol: 추가할 심볼
+
+        Returns:
+            True if added, False if duplicate or max_assets exceeded.
+        """
+        if symbol in self._runtime_symbols:
+            return False
+
+        max_assets = self._config.max_assets
+        if max_assets is not None and len(self._runtime_symbols) >= max_assets:
+            logger.warning(
+                "Pod [{}]: cannot add {} — max_assets {} reached",
+                self.pod_id,
+                symbol,
+                max_assets,
+            )
+            return False
+
+        self._runtime_symbols.add(symbol)
+
+        # AssetSelector에 ACTIVE 상태로 추가
+        if self._asset_selector is not None:
+            self._asset_selector.add_symbol(symbol)
+
+        # AssetAllocator에 추가 (EW 재분배)
+        if self._asset_allocator is not None:
+            self._asset_allocator.add_symbol(symbol)
+
+        # 수익률 히스토리 초기화
+        if symbol not in self._asset_returns:
+            self._asset_returns[symbol] = []
+
+        logger.info(
+            "Pod [{}]: added asset {} (total: {})",
+            self.pod_id,
+            symbol,
+            len(self._runtime_symbols),
+        )
+        return True
+
+    def cleanup_excluded_asset(self, symbol: str) -> None:
+        """permanently_excluded 에셋 버퍼 정리 (수익률 유지).
+
+        OHLCV 버퍼와 타임스탬프, 타겟 웨이트를 제거하되
+        _asset_returns는 유지하여 Pod 성과 무결성을 보존합니다.
+
+        Args:
+            symbol: 정리할 심볼
+        """
+        self._buffers.pop(symbol, None)
+        self._timestamps.pop(symbol, None)
+        self._target_weights.pop(symbol, None)
+        # _asset_returns[symbol]은 유지 (Pod 성과 무결성)
+        logger.info(
+            "Pod [{}]: cleaned up buffers for excluded asset {}",
+            self.pod_id,
+            symbol,
+        )
 
     # ── Serialization ──────────────────────────────────────────────
 
@@ -610,6 +683,7 @@ class StrategyPod:
             "asset_allocator": asset_allocator_data,
             "asset_selector": asset_selector_data,
             "asset_returns": {s: list(r) for s, r in self._asset_returns.items()},
+            "runtime_symbols": sorted(self._runtime_symbols),
         }
 
     def restore_from_dict(self, data: dict[str, object]) -> None:
@@ -671,7 +745,12 @@ class StrategyPod:
         self._restore_allocators_and_returns(data)
 
     def _restore_allocators_and_returns(self, data: dict[str, object]) -> None:
-        """Restore asset allocator, selector, and returns (PLR0912 sub-method)."""
+        """Restore asset allocator, selector, returns, and runtime_symbols (PLR0912 sub-method)."""
+        # Runtime symbols
+        runtime_val = data.get("runtime_symbols")
+        if isinstance(runtime_val, list):
+            self._runtime_symbols = {str(s) for s in runtime_val}
+
         # Asset allocator
         alloc_val = data.get("asset_allocator")
         if isinstance(alloc_val, dict) and self._asset_allocator is not None:
@@ -835,7 +914,7 @@ class StrategyPod:
         (1) AssetSelector multiplier (WHO) — 제외된 에셋은 0
         (2) 1/N 정규화 또는 IntraPodAllocator weight (HOW MUCH)
         """
-        n = len(self._config.symbols)
+        n = len(self._runtime_symbols)
 
         # (1) AssetSelector multiplier
         selector_mult = 1.0

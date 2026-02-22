@@ -66,4 +66,16 @@ CREATE TABLE IF NOT EXISTS bot_state (
     value           TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
+
+-- 유니버스 이벤트 (surveillance)
+CREATE TABLE IF NOT EXISTS universe_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT NOT NULL,
+    symbol          TEXT,
+    reason          TEXT,
+    metadata        TEXT,
+    timestamp       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_universe_events_ts ON universe_events(timestamp);
 """

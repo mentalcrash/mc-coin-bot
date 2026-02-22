@@ -152,6 +152,8 @@ class LiveRunner:
         self._options_feed: Any = None  # LiveOptionsFeed | None
         self._deriv_ext_feed: Any = None  # LiveDerivExtFeed | None
         self._orchestrator: StrategyOrchestrator | None = None
+        self._surveillance_config: Any = None  # SurveillanceConfig | None
+        self._surveillance_task: asyncio.Task[None] | None = None
         self._start_time = time.monotonic()
 
     @classmethod
@@ -374,6 +376,7 @@ class LiveRunner:
             target_timeframe=None if multi_tf else target_timeframe,
         )
 
+        runner._surveillance_config = orchestrator_config.surveillance
         runner._init_onchain_feed(symbols)
         runner._init_macro_feed()
         runner._init_options_feed()
@@ -470,6 +473,7 @@ class LiveRunner:
         from src.eda.derivatives_feed import LiveDerivativesFeed
 
         runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
+        runner._surveillance_config = orchestrator_config.surveillance
         runner._init_onchain_feed(symbols)
         runner._init_macro_feed()
         runner._init_options_feed()
@@ -653,6 +657,9 @@ class LiveRunner:
             # Lifecycle: startup 알림 (Discord Bot ready 대기 포함)
             await self._send_lifecycle_startup(discord_tasks, capital)
 
+            # 8.5. Surveillance task (Orchestrator 모드 + surveillance 활성화)
+            self._start_surveillance_if_enabled(bus, orch_persistence, notification_queue)
+
             logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
 
             # 8. Shutdown 대기
@@ -712,9 +719,13 @@ class LiveRunner:
         """Graceful shutdown 시퀀스 — run()에서 분리."""
         logger.warning("Initiating graceful shutdown...")
 
-        # 주기적 task 취소
+        # 주기적 task 취소 (surveillance 포함)
         await self._cancel_periodic_tasks(
-            save_task, uptime_task, process_monitor_task, reconciler_task
+            save_task,
+            uptime_task,
+            process_monitor_task,
+            reconciler_task,
+            self._surveillance_task,
         )
 
         await self._feed.stop()
@@ -1851,6 +1862,181 @@ class LiveRunner:
                             spam_key="balance_drift",
                         )
                     )
+
+    def _start_surveillance_if_enabled(
+        self,
+        bus: EventBus,
+        orch_persistence: object | None,
+        notification_queue: object | None,
+    ) -> None:
+        """Surveillance task 시작 (조건 충족 시)."""
+        if (
+            self._surveillance_config is not None
+            and self._surveillance_config.enabled
+            and self._client is not None
+            and self._orchestrator is not None
+        ):
+            self._surveillance_task = asyncio.create_task(
+                self._periodic_surveillance_scan(
+                    self._orchestrator,
+                    self._feed,
+                    bus,
+                    orch_persistence,
+                    notification_queue,
+                )
+            )
+
+    async def _periodic_surveillance_scan(
+        self,
+        orchestrator: StrategyOrchestrator,
+        feed: LiveDataFeed,
+        bus: EventBus,
+        orch_persistence: Any,
+        notification_queue: Any,
+    ) -> None:
+        """주기적 surveillance 스캔 (주간).
+
+        Args:
+            orchestrator: StrategyOrchestrator 인스턴스
+            feed: LiveDataFeed 인스턴스
+            bus: EventBus 인스턴스
+            orch_persistence: OrchestratorStatePersistence
+            notification_queue: NotificationQueue (선택)
+        """
+        from src.orchestrator.surveillance import MarketSurveillanceService
+
+        if self._surveillance_config is None or self._client is None:
+            return
+
+        service = MarketSurveillanceService(
+            config=self._surveillance_config,
+            client=self._client,
+        )
+
+        # 상태 복원
+        if orch_persistence is not None:
+            await orch_persistence.restore_surveillance(service)
+
+        # 시작 후 60초 대기 (warmup 완료 보장)
+        _initial_delay = 60.0
+        await asyncio.sleep(_initial_delay)
+
+        interval = service.config.scan_interval_hours * 3600
+
+        while True:
+            try:
+                scan_result = await service.scan()
+
+                if scan_result.added or scan_result.dropped:
+                    # 1. LiveDataFeed에 새 심볼 추가 (WS 스트림)
+                    for sym in scan_result.added:
+                        if sym not in feed.symbols:
+                            await feed.add_symbol(sym, bus)
+
+                    # 2. Orchestrator에 유니버스 변경 적용
+                    pod_additions = await orchestrator.on_universe_update(
+                        scan_result, self._fetch_warmup_bars
+                    )
+
+                    # 3. SQLite universe_events 로깅
+                    await self._log_universe_events(scan_result)
+
+                    # 4. surveillance 상태 저장
+                    if orch_persistence is not None:
+                        await orch_persistence.save_surveillance(service)
+
+                    # 5. Discord 알림
+                    if notification_queue is not None:
+                        from src.notification.formatters import (
+                            format_surveillance_scan_embed,
+                        )
+
+                        embed = format_surveillance_scan_embed(scan_result, pod_additions)
+                        await notification_queue.enqueue(
+                            NotificationItem(
+                                severity=Severity.INFO,
+                                channel=ChannelRoute.ALERTS,
+                                embed=embed,
+                                spam_key="surveillance_scan",
+                            )
+                        )
+
+                # Prometheus 메트릭 업데이트
+                self._update_surveillance_metrics(scan_result)
+
+            except Exception:
+                logger.exception("Surveillance scan failed")
+
+            await asyncio.sleep(interval)
+
+    async def _log_universe_events(self, scan_result: Any) -> None:
+        """Surveillance 이벤트를 SQLite universe_events 테이블에 기록."""
+        if self._db_path is None:
+            return
+
+        from src.eda.persistence.database import Database
+
+        try:
+            db = Database(self._db_path)
+            await db.connect()
+            conn = db.connection
+            now = scan_result.timestamp.isoformat()
+
+            # SCAN 이벤트
+            scan_sql = (
+                "INSERT INTO universe_events (action, reason, metadata, timestamp)"
+                " VALUES (?, ?, ?, ?)"
+            )
+            await conn.execute(
+                scan_sql,
+                (
+                    "SCAN",
+                    f"{len(scan_result.qualified_symbols)} qualified",
+                    f'{{"added": {len(scan_result.added)}, "dropped": {len(scan_result.dropped)}}}',
+                    now,
+                ),
+            )
+
+            # ADDED / DROPPED 이벤트
+            event_sql = (
+                "INSERT INTO universe_events (action, symbol, reason, timestamp)"
+                " VALUES (?, ?, ?, ?)"
+            )
+            for sym in scan_result.added:
+                await conn.execute(
+                    event_sql,
+                    ("ADDED", sym, "surveillance_scan", now),
+                )
+            for sym in scan_result.dropped:
+                await conn.execute(
+                    event_sql,
+                    ("DROPPED", sym, "surveillance_scan", now),
+                )
+
+            await conn.commit()
+            await db.close()
+        except Exception:
+            logger.exception("Failed to log universe events")
+
+    @staticmethod
+    def _update_surveillance_metrics(scan_result: Any) -> None:
+        """Surveillance Prometheus 메트릭 업데이트."""
+        try:
+            from src.monitoring.metrics import (
+                surveillance_active_assets,
+                surveillance_assets_added,
+                surveillance_assets_dropped,
+                surveillance_last_scan_ts,
+                surveillance_scan_duration,
+            )
+
+            surveillance_active_assets.set(len(scan_result.qualified_symbols))
+            surveillance_last_scan_ts.set(scan_result.timestamp.timestamp())
+            surveillance_scan_duration.set(scan_result.scan_duration_seconds)
+            surveillance_assets_added.inc(len(scan_result.added))
+            surveillance_assets_dropped.inc(len(scan_result.dropped))
+        except ImportError:
+            pass  # 메트릭 미등록 시 무시
 
     @property
     def feed(self) -> LiveDataFeed:

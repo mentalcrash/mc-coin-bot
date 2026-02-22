@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from src.notification.queue import NotificationQueue
     from src.orchestrator.models import RiskAlert
     from src.orchestrator.orchestrator import StrategyOrchestrator
+    from src.orchestrator.surveillance import ScanResult
 
 # ── Constants ────────────────────────────────────────────────────
 
@@ -161,6 +162,35 @@ class OrchestratorNotificationEngine:
             )
             await self._queue.enqueue(item)
 
+    # ── Surveillance ──────────────────────────────────────────────
+
+    async def on_surveillance_scan(
+        self,
+        scan_result: ScanResult,
+        pod_additions: dict[str, list[str]],
+    ) -> None:
+        """Surveillance 스캔 결과 Discord 알림.
+
+        변경 없는 스캔은 알림을 발행하지 않습니다.
+
+        Args:
+            scan_result: ScanResult 인스턴스
+            pod_additions: Pod별 추가된 심볼
+        """
+        if not scan_result.added and not scan_result.dropped:
+            return
+
+        from src.notification.formatters import format_surveillance_scan_embed
+
+        embed = format_surveillance_scan_embed(scan_result, pod_additions)
+        item = NotificationItem(
+            severity=Severity.INFO,
+            channel=ChannelRoute.ALERTS,
+            embed=embed,
+            spam_key="surveillance_scan",
+        )
+        await self._queue.enqueue(item)
+
     # ── Daily report ─────────────────────────────────────────────
 
     async def _daily_report_loop(self) -> None:
@@ -195,8 +225,7 @@ class OrchestratorNotificationEngine:
             # Fallback: Pod daily-return 누적 곱으로 간접 환산
             cap = orch.initial_capital
             total_equity = sum(
-                cap * p.capital_fraction * p.performance.current_equity
-                for p in active_pods
+                cap * p.capital_fraction * p.performance.current_equity for p in active_pods
             )
 
         # Pod returns + weights

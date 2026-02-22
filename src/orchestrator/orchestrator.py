@@ -37,6 +37,7 @@ from src.orchestrator.netting import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from datetime import datetime
 
     import pandas as pd
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from src.orchestrator.models import RiskAlert
     from src.orchestrator.pod import StrategyPod
     from src.orchestrator.risk_aggregator import RiskAggregator
+    from src.orchestrator.surveillance import ScanResult
 
 # ── Constants ─────────────────────────────────────────────────────
 
@@ -930,9 +932,7 @@ class StrategyOrchestrator:
             pod_limit = pod.config.max_leverage * pod.capital_fraction
             if pod_gross > pod_limit and pod_gross > _MIN_NET_WEIGHT:
                 scale = pod_limit / pod_gross
-                self._last_pod_targets[pod_id] = {
-                    sym: w * scale for sym, w in pod_targets.items()
-                }
+                self._last_pod_targets[pod_id] = {sym: w * scale for sym, w in pod_targets.items()}
 
     def _cleanup_retired_pod_targets(self) -> None:
         """E7: Retired pod의 잔여 타겟을 zero-out하여 phantom 포지션 방지."""
@@ -944,6 +944,89 @@ class StrategyOrchestrator:
             pod_targets = self._last_pod_targets.get(pod.pod_id)
             if pod_targets:
                 self._last_pod_targets[pod.pod_id] = dict.fromkeys(pod_targets, 0.0)
+
+    # ── Dynamic Universe ────────────────────────────────────────
+
+    async def on_universe_update(
+        self,
+        scan_result: ScanResult,
+        warmup_fn: Callable[..., Awaitable[tuple[list[dict[str, float]], list[datetime]]]],
+    ) -> dict[str, list[str]]:
+        """스캔 결과를 Pod에 적용.
+
+        added → 모든 활성 Pod에 add_asset + warmup + routing
+        dropped → AssetSelector permanently_excluded 플래그 + 버퍼 정리
+
+        Args:
+            scan_result: 스캔 결과
+            warmup_fn: warmup bar fetcher (symbol, timeframe, limit) → (bars, timestamps)
+
+        Returns:
+            Pod별 추가된 심볼 {pod_id: [symbol, ...]}
+        """
+        pod_additions: dict[str, list[str]] = {}
+
+        # 1. 신규 심볼 추가
+        for symbol in scan_result.added:
+            await self._add_symbol_to_pods(symbol, warmup_fn, pod_additions)
+
+        # 2. 탈락 심볼 처리
+        for symbol in scan_result.dropped:
+            self._drop_symbol_from_pods(symbol)
+
+        if pod_additions:
+            logger.info("Universe update applied: {}", pod_additions)
+        if scan_result.dropped:
+            logger.info("Universe dropped symbols flagged: {}", scan_result.dropped)
+
+        return pod_additions
+
+    async def _add_symbol_to_pods(
+        self,
+        symbol: str,
+        warmup_fn: Callable[..., Awaitable[tuple[list[dict[str, float]], list[datetime]]]],
+        pod_additions: dict[str, list[str]],
+    ) -> None:
+        """신규 심볼을 모든 활성 Pod에 추가."""
+        for idx, pod in enumerate(self._pods):
+            if not pod.is_active:
+                continue
+            if not pod.add_asset(symbol):
+                continue
+            self._add_symbol_route(symbol, idx)
+            try:
+                bars, timestamps = await warmup_fn(symbol, pod.timeframe, pod.warmup_periods)
+                if bars:
+                    pod.inject_warmup(symbol, bars, timestamps)
+            except (ValueError, RuntimeError) as exc:
+                logger.warning(
+                    "Pod [{}]: warmup failed for {}: {}",
+                    pod.pod_id,
+                    symbol,
+                    exc,
+                )
+            pod_additions.setdefault(pod.pod_id, []).append(symbol)
+
+    def _drop_symbol_from_pods(self, symbol: str) -> None:
+        """탈락 심볼을 모든 활성 Pod에서 permanently_excluded 처리."""
+        for pod in self._pods:
+            if not pod.is_active or not pod.accepts_symbol(symbol):
+                continue
+            if pod.asset_selector is not None:
+                pod.asset_selector.flag_permanently_excluded(symbol)
+            pod.cleanup_excluded_asset(symbol)
+
+    def _add_symbol_route(self, symbol: str, pod_idx: int) -> None:
+        """심볼 라우팅 테이블에 단일 항목 추가.
+
+        Args:
+            symbol: 심볼
+            pod_idx: Pod 인덱스
+        """
+        if symbol not in self._symbol_pod_map:
+            self._symbol_pod_map[symbol] = []
+        if pod_idx not in self._symbol_pod_map[symbol]:
+            self._symbol_pod_map[symbol].append(pod_idx)
 
     # ── Private ──────────────────────────────────────────────────
 

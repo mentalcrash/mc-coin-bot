@@ -195,6 +195,20 @@ class IntraPodAllocator:
         )
         return dict(self._weights)
 
+    # ── Dynamic Symbol Management ────────────────────────────────
+
+    def add_symbol(self, symbol: str) -> None:
+        """신규 심볼 추가 → EW 재분배.
+
+        Args:
+            symbol: 추가할 심볼
+        """
+        if symbol in self._weights:
+            return
+        self._symbols = (*self._symbols, symbol)
+        n = len(self._symbols)
+        self._weights = dict.fromkeys(self._symbols, 1.0 / n)
+
     # ── Algorithms ────────────────────────────────────────────────
 
     def _equal_weight(self) -> dict[str, float]:

@@ -447,3 +447,23 @@ groups:
         annotations:
           summary: "Frequent MIN_NOTIONAL skips ({{ $value | printf \"%.0f\" }} in 1h)"
           description: "MIN_NOTIONAL threshold skipped 3+ times in 1 hour. Consider adjusting allocation or minimum order size for affected symbols."
+
+      # 40. Surveillance 스캔 지연 (10.5일 초과)
+      - alert: SurveillanceScanStale
+        expr: time() - mcbot_surveillance_last_scan_timestamp > 907200
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Surveillance scan overdue (>10.5 days)"
+          description: "Market surveillance scan has not completed in over 10.5 days. Check scan task health."
+
+      # 41. Surveillance 유니버스 과소 (5개 미만)
+      - alert: SurveillanceUniverseTooSmall
+        expr: mcbot_surveillance_active_assets < 5 and mcbot_surveillance_active_assets > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Surveillance universe has fewer than 5 assets ({{ $value | printf \"%.0f\" }})"
+          description: "Market surveillance universe is critically small. Check volume filters and market conditions."

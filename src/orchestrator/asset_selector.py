@@ -386,6 +386,36 @@ class AssetSelector:
         )
         return active_count >= self._config.min_active_assets
 
+    # ── Dynamic Symbol Management ─────────────────────────────────
+
+    def add_symbol(self, symbol: str) -> None:
+        """신규 심볼을 ACTIVE 상태로 추가.
+
+        Args:
+            symbol: 추가할 심볼
+        """
+        if symbol in self._states:
+            return
+        self._states[symbol] = _AssetState()  # ACTIVE, multiplier=1.0
+        self._symbols = (*self._symbols, symbol)
+
+    def flag_permanently_excluded(self, symbol: str) -> None:
+        """surveillance drop → 즉시 permanently_excluded 플래그.
+
+        Args:
+            symbol: 제외할 심볼
+        """
+        st = self._states.get(symbol)
+        if st is None or st.permanently_excluded:
+            return
+        st.state = AssetLifecycleState.COOLDOWN
+        st.multiplier = 0.0
+        st.permanently_excluded = True
+        logger.info(
+            "AssetSelector: {} flagged permanently_excluded by surveillance",
+            symbol,
+        )
+
     # ── Absolute Thresholds ─────────────────────────────────────
 
     def _check_absolute_thresholds(
