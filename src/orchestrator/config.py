@@ -119,6 +119,23 @@ class AssetSelectorConfig(BaseModel):
         description="최소 활성 에셋 수",
     )
 
+    # Absolute thresholds (cross-sectional과 독립)
+    absolute_min_sharpe: float | None = Field(
+        default=None,
+        description="절대 Sharpe 하한 (None=비활성)",
+    )
+    absolute_max_drawdown: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="절대 최대 drawdown (None=비활성)",
+    )
+    max_cooldown_cycles: int | None = Field(
+        default=None,
+        ge=1,
+        description="최대 cooldown 반복 횟수 (초과 시 영구 제외, None=비활성)",
+    )
+
     @model_validator(mode="after")
     def validate_thresholds_and_weights(self) -> Self:
         """Hysteresis 갭 + scoring weights 합 검증.
@@ -571,6 +588,12 @@ class OrchestratorConfig(BaseModel):
     turnover_constraint: TurnoverConstraintConfig | None = Field(
         default=None,
         description="리밸런싱 턴오버 제약 (None → 제약 없음)",
+    )
+
+    # Risk defense
+    risk_defense_bypass_turnover: bool = Field(
+        default=True,
+        description="Risk defense 시 turnover 제약 우회 (기본: True)",
     )
 
     @model_validator(mode="after")

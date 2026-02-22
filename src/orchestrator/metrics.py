@@ -57,6 +57,16 @@ pod_risk_contribution_gauge = Gauge(
     "Pod percentage risk contribution (PRC)",
     ["pod_id"],
 )
+pod_rolling_sharpe_30d_gauge = Gauge(
+    "mcbot_pod_rolling_sharpe_30d",
+    "Pod 30-day rolling Sharpe ratio",
+    ["pod_id"],
+)
+pod_rolling_drawdown_30d_gauge = Gauge(
+    "mcbot_pod_rolling_drawdown_30d",
+    "Pod 30-day rolling max drawdown",
+    ["pod_id"],
+)
 
 # Lifecycle Enum (5 states)
 _LIFECYCLE_STATES = ["incubation", "production", "warning", "probation", "retired"]
@@ -140,6 +150,8 @@ class OrchestratorMetrics:
             pod_allocation_gauge.labels(pod_id=pid).set(pod.capital_fraction)
             pod_sharpe_gauge.labels(pod_id=pid).set(pod.performance.sharpe_ratio)
             pod_drawdown_gauge.labels(pod_id=pid).set(pod.performance.current_drawdown)
+            pod_rolling_sharpe_30d_gauge.labels(pod_id=pid).set(pod.rolling_sharpe)
+            pod_rolling_drawdown_30d_gauge.labels(pod_id=pid).set(pod.rolling_drawdown)
             pod_lifecycle_enum.labels(pod_id=pid).state(pod.state.value)
 
         active_pods_gauge.set(self._orchestrator.active_pod_count)

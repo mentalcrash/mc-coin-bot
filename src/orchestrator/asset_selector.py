@@ -42,7 +42,9 @@ class _AssetState:
     __slots__ = (
         "confirmation_count",
         "cooldown_bars",
+        "cooldown_cycles",
         "multiplier",
+        "permanently_excluded",
         "ramp_position",
         "score",
         "state",
@@ -54,7 +56,9 @@ class _AssetState:
         self.score: float = _NEUTRAL_SCORE
         self.confirmation_count: int = 0
         self.cooldown_bars: int = 0
+        self.cooldown_cycles: int = 0  # cooldown 진입 횟수
         self.ramp_position: int = 0  # 0=ramp 미사용, 1~ramp_steps=ramp 진행 중
+        self.permanently_excluded: bool = False
 
 
 # ── AssetSelector ────────────────────────────────────────────────
@@ -131,6 +135,9 @@ class AssetSelector:
 
         # 2. Hard exclusion 체크
         self._check_hard_exclusion(returns)
+
+        # 2b. Absolute threshold 체크 (cross-sectional과 독립)
+        self._check_absolute_thresholds(returns)
 
         # 3. FSM 전이
         for symbol in self._symbols:
@@ -216,16 +223,21 @@ class AssetSelector:
                     st.cooldown_bars = 0
                     st.confirmation_count = 0
                     st.ramp_position = 0
+                    st.cooldown_cycles += 1
+                    self._check_permanent_exclusion(symbol, st)
                     logger.info(
-                        "AssetSelector: {} hard excluded (Sharpe={:.2f}, DD={:.1%})",
+                        "AssetSelector: {} hard excluded (Sharpe={:.2f}, DD={:.1%}, cycle {})",
                         symbol,
                         sharpe,
                         dd,
+                        st.cooldown_cycles,
                     )
 
     def _transition(self, symbol: str) -> None:
         """단일 에셋의 FSM 전이를 수행합니다."""
         st = self._states[symbol]
+        if st.permanently_excluded:
+            return  # 영구 제외 에셋은 전이 불가
         cfg = self._config
 
         if st.state == AssetLifecycleState.ACTIVE:
@@ -286,7 +298,9 @@ class AssetSelector:
             st.multiplier = 0.0
             st.cooldown_bars = 0
             st.confirmation_count = 0
-            logger.info("AssetSelector: {} → COOLDOWN", symbol)
+            st.cooldown_cycles += 1
+            self._check_permanent_exclusion(symbol, st)
+            logger.info("AssetSelector: {} → COOLDOWN (cycle {})", symbol, st.cooldown_cycles)
 
     def _transition_cooldown(
         self,
@@ -372,6 +386,69 @@ class AssetSelector:
         )
         return active_count >= self._config.min_active_assets
 
+    # ── Absolute Thresholds ─────────────────────────────────────
+
+    def _check_absolute_thresholds(
+        self,
+        returns: dict[str, list[float]],
+    ) -> None:
+        """Absolute threshold: Sharpe / DD 절대 기준으로 COOLDOWN 진입.
+
+        cross-sectional rank와 독립적으로 개별 에셋 성과를 판단합니다.
+        약세장에서 모든 에셋이 cross-sectionally 비슷해도 절대 기준으로 제외 가능.
+        """
+        cfg = self._config
+        min_sharpe = cfg.absolute_min_sharpe
+        max_dd = cfg.absolute_max_drawdown
+
+        # 두 절대 기준 모두 비활성 → skip
+        if min_sharpe is None and max_dd is None:
+            return
+
+        for symbol in self._symbols:
+            st = self._states.get(symbol)
+            if st is None or st.state == AssetLifecycleState.COOLDOWN:
+                continue
+            if st.permanently_excluded:
+                continue
+
+            rets = returns.get(symbol, [])
+            if len(rets) < _MIN_DATA_BARS:
+                continue
+
+            sharpe = self._compute_sharpe(rets[-cfg.sharpe_lookback:])
+            dd = self._compute_max_drawdown(rets[-cfg.sharpe_lookback:])
+
+            sharpe_fail = min_sharpe is not None and sharpe < min_sharpe
+            dd_fail = max_dd is not None and dd > max_dd
+
+            if (sharpe_fail or dd_fail) and self._can_exclude(symbol):
+                st.state = AssetLifecycleState.COOLDOWN
+                st.multiplier = 0.0
+                st.cooldown_bars = 0
+                st.confirmation_count = 0
+                st.ramp_position = 0
+                st.cooldown_cycles += 1
+                self._check_permanent_exclusion(symbol, st)
+                logger.info(
+                    "AssetSelector: {} absolute threshold excluded (Sharpe={:.2f}, DD={:.1%})",
+                    symbol,
+                    sharpe,
+                    dd,
+                )
+
+    def _check_permanent_exclusion(self, symbol: str, st: _AssetState) -> None:
+        """max_cooldown_cycles 초과 시 영구 제외."""
+        max_cycles = self._config.max_cooldown_cycles
+        if max_cycles is not None and st.cooldown_cycles >= max_cycles:
+            st.permanently_excluded = True
+            logger.warning(
+                "AssetSelector: {} permanently excluded (cooldown cycles {}>={})",
+                symbol,
+                st.cooldown_cycles,
+                max_cycles,
+            )
+
     # ── Metrics Helpers ──────────────────────────────────────────
 
     @staticmethod
@@ -420,7 +497,9 @@ class AssetSelector:
                 "score": st.score,
                 "confirmation_count": st.confirmation_count,
                 "cooldown_bars": st.cooldown_bars,
+                "cooldown_cycles": st.cooldown_cycles,
                 "ramp_position": st.ramp_position,
+                "permanently_excluded": st.permanently_excluded,
             }
         return {"states": states_data}
 
@@ -459,6 +538,14 @@ class AssetSelector:
             ramp = st_data.get("ramp_position")
             if isinstance(ramp, int):
                 st.ramp_position = ramp
+
+            cycles = st_data.get("cooldown_cycles")
+            if isinstance(cycles, int):
+                st.cooldown_cycles = cycles
+
+            perm = st_data.get("permanently_excluded")
+            if isinstance(perm, bool):
+                st.permanently_excluded = perm
 
 
 # ── Utility ──────────────────────────────────────────────────────

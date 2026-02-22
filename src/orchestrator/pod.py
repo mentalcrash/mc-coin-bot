@@ -34,6 +34,7 @@ _PERIODS_PER_YEAR = 365
 _EPSILON = 1e-12
 _MIN_METRICS_SAMPLES = 2
 _MIN_RETURN_BARS = 3  # return 계산에 필요한 최소 버퍼 크기
+_ROLLING_WINDOW = 30  # rolling Sharpe/DD 계산 윈도우 (일)
 
 
 # ── StrategyPod ──────────────────────────────────────────────────
@@ -165,6 +166,15 @@ class StrategyPod:
         return not self._paused and self._state != LifecycleState.RETIRED
 
     @property
+    def should_emit_signals(self) -> bool:
+        """시그널 발행 가능 여부 (active + 에셋 존재)."""
+        if not self.is_active:
+            return False
+        return not (
+            self._asset_selector is not None and self._asset_selector.all_excluded
+        )
+
+    @property
     def warmup_periods(self) -> int:
         """워밍업 기간."""
         return self._warmup
@@ -188,6 +198,37 @@ class StrategyPod:
     def asset_selector(self) -> AssetSelector | None:
         """에셋 선별 FSM (None=비활성)."""
         return self._asset_selector
+
+    @property
+    def rolling_sharpe(self) -> float:
+        """최근 30일 rolling Sharpe ratio (rf=0, annualized)."""
+        window = self._daily_returns[-_ROLLING_WINDOW:]
+        n = len(window)
+        if n < _MIN_METRICS_SAMPLES:
+            return 0.0
+        mean_r = sum(window) / n
+        var_r = sum((r - mean_r) ** 2 for r in window) / (n - 1)
+        vol = var_r**0.5
+        annual_vol = vol * (_PERIODS_PER_YEAR**0.5)
+        if annual_vol < _EPSILON:
+            return 0.0
+        return (mean_r * _PERIODS_PER_YEAR) / annual_vol
+
+    @property
+    def rolling_drawdown(self) -> float:
+        """최근 30일 rolling max drawdown (양수 표현)."""
+        window = self._daily_returns[-_ROLLING_WINDOW:]
+        if not window:
+            return 0.0
+        equity = 1.0
+        peak = 1.0
+        max_dd = 0.0
+        for r in window:
+            equity *= 1.0 + r
+            peak = max(peak, equity)
+            dd = (peak - equity) / peak if peak > 0 else 0.0
+            max_dd = max(max_dd, dd)
+        return max_dd
 
     # ── Core Methods ────────────────────────────────────────────────
 
@@ -252,6 +293,9 @@ class StrategyPod:
         # 4. 최신 시그널 추출
         direction = int(signals.direction.iloc[-1])
         strength = float(signals.strength.iloc[-1])
+
+        # 4b. Layer 1 leverage cap: per-symbol strength 상한
+        strength = min(strength, self._config.max_leverage)
 
         # 5. Intra-pod asset allocation
         self._update_asset_returns(symbol, self._buffers[symbol])

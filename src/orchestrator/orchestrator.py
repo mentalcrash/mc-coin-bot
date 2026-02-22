@@ -220,6 +220,10 @@ class StrategyOrchestrator:
             if result is None:
                 continue
 
+            # E2: all-excluded pod → 시그널 누적 안 함 (내부 상태만 갱신)
+            if not pod.should_emit_signals:
+                continue
+
             direction, strength = result
             # global_weight = direction * strength * capital_fraction
             global_weight = direction * strength * pod.capital_fraction
@@ -293,12 +297,12 @@ class StrategyOrchestrator:
         # 이번 배치에서 변경된 심볼
         changed_symbols = set(self._pending_net_weights.keys())
 
-        # Multi-TF: _last_pod_targets에서 전체 net weight 재계산
-        # 단일 TF: _pending_net_weights == full net (기존과 동일)
-        if len(self._accepted_timeframes) > 1:
-            full_net = self._compute_current_net_weights()
-        else:
-            full_net = dict(self._pending_net_weights)
+        # Layer 2: Per-pod aggregate leverage cap
+        self._apply_per_pod_leverage_cap()
+
+        # full_net 계산 (per-pod cap 반영)
+        # Multi-TF / 단일 TF 모두 _last_pod_targets 기반으로 통일
+        full_net = self._compute_current_net_weights()
 
         # Risk breached → 모든 weight 0으로 억제
         if self._risk_breached:
@@ -405,6 +409,9 @@ class StrategyOrchestrator:
 
         # Lifecycle 평가 (weight 계산 전에 상태 전이)
         self._evaluate_lifecycle()
+
+        # E7: Retired pod 잔여 타겟 즉시 zero-out
+        self._cleanup_retired_pod_targets()
 
         # Pod 수익률 DataFrame 구성
         pod_returns_data: dict[str, list[float]] = {}
@@ -816,6 +823,11 @@ class StrategyOrchestrator:
         """Pod별 마지막 타겟 가중치 (읽기 전용)."""
         return dict(self._last_pod_targets)
 
+    @property
+    def last_allocated_weights(self) -> dict[str, float]:
+        """마지막 리밸런스에서 할당된 가중치 (읽기 전용)."""
+        return dict(self._last_allocated_weights)
+
     # ── Serialization ──────────────────────────────────────────────
 
     def restore_histories(
@@ -899,6 +911,39 @@ class StrategyOrchestrator:
                 for sym, prices in price_hist_val.items()
                 if isinstance(prices, list)
             }
+
+    # ── Leverage & Cleanup ────────────────────────────────────────
+
+    def _apply_per_pod_leverage_cap(self) -> None:
+        """Layer 2: Pod별 aggregate leverage를 max_leverage * capital_fraction으로 제한.
+
+        _last_pod_targets의 weight를 비례 축소하여 Pod이 자기 한도를 초과하지 않도록 합니다.
+        """
+        for pod in self._pods:
+            if not pod.is_active:
+                continue
+            pod_id = pod.pod_id
+            pod_targets = self._last_pod_targets.get(pod_id)
+            if not pod_targets:
+                continue
+            pod_gross = sum(abs(w) for w in pod_targets.values())
+            pod_limit = pod.config.max_leverage * pod.capital_fraction
+            if pod_gross > pod_limit and pod_gross > _MIN_NET_WEIGHT:
+                scale = pod_limit / pod_gross
+                self._last_pod_targets[pod_id] = {
+                    sym: w * scale for sym, w in pod_targets.items()
+                }
+
+    def _cleanup_retired_pod_targets(self) -> None:
+        """E7: Retired pod의 잔여 타겟을 zero-out하여 phantom 포지션 방지."""
+        from src.orchestrator.models import LifecycleState
+
+        for pod in self._pods:
+            if pod.state != LifecycleState.RETIRED:
+                continue
+            pod_targets = self._last_pod_targets.get(pod.pod_id)
+            if pod_targets:
+                self._last_pod_targets[pod.pod_id] = dict.fromkeys(pod_targets, 0.0)
 
     # ── Private ──────────────────────────────────────────────────
 

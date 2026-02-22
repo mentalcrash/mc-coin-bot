@@ -16,6 +16,7 @@ from src.orchestrator.config import (
     RetirementCriteria,
     TurnoverConstraintConfig,
 )
+from src.orchestrator.dashboard import AllocationDashboard
 from src.orchestrator.degradation import PageHinkleyDetector
 from src.orchestrator.lifecycle import LifecycleManager
 from src.orchestrator.metrics import OrchestratorMetrics
@@ -43,6 +44,7 @@ from src.orchestrator.risk_aggregator import RiskAggregator
 from src.orchestrator.state_persistence import OrchestratorStatePersistence
 
 __all__ = [
+    "AllocationDashboard",
     "AllocationMethod",
     "AssetAllocationConfig",
     "AssetAllocationMethod",
