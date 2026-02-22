@@ -1,0 +1,71 @@
+version: 2
+meta:
+  name: hash-ribbon-cap
+  display_name: Hash-Ribbon Capitulation
+  category: Supply/Mining
+  timeframe: 1D
+  short_mode: DISABLED
+  status: RETIRED
+  created_at: '2026-02-22'
+  retired_at: '2026-02-22'
+  economic_rationale: 'BTC 채굴자 capitulation 후 매도 압력 소멸 → 바닥 형성 → 회복 모멘텀. VanEck 실증:
+    hashrate 하락 후 90일 forward return 양수 확률 65%.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      tests: 44.0
+      registry: hash-ribbon-cap
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-02-22'
+    details:
+      best_asset: SOL/USDT
+      is_sharpe: 1.62
+      oos_sharpe: 0.19
+      decay: 88.5
+      overfit_prob: 93.1
+asset_performance: []
+decisions:
+- date: '2026-02-22'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-22'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 hash-ribbon-cap. Ruff/Pyright 0 error.
+- date: '2026-02-22'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. W3: ShortMode=DISABLED + Long-only = 하락장 무방비. W4: capitulation
+    시그널 극저빈도.'
+- date: '2026-02-22'
+  phase: P4
+  verdict: FAIL
+  rationale: P4B FAIL — IS/OOS Decay 88.5%, OOS Sharpe 0.19 < 0.3. Overfit Prob 93.1%.
+    Hash-ribbon capitulation 시그널이 IS 구간 특정 이벤트에 과적합. Long-only(ShortMode=DISABLED)
+    + 극저빈도 capitulation 이벤트 의존.

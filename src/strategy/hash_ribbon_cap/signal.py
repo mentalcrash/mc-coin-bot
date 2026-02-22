@@ -1,0 +1,104 @@
+"""Hash-Ribbon Capitulation 시그널 생성.
+
+Shift(1) Rule: 모든 feature는 shift(1) 적용 후 시그널 계산.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pandas as pd
+
+from src.strategy.types import StrategySignals
+
+if TYPE_CHECKING:
+    from src.strategy.hash_ribbon_cap.config import HashRibbonCapConfig
+
+
+def generate_signals(df: pd.DataFrame, config: HashRibbonCapConfig) -> StrategySignals:
+    """Hash-Ribbon Capitulation 시그널 생성.
+
+    Long 조건: capitulation 탈출 후 recovery_confirm_bars 이상 유지 + momentum > 0.
+    이전에 capitulation이 있었어야 유효.
+
+    Args:
+        df: preprocess() 출력 DataFrame
+        config: 전략 설정
+
+    Returns:
+        StrategySignals (entries, exits, direction, strength)
+    """
+    from src.strategy.hash_ribbon_cap.config import ShortMode
+
+    # --- Shift(1): 전봉 기준 시그널 ---
+    recovery_bars = df["recovery_bars"].shift(1)
+    momentum = df["momentum"].shift(1)
+    had_cap = df["had_capitulation"].shift(1)
+    capitulation = df["capitulation"].shift(1)
+    vol_scalar = df["vol_scalar"].shift(1)
+
+    # --- Signal Logic ---
+    # Long: recovery 구간에서 충분한 확인 bar + momentum 상승 + 과거 capitulation 경험
+    long_signal = (recovery_bars >= config.recovery_confirm_bars) & (momentum > 0) & (had_cap == 1)
+
+    # Short: 현재 capitulation 상태 + momentum 하락 (매도 압력 구간)
+    short_signal = (capitulation == 1) & (momentum < 0)
+
+    # --- Direction (ShortMode 분기) ---
+    direction = _compute_direction(
+        long_signal=long_signal,
+        short_signal=short_signal,
+        df=df,
+        config=config,
+    )
+
+    # --- Strength ---
+    strength = direction.astype(float) * vol_scalar.fillna(0)
+
+    if config.short_mode == ShortMode.HEDGE_ONLY:
+        strength = pd.Series(
+            np.where(direction == -1, strength * config.hedge_strength_ratio, strength),
+            index=df.index,
+        )
+
+    strength = strength.fillna(0.0)
+
+    # --- Entries / Exits ---
+    prev_dir = direction.shift(1).fillna(0).astype(int)
+    entries = (direction != 0) & (direction != prev_dir)
+    exits = (direction == 0) & (prev_dir != 0)
+
+    return StrategySignals(
+        entries=entries.astype(bool),
+        exits=exits.astype(bool),
+        direction=direction,
+        strength=strength,
+    )
+
+
+def _compute_direction(
+    long_signal: pd.Series,
+    short_signal: pd.Series,
+    df: pd.DataFrame,
+    config: HashRibbonCapConfig,
+) -> pd.Series:
+    """ShortMode 3-way 분기로 direction 계산."""
+    from src.strategy.hash_ribbon_cap.config import ShortMode
+
+    if config.short_mode == ShortMode.DISABLED:
+        raw = np.where(long_signal, 1, 0)
+
+    elif config.short_mode == ShortMode.HEDGE_ONLY:
+        dd = df["drawdown"].shift(1)
+        hedge_active = dd < config.hedge_threshold
+        raw = np.where(
+            long_signal,
+            1,
+            np.where(short_signal & hedge_active, -1, 0),
+        )
+
+    else:  # FULL
+        raw = np.where(long_signal, 1, np.where(short_signal, -1, 0))
+
+    return pd.Series(raw, index=df.index, dtype=int)

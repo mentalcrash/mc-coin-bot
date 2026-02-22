@@ -1,0 +1,100 @@
+version: 2
+meta:
+  name: kurtosis-carry
+  display_name: Kurtosis Carry
+  category: Risk Premium/Statistical
+  timeframe: 1D
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-22'
+  retired_at: '2026-02-22'
+  economic_rationale: 고첨도(fat tail) → 리스크 프리미엄 확대 → 저첨도 전환 시 프리미엄 수취. Amaya et al.
+    (JFE 2015) 학술 근거.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  kurtosis_window: 94
+  kurtosis_long_window: 153
+  zscore_window: 135
+  high_kurtosis_zscore: 1.3855586078117494
+  low_kurtosis_zscore: -0.1624572430575636
+  momentum_lookback: 28
+  vol_window: 114
+  atr_period: 50
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      tests: 43.0
+      registry: kurtosis-carry
+      files: 5.0
+  P3:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-02-22'
+    details:
+      best_asset: SOL/USDT
+      sharpe: 1.52
+      cagr: 34.58
+      mdd: 25.21
+      trades: 141.0
+      is_sharpe: 1.53
+      oos_sharpe: 1.24
+      decay: 18.7
+      consistency: 100.0
+      overfit_prob: 11.2
+  P5:
+    status: FAIL
+    date: '2026-02-22'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-22'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-22'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 kurtosis-carry. Ruff/Pyright 0 error.
+- date: '2026-02-22'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 217 tests 통과.
+- date: '2026-02-22'
+  phase: P4
+  verdict: PASS
+  rationale: P4A PASS — SOL Sharpe 1.52, CAGR +34.6%, MDD 25.2%. P4B IS/OOS PASS —
+    OOS Sharpe 1.24, Decay 18.7%, Consistency 100%, Overfit Prob 11.2%. 추세추종 패턴(SOL>BNB>ETH>BTC>DOGE)
+    일치. Beta 0.05로 BTC 독립 alpha.
+- date: '2026-02-22'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 1.53→1.86 (+21.8%), OOS=0.31
+- date: '2026-02-22'
+  phase: P5
+  verdict: FAIL
+  rationale: 'FAIL: low_kurtosis_zscore'
+- date: '2026-02-22'
+  phase: P5
+  verdict: FAIL
+  rationale: 'P5B FAIL: low_kurtosis_zscore ±20% stability 미충족. 실제 Sharpe 전구간 1.41-1.48
+    양수이나 기술적 판정 기준 미충족. 7/8 파라미터 PASS.'

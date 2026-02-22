@@ -154,9 +154,8 @@ class EnsembleConfig(BaseModel):
         Raises:
             ValueError: top_n > 전략 수이거나 vol_target < 0.05일 경우
         """
-        if (
-            self.aggregation == AggregationMethod.STRATEGY_MOMENTUM
-            and self.top_n > len(self.strategies)
+        if self.aggregation == AggregationMethod.STRATEGY_MOMENTUM and self.top_n > len(
+            self.strategies
         ):
             msg = (
                 f"top_n ({self.top_n}) cannot exceed number of strategies ({len(self.strategies)})"
