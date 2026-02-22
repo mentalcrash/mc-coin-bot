@@ -1,29 +1,20 @@
 # ==============================================================================
-# Orchestrator Live Config — 4 Pods (CTREND + Anchor-Mom + CTREND-X + GBTrend)
+# Orchestrator Live Config — 1 Pod (Anchor-Mom)
 # ==============================================================================
 #
-# Multi-TF 지원:
-#   각 Pod은 독립적인 timeframe을 가질 수 있습니다.
-#   MultiTimeframeCandleAggregator가 1m bar에서 복수 TF bar를 생성하고,
-#   Orchestrator가 bar.timeframe과 pod.timeframe을 매칭하여 라우팅합니다.
-#
-# TF 선택: Multi-TF (1D + 12H)
-#   - CTREND (1D): G2H IS=3.68, OOS=2.54 — 주력 전략, 원본 TF 유지
-#   - Anchor-Mom (12H): G2H IS=1.75, OOS=0.78 — 원본 TF 복원
-#   - CTREND-X (1D): P4 Sharpe 4.15, OOS=2.98 — GradientBoosting ML (인큐베이팅)
-#   - GBTrend (1D): P4 Sharpe 4.18, OOS=3.80 — Momentum GB (인큐베이팅)
+# 2026-02-22 업데이트:
+#   ML 전략 전멸 (look-ahead bias 발견):
+#     - CTREND, CTREND-X, GBTrend, Vol-Term ML → 전량 RETIRED
+#     - resolved_end 패턴 적용 후 Sharpe 전부 음수
+#   유일한 ACTIVE 전략: Anchor-Mom (12H, P7 PASS)
 #
 # 에셋 선별:
-#   - CTREND:     BTC ETH SOL BNB (Sharpe ≥ 1.0)
-#   - Anchor-Mom: DOGE SOL (Sharpe ≥ 1.0)
-#   - CTREND-X:   SOL BNB ETH BTC DOGE (전 에셋 Sharpe ≥ 3.3)
-#   - GBTrend:    ETH SOL BTC BNB DOGE (전 에셋 Sharpe ≥ 2.8)
+#   - Anchor-Mom: DOGE(1.36) SOL(1.01) — Sharpe ≥ 1.0
 #
-# Adaptive Allocation (2026-02-21):
-#   - Turnover Constraint: Pod당 ±15%, 전체 ±30% per rebalance
-#   - AssetSelector: 4+ 에셋 Pod에 FSM 기반 동적 에셋 선별
-#     (점수 < 0.20 → 5일 확인 → 5단계 ramp-down → 10일 cooldown)
-#   - Anchor-Mom (2 에셋)은 비활성 (분산 여유 부족)
+# 단일 Pod 운영:
+#   - Orchestrator 프레임워크는 유지 (새 전략 추가 시 즉시 확장 가능)
+#   - Allocation/Correlation/Turnover는 단일 Pod에서 무관하나 기본값 유지
+#   - initial_fraction: 1.0 (전체 자본 투입)
 #
 # 배포 전 필수 검증:
 #   1. uv run mcbot orchestrate backtest config/orchestrator-live.yaml --report
@@ -36,14 +27,14 @@
 # ==============================================================================
 
 backtest:
-  timeframe: "1D"
+  timeframe: "12H"
   start: "2024-01-01"
   end: "2025-12-31"
   capital: 10000.0
 
 orchestrator:
   # ── Allocation ──────────────────────────────────────────────
-  allocation_method: equal_weight       # 4 Pod → EW로 시작, 데이터 축적 후 risk_parity 전환
+  allocation_method: equal_weight       # 1 Pod → EW = 100%
   kelly_fraction: 0.25
   kelly_confidence_ramp: 180
 
@@ -53,24 +44,16 @@ orchestrator:
   rebalance_drift_threshold: 0.10
 
   # ── Portfolio Risk ──────────────────────────────────────────
-  max_gross_leverage: 2.0               # 보수적 시작 (아키텍처 기본 3.0)
+  max_gross_leverage: 2.0
   max_portfolio_drawdown: 0.15
   max_portfolio_volatility: 0.20
-  max_single_pod_risk_pct: 0.35         # 4-Pod이므로 35%까지 허용
+  max_single_pod_risk_pct: 1.0          # 1-Pod → 100% 허용
   daily_loss_limit: 0.03
   cost_bps: 4.0
 
   # ── Correlation ─────────────────────────────────────────────
   correlation_lookback: 90
   correlation_stress_threshold: 0.70
-
-  # ── Turnover Constraint ────────────────────────────────────
-  # 리밸런스 시 급격한 배분 변경 방지
-  # Pod당 ±15%: 0.25 → 0.10~0.40 범위 내에서 최대 3회 리밸런스로 도달
-  # 전체 ±30%: 4-Pod 대칭이동(±7.5% each) 시 sum=30% 허용
-  turnover_constraint:
-    max_pod_turnover_per_rebalance: 0.15
-    max_total_turnover_per_rebalance: 0.30
 
   # ── Lifecycle: Graduation ───────────────────────────────────
   graduation:
@@ -92,64 +75,9 @@ orchestrator:
   # ── Pods ────────────────────────────────────────────────────
   pods:
     # ────────────────────────────────────────────────────────
-    # Pod 1: CTREND — ML 앙상블 (G2H 최적화 파라미터)
-    # Sharpe 2.05 (VBT) / 2.82 (EDA), CAGR 97.8%, G0A-G5+G2H 전 PASS
-    # 에셋: Sharpe ≥ 1.0 — SOL(2.05) BTC(1.70) BNB(1.59) ETH(1.53)
-    # 제외: DOGE(0.83, MDD 64.6%)
-    # ────────────────────────────────────────────────────────
-    - pod_id: pod-ctrend
-      strategy_name: ctrend
-      strategy_params:
-        training_window: 68              # G2H 최적화 (기본 252)
-        prediction_horizon: 12           # G2H 최적화 (기본 5)
-        alpha: 0.6812                    # G2H 최적화 (기본 0.5)
-        vol_window: 24                   # G2H 최적화 (기본 30)
-        vol_target: 0.4772              # G2H 최적화 (기본 0.35)
-        min_volatility: 0.05
-        annualization_factor: 365.0      # 1D
-        short_mode: 2                    # FULL
-      symbols:
-        - SOL/USDT
-        - BTC/USDT
-        - BNB/USDT
-        - ETH/USDT
-      timeframe: "1D"
-      initial_fraction: 0.25            # 4-Pod EW
-      max_fraction: 0.35
-      min_fraction: 0.10
-      max_drawdown: 0.20
-      drawdown_warning: 0.15
-      max_leverage: 2.0
-      system_stop_loss: 0.10
-      use_trailing_stop: true
-      trailing_stop_atr_multiplier: 3.0
-      rebalance_threshold: 0.10
-
-      # Pod 내 에셋 배분: 4 에셋(SOL~90% vs BTC~45% vol) → IV로 리스크 균등화
-      asset_allocation:
-        method: inverse_volatility
-        vol_lookback: 60
-        rebalance_bars: 5
-        min_weight: 0.10
-        max_weight: 0.50
-
-      # AssetSelector: 4 에셋 중 성과 미달 에셋 동적 제외/재진입
-      # min_active=2: 최소 2개 유지 (최대 2개 제외 가능)
-      asset_selector:
-        enabled: true
-        sharpe_lookback: 60           # 60일 Sharpe window
-        return_lookback: 30           # 30일 수익률 window
-        exclude_score_threshold: 0.20 # 하위 20% → 제외 후보
-        include_score_threshold: 0.35 # 상위 35% → 재진입 후보
-        exclude_confirmation_bars: 5  # 5일 연속 확인 후 제외
-        include_confirmation_bars: 3  # 3일 연속 확인 후 재진입
-        min_exclusion_bars: 10        # 10일 최소 cooldown
-        ramp_steps: 5                 # 5단계 점진적 전환
-        min_active_assets: 2          # 최소 2개 활성 유지
-
-    # ────────────────────────────────────────────────────────
-    # Pod 2: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
-    # G2H IS=1.75, OOS=0.78 — 원본 12H TF + G2H 최적화 파라미터 적용
+    # Pod 1: Anchor-Mom — Anchored Momentum (12H, G2H 최적화)
+    # 유일한 ACTIVE 전략 (P7 PASS)
+    # G2H IS=1.75, OOS=0.78 — 원본 12H TF + G2H 최적화 파라미터
     # 에셋: Sharpe ≥ 1.0 — DOGE(1.36) SOL(1.01)
     # 제외: BNB(0.90) ETH(0.84) BTC(0.58)
     # ────────────────────────────────────────────────────────
@@ -173,9 +101,9 @@ orchestrator:
         - DOGE/USDT
         - SOL/USDT
       timeframe: "12H"
-      initial_fraction: 0.25            # 4-Pod EW
-      max_fraction: 0.35
-      min_fraction: 0.10
+      initial_fraction: 1.0             # 단일 Pod → 전체 자본
+      max_fraction: 1.0
+      min_fraction: 0.50
       max_drawdown: 0.20
       drawdown_warning: 0.15
       max_leverage: 2.0
@@ -184,121 +112,3 @@ orchestrator:
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
       # asset_allocation 생략 → equal_weight (2 에셋이면 EW 충분)
-
-    # ────────────────────────────────────────────────────────
-    # Pod 3: CTREND-X — GradientBoosting ML 앙상블 (인큐베이팅)
-    # P4 SOL Sharpe 4.15, CAGR +321.9%, MDD 22.2%, OOS=2.98
-    # CTREND의 ElasticNet → GBR 교체, 28개 기술 지표 비선형 상호작용
-    # 에셋: 전 에셋 Sharpe ≥ 3.3 → 5개 전체 투입
-    # ────────────────────────────────────────────────────────
-    - pod_id: pod-ctrend-x
-      strategy_name: ctrend-x
-      strategy_params:
-        training_window: 160
-        prediction_horizon: 4
-        n_estimators: 415
-        max_depth: 3
-        learning_rate: 0.419572578449225
-        subsample: 0.8
-        vol_target: 0.35
-        vol_window: 73
-        min_volatility: 0.05
-        annualization_factor: 365.0       # 1D
-        short_mode: 2                     # FULL
-      symbols:
-        - SOL/USDT
-        - BNB/USDT
-        - ETH/USDT
-        - BTC/USDT
-        - DOGE/USDT
-      timeframe: "1D"
-      initial_fraction: 0.25             # 4-Pod EW, 인큐베이팅
-      max_fraction: 0.35
-      min_fraction: 0.10
-      max_drawdown: 0.20
-      drawdown_warning: 0.15
-      max_leverage: 2.0
-      system_stop_loss: 0.10
-      use_trailing_stop: true
-      trailing_stop_atr_multiplier: 3.0
-      rebalance_threshold: 0.10
-
-      asset_allocation:
-        method: inverse_volatility
-        vol_lookback: 60
-        rebalance_bars: 5
-        min_weight: 0.10
-        max_weight: 0.40
-
-      # AssetSelector: 5 에셋 중 성과 미달 에셋 동적 제외/재진입
-      # min_active=3: 최소 3개 유지 (최대 2개 제외 가능)
-      asset_selector:
-        enabled: true
-        sharpe_lookback: 60
-        return_lookback: 30
-        exclude_score_threshold: 0.20
-        include_score_threshold: 0.35
-        exclude_confirmation_bars: 5
-        include_confirmation_bars: 3
-        min_exclusion_bars: 10
-        ramp_steps: 5
-        min_active_assets: 3
-
-    # ────────────────────────────────────────────────────────
-    # Pod 4: GBTrend — Momentum GradientBoosting (인큐베이팅) — Momentum GradientBoosting (인큐베이팅)
-    # P4 ETH Sharpe 4.18, CAGR +325.3%, MDD 17.3%, OOS=3.80
-    # 모멘텀 중심 12개 feature, CTREND 대비 low correlation
-    # 에셋: 전 에셋 Sharpe ≥ 2.8 → 5개 전체 투입
-    # ────────────────────────────────────────────────────────
-    - pod_id: pod-gbtrend
-      strategy_name: gbtrend
-      strategy_params:
-        training_window: 195
-        prediction_horizon: 3
-        n_estimators: 345
-        max_depth: 4
-        learning_rate: 0.06189707918754463
-        subsample: 0.8
-        vol_target: 0.35
-        vol_window: 102
-        min_volatility: 0.05
-        annualization_factor: 365.0       # 1D
-        short_mode: 2                     # FULL
-      symbols:
-        - ETH/USDT
-        - SOL/USDT
-        - BTC/USDT
-        - BNB/USDT
-        - DOGE/USDT
-      timeframe: "1D"
-      initial_fraction: 0.25             # 4-Pod EW, 인큐베이팅
-      max_fraction: 0.35
-      min_fraction: 0.10
-      max_drawdown: 0.20
-      drawdown_warning: 0.15
-      max_leverage: 2.0
-      system_stop_loss: 0.10
-      use_trailing_stop: true
-      trailing_stop_atr_multiplier: 3.0
-      rebalance_threshold: 0.10
-
-      asset_allocation:
-        method: inverse_volatility
-        vol_lookback: 60
-        rebalance_bars: 5
-        min_weight: 0.10
-        max_weight: 0.40
-
-      # AssetSelector: 5 에셋 중 성과 미달 에셋 동적 제외/재진입
-      # min_active=3: 최소 3개 유지 (최대 2개 제외 가능)
-      asset_selector:
-        enabled: true
-        sharpe_lookback: 60
-        return_lookback: 30
-        exclude_score_threshold: 0.20
-        include_score_threshold: 0.35
-        exclude_confirmation_bars: 5
-        include_confirmation_bars: 3
-        min_exclusion_bars: 10
-        ramp_steps: 5
-        min_active_assets: 3
