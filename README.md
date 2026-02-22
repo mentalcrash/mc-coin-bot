@@ -26,7 +26,7 @@ WebSocket → Data ──→├─ Pod B (Donchian) ─┼→ Netting → PM →
                     Lifecycle Manager    (5-check defense)
 ```
 
-> 상세: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
+> 상세: [`docs/eda-orchestrator.md`](docs/eda-orchestrator.md)
 
 ### 핵심 설계 원칙
 
@@ -181,7 +181,7 @@ pods:
 | `risk_parity` | 리스크 기여 균등화 | 상관관계까지 반영한 정밀 배분 |
 | `signal_weighted` | 시그널 강도 비례 | 전략의 확신도 차이 반영 |
 
-> 상세 설정 및 아키텍처: [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md)
+> 상세 설정 및 아키텍처: [`docs/eda-orchestrator.md`](docs/eda-orchestrator.md)
 
 ---
 
@@ -365,7 +365,7 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 
 1. **전략 풀 확대**: ACTIVE 2개 → 5~10개 (1D 앙상블 중심 발굴)
 1. **자산 다각화**: ✅ 8종 → 16종 확장 완료 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
-1. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([Asset Allocation 설계](docs/architecture/strategy-orchestrator.md#54-intra-pod-asset-allocation))
+1. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 구현 완료 — EW/IV/RP/SW 4가지 방법 + Numba 최적화 ([Asset Allocation 설계](docs/eda-orchestrator.md#53-intra-pod-asset-allocation))
 1. **Macro/Options 활용**: ✅ FRED(DXY/VIX/M2), Deribit(DVOL/PCR), Coinalyze(멀티거래소 OI/Funding) 수집 완료 — 1D 전략의 regime filter + forward-looking 시그널
 
 ---
@@ -407,7 +407,6 @@ uv run mcbot audit latest                     # 최신 스냅샷
 |------|------|
 | [`docs/strategy-pipeline.md`](docs/strategy-pipeline.md) | **전략 파이프라인** (Phase 1~7, PASS 기준, YAML 스키마) |
 | [`docs/data-collection.md`](docs/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |
-| [`docs/architecture/eda-system.md`](docs/architecture/eda-system.md) | EDA 시스템 아키텍처 (이벤트 흐름, 컴포넌트) |
+| [`docs/eda-orchestrator.md`](docs/eda-orchestrator.md) | **EDA + Orchestrator 아키텍처** (이벤트, 컴포넌트, Pod, 배분, 생애주기, 넷팅) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 설계 (VBT + 검증) |
-| [`docs/architecture/strategy-orchestrator.md`](docs/architecture/strategy-orchestrator.md) | **멀티 전략 오케스트레이터** (Pod, 배분, 생애주기, 넷팅) |
 | [`docs/exchange-safety-stop.md`](docs/exchange-safety-stop.md) | Exchange Safety Stop (봇 장애 시 거래소 STOP_MARKET 안전망) |
