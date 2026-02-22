@@ -147,7 +147,6 @@ uv run mcbot backtest diagnose BTC/USDT -s tsmom
 uv run mcbot eda run config/default.yaml
 uv run mcbot eda run config/default.yaml --report         # QuantStats
 uv run mcbot eda run config/default.yaml --mode shadow    # Signal logging only
-uv run mcbot eda run config/default.yaml --fast           # Fast mode
 uv run mcbot eda run config/default.yaml -V               # Verbose
 ```
 

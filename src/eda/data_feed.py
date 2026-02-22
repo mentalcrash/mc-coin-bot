@@ -74,17 +74,12 @@ class HistoricalDataFeed:
     - TF candle 완성 시: BarEvent(tf=target_tf) 발행 -> Strategy + PM(full)
     - flush()는 TF candle 완성 시에만 호출 (성능 최적화)
 
-    fast_mode=True일 때는 1m bar를 pandas resample로 사전 집계하여
-    TF bar만 리플레이합니다. CandleAggregator를 바이패스하여
-    이벤트 수를 ~1,189x 감소시킵니다 (1D 기준).
-
     Multi-TF 모드: target_timeframes에 2개 이상 TF를 전달하면
     MultiTimeframeCandleAggregator를 사용하여 복수 TF bar를 생성합니다.
 
     Args:
         data: 1m 원본 데이터 (MarketDataSet 또는 MultiSymbolData)
         target_timeframe: 집계 목표 TF ("1D", "4h", "1h" 등)
-        fast_mode: True면 pre-aggregation 후 TF bar만 리플레이 (intrabar SL/TS 없음)
         target_timeframes: Multi-TF 모드용 TF 집합 (None이면 단일 TF)
     """
 
@@ -93,12 +88,10 @@ class HistoricalDataFeed:
         data: MarketDataSet | MultiSymbolData,
         target_timeframe: str,
         *,
-        fast_mode: bool = False,
         target_timeframes: set[str] | None = None,
     ) -> None:
         self._data = data
         self._target_tf = target_timeframe
-        self._fast_mode = fast_mode
         self._bars_emitted: int = 0
 
         # Multi-TF aggregator (2+ TF)
@@ -109,7 +102,7 @@ class HistoricalDataFeed:
 
         if target_timeframes and len(target_timeframes) > 1:
             self._multi_aggregator = MultiTimeframeCandleAggregator(target_timeframes)
-        elif not fast_mode:
+        else:
             tf = target_timeframe if not target_timeframes else next(iter(target_timeframes))
             self._aggregator = CandleAggregator(tf)
 
@@ -120,17 +113,12 @@ class HistoricalDataFeed:
 
     async def start(self, bus: EventBus) -> None:
         """1m bar 재생 + CandleAggregator 집계."""
-        if self._fast_mode:
-            if self._is_multi_symbol:
-                await self._replay_multi_fast(bus)
-            else:
-                await self._replay_single_fast(bus)
-        elif self._is_multi_symbol:
+        if self._is_multi_symbol:
             await self._replay_multi(bus)
         else:
             await self._replay_single(bus)
 
-        # 마지막 미완성 캔들 flush (fast_mode에서는 불필요)
+        # 마지막 미완성 캔들 flush
         if self._multi_aggregator is not None:
             remaining = self._multi_aggregator.flush_all()
             for completed in remaining:
@@ -145,10 +133,8 @@ class HistoricalDataFeed:
                 self._bars_emitted += 1
                 await bus.flush()
 
-        mode_label = " [fast]" if self._fast_mode else ""
         logger.info(
-            "HistoricalDataFeed finished{}: {} bars emitted (target_tf={})",
-            mode_label,
+            "HistoricalDataFeed finished: {} bars emitted (target_tf={})",
             self._bars_emitted,
             self._target_tf,
         )
@@ -174,102 +160,6 @@ class HistoricalDataFeed:
         from src.eda.analytics import tf_to_pandas_freq
 
         return tf_to_pandas_freq(self._target_tf)
-
-    # ------------------------------------------------------------------
-    # Fast mode: pre-aggregated TF bars only
-    # ------------------------------------------------------------------
-
-    async def _replay_single_fast(self, bus: EventBus) -> None:
-        """단일 심볼 fast mode: pandas resample 후 TF bar만 리플레이."""
-        from src.data.market_data import MarketDataSet
-
-        assert isinstance(self._data, MarketDataSet)
-
-        symbol = self._data.symbol
-        df_tf = resample_1m_to_tf(self._data.ohlcv, self._resample_freq)
-
-        for ts, row in df_tf.iterrows():
-            o, h, lo, c, v = (
-                float(row["open"]),
-                float(row["high"]),
-                float(row["low"]),
-                float(row["close"]),
-                float(row["volume"]),
-            )
-            if not validate_bar(o, h, lo, c, v, symbol, ts):
-                continue
-
-            bar = BarEvent(
-                symbol=symbol,
-                timeframe=self._target_tf,
-                open=o,
-                high=h,
-                low=lo,
-                close=c,
-                volume=v,
-                bar_timestamp=ts.to_pydatetime(),  # type: ignore[union-attr]
-                correlation_id=uuid4(),
-                source="HistoricalDataFeed",
-            )
-            await bus.publish(bar)
-            self._bars_emitted += 1
-            await bus.flush()
-
-    async def _replay_multi_fast(self, bus: EventBus) -> None:
-        """멀티 심볼 fast mode: pandas resample 후 common index TF bar 리플레이."""
-        from src.data.market_data import MultiSymbolData
-
-        assert isinstance(self._data, MultiSymbolData)
-
-        symbols = self._data.symbols
-        ohlcv_dict = self._data.ohlcv
-        freq = self._resample_freq
-
-        # 각 심볼을 TF로 resample
-        resampled: dict[str, pd.DataFrame] = {}
-        for sym in symbols:
-            resampled[sym] = resample_1m_to_tf(ohlcv_dict[sym], freq)
-
-        # common index 계산
-        common_index = resampled[symbols[0]].index
-        for sym in symbols[1:]:
-            common_index = common_index.intersection(resampled[sym].index)
-
-        for ts in common_index:
-            cid = uuid4()
-
-            for symbol in symbols:
-                row = resampled[symbol].loc[ts]
-                o, h, lo, c, v = (
-                    float(row["open"]),
-                    float(row["high"]),
-                    float(row["low"]),
-                    float(row["close"]),
-                    float(row["volume"]),
-                )
-                if not validate_bar(o, h, lo, c, v, symbol, ts):
-                    continue
-
-                bar = BarEvent(
-                    symbol=symbol,
-                    timeframe=self._target_tf,
-                    open=o,
-                    high=h,
-                    low=lo,
-                    close=c,
-                    volume=v,
-                    bar_timestamp=ts.to_pydatetime(),  # type: ignore[union-attr]
-                    correlation_id=cid,
-                    source="HistoricalDataFeed",
-                )
-                await bus.publish(bar)
-                self._bars_emitted += 1
-
-            await bus.flush()
-
-    # ------------------------------------------------------------------
-    # Standard mode: 1m replay + CandleAggregator
-    # ------------------------------------------------------------------
 
     async def _replay_single(self, bus: EventBus) -> None:
         """단일 심볼 1m 리플레이 + 집계."""

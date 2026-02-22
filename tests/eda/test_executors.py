@@ -235,18 +235,20 @@ class TestFeeCalculation:
     """CostModel 수수료 적용 테스트."""
 
     async def test_fee_on_immediate_fill(self) -> None:
-        """SL 즉시 체결 시 수수료 적용."""
+        """SL 즉시 체결 시 수수료 적용 (exchange fee만, 슬리피지는 가격에 반영)."""
         cost_model = CostModel.binance_futures()
         executor = BacktestExecutor(cost_model=cost_model)
         executor.on_bar(_make_bar())
 
         fill = await executor.execute(_make_order(price=50000.0, notional_usd=10000.0))
         assert fill is not None
-        expected_fee = 10000.0 * cost_model.total_fee_rate
+        expected_fee = 10000.0 * cost_model.effective_fee
         assert abs(fill.fee - expected_fee) < 0.01
+        # BUY: 가격이 슬리피지만큼 상승
+        assert fill.fill_price > 50000.0
 
     async def test_fee_on_deferred_fill(self) -> None:
-        """Deferred 체결 시 수수료 적용."""
+        """Deferred 체결 시 수수료 적용 (exchange fee만)."""
         cost_model = CostModel.binance_futures()
         executor = BacktestExecutor(cost_model=cost_model)
         executor.on_bar(_make_bar())
@@ -258,8 +260,100 @@ class TestFeeCalculation:
         executor.fill_pending(bar2)
 
         fills = executor.drain_fills()
-        expected_fee = 10000.0 * cost_model.total_fee_rate
+        expected_fee = 10000.0 * cost_model.effective_fee
         assert abs(fills[0].fee - expected_fee) < 0.01
+
+
+class TestSlippagePriceDegradation:
+    """슬리피지 가격 악화 테스트 (VBT parity)."""
+
+    async def test_buy_slippage_raises_fill_price(self) -> None:
+        """BUY: fill_price > 원래 가격 (슬리피지 가격 악화)."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(_make_bar())
+
+        fill = await executor.execute(_make_order(side="BUY", price=50000.0, notional_usd=10000.0))
+        assert fill is not None
+        expected_price = 50000.0 * (1.0 + cost_model.slip_rate)
+        assert abs(fill.fill_price - expected_price) < 0.01
+
+    async def test_sell_slippage_lowers_fill_price(self) -> None:
+        """SELL: fill_price < 원래 가격 (슬리피지 가격 악화)."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(_make_bar())
+
+        fill = await executor.execute(_make_order(side="SELL", price=50000.0, notional_usd=10000.0))
+        assert fill is not None
+        expected_price = 50000.0 * (1.0 - cost_model.slip_rate)
+        assert abs(fill.fill_price - expected_price) < 0.01
+
+    async def test_fee_only_exchange_fee(self) -> None:
+        """fee = notional * effective_fee (슬리피지 미포함)."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(_make_bar())
+
+        notional = 10000.0
+        fill = await executor.execute(_make_order(price=50000.0, notional_usd=notional))
+        assert fill is not None
+        assert abs(fill.fee - notional * cost_model.effective_fee) < 0.01
+        # fee가 total_fee_rate보다 작아야 함 (슬리피지 미포함)
+        assert fill.fee < notional * cost_model.total_fee_rate + 0.01
+
+    async def test_slts_close_preserves_full_qty(self) -> None:
+        """SL/TS close (order.price 설정): fill_qty = notional / fill_price (전량 청산)."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(_make_bar())
+
+        # 포지션 크기 시뮬레이션: size=10, price=50000 → notional=500000
+        position_size = 10.0
+        position_price = 50000.0
+        notional = position_size * position_price
+
+        fill = await executor.execute(
+            _make_order(side="BUY", price=position_price, notional_usd=notional)
+        )
+        assert fill is not None
+        # SL/TS: fill_qty = notional / fill_price (슬리피지 반영 전 가격)
+        expected_qty = notional / position_price  # = position_size exactly
+        assert abs(fill.fill_qty - expected_qty) < 1e-10
+        # 가격에는 슬리피지 적용됨
+        assert fill.fill_price > position_price
+
+    async def test_deferred_entry_slippage_affects_qty(self) -> None:
+        """Deferred entry (order.price=None): fill_qty = notional / adjusted_price."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model)
+        executor.on_bar(_make_bar())
+
+        notional = 10000.0
+        await executor.execute(_make_order(side="BUY", notional_usd=notional))
+
+        bar2 = _make_bar(open_price=50000.0)
+        executor.on_bar(bar2)
+        executor.fill_pending(bar2)
+        fills = executor.drain_fills()
+        assert len(fills) == 1
+
+        # Deferred: fill_qty = notional / adjusted_price (슬리피지 반영)
+        adjusted_price = 50000.0 * (1.0 + cost_model.slip_rate)
+        expected_qty = notional / adjusted_price
+        assert abs(fills[0].fill_qty - expected_qty) < 1e-6
+        # 수량이 슬리피지 없는 경우보다 적어야 함
+        assert fills[0].fill_qty < notional / 50000.0
+
+    async def test_zero_cost_model_no_slippage(self) -> None:
+        """CostModel.zero() → fill_price 불변."""
+        executor = BacktestExecutor(cost_model=CostModel.zero())
+        executor.on_bar(_make_bar())
+
+        fill = await executor.execute(_make_order(price=50000.0, notional_usd=10000.0))
+        assert fill is not None
+        assert fill.fill_price == 50000.0
+        assert fill.fee == 0.0
 
 
 class TestEdgeCases:
@@ -430,9 +524,7 @@ class TestLiveExecutorMetricsCallback:
         _, metrics = self._make_live_executor_with_metrics()
 
         order = _make_order()
-        result = LiveExecutor._parse_fill(
-            order, {"average": 0, "filled": 0}, metrics=metrics
-        )
+        result = LiveExecutor._parse_fill(order, {"average": 0, "filled": 0}, metrics=metrics)
 
         assert result is None
         metrics.on_fill_parse_failure.assert_called_once_with(order.symbol)

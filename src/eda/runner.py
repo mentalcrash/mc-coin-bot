@@ -50,7 +50,6 @@ class EDARunner:
         initial_capital: 초기 자본 (USD)
         asset_weights: 에셋별 가중치 (None이면 균등분배)
         queue_size: EventBus 큐 크기
-        fast_mode: True면 pre-aggregation + incremental 전략 (intrabar SL/TS 없음)
     """
 
     def __init__(
@@ -63,7 +62,6 @@ class EDARunner:
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
         *,
-        fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
         feature_store_config: FeatureStoreConfig | None = None,
     ) -> None:
@@ -73,14 +71,11 @@ class EDARunner:
         self._asset_weights = asset_weights
         self._queue_size = queue_size
         self._target_timeframe = target_timeframe
-        self._fast_mode = fast_mode
         self._regime_config = regime_config
         self._feature_store_config = feature_store_config
 
         # feed/executor 생성
-        self._feed: DataFeedPort = HistoricalDataFeed(
-            data, target_timeframe=target_timeframe, fast_mode=fast_mode
-        )
+        self._feed: DataFeedPort = HistoricalDataFeed(data, target_timeframe=target_timeframe)
         self._executor: ExecutorPort = BacktestExecutor(cost_model=config.cost_model)
 
         # Components (run() 시 초기화)
@@ -100,7 +95,6 @@ class EDARunner:
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
         *,
-        fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
         feature_store_config: FeatureStoreConfig | None = None,
     ) -> EDARunner:
@@ -114,7 +108,6 @@ class EDARunner:
         instance._asset_weights = asset_weights
         instance._queue_size = queue_size
         instance._target_timeframe = target_timeframe
-        instance._fast_mode = fast_mode
         instance._regime_config = regime_config
         instance._feature_store_config = feature_store_config
         instance._bus = None
@@ -133,25 +126,22 @@ class EDARunner:
         asset_weights: dict[str, float] | None = None,
         queue_size: int = 10000,
         *,
-        fast_mode: bool = False,
         regime_config: RegimeServiceConfig | None = None,
         feature_store_config: FeatureStoreConfig | None = None,
     ) -> EDARunner:
         """백테스트용 Runner 생성.
 
         HistoricalDataFeed(1m→target_tf) + BacktestExecutor 조합입니다.
-        fast_mode=True면 pre-aggregation + incremental 전략으로 고속 실행.
         """
         return cls._from_adapters(
             strategy=strategy,
-            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe, fast_mode=fast_mode),
+            feed=HistoricalDataFeed(data, target_timeframe=target_timeframe),
             executor=BacktestExecutor(cost_model=config.cost_model),
             target_timeframe=target_timeframe,
             config=config,
             initial_capital=initial_capital,
             asset_weights=asset_weights,
             queue_size=queue_size,
-            fast_mode=fast_mode,
             regime_config=regime_config,
             feature_store_config=feature_store_config,
         )
@@ -218,6 +208,9 @@ class EDARunner:
             max_order_size_usd=self._initial_capital * self._config.max_leverage_cap,
             enable_circuit_breaker=False,
         )
+        # 백테스트: 동적 max_order_size (equity 성장에 비례 — VBT parity)
+        if isinstance(executor, BacktestExecutor):
+            rm.enable_dynamic_max_order_size()
         oms = OMS(executor=executor, portfolio_manager=pm)
         analytics = AnalyticsEngine(initial_capital=self._initial_capital)
 
@@ -235,8 +228,12 @@ class EDARunner:
                 # TF bar에서만 deferred fill 처리 (VBT shift(-1) 동일)
                 if event.timeframe == target_tf:
                     bt_executor.fill_pending(event)
-                    for fill in bt_executor.drain_fills():
-                        await bus.publish(fill)
+                    fills = bt_executor.drain_fills()
+                    if fills:
+                        # Fill을 PM에 즉시 반영 → _on_bar의 MTM/SL/TS가 최신 포지션 기준
+                        await pm.apply_fills(fills)
+                    for fill in fills:
+                        await bus.publish(fill)  # analytics, rm 등 다른 구독자용
 
             bus.subscribe(EventType.BAR, executor_bar_handler)
 
@@ -253,8 +250,7 @@ class EDARunner:
         await analytics.register(bus)
 
         # 3. 실행
-        mode_label = " [fast]" if self._fast_mode else ""
-        logger.info("EDA Runner starting...{}", mode_label)
+        logger.info("EDA Runner starting...")
         bus_task = asyncio.create_task(bus.start())
 
         await feed.start(bus)
@@ -297,10 +293,6 @@ class EDARunner:
         kwargs: dict[str, object] = {
             "target_timeframe": self._target_timeframe,
         }
-        if self._fast_mode:
-            precomputed = self._precompute_signals()
-            if precomputed:
-                kwargs["precomputed_signals"] = precomputed
 
         # 각 provider를 생성하고 None이 아니면 추가
         deriv_provider = self._create_derivatives_provider()
@@ -318,7 +310,8 @@ class EDARunner:
         return kwargs
 
     def _create_regime_service(
-        self, derivatives_provider: object | None = None,
+        self,
+        derivatives_provider: object | None = None,
     ) -> RegimeService | None:
         """RegimeService 생성 + 전체 데이터 사전 계산.
 
@@ -337,7 +330,9 @@ class EDARunner:
         from src.eda.analytics import tf_to_pandas_freq
         from src.regime.service import RegimeService
 
-        regime_service = RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
+        regime_service = RegimeService(
+            self._regime_config, derivatives_provider=derivatives_provider
+        )
 
         feed = self._feed
         if not isinstance(feed, HistoricalDataFeed):
@@ -354,14 +349,18 @@ class EDARunner:
         if isinstance(data, MarketDataSet):
             df_tf = resample_1m_to_tf(data.ohlcv, freq)
             regime_service.precompute(
-                data.symbol, df_tf["close"], deriv_df=deriv_map.get(data.symbol),  # type: ignore[arg-type]
+                data.symbol,
+                df_tf["close"],
+                deriv_df=deriv_map.get(data.symbol),  # type: ignore[arg-type]
             )
         else:
             assert isinstance(data, MultiSymbolData)
             for sym in data.symbols:
                 df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
                 regime_service.precompute(
-                    sym, df_tf["close"], deriv_df=deriv_map.get(sym),  # type: ignore[arg-type]
+                    sym,
+                    df_tf["close"],
+                    deriv_df=deriv_map.get(sym),  # type: ignore[arg-type]
                 )
 
         return regime_service
@@ -620,42 +619,6 @@ class EDARunner:
             len(precomputed),
         )
         return BacktestDerivExtProvider(precomputed)
-
-    def _precompute_signals(self) -> dict[str, object] | None:
-        """fast_mode: 전체 TF 데이터로 시그널을 사전 계산.
-
-        forward_return 등 미래 참조 feature를 사용하는 전략(CTREND)에서
-        bar-by-bar 증분 실행 시 발생하는 edge effect를 방지합니다.
-        VBT와 동일하게 전체 데이터셋에서 한번에 시그널을 계산합니다.
-
-        Returns:
-            {symbol: StrategySignals} 또는 실패 시 None
-        """
-        from src.data.market_data import MarketDataSet, MultiSymbolData
-        from src.eda.analytics import tf_to_pandas_freq
-
-        feed = self._feed
-        if not isinstance(feed, HistoricalDataFeed):
-            return None
-
-        data = feed.data
-        freq = tf_to_pandas_freq(self._target_timeframe)
-        result: dict[str, object] = {}
-
-        if isinstance(data, MarketDataSet):
-            df_tf = resample_1m_to_tf(data.ohlcv, freq)
-            _, signals = self._strategy.run(df_tf)
-            result[data.symbol] = signals
-            logger.info("Pre-computed signals for {} ({} bars)", data.symbol, len(df_tf))
-        else:
-            assert isinstance(data, MultiSymbolData)
-            for sym in data.symbols:
-                df_tf = resample_1m_to_tf(data.ohlcv[sym], freq)
-                _, signals = self._strategy.run(df_tf)
-                result[sym] = signals
-                logger.info("Pre-computed signals for {} ({} bars)", sym, len(df_tf))
-
-        return result if result else None
 
     @property
     def analytics(self) -> AnalyticsEngine | None:

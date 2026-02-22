@@ -1357,7 +1357,7 @@ class TestIntrabarStopLoss:
         assert len(bal_events) > bal_before
 
     async def test_1m_trailing_stop_triggered(self) -> None:
-        """1m bar에서 trailing stop 발동."""
+        """TF bar로 ATR warmup 후, 1m bar에서 trailing stop 발동."""
         config = PortfolioManagerConfig(
             max_leverage_cap=2.0,
             rebalance_threshold=0.01,
@@ -1381,12 +1381,13 @@ class TestIntrabarStopLoss:
         await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
         await bus.flush()
 
-        # 1m bar로 ATR warmup (16봉, 부드러운 상승)
+        # TF(1D) bar로 ATR warmup (16봉, 부드러운 상승)
+        # ATR은 TF bar에서만 계산됨 (수정 1: VBT parity)
         for i in range(16):
             base_price = 50000.0 + i * 625
             await bus.publish(
                 _make_bar_tf(
-                    timeframe="1m",
+                    timeframe="1D",
                     close=base_price + 500,
                     high=base_price + 1000,
                     low=base_price,
@@ -1398,7 +1399,7 @@ class TestIntrabarStopLoss:
         peak = pos.peak_price_since_entry
         # ATR ≈ 1000, mult=2.0 → trailing distance ≈ 2000
 
-        # 1m bar: close < peak - 2000 → trailing stop 발동
+        # 1m bar: close < peak - 2000 → trailing stop 발동 (TF ATR 캐시 사용)
         await bus.publish(
             _make_bar_tf(
                 timeframe="1m",
@@ -1925,3 +1926,218 @@ class TestReconcileWithExchange:
         removed = pm.reconcile_with_exchange({})
 
         assert removed == []
+
+
+# =========================================================================
+# I. ATR TF 전용 계산 검증
+# =========================================================================
+class TestATRTFOnly:
+    """ATR이 TF bar에서만 계산되는지 검증 (수정 1)."""
+
+    async def test_atr_only_computed_on_tf_bars(self) -> None:
+        """1m bar를 삽입해도 pos.atr_values 불변."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            use_trailing_stop=True,
+            trailing_stop_atr_multiplier=2.0,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
+        bus = EventBus(queue_size=200)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        # TF bar 1개 → ATR values에 1개 추가
+        await bus.publish(_make_bar_tf(timeframe="1D", close=51000.0, high=52000.0, low=50000.0))
+        await bus.flush()
+        pos = pm.positions["BTC/USDT"]
+        atr_count_after_tf = len(pos.atr_values)
+        assert atr_count_after_tf == 1
+
+        # 1m bar 5개 → ATR values 불변 (1m에서 ATR 계산 안 함)
+        for i in range(5):
+            await bus.publish(
+                _make_bar_tf(
+                    timeframe="1m",
+                    close=51000.0 + i * 100,
+                    high=51200.0 + i * 100,
+                    low=50800.0 + i * 100,
+                )
+            )
+            await bus.flush()
+
+        assert len(pos.atr_values) == atr_count_after_tf  # 불변
+
+        await bus.stop()
+        await task
+
+    async def test_intrabar_ts_uses_cached_tf_atr(self) -> None:
+        """1m bar에서 TS 체크 시 TF ATR 캐시 사용."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            use_trailing_stop=True,
+            trailing_stop_atr_multiplier=2.0,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
+        bus = EventBus(queue_size=500)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        # TF bar로 ATR warmup (14봉 + peak 상승)
+        for i in range(16):
+            base = 50000.0 + i * 625
+            await bus.publish(
+                _make_bar_tf(timeframe="1D", close=base + 500, high=base + 1000, low=base)
+            )
+            await bus.flush()
+
+        # TF ATR 캐시가 설정되었는지 확인
+        assert "BTC/USDT" in pm._last_tf_atr
+        cached_atr = pm._last_tf_atr["BTC/USDT"]
+        assert cached_atr is not None
+
+        pos = pm.positions["BTC/USDT"]
+        peak = pos.peak_price_since_entry
+
+        # 1m bar에서 TS 발동 (TF ATR 캐시 사용, 발동 시점에 즉시 청산)
+        await bus.publish(
+            _make_bar_tf(
+                timeframe="1m",
+                close=peak - cached_atr * 2.0 - 500,
+                high=peak - 500,
+                low=peak - cached_atr * 2.0 - 1000,
+            )
+        )
+        await bus.flush()
+        await bus.stop()
+        await task
+
+        close_orders = [o for o in orders if o.target_weight == 0.0]
+        assert len(close_orders) >= 1
+
+    async def test_no_tf_atr_no_trailing_stop(self) -> None:
+        """TF bar 없이 1m bar만 수신 시 trailing stop 미작동."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            system_stop_loss=None,
+            use_trailing_stop=True,
+            trailing_stop_atr_multiplier=2.0,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, target_timeframe="1D")
+        bus = EventBus(queue_size=200)
+        orders: list[OrderRequestEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, OrderRequestEvent):
+                orders.append(event)
+
+        bus.subscribe(EventType.ORDER_REQUEST, handler)
+        await pm.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        await bus.publish(_make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0))
+        await bus.flush()
+
+        # 1m bar만 20개 → TF ATR 캐시 없음 → TS 미작동
+        for _ in range(20):
+            await bus.publish(
+                _make_bar_tf(timeframe="1m", close=30000.0, high=50000.0, low=30000.0)
+            )
+            await bus.flush()
+
+        await bus.stop()
+        await task
+
+        close_orders = [o for o in orders if o.target_weight == 0.0]
+        assert len(close_orders) == 0  # ATR 캐시 없으므로 TS 미작동
+
+
+# =========================================================================
+# J. Fill/MTM 순서 (apply_fills dedup) 검증
+# =========================================================================
+class TestApplyFills:
+    """apply_fills + _on_fill dedup 검증 (수정 4)."""
+
+    async def test_apply_fills_updates_position_immediately(self) -> None:
+        """apply_fills 후 포지션 즉시 반영."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        await pm.register(bus)
+        task = asyncio.create_task(bus.start())
+
+        fill = _make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0)
+        await pm.apply_fills([fill])
+
+        # 포지션이 즉시 반영됨
+        pos = pm.positions["BTC/USDT"]
+        assert pos.is_open
+        assert pos.size == 0.1
+        assert pos.direction == Direction.LONG
+
+        await bus.stop()
+        await task
+
+    async def test_duplicate_fill_skipped(self) -> None:
+        """apply_fills 후 bus.publish(fill) → _on_fill에서 dedup skip."""
+        config = PortfolioManagerConfig(
+            max_leverage_cap=2.0,
+            rebalance_threshold=0.01,
+            cost_model=CostModel.zero(),
+        )
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        pos_events: list[PositionUpdateEvent] = []
+
+        async def handler(event: AnyEvent) -> None:
+            if isinstance(event, PositionUpdateEvent):
+                pos_events.append(event)
+
+        bus.subscribe(EventType.POSITION_UPDATE, handler)
+        await pm.register(bus)
+        task = asyncio.create_task(bus.start())
+
+        fill = _make_fill(side="BUY", price=50000.0, qty=0.1, fee=0.0)
+
+        # apply_fills → PositionUpdate 1개 발행
+        await pm.apply_fills([fill])
+        await bus.flush()
+        count_after_apply = len(pos_events)
+        assert count_after_apply == 1
+
+        # bus.publish(fill) → _on_fill에서 dedup → PositionUpdate 추가 발행 없음
+        await bus.publish(fill)
+        await bus.flush()
+
+        assert len(pos_events) == count_after_apply  # dedup: 추가 없음
+
+        # 포지션 크기 확인 (이중 반영 방지)
+        pos = pm.positions["BTC/USDT"]
+        assert abs(pos.size - 0.1) < 1e-10
+
+        await bus.stop()
+        await task

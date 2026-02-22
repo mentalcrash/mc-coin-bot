@@ -127,6 +127,12 @@ class EDAPortfolioManager:
         # SL/TS pending close: close fill 수신 전까지 해당 심볼 주문 차단
         self._pending_close: set[str] = set()
 
+        # TF bar ATR 캐시: 1m intrabar에서 TF ATR 재사용 (VBT parity)
+        self._last_tf_atr: dict[str, float] = {}
+
+        # Fill dedup: apply_fills()에서 처리된 fill은 _on_fill에서 스킵
+        self._applied_fill_ids: set[UUID] = set()
+
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
         self._bus = bus
@@ -302,6 +308,7 @@ class EDAPortfolioManager:
             self._pending_signals.pop(symbol, None)
             self._pending_close.discard(symbol)
             self._deferred_close_targets.pop(symbol, None)
+            self._last_tf_atr.pop(symbol, None)
 
             removed.append(symbol)
 
@@ -530,6 +537,12 @@ class EDAPortfolioManager:
         last_executed = self._last_executed_targets.get(symbol, 0.0)
         change = abs(target_weight - last_executed)
         if change < self._config.rebalance_threshold:
+            logger.debug(
+                "Rebalance skip: {} change={:.4f} < threshold={:.4f}",
+                symbol,
+                change,
+                self._config.rebalance_threshold,
+            )
             return
 
         pos = self._positions.get(symbol)
@@ -572,9 +585,28 @@ class EDAPortfolioManager:
         self._last_executed_targets[symbol] = target_weight
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent → 포지션/잔고 업데이트."""
+        """FillEvent → 포지션/잔고 업데이트.
+
+        apply_fills()에서 이미 처리된 fill은 dedup으로 스킵합니다.
+        """
         assert isinstance(event, FillEvent)
-        fill = event
+        if event.event_id in self._applied_fill_ids:
+            self._applied_fill_ids.discard(event.event_id)
+            return
+        await self._process_fill(event)
+
+    async def apply_fills(self, fills: list[FillEvent]) -> None:
+        """Deferred fill을 _on_bar 전에 직접 반영 (Runner 호출).
+
+        fill을 즉시 포지션에 반영하여, 이후 _on_bar의 MTM/SL/TS가
+        최신 포지션 기준으로 동작하도록 합니다.
+        """
+        for fill in fills:
+            self._applied_fill_ids.add(fill.event_id)
+            await self._process_fill(fill)
+
+    async def _process_fill(self, fill: FillEvent) -> None:
+        """Fill 처리 본체 — 포지션/잔고 업데이트 + 이벤트 발행."""
         bus = self._bus
         assert bus is not None
 
@@ -767,8 +799,8 @@ class EDAPortfolioManager:
             await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
             return
 
-        # 1. ATR 업데이트 (last_price 변경 전에 prev_close 사용)
-        atr = self._update_atr(pos, bar)
+        # 1. ATR 업데이트 + TF 캐시 저장 (last_price 변경 전에 prev_close 사용)
+        atr = self._update_atr_and_cache(pos, bar)
 
         # 2. Mark-to-market
         pos.last_price = bar.close
@@ -782,17 +814,9 @@ class EDAPortfolioManager:
             await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
             return
 
-        # 3. Position stop-loss 체크
-        if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
-            await self._handle_stop_trigger(pos, bar, "stop-loss")
+        # 3-4. SL/TS 체크 (서브메서드로 branch 분리)
+        if await self._check_and_handle_stops(pos, bar, atr):
             return
-
-        # 4. Trailing stop 체크
-        if self._config.use_trailing_stop:
-            self._update_peak_trough(pos, bar)
-            if atr is not None and self._check_trailing_stop(pos, bar, atr):
-                await self._handle_stop_trigger(pos, bar, "trailing-stop")
-                return
 
         # 5. Weight 업데이트
         equity = self.total_equity
@@ -811,43 +835,70 @@ class EDAPortfolioManager:
     # Intrabar Handler (1m bar → SL/TS only)
     # =========================================================================
     async def _on_intrabar(self, bar: BarEvent) -> None:
-        """1m bar에서 intrabar SL/TS만 체크 (rebalancing 생략)."""
+        """1m bar에서 intrabar SL/TS 체크 (라이브 동일 — 발동 시점에 즉시 청산)."""
         pos = self._positions.get(bar.symbol)
         if pos is None or not pos.is_open:
             return
         # 이미 이번 TF bar에서 SL/TS 발동 → 중복 close 방지
         if bar.symbol in self._stopped_this_bar:
             return
-        atr = self._update_atr(pos, bar)
+        # TF ATR 캐시 사용 (1m bar에서 ATR 재계산하지 않음)
+        # 새 포지션 (ATR warmup 미완료) 시 stale cache 사용 방지
+        atr = self._last_tf_atr.get(bar.symbol) if len(pos.atr_values) >= _ATR_PERIOD else None
         pos.last_price = bar.close
         if pos.direction == Direction.LONG:
             pos.unrealized_pnl = (bar.close - pos.avg_entry_price) * pos.size
         elif pos.direction == Direction.SHORT:
             pos.unrealized_pnl = (pos.avg_entry_price - bar.close) * pos.size
-        # Stop-loss
-        if self._config.system_stop_loss is not None and self._check_position_stop_loss(pos, bar):
+        # Stop-loss (1m bar에서 즉시 체크 — stop level 가격에 청산)
+        sl_price = self._check_position_stop_loss(pos, bar)
+        if sl_price is not None:
             self._stopped_this_bar.add(bar.symbol)
             self._last_executed_targets[bar.symbol] = 0.0
-            await self._emit_close_order(pos, bar.correlation_id, "stop-loss", fill_price=bar.close)
+            await self._emit_close_order(pos, bar.correlation_id, "stop-loss", fill_price=sl_price)
             return
-        # Trailing stop
+        # Trailing stop (1m bar에서 즉시 체크 — stop level 가격에 청산)
         if self._config.use_trailing_stop:
             self._update_peak_trough(pos, bar)
-            if atr is not None and self._check_trailing_stop(pos, bar, atr):
-                self._stopped_this_bar.add(bar.symbol)
-                self._last_executed_targets[bar.symbol] = 0.0
-                await self._emit_close_order(
-                    pos, bar.correlation_id, "trailing-stop", fill_price=bar.close
-                )
+            if atr is not None:
+                ts_price = self._check_trailing_stop(pos, bar, atr)
+                if ts_price is not None:
+                    self._stopped_this_bar.add(bar.symbol)
+                    self._last_executed_targets[bar.symbol] = 0.0
+                    await self._emit_close_order(
+                        pos, bar.correlation_id, "trailing-stop", fill_price=ts_price
+                    )
+
+    async def _check_and_handle_stops(
+        self, pos: Position, bar: BarEvent, atr: float | None
+    ) -> bool:
+        """SL/TS 체크 + 발동 시 처리. 발동 여부 반환."""
+        sl_price = self._check_position_stop_loss(pos, bar)
+        if sl_price is not None:
+            await self._handle_stop_trigger(pos, bar, "stop-loss", fill_price=sl_price)
+            return True
+        if self._config.use_trailing_stop:
+            self._update_peak_trough(pos, bar)
+            if atr is not None:
+                ts_price = self._check_trailing_stop(pos, bar, atr)
+                if ts_price is not None:
+                    await self._handle_stop_trigger(pos, bar, "trailing-stop", fill_price=ts_price)
+                    return True
+        return False
 
     # =========================================================================
     # Stop Trigger Handler (batch/non-batch 분기)
     # =========================================================================
-    async def _handle_stop_trigger(self, pos: Position, bar: BarEvent, reason: str) -> None:
+    async def _handle_stop_trigger(
+        self, pos: Position, bar: BarEvent, reason: str, fill_price: float | None = None
+    ) -> None:
         """SL/TS 발동 처리.
 
-        Batch mode: deferred close (next bar's open에서 체결, VBT parity).
-        Non-batch mode: 즉시 close (bar.close에서 체결).
+        Batch mode: deferred close (next bar's open에서 체결).
+        Non-batch mode: 즉시 close (stop level 가격에 체결).
+
+        Args:
+            fill_price: stop level 가격. None이면 bar.close 사용 (fallback).
         """
         self._stopped_this_bar.add(bar.symbol)
         if self._batch_mode:
@@ -863,13 +914,21 @@ class EDAPortfolioManager:
                 pos.last_price,
             )
         else:
-            await self._emit_close_order(pos, bar.correlation_id, reason, fill_price=bar.close)
+            price = fill_price if fill_price is not None else bar.close
+            await self._emit_close_order(pos, bar.correlation_id, reason, fill_price=price)
             self._last_executed_targets[bar.symbol] = 0.0
             await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
 
     # =========================================================================
     # Stop-Loss / Trailing Stop Helpers
     # =========================================================================
+    def _update_atr_and_cache(self, pos: Position, bar: BarEvent) -> float | None:
+        """ATR 계산 + TF ATR 캐시 저장."""
+        atr = self._update_atr(pos, bar)
+        if atr is not None:
+            self._last_tf_atr[bar.symbol] = atr
+        return atr
+
     def _update_atr(self, pos: Position, bar: BarEvent) -> float | None:
         """True Range를 누적하고 ATR(14) SMA를 반환. 데이터 부족 시 None."""
         prev_close = pos.last_price
@@ -887,24 +946,27 @@ class EDAPortfolioManager:
             return None
         return sum(pos.atr_values) / _ATR_PERIOD
 
-    def _check_position_stop_loss(self, pos: Position, bar: BarEvent) -> bool:
+    def _check_position_stop_loss(self, pos: Position, bar: BarEvent) -> float | None:
         """포지션 레벨 손절 조건 체크.
 
         Returns:
-            True면 손절 발동 (청산 필요)
+            SL 발동 시 stop price (체결가), 미발동 시 None.
+            실제 거래소처럼 stop level 가격에 체결 (bar 극값이 아님).
         """
         sl = self._config.system_stop_loss
         if sl is None:
-            return False
+            return None
 
         use_intrabar = self._config.use_intrabar_stop
         if pos.direction == Direction.LONG:
+            stop_price = pos.avg_entry_price * (1 - sl)
             check_price = bar.low if use_intrabar else bar.close
-            return check_price < pos.avg_entry_price * (1 - sl)
+            return stop_price if check_price < stop_price else None
         if pos.direction == Direction.SHORT:
+            stop_price = pos.avg_entry_price * (1 + sl)
             check_price = bar.high if use_intrabar else bar.close
-            return check_price > pos.avg_entry_price * (1 + sl)
-        return False
+            return stop_price if check_price > stop_price else None
+        return None
 
     def _update_peak_trough(self, pos: Position, bar: BarEvent) -> None:
         """진입 후 최고가/최저가 갱신."""
@@ -916,20 +978,23 @@ class EDAPortfolioManager:
             else:
                 pos.trough_price_since_entry = min(pos.trough_price_since_entry, bar.low)
 
-    def _check_trailing_stop(self, pos: Position, bar: BarEvent, atr: float) -> bool:
+    def _check_trailing_stop(self, pos: Position, bar: BarEvent, atr: float) -> float | None:
         """Trailing stop 조건 체크.
 
         Returns:
-            True면 trailing stop 발동 (청산 필요)
+            TS 발동 시 stop price (체결가), 미발동 시 None.
+            실제 거래소처럼 stop level 가격에 체결 (bar 극값이 아님).
         """
         mult = self._config.trailing_stop_atr_multiplier
         trailing_distance = atr * mult
 
         if pos.direction == Direction.LONG:
-            return bar.low < pos.peak_price_since_entry - trailing_distance
+            stop_price = pos.peak_price_since_entry - trailing_distance
+            return stop_price if bar.low < stop_price else None
         if pos.direction == Direction.SHORT:
-            return bar.high > pos.trough_price_since_entry + trailing_distance
-        return False
+            stop_price = pos.trough_price_since_entry + trailing_distance
+            return stop_price if bar.high > stop_price else None
+        return None
 
     async def _emit_close_order(
         self,
@@ -953,12 +1018,14 @@ class EDAPortfolioManager:
         side = "SELL" if pos.direction == Direction.LONG else "BUY"
         client_order_id = f"{reason}-{pos.symbol}-{self._order_counter}"
 
+        # SL/TS: notional을 stop price 기준으로 계산 (fill_qty = pos.size 보장)
+        notional = pos.size * fill_price if fill_price is not None else pos.notional
         order = OrderRequestEvent(
             client_order_id=client_order_id,
             symbol=pos.symbol,
             side=side,  # type: ignore[arg-type]
             target_weight=0.0,
-            notional_usd=pos.notional,
+            notional_usd=notional,
             price=fill_price,
             correlation_id=correlation_id,
             source="PortfolioManager",
@@ -996,9 +1063,7 @@ class EDAPortfolioManager:
         margin_used = sum(p.notional for p in self._positions.values() if p.is_open)
         equity = self.total_equity
         self._peak_equity = max(self._peak_equity, equity)
-        drawdown_pct = (
-            max(0.0, 1.0 - equity / self._peak_equity) if self._peak_equity > 0 else 0.0
-        )
+        drawdown_pct = max(0.0, 1.0 - equity / self._peak_equity) if self._peak_equity > 0 else 0.0
         kwargs: dict[str, object] = {
             "total_equity": equity,
             "available_cash": self._cash,

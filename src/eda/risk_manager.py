@@ -221,6 +221,12 @@ class EDARiskManager:
             return
 
         # 검증 통과 → validated=True로 재발행
+        logger.debug(
+            "Order validated: {} {} notional=${:.2f}",
+            order.symbol,
+            order.client_order_id,
+            order.notional_usd,
+        )
         validated_order = OrderRequestEvent(
             client_order_id=order.client_order_id,
             symbol=order.symbol,

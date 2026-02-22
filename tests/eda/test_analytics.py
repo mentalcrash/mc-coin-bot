@@ -18,11 +18,14 @@ from src.eda.analytics import AnalyticsEngine
 from src.portfolio.cost_model import CostModel
 
 
-def _make_balance(equity: float, ts: datetime | None = None) -> BalanceUpdateEvent:
+def _make_balance(
+    equity: float, ts: datetime | None = None, leverage: float = 0.0
+) -> BalanceUpdateEvent:
     kwargs: dict[str, object] = {
         "total_equity": equity,
         "available_cash": equity * 0.5,
         "total_margin_used": equity * 0.5,
+        "aggregate_leverage": leverage,
         "correlation_id": uuid4(),
         "source": "test",
     }
@@ -253,7 +256,7 @@ class TestFundingAdjustment:
     """H-002: 펀딩비 post-hoc 보정 테스트."""
 
     async def test_funding_adjustment_reduces_return(self) -> None:
-        """펀딩비 보정 시 수익률이 하락."""
+        """펀딩비 보정 시 수익률이 하락 (leverage 가중)."""
         engine = AnalyticsEngine(initial_capital=10000.0)
         bus = EventBus(queue_size=100)
         await engine.register(bus)
@@ -264,7 +267,8 @@ class TestFundingAdjustment:
             ts = base + timedelta(days=i)
             equity = 10000.0 + i * 50
             await bus.publish(_make_bar(ts=ts))
-            await bus.publish(_make_balance(equity, ts=ts))
+            # leverage=1.0 → 펀딩비 차감 발생
+            await bus.publish(_make_balance(equity, ts=ts, leverage=1.0))
         await bus.stop()
         await task
 
@@ -414,3 +418,97 @@ class TestEquityCurveNormalization:
         # 같은 timestamp → 1개 포인트만 유지 (마지막 값)
         assert len(engine.equity_curve) == 1
         assert engine.equity_curve[0].equity == 10200.0
+
+
+class TestLeverageWeightedFunding:
+    """펀딩비 leverage 가중 차감 테스트 (수정 3)."""
+
+    async def test_leverage_recorded_in_equity_point(self) -> None:
+        """BalanceUpdateEvent.aggregate_leverage → EquityPoint.leverage."""
+        engine = AnalyticsEngine(initial_capital=10000.0)
+        bus = EventBus(queue_size=100)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+        bal = BalanceUpdateEvent(
+            total_equity=10000.0,
+            available_cash=5000.0,
+            total_margin_used=5000.0,
+            aggregate_leverage=1.5,
+            timestamp=ts,
+            correlation_id=uuid4(),
+            source="test",
+        )
+        await bus.publish(bal)
+        await bus.stop()
+        await task
+
+        assert len(engine.equity_curve) == 1
+        assert engine.equity_curve[0].leverage == 1.5
+
+    async def test_funding_weighted_by_leverage(self) -> None:
+        """leverage=2.0 구간 vs leverage=0.0 구간에서 차등 차감."""
+        engine = AnalyticsEngine(initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        for i in range(30):
+            ts = base + timedelta(days=i)
+            equity = 10000.0 + i * 50
+            # 전반 15일: leverage=2.0, 후반 15일: leverage=0.0
+            lev = 2.0 if i < 15 else 0.0
+            bal = BalanceUpdateEvent(
+                total_equity=equity,
+                available_cash=equity * 0.5,
+                total_margin_used=equity * 0.5,
+                aggregate_leverage=lev,
+                timestamp=ts,
+                correlation_id=uuid4(),
+                source="test",
+            )
+            await bus.publish(_make_bar(ts=ts))
+            await bus.publish(bal)
+        await bus.stop()
+        await task
+
+        cost_model = CostModel(funding_rate_8h=0.0003)
+        metrics_fund = engine.compute_metrics(timeframe="1D", cost_model=cost_model)
+        metrics_no_fund = engine.compute_metrics(timeframe="1D")
+
+        # 가중 차감 → 전체 보다 적지만 여전히 감소
+        assert metrics_fund.total_return < metrics_no_fund.total_return
+
+    async def test_no_position_zero_funding(self) -> None:
+        """leverage=0 전 구간 → 펀딩비 차감 없음."""
+        engine = AnalyticsEngine(initial_capital=10000.0)
+        bus = EventBus(queue_size=200)
+        await engine.register(bus)
+
+        task = asyncio.create_task(bus.start())
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        for i in range(30):
+            ts = base + timedelta(days=i)
+            equity = 10000.0 + i * 50
+            bal = BalanceUpdateEvent(
+                total_equity=equity,
+                available_cash=equity,
+                total_margin_used=0.0,
+                aggregate_leverage=0.0,  # 포지션 없음
+                timestamp=ts,
+                correlation_id=uuid4(),
+                source="test",
+            )
+            await bus.publish(_make_bar(ts=ts))
+            await bus.publish(bal)
+        await bus.stop()
+        await task
+
+        cost_model = CostModel(funding_rate_8h=0.0003)
+        metrics_fund = engine.compute_metrics(timeframe="1D", cost_model=cost_model)
+        metrics_no_fund = engine.compute_metrics(timeframe="1D")
+
+        # leverage=0이면 가중 차감 = 0 → total_return 동일
+        assert abs(metrics_fund.total_return - metrics_no_fund.total_return) < 0.01

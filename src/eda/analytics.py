@@ -41,6 +41,7 @@ class EquityPoint:
 
     timestamp: datetime
     equity: float
+    leverage: float = 0.0
 
 
 @dataclass
@@ -116,11 +117,16 @@ class AnalyticsEngine:
         """
         assert isinstance(event, BalanceUpdateEvent)
         ts = event.timestamp
+        lev = event.aggregate_leverage
         if self._last_equity_ts is not None and ts == self._last_equity_ts and self._equity_curve:
             # 같은 timestamp → 마지막 값 덮어쓰기
-            self._equity_curve[-1] = EquityPoint(timestamp=ts, equity=event.total_equity)
+            self._equity_curve[-1] = EquityPoint(
+                timestamp=ts, equity=event.total_equity, leverage=lev
+            )
         else:
-            self._equity_curve.append(EquityPoint(timestamp=ts, equity=event.total_equity))
+            self._equity_curve.append(
+                EquityPoint(timestamp=ts, equity=event.total_equity, leverage=lev)
+            )
         self._last_equity_ts = ts
 
     async def _on_fill(self, event: AnyEvent) -> None:
@@ -222,6 +228,17 @@ class AnalyticsEngine:
         values = [p.equity for p in self._equity_curve]
         return pd.Series(values, index=pd.DatetimeIndex(timestamps), dtype=float)
 
+    def _get_leverage_series(self) -> pd.Series:
+        """Equity curve에서 leverage Series 추출."""
+        import pandas as pd
+
+        if not self._equity_curve:
+            return pd.Series(dtype=float)
+
+        timestamps = [p.timestamp for p in self._equity_curve]
+        values = [p.leverage for p in self._equity_curve]
+        return pd.Series(values, index=pd.DatetimeIndex(timestamps), dtype=float)
+
     def get_strategy_returns(
         self,
         timeframe: str = "1D",
@@ -249,12 +266,15 @@ class AnalyticsEngine:
         equity_resampled = equity_series.resample(pandas_freq).last().dropna()
         returns: pd.Series = equity_resampled.pct_change().dropna()  # type: ignore[assignment]
 
-        # H-002: 펀딩비 post-hoc 보정
+        # H-002: 펀딩비 post-hoc 보정 (leverage 가중)
         ppy = freq_to_periods_per_year(timeframe)
         if cost_model is not None and cost_model.funding_rate_8h > 0:
             hours_per_bar = _HOURS_PER_YEAR / ppy
-            funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
-            returns = returns - funding_drag
+            funding_rate_per_period = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+            leverage_series = self._get_leverage_series()
+            leverage_resampled = leverage_series.resample(pandas_freq).mean()
+            leverage_aligned = leverage_resampled.reindex(returns.index, method="ffill").fillna(0.0)
+            returns = returns - leverage_aligned * funding_rate_per_period
 
         return returns
 
@@ -270,26 +290,38 @@ class AnalyticsEngine:
             cost_model: 비용 모델 (H-002: 펀딩비 post-hoc 보정에 사용)
         """
         equity_series = self.get_equity_series()
+        pandas_freq = tf_to_pandas_freq(timeframe)
 
         # Equity curve를 target TF로 리샘플링 (intrabar 업데이트 → 일별 등)
         if len(equity_series) > 0:
-            pandas_freq = tf_to_pandas_freq(timeframe)
             equity_series = equity_series.resample(pandas_freq).last().dropna()
 
         ppy = freq_to_periods_per_year(timeframe)
 
-        # H-002: 펀딩비 post-hoc 보정 (per equity-period drag)
-        funding_drag = 0.0
+        # H-002: 펀딩비 post-hoc 보정 (leverage 가중)
         if cost_model is not None and cost_model.funding_rate_8h > 0:
             hours_per_bar = _HOURS_PER_YEAR / ppy
-            funding_drag = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+            funding_rate_per_period = cost_model.funding_rate_8h * (hours_per_bar / 8.0)
+            returns: pd.Series = equity_series.pct_change().dropna()  # type: ignore[assignment]
+            leverage_series = self._get_leverage_series()
+            leverage_resampled = leverage_series.resample(pandas_freq).mean()
+            leverage_aligned = leverage_resampled.reindex(returns.index, method="ffill").fillna(0.0)
+            returns = returns - leverage_aligned * funding_rate_per_period
+            # returns 적용된 equity curve 재구성
+            import pandas as pd
+
+            adjusted_equity = (1 + returns).cumprod() * equity_series.iloc[0]
+            adjusted_equity = pd.concat(
+                [pd.Series([equity_series.iloc[0]], index=equity_series.index[:1]), adjusted_equity]
+            )
+            equity_series = adjusted_equity
 
         return build_performance_metrics(
             equity_curve=equity_series,
             trades=self._closed_trades,
             periods_per_year=ppy,
             risk_free_rate=0.0,
-            funding_drag_per_period=funding_drag,
+            funding_drag_per_period=0.0,
         )
 
 

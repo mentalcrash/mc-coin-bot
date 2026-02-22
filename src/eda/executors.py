@@ -136,14 +136,23 @@ class BacktestExecutor:
         if not math.isfinite(notional) or notional <= 0:
             return None
 
-        fill_qty = notional / fill_price
-        fee = notional * self._cost_model.total_fee_rate
+        # 슬리피지를 가격에 적용 (VBT parity: price deterioration)
+        slip = self._cost_model.slip_rate
+        if order.side == "BUY":
+            adjusted_price = fill_price * (1.0 + slip)
+        else:
+            adjusted_price = fill_price * (1.0 - slip)
+
+        # SL/TS exit (order.price 설정): 수량은 원래 가격 기준 (전량 청산 보장)
+        # 일반 entry/rebalance: 수량은 슬리피지 반영 가격 기준
+        fill_qty = notional / fill_price if order.price is not None else notional / adjusted_price
+        fee = notional * self._cost_model.effective_fee
 
         return FillEvent(
             client_order_id=order.client_order_id,
             symbol=order.symbol,
             side=order.side,
-            fill_price=fill_price,
+            fill_price=adjusted_price,
             fill_qty=fill_qty,
             fee=fee,
             fill_timestamp=fill_ts,
@@ -222,7 +231,9 @@ class LiveExecutor:
             체결 결과 (에러 시 None)
         """
         corr_id = str(order.correlation_id) if order.correlation_id else None
-        with component_span_with_context("exchange.create_order", corr_id, {"symbol": order.symbol}):
+        with component_span_with_context(
+            "exchange.create_order", corr_id, {"symbol": order.symbol}
+        ):
             return await self._execute_inner(order)
 
     async def _execute_inner(self, order: OrderRequestEvent) -> FillEvent | None:

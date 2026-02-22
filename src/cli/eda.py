@@ -93,12 +93,6 @@ def run(
     report: Annotated[
         bool, typer.Option("--report/--no-report", help="Generate QuantStats HTML report")
     ] = False,
-    fast: Annotated[
-        bool,
-        typer.Option(
-            "--fast/--no-fast", help="Fast mode: pre-aggregate TF bars, skip intrabar SL/TS"
-        ),
-    ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
 ) -> None:
     """Run EDA backtest from config file.
@@ -109,8 +103,6 @@ def run(
     Modes:
         - backtest: 기본 백테스트
         - shadow: 시그널 로깅만 (체결 없음)
-
-    --fast: pre-aggregation + incremental 전략으로 고속 실행 (intrabar SL/TS 없음)
     """
     setup_logger(console_level="DEBUG" if verbose else "WARNING")
 
@@ -157,12 +149,10 @@ def run(
             config=cfg.portfolio,
             initial_capital=cfg.backtest.capital,
             asset_weights=asset_weights,
-            fast_mode=fast,
         )
 
     mode_label = "Shadow" if mode == RunMode.SHADOW else "Backtest"
-    fast_label = " [fast]" if fast else ""
-    title = f"EDA {mode_label}{fast_label}: {cfg.strategy.name} / {label} (1m → {target_tf})"
+    title = f"EDA {mode_label}: {cfg.strategy.name} / {label} (1m → {target_tf})"
 
     logger.info("Running EDA {}: {} {} (1m → {})", mode.value, cfg.strategy.name, label, target_tf)
     metrics = asyncio.run(runner.run())

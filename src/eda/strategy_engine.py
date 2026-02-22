@@ -50,10 +50,7 @@ class StrategyEngine:
         strategy: 벡터화 전략 인스턴스
         warmup_periods: 워밍업 기간 (None이면 자동 감지)
         target_timeframe: 타겟 타임프레임
-        incremental: True면 strategy.run_incremental() 호출 (fast_mode용)
         max_buffer_size: 버퍼 최대 크기. 초과 시 오래된 데이터 제거. None이면 무제한.
-        precomputed_signals: 사전 계산된 시그널 {symbol: StrategySignals}.
-            설정 시 strategy.run() 호출 없이 timestamp lookup으로 시그널 발행.
     """
 
     def __init__(
@@ -62,9 +59,7 @@ class StrategyEngine:
         warmup_periods: int | None = None,
         target_timeframe: str = "1D",
         *,
-        incremental: bool = False,
         max_buffer_size: int | None = 5000,
-        precomputed_signals: dict[str, object] | None = None,
         regime_service: RegimeService | None = None,
         derivatives_provider: DerivativesProviderPort | None = None,
         feature_store: FeatureStorePort | None = None,
@@ -80,9 +75,7 @@ class StrategyEngine:
         self._consecutive_failures: dict[str, int] = {}
         self._bus: EventBus | None = None
         self._target_timeframe = target_timeframe
-        self._incremental = incremental
         self._max_buffer_size = max_buffer_size
-        self._precomputed_signals = precomputed_signals
         self._regime_service = regime_service
         self._derivatives_provider = derivatives_provider
         self._feature_store = feature_store
@@ -105,7 +98,7 @@ class StrategyEngine:
 
         1. OHLCV 버퍼에 누적
         2. warmup 미달 시 스킵
-        3. strategy.run() 호출 (또는 precomputed lookup)
+        3. strategy.run() 호출
         4. 매 bar SignalEvent 발행
         """
         assert isinstance(event, BarEvent)
@@ -118,11 +111,6 @@ class StrategyEngine:
         symbol = bar.symbol
         bus = self._bus
         assert bus is not None
-
-        # precomputed_signals 모드: timestamp lookup만 수행
-        if self._precomputed_signals is not None:
-            await self._on_bar_precomputed(bar, bus)
-            return
 
         # 1. 버퍼에 누적
         if symbol not in self._buffers:
@@ -151,7 +139,7 @@ class StrategyEngine:
         if buf_len < self._warmup:
             return
 
-        # 3. DataFrame 구성 + strategy.run() / run_incremental()
+        # 3. DataFrame 구성 + strategy.run()
         df = pd.DataFrame(
             self._buffers[symbol],
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
@@ -161,10 +149,7 @@ class StrategyEngine:
         df = self._apply_enrichments(df, symbol)
 
         try:
-            if self._incremental:
-                _, signals = self._strategy.run_incremental(df)
-            else:
-                _, signals = self._strategy.run(df)
+            _, signals = self._strategy.run(df)
         except (ValueError, TypeError) as exc:
             count = self._consecutive_failures.get(symbol, 0) + 1
             self._consecutive_failures[symbol] = count
@@ -206,39 +191,14 @@ class StrategyEngine:
             correlation_id=bar.correlation_id,
             source="StrategyEngine",
         )
+        logger.info(
+            "Signal: {} dir={} strength={:.3f}",
+            symbol,
+            signal_event.direction.name,
+            latest_strength,
+        )
         with trade_cycle_span(symbol, self._strategy.name, corr_id):
             await bus.publish(signal_event)
-
-    async def _on_bar_precomputed(self, bar: BarEvent, bus: EventBus) -> None:
-        """Precomputed signals 모드: timestamp로 사전 계산된 시그널을 조회하여 발행."""
-        from src.strategy.types import StrategySignals
-
-        assert self._precomputed_signals is not None
-        symbol = bar.symbol
-        signals = self._precomputed_signals.get(symbol)
-        if signals is None:
-            return
-
-        assert isinstance(signals, StrategySignals)
-
-        # bar_timestamp로 시그널 lookup
-        ts = bar.bar_timestamp
-        if ts not in signals.direction.index:
-            return
-
-        direction_val = int(signals.direction.loc[ts])
-        strength_val = float(signals.strength.loc[ts])
-
-        signal_event = SignalEvent(
-            symbol=symbol,
-            strategy_name=self._strategy.name,
-            direction=Direction(direction_val),
-            strength=strength_val,
-            bar_timestamp=ts,
-            correlation_id=bar.correlation_id,
-            source="StrategyEngine",
-        )
-        await bus.publish(signal_event)
 
     def inject_warmup(
         self,

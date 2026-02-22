@@ -110,6 +110,15 @@ class CostModel(BaseModel):
         return self.taker_fee if self.use_taker else self.maker_fee
 
     @property
+    def slip_rate(self) -> float:
+        """슬리피지 + 시장충격 합산 (가격 악화용).
+
+        Returns:
+            편도 가격 악화율
+        """
+        return self.slippage + self.market_impact
+
+    @property
     def total_fee_rate(self) -> float:
         """총 비용률 (수수료 + 슬리피지 + 시장 충격).
 
