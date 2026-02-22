@@ -1,6 +1,6 @@
 """Indicator Catalog models.
 
-53개 지표의 메타데이터 + 전략 매핑 + 미사용/고가치 식별을 구조화합니다.
+70개 지표의 메타데이터 + 전략 매핑 + 미사용/고가치 식별을 구조화합니다.
 """
 
 from __future__ import annotations
@@ -21,6 +21,10 @@ class IndicatorCategory(StrEnum):
     VOLUME = "volume"
     DERIVATIVES = "derivatives"
     COMPOSITE = "composite"
+    ONCHAIN = "onchain"
+    OPTIONS = "options"
+    MACRO = "macro"
+    MICROSTRUCTURE = "microstructure"
 
 
 class AlphaPotential(StrEnum):

@@ -1,4 +1,4 @@
-# Indicator Catalog — 54개 지표 메타데이터
+# Indicator Catalog — 70개 지표 메타데이터
 # src/market/indicators/__all__ 함수와 1:1 매핑
 
 indicators:
@@ -514,3 +514,167 @@ indicators:
     default_params: {period: 20}
     used_by: []
     alpha_potential: medium
+
+  # ─── On-chain (6) ────────────────────────────────────────────────
+  - id: puell_multiple
+    name: Puell Multiple
+    module: onchain
+    category: onchain
+    description: "일일 채굴 수익 / 365일 MA. >4 과열, <0.5 저평가"
+    default_params: {ma_window: 365}
+    used_by: []
+    alpha_potential: high
+    notes: "BTC 전용. bc_miners-revenue 데이터 사용"
+
+  - id: nvt_signal
+    name: NVT Signal
+    module: onchain
+    category: onchain
+    description: "Market Cap / MA_90(Tx Volume). NVT의 smoothed 버전"
+    default_params: {ma_window: 90}
+    used_by: []
+    alpha_potential: high
+    notes: "btc_metrics CapMrktCurUSD + TxTfrValAdjUSD 필요"
+
+  - id: mvrv_zscore
+    name: MVRV Z-Score
+    module: onchain
+    category: onchain
+    description: "MVRV의 365일 z-score. >7 과열, <-0.3 저점"
+    default_params: {window: 365}
+    used_by: []
+    alpha_potential: high
+    notes: "btc_metrics MVRV 데이터 사용"
+
+  - id: exchange_flow_net_zscore
+    name: Exchange Net Flow Z-Score
+    module: onchain
+    category: onchain
+    description: "거래소 순입출금 z-score. 양수=매도압력, 음수=축적"
+    default_params: {window: 30}
+    used_by: []
+    alpha_potential: high
+    notes: "btc_metrics FlowInExUSD/FlowOutExUSD 사용"
+
+  - id: stablecoin_supply_ratio
+    name: Stablecoin Supply Ratio
+    module: onchain
+    category: onchain
+    description: "BTC 시총 / 스테이블코인 공급. 낮으면 매수력 충분"
+    default_params: {}
+    used_by: []
+    alpha_potential: medium
+    notes: "btc_metrics + stablecoin_total 데이터"
+
+  - id: tvl_stablecoin_ratio
+    name: TVL / Stablecoin Ratio
+    module: onchain
+    category: onchain
+    description: "DeFi TVL / 스테이블코인 공급. DeFi 활용도 지표"
+    default_params: {}
+    used_by: []
+    alpha_potential: medium
+    notes: "tvl_total + stablecoin_total 데이터"
+
+  # ─── Options Derived (2) ─────────────────────────────────────────
+  - id: iv_rv_spread
+    name: IV-RV Spread
+    module: options_derived
+    category: options
+    description: "내재변동성 - 실현변동성. Variance Risk Premium proxy"
+    default_params: {}
+    used_by: []
+    alpha_potential: high
+    notes: "deribit_btc_dvol + deribit_btc_hist_vol 사용"
+
+  - id: iv_percentile_rank
+    name: IV Percentile Rank
+    module: options_derived
+    category: options
+    description: "IV의 365일 백분위 순위 (0~1)"
+    default_params: {window: 365}
+    used_by: []
+    alpha_potential: medium
+    notes: "deribit_btc_dvol 사용"
+
+  # ─── Macro Derived (3) ──────────────────────────────────────────
+  - id: credit_spread_proxy
+    name: Credit Spread Proxy
+    module: macro_derived
+    category: macro
+    description: "HYG vs TLT 수익률 차이 기반 크레딧 스프레드 프록시"
+    default_params: {window: 20}
+    used_by: []
+    alpha_potential: medium
+    notes: "yf_hyg + yf_tlt 데이터 사용"
+
+  - id: risk_appetite_index
+    name: Risk Appetite Index
+    module: macro_derived
+    category: macro
+    description: "SPY-TLT 수익률 차이 z-score. 위험자산 선호도"
+    default_params: {window: 60}
+    used_by: []
+    alpha_potential: medium
+    notes: "yf_spy + yf_tlt 데이터 사용"
+
+  - id: btc_spy_correlation
+    name: BTC-SPY Correlation
+    module: macro_derived
+    category: macro
+    description: "BTC와 S&P500 수익률의 21일 rolling 상관"
+    default_params: {window: 21}
+    used_by: []
+    alpha_potential: medium
+    notes: "OHLCV + yf_spy 데이터 사용"
+
+  # ─── Microstructure (5) ─────────────────────────────────────────
+  - id: vpin
+    name: VPIN
+    module: microstructure
+    category: microstructure
+    description: "Bulk Volume Classification 기반 정보비대칭 지표 (0~1)"
+    default_params: {window: 50}
+    used_by: []
+    alpha_potential: high
+    notes: "OHLCV만으로 계산 가능"
+
+  - id: cvd_price_divergence
+    name: CVD-Price Divergence
+    module: microstructure
+    category: microstructure
+    description: "가격과 CVD 방향 불일치 점수 (-1, 0, +1)"
+    default_params: {window: 14}
+    used_by: []
+    alpha_potential: high
+    notes: "coinalyze_btc_cvd + OHLCV 사용"
+
+  - id: liquidation_cascade_score
+    name: Liquidation Cascade Score
+    module: microstructure
+    category: microstructure
+    description: "총 청산량 / OI. 대량 청산(cascade) 리스크 측정"
+    default_params: {}
+    used_by: []
+    alpha_potential: high
+    notes: "coinalyze_btc_liquidations + coinalyze_btc_agg_oi 사용"
+
+  - id: liquidation_asymmetry
+    name: Liquidation Asymmetry
+    module: microstructure
+    category: microstructure
+    description: "롱-숏 청산 비대칭도 (-1~+1). 양수=롱청산 우세"
+    default_params: {}
+    used_by: []
+    alpha_potential: medium
+    notes: "coinalyze_btc_liquidations 사용"
+
+  - id: order_flow_imbalance
+    name: Order Flow Imbalance
+    module: microstructure
+    category: microstructure
+    description: "Taker 매수-매도 불균형 z-score"
+    default_params: {window: 30}
+    used_by: []
+    alpha_potential: high
+    notes: "taker_ratio 또는 CVD 기반 역산"
