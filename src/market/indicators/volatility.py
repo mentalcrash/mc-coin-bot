@@ -206,7 +206,55 @@ def vol_regime(
     vol = returns.rolling(vol_lookback, min_periods=vol_lookback).std() * np.sqrt(
         annualization_factor
     )
-    vol_pct = vol.rolling(
-        vol_rank_lookback, min_periods=min(vol_rank_lookback, 60)
-    ).rank(pct=True)
+    vol_pct = vol.rolling(vol_rank_lookback, min_periods=min(vol_rank_lookback, 60)).rank(pct=True)
     return pd.Series(vol_pct, index=returns.index, name="vol_regime")
+
+
+def rolling_kurtosis(
+    returns: pd.Series,
+    window: int,
+    min_periods: int | None = None,
+) -> pd.Series:
+    """수익률의 rolling excess kurtosis.
+
+    Fat-tail 리스크 측정. 양의 kurtosis = 극단값 빈번.
+
+    Args:
+        returns: 수익률 시리즈.
+        window: Rolling 윈도우 크기.
+        min_periods: 최소 관측치 수 (None이면 *window*).
+
+    Returns:
+        Rolling kurtosis 시리즈.
+    """
+    if min_periods is None:
+        min_periods = window
+    result: pd.Series = returns.rolling(  # type: ignore[assignment]
+        window=window, min_periods=min_periods
+    ).kurt()
+    return pd.Series(result, index=returns.index, name="rolling_kurtosis")
+
+
+def rolling_skewness(
+    returns: pd.Series,
+    window: int,
+    min_periods: int | None = None,
+) -> pd.Series:
+    """수익률의 rolling skewness — 분포 비대칭도 측정.
+
+    음의 skew 증가 = 하방 리스크 확대.
+
+    Args:
+        returns: 수익률 시리즈.
+        window: Rolling 윈도우 크기.
+        min_periods: 최소 관측치 수 (None이면 *window*).
+
+    Returns:
+        Rolling skewness 시리즈.
+    """
+    if min_periods is None:
+        min_periods = window
+    result: pd.Series = returns.rolling(  # type: ignore[assignment]
+        window=window, min_periods=min_periods
+    ).skew()
+    return pd.Series(result, index=returns.index, name="rolling_skewness")

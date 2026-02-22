@@ -55,6 +55,26 @@ def drawdown(close: pd.Series) -> pd.Series:
     return pd.Series(dd, index=close.index, name="drawdown")
 
 
+def drawdown_recovery_pct(close: pd.Series, window: int = 60) -> pd.Series:
+    """드로다운 후 회복률 (0=최저점, 1=완전회복).
+
+    ``(close - rolling_min) / (rolling_max - rolling_min)`` 으로 계산.
+    0 나눗셈 방지를 위해 range_val을 ``1e-10`` 으로 clamp.
+
+    Args:
+        close: 종가 시리즈.
+        window: Rolling 윈도우 크기.
+
+    Returns:
+        회복률 시리즈 (0~1).
+    """
+    rolling_max = close.rolling(window=window, min_periods=1).max()
+    rolling_min = close.rolling(window=window, min_periods=1).min()
+    range_val: pd.Series = (rolling_max - rolling_min).clip(lower=1e-10)  # type: ignore[assignment]
+    recovery: pd.Series = (close - rolling_min) / range_val  # type: ignore[assignment]
+    return pd.Series(recovery.clip(0.0, 1.0), index=close.index, name="drawdown_recovery_pct")
+
+
 def rolling_zscore(
     series: pd.Series,
     window: int,
@@ -172,9 +192,7 @@ def hurst_exponent(
         rs = r / s
         return float(np.log(rs) / np.log(n))
 
-    result = close.rolling(window=window, min_periods=window).apply(
-        _rs_hurst, raw=True
-    )
+    result = close.rolling(window=window, min_periods=window).apply(_rs_hurst, raw=True)
     return pd.Series(result, index=close.index, name="hurst_exponent")
 
 

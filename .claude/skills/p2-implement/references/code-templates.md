@@ -1057,3 +1057,66 @@ class Test{StrategyClass}:
         assert "{registry-key}" in strategy.name
         assert repr(strategy)  # truthy (not empty)
 ```
+
+---
+
+## 7. Look-Ahead Bias Tests (test_signal.py에 추가)
+
+### TestNoLookaheadBias (모든 전략 필수)
+
+```python
+class TestNoLookaheadBias:
+    def test_truncation_invariance(self, sample_ohlcv_df, config):
+        """마지막 50 bar 제거해도 이전 시그널 동일."""
+        df_full = preprocess(sample_ohlcv_df, config)
+        sig_full = generate_signals(df_full, config)
+        cut = 50
+        df_trunc = preprocess(sample_ohlcv_df.iloc[:-cut].copy(), config)
+        sig_trunc = generate_signals(df_trunc, config)
+        overlap = len(sig_trunc.direction)
+        pd.testing.assert_series_equal(
+            sig_full.direction.iloc[:overlap].reset_index(drop=True),
+            sig_trunc.direction.reset_index(drop=True),
+            check_names=False,
+        )
+
+    def test_single_bar_append(self, sample_ohlcv_df, config):
+        """1 bar 추가 시 마지막 bar만 변경 가능."""
+        n = len(sample_ohlcv_df)
+        df_prev = preprocess(sample_ohlcv_df.iloc[:n-1].copy(), config)
+        sig_prev = generate_signals(df_prev, config)
+        df_full = preprocess(sample_ohlcv_df, config)
+        sig_full = generate_signals(df_full, config)
+        pd.testing.assert_series_equal(
+            sig_full.direction.iloc[:-1].reset_index(drop=True),
+            sig_prev.direction.reset_index(drop=True),
+            check_names=False,
+        )
+```
+
+### TestPreprocessorImmutability (모든 전략 필수)
+
+```python
+class TestPreprocessorImmutability:
+    def test_original_unchanged(self, sample_ohlcv_df, config):
+        original = sample_ohlcv_df.copy()
+        preprocess(sample_ohlcv_df, config)
+        pd.testing.assert_frame_equal(sample_ohlcv_df, original)
+
+    def test_output_is_new_object(self, sample_ohlcv_df, config):
+        result = preprocess(sample_ohlcv_df, config)
+        assert result is not sample_ohlcv_df
+```
+
+### TestResolvedTargetOnly (ML 전략 한정)
+
+```python
+class TestResolvedTargetOnly:
+    def test_resolved_end_boundary(self, sample_ohlcv_df, config):
+        """forward_return 학습 시 미확정 타겟 미포함."""
+        # resolved_end = t - prediction_horizon + 1
+        # y_train = forward_returns[start:resolved_end]  (t가 아닌 resolved_end)
+        df = preprocess(sample_ohlcv_df, config)
+        sig = generate_signals(df, config)
+        assert sig.direction.dtype in (int, np.int64, np.int32)
+```

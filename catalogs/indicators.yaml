@@ -1,4 +1,4 @@
-# Indicator Catalog — 53개 지표 메타데이터
+# Indicator Catalog — 54개 지표 메타데이터
 # src/market/indicators/__all__ 함수와 1:1 매핑
 
 indicators:
@@ -124,7 +124,7 @@ indicators:
     used_by: [ctrend]
     alpha_potential: medium
 
-  # ─── Volatility (8) ────────────────────────────────────────────────
+  # ─── Volatility (10) ───────────────────────────────────────────────
   - id: garman_klass_volatility
     name: Garman-Klass Volatility
     module: volatility
@@ -200,6 +200,26 @@ indicators:
     used_by: []
     alpha_potential: medium
     notes: "이론적으로 가장 효율적 OHLC 변동성 추정량"
+
+  - id: rolling_kurtosis
+    name: Rolling Kurtosis
+    module: volatility
+    category: volatility
+    description: "수익률의 rolling excess kurtosis — fat-tail 리스크 측정"
+    default_params: {window: 60}
+    used_by: []
+    alpha_potential: medium
+    notes: "양의 kurtosis = 극단값 빈번. kurtosis-carry 전략 핵심 지표"
+
+  - id: rolling_skewness
+    name: Rolling Skewness
+    module: volatility
+    category: volatility
+    description: "수익률의 rolling skewness — 분포 비대칭도 측정"
+    default_params: {window: 60}
+    used_by: []
+    alpha_potential: medium
+    notes: "음의 skew 증가 = 하방 리스크 확대"
 
   # ─── Channels (3) ──────────────────────────────────────────────────
   - id: bollinger_bands
@@ -363,7 +383,7 @@ indicators:
     alpha_potential: high
     notes: "BTC/ETH 전용. 미사용 고가치 지표"
 
-  # ─── Composite (12) ────────────────────────────────────────────────
+  # ─── Composite (14) ────────────────────────────────────────────────
   - id: bb_position
     name: Bollinger Band Position
     module: composite
@@ -466,6 +486,25 @@ indicators:
     used_by: []
     alpha_potential: high
     notes: "미사용 고가치. TTM Squeeze 전략은 RETIRED이나 지표 자체는 유용"
+
+  - id: count_consecutive
+    name: Count Consecutive
+    module: composite
+    category: composite
+    description: "Boolean mask에서 연속 True 횟수를 벡터화 계산"
+    default_params: {}
+    used_by: [fg_asym_mom, fg_persist_break, candle_reject]
+    alpha_potential: low
+
+  - id: drawdown_recovery_pct
+    name: Drawdown Recovery Percentage
+    module: composite
+    category: composite
+    description: "드로다운 후 회복률 (0=최저점, 1=완전회복)"
+    default_params: {window: 60}
+    used_by: []
+    alpha_potential: medium
+    notes: "dd-recovery-phase 전략 핵심. 손실회피 행동 기반 시그널"
 
   - id: trend_strength
     name: Trend Strength

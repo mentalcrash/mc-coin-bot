@@ -119,10 +119,19 @@ scan "C1-c" "iloc[i+N]: 미래 행 접근" \
     "CRITICAL" \
     'iloc\[.*\+.*[1-9]'
 
-scan "C1-d" ".min()/.max()/.mean()/.std() (rolling/expanding 없이)" \
-    "HIGH" \
-    '\.(min|max|mean|std)\(\)' \
-    "$STRATEGY_DIR/preprocessor.py"
+# C1-d: 전체 기간 통계 (rolling/expanding 없이)
+_c1d_results=$(grep -rn --include="*.py" -E '\.(min|max|mean|std)\(\)' \
+    "$STRATEGY_DIR/preprocessor.py" "$STRATEGY_DIR/signal.py" 2>/dev/null \
+    | grep -v "__pycache__\|# noqa\|# type:" \
+    | grep -v 'rolling\|expanding\|ewm\|cummax\|cummin\|cumsum\|cumprod\|groupby' \
+    || true)
+if [ -n "$_c1d_results" ]; then
+    _c1d_count=$(echo "$_c1d_results" | wc -l | tr -d ' ')
+    echo -e "${YELLOW}[C1-d] HIGH: .min()/.max()/.mean()/.std() (rolling/expanding 없이) (${_c1d_count}건)${NC}"
+    found_critical=$(( found_critical + _c1d_count ))
+    echo "$_c1d_results" | head -5
+    echo ""
+fi
 
 # ================================================================
 # C2: Data Leakage

@@ -12,17 +12,34 @@ allowed-tools:
 argument-hint: <strategy-name-or-directory>
 ---
 
-# Phase 3: 전략 코드 검증 (p3-audit)
+# Phase 3: 전략 코드 독립 감사 (p3-audit)
 
 ## 역할
 
-**비판적 시니어 퀀트 개발자**로서 행동한다.
-판단 기준은 단 하나: **"이 코드로 실제 돈을 운용해도 되는가?"**
+**독립 감사자(External Auditor)**로서 행동한다.
+P2에서 이미 프리스캔(C1,C5,C7)과 look-ahead bias 테스트를 통과한 전략에 대해,
+**구현자와 다른 시각**에서 C1-C7 전항목을 재검증한다.
 
-- 칭찬보다 **결함 탐지**를 우선한다
-- 의심이 기본값 — 코드가 올바름을 **증명할 때까지** 결함 가정
-- 모든 지적에 **구체적 수치와 수정안**을 제시한다
-- **돈과 직결**되는 이슈는 절대 관대하게 넘기지 않는다
+판단 기준: **"P2 구현자가 놓쳤을 수 있는 결함이 있는가?"**
+기본값은 **의심** — 코드가 올바름을 증명할 때까지 결함 가정.
+
+### 사용 시점
+
+| 상황 | 설명 |
+|------|------|
+| P2 완료 후 (표준) | IMPLEMENTED 전략의 독립 감사 |
+| ML 전략 심층 검증 | forward_return/training loop look-ahead bias 정밀 감사 |
+| P4 FAIL 후 | 백테스트 실패 원인 추적 시 코드 재검증 |
+| 외부 리뷰 요청 | 다른 사람이 만든 전략 검증 |
+
+### P2 프리스캔과의 관계
+
+P2 Step 9에서 scan_strategy.sh + 수동 C1/C5/C7 + look-ahead bias 테스트를 이미 수행.
+P3는 이를 **재확인하되, 추가로**:
+- C2(Data Leakage), C3(Survivorship), C4(Vectorization), C6(Cost Model) 심층 검증
+- ML 전략의 training loop 상세 추적 (resolved_end 패턴)
+- Warning W1-W7 체계적 기록
+- 결함의 경제적 영향 추정 (금액/비율)
 
 ---
 
@@ -79,6 +96,9 @@ src/strategy/{name}/
 ```
 
 ### 1단계: [C1] Look-Ahead Bias (CRITICAL)
+
+> **P2 참조**: scan_strategy.sh C1-a~C1-d + 수동 C1 체크 완료 상태.
+> P3에서는 **간접 look-ahead**(shift 순서 오류, 레짐 컬럼 shift 누락 등) 집중 검증.
 
 미래 데이터를 현재 시그널 생성에 사용하는가?
 
@@ -143,6 +163,9 @@ IS/OOS 경계를 넘어 학습하는가?
 
 ### 5단계: [C5] Position Sizing (CRITICAL)
 
+> **P2 참조**: annualization_factor + min_volatility 확인 완료 상태.
+> P3에서는 **vol_scalar 공식 정확성 + strength 부호 일치** 집중 검증.
+
 vol-target, leverage cap이 올바르게 적용되는가?
 
 **검증 대상**: `preprocessor.py` (vol_scalar 계산), `signal.py` (strength 출력)
@@ -185,6 +208,9 @@ vol_scalar = clip(vol_scalar, 0, max_leverage_cap)  # PM에서 처리될 수도 
 
 ### 7단계: [C7] Entry/Exit Logic (CRITICAL)
 
+> **P2 참조**: ShortMode 3-way 분기 확인 완료 상태.
+> P3에서는 **edge case**(동시 long+short, strength=NaN+entries=True 등) 집중 검증.
+
 진입/청산 조건에 논리적 모순이 없는가?
 
 **검증 대상**: `signal.py`
@@ -212,9 +238,22 @@ FAIL 사유는 아니나 반드시 기록:
 | W4 | Turnover | 연간 회전율이 비용 대비 합리적인가 |
 | W5 | Correlation | 기존 활성 전략과 수익률 상관 < 0.7 |
 | W6 | Derivatives NaN | derivatives 컬럼 `ffill()` 처리 여부 |
-| W7 | Shared Indicators | `src/market/indicators/` 53개 지표 중복 재구현 방지 |
+| W7 | Shared Indicators | `src/market/indicators/` 54개 지표 중복 재구현 방지 |
 
 > 상세: [references/warning-checklist.md](references/warning-checklist.md)
+
+### 8.5단계: ML 전략 심층 검증 (forward_return 사용 시에만)
+
+| # | 항목 | 검증 |
+|---|------|------|
+| ML-1 | resolved_end 패턴 | `resolved_end = t - prediction_horizon + 1` 사용 확인 |
+| ML-2 | Training window 경계 | `x_train = features[start:resolved_end]` (t가 아닌 resolved_end) |
+| ML-3 | Feature engineering 시점 | 학습 feature에 미래 데이터 미사용 |
+| ML-4 | Scaler fit 범위 | `scaler.fit(X_train[:resolved_end])` — 전체 fit 금지 |
+| ML-5 | Expanding Window Parity Test | TestResolvedTargetOnly 존재 + PASS 확인 |
+
+> ML-1~ML-5 중 1개 FAIL → Phase 3 FAIL.
+> 교훈 #068: CTREND/GBTrend 등 4개 ML 전략이 이 결함으로 전량 RETIRED.
 
 ---
 

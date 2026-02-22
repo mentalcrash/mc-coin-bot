@@ -235,6 +235,15 @@ uv run python -c "from src.strategy import list_strategies; print('{name}' in li
 
 레짐 적응형 전략은 `TestRegimeAdaptation` 추가 (with/without regime 컬럼).
 
+**필수 Look-Ahead Bias 방어 테스트** (test_signal.py에 포함):
+
+- **TestNoLookaheadBias**: 마지막 50 bar 제거 시 이전 시그널 불변 (truncation invariance)
+- **TestPreprocessorImmutability**: preprocess() 호출 후 원본 df 변경 없음
+- **TestResolvedTargetOnly** (ML 전략 한정): forward_return expanding window parity
+
+> 3종 중 TestNoLookaheadBias + TestPreprocessorImmutability는 **모든 전략 필수**.
+> TestResolvedTargetOnly는 forward_return/ML training loop 사용 시에만 추가.
+
 ---
 
 ## Step 8: 품질 검증
@@ -268,13 +277,43 @@ uv run pytest --tb=short -q  # 전체
 
 ---
 
-## Step 9-10: YAML 갱신 + Dashboard
+## Step 9: P3 Critical 프리스캔
+
+구현 완료 후, YAML 기록 전에 C1-C7 핵심 패턴을 자동+수동 스캔한다.
+이 단계에서 FAIL이면 Step 2-7로 돌아가 수정한다.
+
+### 9-1. 자동 스캔
 
 ```bash
-# 1. P2 phase 결과 기록 (필수 — 누락 시 P1→P3 건너뛰기 발생)
+bash .claude/skills/p3-audit/scripts/scan_strategy.sh src/strategy/{name_snake}
+```
+
+Critical/High 0건이어야 통과.
+
+### 9-2. 수동 핵심 3종 확인
+
+| # | 항목 | 검증 방법 |
+|---|------|----------|
+| C1 | Look-Ahead Bias | signal.py의 모든 feature에 shift(1) 적용 확인 |
+| C5 | Position Sizing | min_volatility clip + annualization_factor 정확성 |
+| C7 | Entry/Exit Logic | ShortMode 3-way 분기 + direction ∈ {-1,0,1} |
+
+> C2-C4, C6은 코드 템플릿 준수 시 자동 충족. 의심 시 전항목 검증.
+
+### 9-3. Parameter Stability Pre-check (권장)
+
+핵심 threshold 파라미터를 ±20% 변동했을 때 direction 50%+ 변경되면 WARNING.
+
+---
+
+## Step 10: YAML 갱신 + Dashboard
+
+```bash
+# 1. P2 phase 결과 기록 (필수)
 uv run mcbot pipeline record {strategy_name} --phase P2 --verdict PASS \
   --rationale "4-file 구조 구현 완료. Registry 등록 {strategy_name}. Ruff/Pyright 0 error." \
-  -d "tests={N}" -d "registry={strategy_name}" -d "files=5"
+  -d "tests={N}" -d "registry={strategy_name}" -d "files=5" \
+  -d "lookahead_tests=PASS" -d "prescan_critical=0"
 
 # 2. status: CANDIDATE → IMPLEMENTED
 uv run mcbot pipeline update-status {strategy_name} --status IMPLEMENTED
@@ -300,6 +339,7 @@ uv run mcbot pipeline report
   테스트: tests/strategy/{name_snake}/ (4 files)
   Ruff: PASS | Pyright: PASS | Tests: PASS ({N} tests)
   Registry: {registry-key} ({total} strategies)
+  P3 프리스캔: PASS (Critical 0건)
   다음: /p3-audit → /p4-backtest → 앙상블 편입 검토
 ============================================================
 ```

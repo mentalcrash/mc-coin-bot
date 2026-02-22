@@ -17,6 +17,7 @@ from src.market.indicators import (
     chaikin_money_flow,
     donchian_channel,
     drawdown,
+    drawdown_recovery_pct,
     efficiency_ratio,
     ema,
     ema_cross,
@@ -34,7 +35,9 @@ from src.market.indicators import (
     price_acceleration,
     realized_volatility,
     roc,
+    rolling_kurtosis,
     rolling_return,
+    rolling_skewness,
     rolling_zscore,
     rsi,
     rsi_divergence,
@@ -890,3 +893,90 @@ class TestCrossIndicators:
         valid = result.dropna()
         assert valid.min() >= -2.0
         assert valid.max() <= 2.0
+
+
+# ---------------------------------------------------------------------------
+# Rolling Kurtosis
+# ---------------------------------------------------------------------------
+
+
+class TestRollingKurtosis:
+    def test_basic(self) -> None:
+        """기본 계산 + 길이 동일."""
+        rng = np.random.default_rng(42)
+        returns = pd.Series(rng.normal(0, 1, 200))
+        result = rolling_kurtosis(returns, window=60)
+        assert len(result) == 200
+        assert result.name == "rolling_kurtosis"
+        valid = result.dropna()
+        assert len(valid) > 0
+
+    def test_min_periods(self) -> None:
+        """min_periods 적용 시 더 빨리 값 생성."""
+        rng = np.random.default_rng(42)
+        returns = pd.Series(rng.normal(0, 1, 100))
+        result = rolling_kurtosis(returns, window=60, min_periods=20)
+        assert not pd.isna(result.iloc[20])
+
+    def test_normal_distribution_approx_zero(self) -> None:
+        """정규분포 → excess kurtosis ≈ 0."""
+        rng = np.random.default_rng(42)
+        returns = pd.Series(rng.normal(0, 1, 10000))
+        result = rolling_kurtosis(returns, window=5000)
+        last_val = result.dropna().iloc[-1]
+        assert abs(last_val) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# Rolling Skewness
+# ---------------------------------------------------------------------------
+
+
+class TestRollingSkewness:
+    def test_basic(self) -> None:
+        """기본 계산 + 길이 동일."""
+        rng = np.random.default_rng(42)
+        returns = pd.Series(rng.normal(0, 1, 200))
+        result = rolling_skewness(returns, window=60)
+        assert len(result) == 200
+        assert result.name == "rolling_skewness"
+        valid = result.dropna()
+        assert len(valid) > 0
+
+    def test_symmetric_distribution_approx_zero(self) -> None:
+        """대칭 분포 → skewness ≈ 0."""
+        rng = np.random.default_rng(42)
+        returns = pd.Series(rng.normal(0, 1, 10000))
+        result = rolling_skewness(returns, window=5000)
+        last_val = result.dropna().iloc[-1]
+        assert abs(last_val) < 0.2
+
+
+# ---------------------------------------------------------------------------
+# Drawdown Recovery Percentage
+# ---------------------------------------------------------------------------
+
+
+class TestDrawdownRecoveryPct:
+    def test_basic(self) -> None:
+        """기본 계산."""
+        close = pd.Series([100.0, 90.0, 80.0, 85.0, 100.0])
+        result = drawdown_recovery_pct(close, window=5)
+        assert len(result) == 5
+        assert result.name == "drawdown_recovery_pct"
+
+    def test_range_0_to_1(self) -> None:
+        """출력 범위 [0, 1]."""
+        rng = np.random.default_rng(42)
+        close = pd.Series(100 + np.cumsum(rng.normal(0, 1, 200)))
+        result = drawdown_recovery_pct(close, window=60)
+        valid = result.dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()
+
+    def test_at_peak_equals_one(self) -> None:
+        """신고가에서 회복률 = 1.0."""
+        close = pd.Series([100.0, 110.0, 120.0, 130.0, 140.0])
+        result = drawdown_recovery_pct(close, window=5)
+        # 마지막 값은 rolling max = 140, rolling min < 140 → recovery = 1.0
+        assert result.iloc[-1] == pytest.approx(1.0)

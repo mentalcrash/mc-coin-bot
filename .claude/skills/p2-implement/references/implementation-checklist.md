@@ -167,6 +167,10 @@
 - [ ] test_preprocessor.py: 컬럼, 길이, 불변, missing, feature 범위
 - [ ] test_signal.py: 구조, shift(1), ShortMode 3종, 전략 고유 로직
 - [ ] test_strategy.py: registry, properties, pipeline, from_params
+- [ ] test_signal.py: TestNoLookaheadBias (truncation_invariance + single_bar_append)
+- [ ] test_preprocessor.py: TestPreprocessorImmutability (original_unchanged + output_is_new_object)
+- [ ] test_signal.py: TestResolvedTargetOnly (ML 전략 한정)
+- [ ] P3 프리스캔: scan_strategy.sh Critical 0건
 
 ### Quality
 
