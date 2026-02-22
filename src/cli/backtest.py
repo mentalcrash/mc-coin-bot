@@ -1890,7 +1890,7 @@ def validate(
     year: Annotated[
         list[int],
         typer.Option("--year", "-y", help="Year(s)"),
-    ] = [2020, 2021, 2022, 2023, 2024, 2025],  # noqa: B006
+    ] = [2022, 2023, 2024, 2025],  # noqa: B006
     capital: Annotated[
         float,
         typer.Option("--capital", "-c", help="Initial capital (USD)"),

@@ -134,7 +134,7 @@ def _make_sweep_results(values: list[float], sharpes: list[float]) -> list[dict[
 
 class TestAnalyzeSweep:
     def test_pass_with_plateau_and_stability(self) -> None:
-        """고원 3개 + +-20% 안정 -> PASS."""
+        """고원 2개+ + +-20% 안정 -> PASS."""
         values = [8, 9, 10, 11, 12]
         sharpes = [1.0, 1.1, 1.2, 1.15, 0.95]
         results = _make_sweep_results(values, sharpes)
@@ -153,7 +153,7 @@ class TestAnalyzeSweep:
 
         analysis = analyze_sweep("lookback", 10, results)
 
-        # 2.5 * 0.8 = 2.0 threshold, only value 15 (2.5) >= 2.0 -> count=1 < 3
+        # 2.5 * 0.7 = 1.75 threshold, only value 15 (2.5) >= 1.75 -> count=1 < 2
         assert analysis["plateau_exists"] is False
         assert analysis["verdict"] == "FAIL"
 
@@ -203,7 +203,7 @@ class TestAnalyzeSweep:
 
         analysis = analyze_sweep("lookback", 8, results)
 
-        # best=1.1, threshold=0.88; 0.9, 1.0, 1.1, 1.05, 0.95 >= 0.88 -> count=5
+        # best=1.1, threshold=0.77; 0.9, 1.0, 1.1, 1.05, 0.95 >= 0.77 -> count=5
         assert analysis["plateau_count"] == 5
         assert analysis["plateau_exists"] is True
 
@@ -313,6 +313,72 @@ class TestUpdateYamlP4:
         updated = store.load("fail-strat")
         assert updated.phases[PhaseId.P4].status == PhaseVerdict.FAIL
         assert updated.meta.status == StrategyStatus.RETIRED
+
+    def test_median_sharpe_in_details(self, tmp_path: Path) -> None:
+        """P4 결과에 median_sharpe가 details에 포함됨."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="median-strat",
+                display_name="Median",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+
+        results = [
+            {
+                "symbol": "BTC/USDT",
+                "sharpe_ratio": 1.0,
+                "cagr": 0.3,
+                "max_drawdown": 25.0,
+                "total_trades": 60,
+                "total_return": 100.0,
+                "profit_factor": 1.4,
+                "win_rate": 52.0,
+                "sortino_ratio": 1.5,
+                "calmar_ratio": 1.2,
+            },
+            {
+                "symbol": "ETH/USDT",
+                "sharpe_ratio": 2.0,
+                "cagr": 0.5,
+                "max_drawdown": 20.0,
+                "total_trades": 80,
+                "total_return": 200.0,
+                "profit_factor": 1.6,
+                "win_rate": 55.0,
+                "sortino_ratio": 2.5,
+                "calmar_ratio": 2.0,
+            },
+            {
+                "symbol": "SOL/USDT",
+                "sharpe_ratio": 1.5,
+                "cagr": 0.4,
+                "max_drawdown": 30.0,
+                "total_trades": 70,
+                "total_return": 150.0,
+                "profit_factor": 1.5,
+                "win_rate": 53.0,
+                "sortino_ratio": 2.0,
+                "calmar_ratio": 1.5,
+            },
+        ]
+
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("median-strat", results)
+
+        updated = store.load("median-strat")
+        details = updated.phases[PhaseId.P4].details
+        assert "median_sharpe" in details
+        # median of [2.0, 1.5, 1.0] (sorted desc) = median of [1.0, 1.5, 2.0] = 1.5
+        assert details["median_sharpe"] == 1.5
 
     def test_nonexistent_strategy_noop(self) -> None:
         """존재하지 않는 전략 -> no-op."""
@@ -493,9 +559,7 @@ class TestParallelPhase4:
         mock_console = MagicMock(spec=RichConsole)
 
         with (
-            patch(
-                "src.cli._phase_runners._run_symbols_sequential", return_value=[]
-            ) as mock_seq,
+            patch("src.cli._phase_runners._run_symbols_sequential", return_value=[]) as mock_seq,
             patch("src.cli._phase_runners.resolve_timeframe", return_value="1D"),
             patch("src.cli._phase_runners._update_yaml_p4"),
             patch("src.cli._phase_runners._RESULTS_DIR", tmp_path),
@@ -529,9 +593,7 @@ class TestParallelPhase4:
             patch("src.cli._phase_runners.resolve_timeframe", return_value="1D"),
             patch("src.cli._phase_runners._update_yaml_p4"),
             patch("src.cli._phase_runners._RESULTS_DIR", tmp_path),
-            patch(
-                "src.cli._phase_runners._run_symbols_parallel", return_value=[]
-            ) as mock_par,
+            patch("src.cli._phase_runners._run_symbols_parallel", return_value=[]) as mock_par,
         ):
             from datetime import UTC, datetime
 

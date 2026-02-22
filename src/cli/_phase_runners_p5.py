@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from rich.console import Console
 
 _RESULTS_DIR = Path("results")
-_DEFAULT_START = datetime(2020, 1, 1, tzinfo=UTC)
+_DEFAULT_START = datetime(2022, 1, 1, tzinfo=UTC)
 _DEFAULT_END = datetime(2025, 12, 31, tzinfo=UTC)
 _DEFAULT_CAPITAL = Decimal(100_000)
 

@@ -468,10 +468,12 @@ class TieredValidator:
         failure_reasons: list[str] = []
 
         # 기본 기준
+        from src.backtest.validation.deflated_sharpe import deflated_sharpe_ratio
         from src.backtest.validation.models import (
             FINAL_MAX_P_VALUE,
             FINAL_MAX_SHARPE_DECAY,
             FINAL_MIN_CONSISTENCY,
+            FINAL_MIN_DSR,
             FINAL_MIN_OOS_SHARPE,
         )
 
@@ -501,6 +503,16 @@ class TieredValidator:
         # Monte Carlo 통계적 유의성
         if monte_carlo.p_value > FINAL_MAX_P_VALUE:
             failure_reasons.append(f"P-value ({monte_carlo.p_value:.3f}) > {FINAL_MAX_P_VALUE}")
+
+        # DSR (Deflated Sharpe Ratio)
+        n_obs = sum(f.split.test_periods for f in fold_results) if fold_results else 100
+        dsr = deflated_sharpe_ratio(
+            observed_sharpe=avg_test_sharpe,
+            n_trials=len(fold_results),
+            n_observations=n_obs,
+        )
+        if dsr < FINAL_MIN_DSR:
+            failure_reasons.append(f"DSR ({dsr:.2f}) < {FINAL_MIN_DSR}")
 
         passed = len(failure_reasons) == 0
         computation_time = time.perf_counter() - start_time

@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from src.config.universe import TIER1_SYMBOLS
 from src.pipeline.models import (
     Decision,
     PhaseId,
@@ -1226,10 +1227,10 @@ def p1_scan(
 @app.command(name="phase4-run")
 def phase4_run(
     strategies: Annotated[list[str], typer.Argument(help="전략 이름 (복수)")],
-    symbols: Annotated[
-        str, typer.Option("--symbols", help="쉼표 구분 심볼")
-    ] = "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,DOGE/USDT",
-    start: Annotated[str, typer.Option("--start", help="시작일 (YYYY-MM-DD)")] = "2020-01-01",
+    symbols: Annotated[str, typer.Option("--symbols", help="쉼표 구분 심볼")] = ",".join(
+        TIER1_SYMBOLS
+    ),
+    start: Annotated[str, typer.Option("--start", help="시작일 (YYYY-MM-DD)")] = "2022-01-01",
     end: Annotated[str, typer.Option("--end", help="종료일 (YYYY-MM-DD)")] = "2025-12-31",
     capital: Annotated[int, typer.Option("--capital", help="초기 자본")] = 100_000,
     save_json: Annotated[bool, typer.Option("--json/--no-json", help="JSON 결과 저장")] = True,
@@ -1237,7 +1238,7 @@ def phase4_run(
         bool, typer.Option("--parallel/--no-parallel", help="심볼 간 병렬 실행")
     ] = True,
 ) -> None:
-    """Phase 4: 5-coin x 6-year 단일에셋 백테스트 + YAML 자동 갱신."""
+    """Phase 4: 8-coin x 4-year 단일에셋 백테스트 + YAML 자동 갱신."""
     from datetime import UTC, datetime
 
     from src.cli._phase_runners import run_phase4

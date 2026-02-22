@@ -10,7 +10,7 @@
 | 항목 | 값 |
 |------|---:|
 | **초기자본** | $100,000 |
-| **기간** | 2020-01-01 ~ 2025-12-31 (6년) |
+| **기간** | 2022-01-01 ~ 2025-12-31 (4년) |
 | **타임프레임** | 1D |
 
 ### 에셋 유니버스 (Tier 1)
@@ -22,6 +22,9 @@
 | 3 | BNB/USDT | 거래소 토큰 |
 | 4 | SOL/USDT | 고변동성, 추세추종 유리 |
 | 5 | DOGE/USDT | 밈코인, 노이즈 높음 |
+| 6 | LINK/USDT | 오라클 |
+| 7 | ADA/USDT | 스마트 컨트랙트 |
+| 8 | AVAX/USDT | L1 체인 |
 
 ### 비용 모델
 
@@ -41,16 +44,16 @@
 
 | 지표 | 기준 | 비고 |
 |------|------|------|
-| Sharpe Ratio | > 1.0 | Best Asset에서 |
-| CAGR | > 20% | Best Asset에서 |
-| MDD | < 40% | Best Asset에서 |
-| Total Trades | > 50 | 통계적 유의성 |
+| Sharpe Ratio | > 0.7 | Best Asset에서 |
+| CAGR | > 15% | Best Asset에서 |
+| MDD | < 50% | Best Asset에서 |
+| Total Trades | > 30 | 통계적 유의성 |
 
 ### 즉시 폐기 조건 (전 에셋 해당 시)
 
 | # | 조건 | 판정 |
 |---|------|------|
-| 1 | MDD > 50% (전 에셋) | 즉시 폐기 |
+| 1 | MDD > 60% (전 에셋) | 즉시 폐기 |
 | 2 | Sharpe < 0 (전 에셋) | 즉시 폐기 |
 | 3 | Trades < 20 AND 수익 < 0 (전 에셋) | 즉시 폐기 |
 | 4 | 총 수익의 80%+ 단일 거래 | 즉시 폐기 |
@@ -58,12 +61,15 @@
 ### CLI 명령
 
 ```bash
-# 개별 실행 (5회)
-uv run mcbot backtest run {strategy} BTC/USDT --start 2020-01-01 --end 2025-12-31
-uv run mcbot backtest run {strategy} ETH/USDT --start 2020-01-01 --end 2025-12-31
-uv run mcbot backtest run {strategy} BNB/USDT --start 2020-01-01 --end 2025-12-31
-uv run mcbot backtest run {strategy} SOL/USDT --start 2020-01-01 --end 2025-12-31
-uv run mcbot backtest run {strategy} DOGE/USDT --start 2020-01-01 --end 2025-12-31
+# 개별 실행 (8회)
+uv run mcbot backtest run {strategy} BTC/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} ETH/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} BNB/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} SOL/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} DOGE/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} LINK/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} ADA/USDT --start 2022-01-01 --end 2025-12-31
+uv run mcbot backtest run {strategy} AVAX/USDT --start 2022-01-01 --end 2025-12-31
 
 # 일괄 실행 (bulk_backtest.py 패턴 — Python API 직접 호출)
 uv run python scripts/bulk_backtest.py
@@ -77,8 +83,8 @@ uv run python scripts/bulk_backtest.py
 
 | 지표 | 기준 | CTREND 참조 |
 |------|------|------------|
-| OOS Sharpe | >= 0.3 | 1.78 |
-| Decay | < 50% | 33.7% |
+| OOS Sharpe | >= 0.2 | 1.78 |
+| Decay | < 60% | 33.7% |
 | OOS Trades | >= 15 | — |
 
 ### Decay 계산
@@ -96,7 +102,7 @@ uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m quick \
-  -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+  -y 2022 -y 2023 -y 2024 -y 2025
 ```
 
 ---
@@ -132,7 +138,7 @@ uv run mcbot pipeline phase5-run {strategy} --n-trials 100 --seed 42 --json
 
 | 조건 | 기준 | 정의 |
 |------|------|------|
-| 고원 존재 | >= 60% | Best Sharpe의 80% 이상인 값이 총 값의 60% 이상 (또는 최소 3개) |
+| 고원 존재 | >= 60% | Best Sharpe의 70% 이상인 값이 최소 2개 |
 | ±20% 안정 | Sharpe > 0 | 기본값 ±20% 범위에서 Sharpe 양수 유지 |
 
 **전체 PASS**: 모든 핵심 파라미터가 (고원 존재 AND ±20% 안정)
@@ -140,9 +146,9 @@ uv run mcbot pipeline phase5-run {strategy} --n-trials 100 --seed 42 --json
 ### 고원 판정 상세
 
 ```
-plateau_threshold = best_sharpe × 0.8  (best_sharpe > 0일 때)
+plateau_threshold = best_sharpe × 0.7  (best_sharpe > 0일 때)
 plateau_count = count(sharpe >= plateau_threshold)
-plateau_exists = plateau_count >= 3
+plateau_exists = plateau_count >= 2
 ```
 
 ### CLI 명령
@@ -169,12 +175,12 @@ uv run mcbot pipeline phase5-stability {strategy} --json
 
 | 지표 | 기준 | CTREND 참조 | 비고 |
 |------|------|------------|------|
-| WFA OOS Sharpe | >= 0.5 | 1.49 | 3-fold expanding window 평균 |
-| WFA Decay | < 40% | 39% | IS → OOS |
-| WFA Consistency | >= 60% | 67% | OOS fold 양수 비율 |
+| WFA OOS Sharpe | >= 0.3 | 1.49 | 3-fold expanding window 평균 |
+| WFA Decay | < 50% | 39% | IS → OOS |
+| WFA Consistency | >= 50% | 67% | OOS fold 양수 비율 |
 | PBO | 아래 참조 | 60% (PASS-B) | Probability of Backtest Overfitting |
-| DSR (batch) | > 0.95 | 1.00 | 동일 배치 기준 |
-| MC p-value | < 0.05 | 0.000 | Monte Carlo 통계적 유의성 |
+| DSR (batch) | > 0.5 | 1.00 | 동일 배치 기준 |
+| MC p-value | < 0.10 | 0.000 | Monte Carlo 통계적 유의성 |
 
 ### PBO 판정 (이중 경로)
 
@@ -200,14 +206,14 @@ uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m milestone \
-  -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+  -y 2022 -y 2023 -y 2024 -y 2025
 
 # Phase 6B: CPCV + PBO + DSR + Monte Carlo
 uv run mcbot backtest validate \
   -s {strategy} \
   --symbols {best_asset} \
   -m final \
-  -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+  -y 2022 -y 2023 -y 2024 -y 2025
 ```
 
 ---

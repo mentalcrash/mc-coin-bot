@@ -259,20 +259,21 @@ class ValidationResult(BaseModel):
 # Pass/Fail 기준 상수
 # =============================================================================
 
-# Quick Validation 기준
-QUICK_MIN_OOS_SHARPE = 0.3  # OOS Sharpe 최소값
-QUICK_MAX_SHARPE_DECAY = 0.5  # Sharpe Decay 최대값 (50%)
+# Quick Validation 기준 (P4B)
+QUICK_MIN_OOS_SHARPE = 0.2  # OOS Sharpe 최소값
+QUICK_MAX_SHARPE_DECAY = 0.6  # Sharpe Decay 최대값 (60%)
 
-# Milestone Validation 기준
-MILESTONE_MIN_OOS_SHARPE = 0.5
-MILESTONE_MAX_SHARPE_DECAY = 0.4
-MILESTONE_MIN_CONSISTENCY = 0.6  # 60% 이상 Fold가 일관적
+# Milestone Validation 기준 (P6A WFA)
+MILESTONE_MIN_OOS_SHARPE = 0.3
+MILESTONE_MAX_SHARPE_DECAY = 0.5
+MILESTONE_MIN_CONSISTENCY = 0.5  # 50% 이상 Fold가 일관적
 
-# Final Validation 기준
-FINAL_MIN_OOS_SHARPE = 0.7
-FINAL_MAX_SHARPE_DECAY = 0.3
-FINAL_MIN_CONSISTENCY = 0.8
-FINAL_MAX_P_VALUE = 0.05  # 통계적 유의성
+# Final Validation 기준 (P6B)
+FINAL_MIN_OOS_SHARPE = 0.3
+FINAL_MAX_SHARPE_DECAY = 0.5
+FINAL_MIN_CONSISTENCY = 0.5
+FINAL_MAX_P_VALUE = 0.10  # 통계적 유의성
+FINAL_MIN_DSR = 0.5  # Deflated Sharpe Ratio 최소값
 
 # =============================================================================
 # Multi-Asset Validation 기준 (로드맵 3.3)

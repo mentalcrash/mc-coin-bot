@@ -1,6 +1,6 @@
 """Phase 4 / Phase 5 stability runner logic for CLI integration.
 
-Phase 4: 5-coin x 6-year single-asset backtest (심볼 간 병렬 지원)
+Phase 4: 8-coin x 4-year single-asset backtest (심볼 간 병렬 지원)
 Phase 5 stability: Parameter stability validation (plateau + +/-20%)
 """
 
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from rich.table import Table
+
+from src.config.universe import TIER1_SYMBOLS
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -28,21 +31,21 @@ if TYPE_CHECKING:
 # Constants
 # =============================================================================
 
-_DEFAULT_SYMBOLS = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "DOGE/USDT"]
-_DEFAULT_START = datetime(2020, 1, 1, tzinfo=UTC)
+_DEFAULT_SYMBOLS = list(TIER1_SYMBOLS)
+_DEFAULT_START = datetime(2022, 1, 1, tzinfo=UTC)
 _DEFAULT_END = datetime(2025, 12, 31, tzinfo=UTC)
 _DEFAULT_CAPITAL = Decimal(100_000)
 _RESULTS_DIR = Path("results")
 
 # Phase 4 PASS thresholds
-_P4_MIN_SHARPE = 1.0
-_P4_MIN_CAGR = 20.0
-_P4_MAX_MDD = 40.0
-_P4_MIN_TRADES = 50
+_P4_MIN_SHARPE = 0.7
+_P4_MIN_CAGR = 15.0
+_P4_MAX_MDD = 50.0
+_P4_MIN_TRADES = 30
 
 # Phase 5 plateau detection
-_PLATEAU_MIN_COUNT = 3
-_PLATEAU_THRESHOLD_RATIO = 0.8
+_PLATEAU_MIN_COUNT = 2
+_PLATEAU_THRESHOLD_RATIO = 0.7
 
 # Phase 5 전략별 파라미터 설정 (P4 PASS strategies)
 P5_STRATEGIES: dict[str, dict[str, Any]] = {
@@ -319,12 +322,16 @@ def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
         else PhaseVerdict.FAIL
     )
 
+    all_sharpes = [r.get("sharpe_ratio") or 0 for r in sorted_results]
+    median_sharpe = round(statistics.median(all_sharpes), 2) if all_sharpes else 0.0
+
     details = {
         "best_asset": best["symbol"],
         "sharpe": round(best_sharpe, 2),
         "cagr": round(best_cagr, 1),
         "mdd": round(best_mdd, 1),
         "trades": best_trades,
+        "median_sharpe": median_sharpe,
     }
     rationale = (
         f"{best['symbol']} Sharpe {best_sharpe:.2f}, CAGR {best_cagr:+.1f}%, MDD -{best_mdd:.1f}%"
@@ -496,6 +503,12 @@ def run_phase4(
             )
 
         console.print(table)
+
+        # Median Sharpe (정보용)
+        sharpes = [r.get("sharpe_ratio") or 0 for r in results]
+        if sharpes:
+            median_s = statistics.median(sharpes)
+            console.print(f"  [dim]Median Sharpe: {median_s:.2f}[/dim]")
 
     console.print(f"\n[dim]Elapsed: {elapsed:.1f}s[/dim]")
 

@@ -26,6 +26,7 @@ from src.backtest.validation.deflated_sharpe import (
 )
 from src.backtest.validation.levels import ValidationLevel
 from src.backtest.validation.models import (
+    FINAL_MIN_DSR,
     MILESTONE_MAX_SHARPE_DECAY,
     MILESTONE_MIN_CONSISTENCY,
     MILESTONE_MIN_OOS_SHARPE,
@@ -57,6 +58,7 @@ from src.backtest.validation.splitters import (
 from src.backtest.validation.validator import TieredValidator
 
 __all__ = [
+    "FINAL_MIN_DSR",
     "MILESTONE_MAX_SHARPE_DECAY",
     "MILESTONE_MIN_CONSISTENCY",
     "MILESTONE_MIN_OOS_SHARPE",
