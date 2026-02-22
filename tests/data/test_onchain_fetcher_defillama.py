@@ -89,9 +89,7 @@ class TestFetchStablecoinTotal:
         assert "/stablecoincharts/all" in called_url
 
     @pytest.mark.asyncio()
-    async def test_decimal_precision(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_decimal_precision(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
@@ -214,9 +212,7 @@ class TestFetchStablecoinIndividual:
         assert "circulating_usd" in df.columns
 
     @pytest.mark.asyncio()
-    async def test_url_contains_id(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_url_contains_id(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         mock_response = MagicMock()
         mock_response.json.return_value = {"chainBalances": {}}
         mock_client.get.return_value = mock_response

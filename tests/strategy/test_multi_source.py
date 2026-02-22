@@ -73,9 +73,7 @@ class TestMultiSourceConfig:
         """최대 5개 서브시그널."""
         with pytest.raises(ValueError, match="most 5"):
             MultiSourceConfig(
-                signals=tuple(
-                    SubSignalSpec(column=f"col_{i}") for i in range(6)
-                ),
+                signals=tuple(SubSignalSpec(column=f"col_{i}") for i in range(6)),
             )
 
     def test_exit_must_be_less_than_entry(self) -> None:
@@ -198,7 +196,9 @@ class TestPreprocess:
         df = _make_enriched_df()
         config = MultiSourceConfig(
             signals=(
-                SubSignalSpec(column="oc_fear_greed", transform=SubSignalTransform.PERCENTILE, window=20),
+                SubSignalSpec(
+                    column="oc_fear_greed", transform=SubSignalTransform.PERCENTILE, window=20
+                ),
                 SubSignalSpec(column="oc_mvrv", window=20),
             ),
         )
@@ -213,7 +213,9 @@ class TestPreprocess:
         df = _make_enriched_df()
         config = MultiSourceConfig(
             signals=(
-                SubSignalSpec(column="oc_fear_greed", transform=SubSignalTransform.MA_CROSS, window=20),
+                SubSignalSpec(
+                    column="oc_fear_greed", transform=SubSignalTransform.MA_CROSS, window=20
+                ),
                 SubSignalSpec(column="oc_mvrv", window=20),
             ),
         )

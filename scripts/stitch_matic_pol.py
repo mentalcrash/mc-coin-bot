@@ -101,7 +101,9 @@ async def _fetch_fr(symbol: str, years: list[int], skip_existing: bool) -> None:
                 logger.warning("Empty FR: {} {}", symbol, year)
                 continue
             deriv_bronze.save(batch, year)
-            logger.info("Saved FR Bronze: {} {} ({} records)", symbol, year, len(batch.funding_rates))
+            logger.info(
+                "Saved FR Bronze: {} {} ({} records)", symbol, year, len(batch.funding_rates)
+            )
             await asyncio.sleep(0.5)
 
 

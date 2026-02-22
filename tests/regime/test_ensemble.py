@@ -596,7 +596,9 @@ class TestMetaLearnerEnsemble:
         # train_window + fwd_window 이후 결과 존재
         assert len(valid) > 0
 
-    def test_incremental_falls_back(self, detector: EnsembleRegimeDetector, caplog: pytest.LogCaptureFixture) -> None:
+    def test_incremental_falls_back(
+        self, detector: EnsembleRegimeDetector, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """incremental update에서 weighted_average 폴백 + 로그 검증."""
         result = None
         with caplog.at_level("WARNING", logger="src.regime.ensemble"):

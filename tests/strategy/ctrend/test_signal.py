@@ -211,8 +211,7 @@ class TestResolvedTargetOnly:
             full_dir = signals_full.direction.iloc[t]
 
             assert exp_dir == full_dir, (
-                f"Signal mismatch at index {t}: "
-                f"expanding={exp_dir}, full={full_dir}"
+                f"Signal mismatch at index {t}: expanding={exp_dir}, full={full_dir}"
             )
 
     def test_training_excludes_unresolved_targets(self) -> None:

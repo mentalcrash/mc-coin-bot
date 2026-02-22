@@ -285,11 +285,7 @@ class OrchestratedRunner:
         await analytics.register(bus)
 
         # 5. 실행
-        tf_label = (
-            ", ".join(sorted(self._all_timeframes))
-            if multi_tf
-            else self._target_timeframe
-        )
+        tf_label = ", ".join(sorted(self._all_timeframes)) if multi_tf else self._target_timeframe
         logger.info(
             "OrchestratedRunner starting: {} pods, {} symbols, TF={}{}",
             len(pods),

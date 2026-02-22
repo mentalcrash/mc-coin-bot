@@ -39,7 +39,9 @@ def preprocessed_df(sample_ohlcv_df: pd.DataFrame, config: VolSqueezeBrkConfig) 
 
 
 class TestSignalStructure:
-    def test_output_fields(self, preprocessed_df: pd.DataFrame, config: VolSqueezeBrkConfig) -> None:
+    def test_output_fields(
+        self, preprocessed_df: pd.DataFrame, config: VolSqueezeBrkConfig
+    ) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert hasattr(signals, "entries")
         assert hasattr(signals, "exits")
@@ -53,7 +55,9 @@ class TestSignalStructure:
         assert signals.entries.dtype == bool
         assert signals.exits.dtype == bool
 
-    def test_direction_values(self, preprocessed_df: pd.DataFrame, config: VolSqueezeBrkConfig) -> None:
+    def test_direction_values(
+        self, preprocessed_df: pd.DataFrame, config: VolSqueezeBrkConfig
+    ) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert set(signals.direction.unique()).issubset({-1, 0, 1})
 

@@ -181,9 +181,7 @@ class BinanceFuturesClient:
             try:
                 from src.monitoring.metrics import errors_counter
 
-                errors_counter.labels(
-                    component="Exchange", error_type=type(exc).__name__
-                ).inc()
+                errors_counter.labels(component="Exchange", error_type=type(exc).__name__).inc()
             except Exception:  # noqa: S110
                 pass
 

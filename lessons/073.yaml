@@ -1,0 +1,15 @@
+id: 73
+title: P5A 최적값 기준 sweep에서 절대값이 작은 파라미터의 ±20% 범위 축소 문제
+body: low_kurtosis_zscore 기본값 -0.5 → P5A 최적값 -0.162로 변경 시, ±20% 범위가 -0.194~-0.130으로
+  매우 좁아짐. 실제 Sharpe 전구간 1.41-1.48 양수이나 sweep 그리드가 이 좁은 범위를 충분히 커버하지 못해 기술적 FAIL. 절대값이
+  작은 threshold 파라미터는 ±20% 기준이 의미 없을 수 있음.
+category: pipeline-process
+tags:
+- P5-sweep
+- parameter-sensitivity
+- threshold
+strategies:
+- kurtosis-carry
+timeframes:
+- 1D
+added_at: '2026-02-22'

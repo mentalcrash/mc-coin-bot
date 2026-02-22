@@ -246,9 +246,7 @@ class ExecutionAnomalyDetector:
             return None
 
         # EWMA update
-        self._avg_latency = (
-            _EWMA_ALPHA * latency + (1.0 - _EWMA_ALPHA) * self._avg_latency
-        )
+        self._avg_latency = _EWMA_ALPHA * latency + (1.0 - _EWMA_ALPHA) * self._avg_latency
 
         # Cold start: skip anomaly detection
         if self._latency_count < _LATENCY_COLD_START:
@@ -281,9 +279,7 @@ class ExecutionAnomalyDetector:
         self._last_slippages.append(bps)
         # Keep only recent slippages for memory efficiency
         if len(self._last_slippages) > _SLIPPAGE_TREND_COUNT + 1:
-            self._last_slippages = self._last_slippages[-(
-                _SLIPPAGE_TREND_COUNT + 1
-            ) :]
+            self._last_slippages = self._last_slippages[-(_SLIPPAGE_TREND_COUNT + 1) :]
 
         if self._slippage_increase_count >= _SLIPPAGE_TREND_COUNT:
             return ExecutionAnomaly(

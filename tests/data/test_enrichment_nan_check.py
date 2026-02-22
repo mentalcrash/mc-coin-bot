@@ -81,9 +81,7 @@ class TestEnrichmentNanCheck:
         assert "oc_tvl_total" in warnings[0]
         assert "50%" in warnings[0]
 
-    def test_drop_suggestion_when_nan_above_80_pct(
-        self, service: MarketDataService
-    ) -> None:
+    def test_drop_suggestion_when_nan_above_80_pct(self, service: MarketDataService) -> None:
         """NaN 비율이 80% 초과 시 drop 제안 경고."""
         df = _make_df(100, {"macro_gold": 0.9})
 
@@ -103,9 +101,9 @@ class TestEnrichmentNanCheck:
         df = _make_df(
             100,
             {
-                "oc_fear_greed": 0.5,   # > 30%, warning
-                "opt_btc_dvol": 0.85,   # > 80%, drop
-                "dext_agg_oi": 0.1,     # < 30%, OK
+                "oc_fear_greed": 0.5,  # > 30%, warning
+                "opt_btc_dvol": 0.85,  # > 80%, drop
+                "dext_agg_oi": 0.1,  # < 30%, OK
             },
         )
 
@@ -145,9 +143,7 @@ class TestEnrichmentNanCheck:
         # 에러 없이 실행되면 OK
         service._check_enrichment_nan_ratios(df, OHLCV_COLS)
 
-    def test_no_enrichment_columns_no_warning(
-        self, service: MarketDataService
-    ) -> None:
+    def test_no_enrichment_columns_no_warning(self, service: MarketDataService) -> None:
         """enrichment 컬럼이 없으면 경고 없이 조기 반환."""
         df = _make_df(100, {})
 
@@ -160,9 +156,7 @@ class TestEnrichmentNanCheck:
 
         assert len(warnings) == 0
 
-    def test_funding_rate_and_oi_columns_checked(
-        self, service: MarketDataService
-    ) -> None:
+    def test_funding_rate_and_oi_columns_checked(self, service: MarketDataService) -> None:
         """funding_rate, open_interest 컬럼도 검사 대상이다."""
         df = _make_df(
             100,

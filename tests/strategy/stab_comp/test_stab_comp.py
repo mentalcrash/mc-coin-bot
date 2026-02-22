@@ -107,9 +107,7 @@ class TestConfig:
 class TestPreprocessor:
     """Preprocessor 검증."""
 
-    def test_adds_columns_with_stablecoin(
-        self, sample_ohlcv_with_stablecoin: pd.DataFrame
-    ) -> None:
+    def test_adds_columns_with_stablecoin(self, sample_ohlcv_with_stablecoin: pd.DataFrame) -> None:
         cfg = StabCompConfig()
         result = preprocess(sample_ohlcv_with_stablecoin, cfg)
         expected = {

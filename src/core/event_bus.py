@@ -243,9 +243,7 @@ class EventBus:
                 try:
                     from src.monitoring.metrics import errors_counter
 
-                    errors_counter.labels(
-                        component="EventBus", error_type=type(exc).__name__
-                    ).inc()
+                    errors_counter.labels(component="EventBus", error_type=type(exc).__name__).inc()
                 except Exception:  # noqa: S110
                     pass
 

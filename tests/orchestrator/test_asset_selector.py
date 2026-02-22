@@ -125,7 +125,9 @@ class TestAssetSelectorInit:
 
     def test_disabled_no_transition(self) -> None:
         selector = _make_selector(enabled=False)
-        returns = {s: _make_bad_returns(30) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")}
+        returns = {
+            s: _make_bad_returns(30) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")
+        }
         closes = dict.fromkeys(returns, 100.0)
         for _ in range(20):
             selector.on_bar(returns, closes)
@@ -325,7 +327,9 @@ class TestHardExclusion:
         """Sharpe만 나쁘고 DD 조건 미충족 → hard exclude 안 됨."""
         selector = _make_selector()
         # Mildly bad: negative but low DD
-        returns = {s: _make_returns(30, -0.001) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")}
+        returns = {
+            s: _make_returns(30, -0.001) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")
+        }
         closes = dict.fromkeys(returns, 100.0)
 
         selector.on_bar(returns, closes)
@@ -472,7 +476,9 @@ class TestOnBarIntegration:
     def test_equal_returns_no_exclusion(self) -> None:
         """모든 에셋 동일 수익률 → 모두 ACTIVE."""
         selector = _make_selector()
-        returns = {s: _make_returns(30, 0.01) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")}
+        returns = {
+            s: _make_returns(30, 0.01) for s in ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")
+        }
         closes = dict.fromkeys(returns, 100.0)
 
         for _ in range(10):

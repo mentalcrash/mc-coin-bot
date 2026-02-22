@@ -247,12 +247,8 @@ class TestEndToEndParity:
                 mismatches.append((i, vbt, eda))
 
         if mismatches:
-            detail = "\n".join(
-                f"  bar {i}: VBT={v}, EDA={e}" for i, v, e in mismatches[:10]
-            )
-            pytest.fail(
-                f"{len(mismatches)} mismatches out of {len(prices)} bars:\n{detail}"
-            )
+            detail = "\n".join(f"  bar {i}: VBT={v}, EDA={e}" for i, v, e in mismatches[:10])
+            pytest.fail(f"{len(mismatches)} mismatches out of {len(prices)} bars:\n{detail}")
 
     def _assert_parity_tolerant(
         self,

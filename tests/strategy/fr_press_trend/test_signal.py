@@ -61,7 +61,9 @@ class TestSignalStructure:
         assert signals.entries.dtype == bool
         assert signals.exits.dtype == bool
 
-    def test_direction_values(self, preprocessed_df: pd.DataFrame, config: FrPressTrendConfig) -> None:
+    def test_direction_values(
+        self, preprocessed_df: pd.DataFrame, config: FrPressTrendConfig
+    ) -> None:
         signals = generate_signals(preprocessed_df, config)
         assert set(signals.direction.unique()).issubset({-1, 0, 1})
 

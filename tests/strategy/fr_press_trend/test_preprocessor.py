@@ -41,7 +41,9 @@ def sample_ohlcv_fr_df() -> pd.DataFrame:
 
 
 class TestPreprocess:
-    def test_output_columns(self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig) -> None:
+    def test_output_columns(
+        self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig
+    ) -> None:
         result = preprocess(sample_ohlcv_fr_df, config)
         required = {
             "returns",
@@ -57,11 +59,15 @@ class TestPreprocess:
         }
         assert required.issubset(set(result.columns))
 
-    def test_same_length(self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig) -> None:
+    def test_same_length(
+        self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig
+    ) -> None:
         result = preprocess(sample_ohlcv_fr_df, config)
         assert len(result) == len(sample_ohlcv_fr_df)
 
-    def test_immutability(self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig) -> None:
+    def test_immutability(
+        self, sample_ohlcv_fr_df: pd.DataFrame, config: FrPressTrendConfig
+    ) -> None:
         original = sample_ohlcv_fr_df.copy()
         preprocess(sample_ohlcv_fr_df, config)
         pd.testing.assert_frame_equal(sample_ohlcv_fr_df, original)
@@ -72,13 +78,15 @@ class TestPreprocess:
             preprocess(df, config)
 
     def test_missing_funding_rate(self, config: FrPressTrendConfig) -> None:
-        df = pd.DataFrame({
-            "open": [1, 2, 3],
-            "high": [2, 3, 4],
-            "low": [0.5, 1, 2],
-            "close": [1.5, 2.5, 3.5],
-            "volume": [100, 200, 300],
-        })
+        df = pd.DataFrame(
+            {
+                "open": [1, 2, 3],
+                "high": [2, 3, 4],
+                "low": [0.5, 1, 2],
+                "close": [1.5, 2.5, 3.5],
+                "volume": [100, 200, 300],
+            }
+        )
         with pytest.raises(ValueError, match="Missing required columns"):
             preprocess(df, config)
 

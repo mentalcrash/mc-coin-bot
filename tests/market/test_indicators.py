@@ -751,8 +751,10 @@ class TestVolatilityAdvanced:
     def test_yang_zhang_basic(self, ohlcv_df: pd.DataFrame) -> None:
         """Yang-Zhang volatility 기본 계산."""
         result = yang_zhang_volatility(
-            ohlcv_df["open"], ohlcv_df["high"],
-            ohlcv_df["low"], ohlcv_df["close"],
+            ohlcv_df["open"],
+            ohlcv_df["high"],
+            ohlcv_df["low"],
+            ohlcv_df["close"],
             window=20,
         )
         assert len(result) == len(ohlcv_df)
@@ -763,8 +765,10 @@ class TestVolatilityAdvanced:
     def test_yang_zhang_vs_realized(self, ohlcv_df: pd.DataFrame) -> None:
         """YZ vol은 range 정보를 활용하므로 close-to-close와 다름."""
         yz = yang_zhang_volatility(
-            ohlcv_df["open"], ohlcv_df["high"],
-            ohlcv_df["low"], ohlcv_df["close"],
+            ohlcv_df["open"],
+            ohlcv_df["high"],
+            ohlcv_df["low"],
+            ohlcv_df["close"],
             window=20,
         )
         cc_returns = log_returns(ohlcv_df["close"])

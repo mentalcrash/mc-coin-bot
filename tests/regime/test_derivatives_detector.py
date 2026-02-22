@@ -87,8 +87,13 @@ class TestClassifySeries:
         df = _make_deriv_df()
         result = detector.classify_series(df)
         expected = {
-            "regime_label", "p_trending", "p_ranging", "p_volatile",
-            "rv_ratio", "efficiency_ratio", "confidence",
+            "regime_label",
+            "p_trending",
+            "p_ranging",
+            "p_volatile",
+            "rv_ratio",
+            "efficiency_ratio",
+            "confidence",
         }
         assert expected <= set(result.columns)
 

@@ -1,0 +1,14 @@
+id: 69
+title: OHLCV Volume ≠ On-chain Velocity Proxy
+body: 거래소 volume으로 stablecoin velocity를 근사하면 실제 on-chain flow 대비 noise가 과다. Best Sharpe
+  0.81 (DOGE)으로 1.0 미달. 실 on-chain 데이터 없이 volume proxy 전략은 alpha 부족.
+category: strategy-design
+tags:
+- volume-proxy
+- on-chain
+- proxy
+strategies:
+- stablecoin-velocity
+timeframes:
+- 1D
+added_at: '2026-02-22'

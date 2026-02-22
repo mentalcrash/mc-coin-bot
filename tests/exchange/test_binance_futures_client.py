@@ -632,9 +632,7 @@ class TestApiCircuitBreaker:
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
                 client._consecutive_failures = 3
-                await client.create_order(
-                    symbol="BTC/USDT:USDT", side="buy", amount=0.001
-                )
+                await client.create_order(symbol="BTC/USDT:USDT", side="buy", amount=0.001)
                 assert client._consecutive_failures == 0
 
     @pytest.mark.asyncio
@@ -649,9 +647,7 @@ class TestApiCircuitBreaker:
         with patch("src.exchange.binance_futures_client.ccxt.binance", return_value=mock_exchange):
             async with BinanceFuturesClient(settings) as client:
                 with pytest.raises(OrderExecutionError):
-                    await client.create_order(
-                        symbol="BTC/USDT:USDT", side="buy", amount=0.001
-                    )
+                    await client.create_order(symbol="BTC/USDT:USDT", side="buy", amount=0.001)
                 assert client._consecutive_failures == 1
 
     @pytest.mark.asyncio
@@ -675,9 +671,7 @@ class TestApiCircuitBreaker:
             async with BinanceFuturesClient(settings) as client:
                 client._consecutive_failures = 5
                 assert client.is_api_healthy is False
-                await client.create_order(
-                    symbol="BTC/USDT:USDT", side="buy", amount=0.001
-                )
+                await client.create_order(symbol="BTC/USDT:USDT", side="buy", amount=0.001)
                 assert client.is_api_healthy is True
                 assert client._consecutive_failures == 0
 
@@ -696,9 +690,7 @@ class TestApiCircuitBreaker:
         ):
             async with BinanceFuturesClient(settings) as client:
                 with pytest.raises(NetworkError):
-                    await client.create_order(
-                        symbol="BTC/USDT:USDT", side="buy", amount=0.001
-                    )
+                    await client.create_order(symbol="BTC/USDT:USDT", side="buy", amount=0.001)
                 assert client._consecutive_failures == 1
 
 

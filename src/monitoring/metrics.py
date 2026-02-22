@@ -516,9 +516,7 @@ def _calculate_slippage_bps(expected_price: float, fill_price: float) -> float:
     return abs(fill_price - expected_price) / expected_price * 10000
 
 
-def _calculate_signed_slippage_bps(
-    expected_price: float, fill_price: float, side: str
-) -> float:
+def _calculate_signed_slippage_bps(expected_price: float, fill_price: float, side: str) -> float:
     """방향성 슬리피지 계산 (양수=불리, 음수=유리).
 
     BUY: fill이 expected보다 높으면 불리(양수)
@@ -589,9 +587,7 @@ gbm_severity_gauge = Gauge(
 execution_consecutive_rejections_gauge = Gauge(
     "mcbot_execution_consecutive_rejections", "Consecutive order rejections"
 )
-execution_fill_rate_gauge = Gauge(
-    "mcbot_execution_fill_rate", "1h window fill rate (0.0~1.0)"
-)
+execution_fill_rate_gauge = Gauge("mcbot_execution_fill_rate", "1h window fill rate (0.0~1.0)")
 
 strategy_pnl_gauge = Gauge("mcbot_strategy_pnl_usdt", "Strategy realized PnL", ["strategy"])
 strategy_signals_counter = Counter(
@@ -788,12 +784,10 @@ class MetricsExporter:
                 bps = _calculate_slippage_bps(expected, event.fill_price)
                 slippage_histogram.labels(symbol=event.symbol, side=event.side).observe(bps)
 
-                signed_bps = _calculate_signed_slippage_bps(
-                    expected, event.fill_price, event.side
+                signed_bps = _calculate_signed_slippage_bps(expected, event.fill_price, event.side)
+                slippage_signed_histogram.labels(symbol=event.symbol, side=event.side).observe(
+                    signed_bps
                 )
-                slippage_signed_histogram.labels(
-                    symbol=event.symbol, side=event.side
-                ).observe(signed_bps)
 
                 # Per-strategy slippage
                 strategy_slippage_histogram.labels(

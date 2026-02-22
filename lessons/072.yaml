@@ -1,0 +1,15 @@
+id: 72
+title: 'Hash-ribbon Capitulation: IS 과적합 + 극저빈도 이벤트 의존'
+body: Hash-Ribbon-Cap P4A PASS (SOL Sharpe 1.33) 후 P4B에서 IS/OOS Decay 88.5%, OOS Sharpe
+  0.19, Overfit Prob 93.1%로 심각한 과적합. 채굴자 capitulation은 6년간 소수 이벤트에 집중되어 IS 구간 학습이
+  OOS에 일반화 불가. Long-only + 극저빈도 시그널 = 과적합 고위험.
+category: pipeline-process
+tags:
+- overfitting
+- is-oos
+- low-frequency
+strategies:
+- hash-ribbon-cap
+timeframes:
+- 1D
+added_at: '2026-02-22'

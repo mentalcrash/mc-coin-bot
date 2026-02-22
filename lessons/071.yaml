@@ -1,0 +1,14 @@
+id: 71
+title: 'Return Streak 패턴: 낮은 MDD이지만 alpha 부족'
+body: 'Streak-Persistence 전략: 연속 3일+ 양봉/음봉 후 추세 지속 베팅. Best Sharpe 0.64 (BTC), MDD
+  21.6%로 방어 우수하나 CAGR 6.2%로 alpha 미생성. 1D에서 3일 연속 봉 패턴은 이미 가격에 반영되어 예측력 부족.'
+category: strategy-design
+tags:
+- streak
+- behavioral
+- herding
+strategies:
+- streak-persistence
+timeframes:
+- 1D
+added_at: '2026-02-22'

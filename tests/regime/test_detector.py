@@ -461,9 +461,7 @@ class TestVectorizedIncrementalParity:
         np.testing.assert_allclose(
             state.probabilities["trending"], vec_row["p_trending"], atol=1e-6
         )
-        np.testing.assert_allclose(
-            state.probabilities["ranging"], vec_row["p_ranging"], atol=1e-6
-        )
+        np.testing.assert_allclose(state.probabilities["ranging"], vec_row["p_ranging"], atol=1e-6)
         np.testing.assert_allclose(
             state.probabilities["volatile"], vec_row["p_volatile"], atol=1e-6
         )

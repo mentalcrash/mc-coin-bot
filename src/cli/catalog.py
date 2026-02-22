@@ -270,9 +270,7 @@ def list_indicators(
     category: Annotated[
         str | None, typer.Option("--category", "-c", help="Filter by category")
     ] = None,
-    unused: Annotated[
-        bool, typer.Option("--unused", help="Show only unused indicators")
-    ] = False,
+    unused: Annotated[bool, typer.Option("--unused", help="Show only unused indicators")] = False,
     potential: Annotated[
         str | None, typer.Option("--potential", "-p", help="Filter by alpha potential")
     ] = None,

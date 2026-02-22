@@ -39,9 +39,7 @@ class TestFearGreedUrl:
 
 class TestFetchFearGreed:
     @pytest.mark.asyncio()
-    async def test_success(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_success(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """정상 응답 — 2개 레코드 파싱."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -67,9 +65,7 @@ class TestFetchFearGreed:
         assert list(df.columns) == ["timestamp", "value", "classification", "source"]
 
     @pytest.mark.asyncio()
-    async def test_empty_response(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_empty_response(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """빈 응답 → empty DataFrame with columns."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"data": []}
@@ -81,9 +77,7 @@ class TestFetchFearGreed:
         assert list(df.columns) == ["timestamp", "value", "classification", "source"]
 
     @pytest.mark.asyncio()
-    async def test_missing_data_key(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_missing_data_key(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """data 키 없음 → empty DataFrame."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"name": "Fear and Greed Index"}
@@ -94,9 +88,7 @@ class TestFetchFearGreed:
         assert df.empty
 
     @pytest.mark.asyncio()
-    async def test_value_types(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_value_types(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """value는 int, classification은 str."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -117,9 +109,7 @@ class TestFetchFearGreed:
         assert df["classification"].iloc[0] == "Neutral"
 
     @pytest.mark.asyncio()
-    async def test_timestamp_utc(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_timestamp_utc(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """timestamp는 UTC timezone-aware."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -140,9 +130,7 @@ class TestFetchFearGreed:
         assert str(ts.tz) == "UTC"
 
     @pytest.mark.asyncio()
-    async def test_source_column(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_source_column(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """source 컬럼은 'alternative_me'."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -161,9 +149,7 @@ class TestFetchFearGreed:
         assert df["source"].iloc[0] == "alternative_me"
 
     @pytest.mark.asyncio()
-    async def test_url_and_params(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_url_and_params(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """올바른 URL과 파라미터로 호출."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"data": []}
@@ -177,9 +163,7 @@ class TestFetchFearGreed:
         assert called_kwargs["params"]["limit"] == "0"
 
     @pytest.mark.asyncio()
-    async def test_non_dict_response(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_non_dict_response(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """dict가 아닌 응답 → empty DataFrame."""
         mock_response = MagicMock()
         mock_response.json.return_value = "unexpected"

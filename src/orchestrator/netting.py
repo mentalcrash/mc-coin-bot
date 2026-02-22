@@ -136,11 +136,7 @@ def attribute_fill(
         return {}
 
     # 절대 비중 기반 필터: non-zero target pods 전체 귀속
-    matching = {
-        pid: t
-        for pid, t in pod_targets.items()
-        if abs(t) > _MIN_WEIGHT
-    }
+    matching = {pid: t for pid, t in pod_targets.items() if abs(t) > _MIN_WEIGHT}
 
     if not matching:
         return {}

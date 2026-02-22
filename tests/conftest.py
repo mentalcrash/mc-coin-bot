@@ -51,6 +51,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 item.add_marker(getattr(pytest.mark, marker_name))
                 break
 
+
 # Opt-in to future pandas behavior: fillna/ffill/bfill won't auto-downcast
 pd.set_option("future.no_silent_downcasting", True)
 

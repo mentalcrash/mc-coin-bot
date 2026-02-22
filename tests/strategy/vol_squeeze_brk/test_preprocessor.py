@@ -33,7 +33,9 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 class TestPreprocess:
-    def test_output_columns(self, sample_ohlcv_df: pd.DataFrame, config: VolSqueezeBrkConfig) -> None:
+    def test_output_columns(
+        self, sample_ohlcv_df: pd.DataFrame, config: VolSqueezeBrkConfig
+    ) -> None:
         result = preprocess(sample_ohlcv_df, config)
         required = {
             "returns",
@@ -73,6 +75,8 @@ class TestPreprocess:
         valid = result["vol_scalar"].dropna()
         assert (valid > 0).all()
 
-    def test_in_squeeze_bool(self, sample_ohlcv_df: pd.DataFrame, config: VolSqueezeBrkConfig) -> None:
+    def test_in_squeeze_bool(
+        self, sample_ohlcv_df: pd.DataFrame, config: VolSqueezeBrkConfig
+    ) -> None:
         result = preprocess(sample_ohlcv_df, config)
         assert result["in_squeeze"].dtype == bool

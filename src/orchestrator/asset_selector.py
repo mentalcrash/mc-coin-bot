@@ -166,15 +166,9 @@ class AssetSelector:
                 dd_vals[symbol] = 0.0
                 continue
 
-            sharpe_vals[symbol] = self._compute_sharpe(
-                rets[-cfg.sharpe_lookback:]
-            )
-            return_vals[symbol] = self._compute_cumulative_return(
-                rets[-cfg.return_lookback:]
-            )
-            dd_vals[symbol] = self._compute_max_drawdown(
-                rets[-cfg.sharpe_lookback:]
-            )
+            sharpe_vals[symbol] = self._compute_sharpe(rets[-cfg.sharpe_lookback :])
+            return_vals[symbol] = self._compute_cumulative_return(rets[-cfg.return_lookback :])
+            dd_vals[symbol] = self._compute_max_drawdown(rets[-cfg.sharpe_lookback :])
 
         # Cross-sectional rank (0~1)
         sharpe_ranks = _cross_sectional_rank(sharpe_vals)
@@ -210,28 +204,28 @@ class AssetSelector:
             if len(rets) < _MIN_DATA_BARS:
                 continue
 
-            sharpe = self._compute_sharpe(rets[-cfg.sharpe_lookback:])
-            dd = self._compute_max_drawdown(rets[-cfg.sharpe_lookback:])
+            sharpe = self._compute_sharpe(rets[-cfg.sharpe_lookback :])
+            dd = self._compute_max_drawdown(rets[-cfg.sharpe_lookback :])
 
             if (
                 sharpe < cfg.hard_exclude_sharpe
                 and dd > cfg.hard_exclude_drawdown
                 and self._can_exclude(symbol)
             ):
-                    st.state = AssetLifecycleState.COOLDOWN
-                    st.multiplier = 0.0
-                    st.cooldown_bars = 0
-                    st.confirmation_count = 0
-                    st.ramp_position = 0
-                    st.cooldown_cycles += 1
-                    self._check_permanent_exclusion(symbol, st)
-                    logger.info(
-                        "AssetSelector: {} hard excluded (Sharpe={:.2f}, DD={:.1%}, cycle {})",
-                        symbol,
-                        sharpe,
-                        dd,
-                        st.cooldown_cycles,
-                    )
+                st.state = AssetLifecycleState.COOLDOWN
+                st.multiplier = 0.0
+                st.cooldown_bars = 0
+                st.confirmation_count = 0
+                st.ramp_position = 0
+                st.cooldown_cycles += 1
+                self._check_permanent_exclusion(symbol, st)
+                logger.info(
+                    "AssetSelector: {} hard excluded (Sharpe={:.2f}, DD={:.1%}, cycle {})",
+                    symbol,
+                    sharpe,
+                    dd,
+                    st.cooldown_cycles,
+                )
 
     def _transition(self, symbol: str) -> None:
         """단일 에셋의 FSM 전이를 수행합니다."""
@@ -380,9 +374,7 @@ class AssetSelector:
     def _can_exclude(self, symbol: str) -> bool:
         """제외 가능 여부: min_active_assets 안전망."""
         active_count = sum(
-            1
-            for s, st in self._states.items()
-            if s != symbol and st.multiplier > _EPSILON
+            1 for s, st in self._states.items() if s != symbol and st.multiplier > _EPSILON
         )
         return active_count >= self._config.min_active_assets
 
@@ -446,8 +438,8 @@ class AssetSelector:
             if len(rets) < _MIN_DATA_BARS:
                 continue
 
-            sharpe = self._compute_sharpe(rets[-cfg.sharpe_lookback:])
-            dd = self._compute_max_drawdown(rets[-cfg.sharpe_lookback:])
+            sharpe = self._compute_sharpe(rets[-cfg.sharpe_lookback :])
+            dd = self._compute_max_drawdown(rets[-cfg.sharpe_lookback :])
 
             sharpe_fail = min_sharpe is not None and sharpe < min_sharpe
             dd_fail = max_dd is not None and dd > max_dd

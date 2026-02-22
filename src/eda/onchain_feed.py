@@ -313,8 +313,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_stablecoin_total()
             _record_fetch(
-                "defillama", "stablecoin_total", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "defillama",
+                "stablecoin_total",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 self._set_global_cache(
@@ -331,8 +334,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_tvl("")
             _record_fetch(
-                "defillama", "tvl_total", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "defillama",
+                "tvl_total",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 self._set_global_cache("oc_tvl_usd", float(df.iloc[-1]["tvl_usd"]))
@@ -346,8 +352,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_dex_volume()
             _record_fetch(
-                "defillama", "dex_volume", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "defillama",
+                "dex_volume",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 self._set_global_cache("oc_dex_volume_usd", float(df.iloc[-1]["volume_usd"]))
@@ -381,8 +390,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_fear_greed()
             _record_fetch(
-                "alternative_me", "fear_greed", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "alternative_me",
+                "fear_greed",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 self._set_global_cache("oc_fear_greed", float(df.iloc[-1]["value"]))
@@ -427,8 +439,11 @@ class LiveOnchainFeed:
             try:
                 df = await self._fetcher.fetch_coinmetrics(asset_lower, start=start, end=end)
                 _record_fetch(
-                    "coinmetrics", f"{asset_lower}_metrics", time.monotonic() - t0,
-                    "empty" if df.empty else "success", len(df),
+                    "coinmetrics",
+                    f"{asset_lower}_metrics",
+                    time.monotonic() - t0,
+                    "empty" if df.empty else "success",
+                    len(df),
                 )
                 if not df.empty:
                     last = df.iloc[-1]
@@ -441,7 +456,11 @@ class LiveOnchainFeed:
                                 continue
             except Exception as e:
                 _record_fetch(
-                    "coinmetrics", f"{asset_lower}_metrics", time.monotonic() - t0, "failure", 0,
+                    "coinmetrics",
+                    f"{asset_lower}_metrics",
+                    time.monotonic() - t0,
+                    "failure",
+                    0,
                 )
                 logger.warning("CoinMetrics {} polling error: {}", asset_upper, e)
                 any_failure = True
@@ -475,8 +494,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_mempool_mining(interval="1m")
             _record_fetch(
-                "mempool_space", "mining", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "mempool_space",
+                "mining",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 last = df.iloc[-1]
@@ -523,8 +545,11 @@ class LiveOnchainFeed:
         try:
             df = await self._fetcher.fetch_eth_supply(api_key)
             _record_fetch(
-                "etherscan", "eth_supply", time.monotonic() - t0,
-                "empty" if df.empty else "success", len(df),
+                "etherscan",
+                "eth_supply",
+                time.monotonic() - t0,
+                "empty" if df.empty else "success",
+                len(df),
             )
             if not df.empty:
                 last = df.iloc[-1]

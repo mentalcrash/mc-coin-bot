@@ -125,6 +125,17 @@ allowed-tools:
    uv run mcbot pipeline p1-scan --top 20
    uv run mcbot pipeline p1-scan --source onchain --top 10
    → Cross-asset stable 지표 우선, 비-OHLCV IC PASS 지표 우선
+
+8. Data Catalog 탐색 (권장 — 미사용 지표/데이터셋 발굴)
+   uv run mcbot catalog indicators --unused --potential high  # 미사용 고잠재력 지표
+   uv run mcbot catalog indicators --unused                   # 전체 미사용 지표 (29개)
+   uv run mcbot catalog list -t onchain                       # On-chain 데이터셋 현황
+   uv run mcbot catalog list -t macro                         # Macro 데이터셋 (DXY/VIX/M2 등)
+   uv run mcbot catalog list -t derivatives                   # Derivatives 데이터셋
+   uv run mcbot catalog failure-patterns                      # 구조화된 실패 패턴 + detection rules
+   # → 미사용 지표 중 전략 후보 선별 (indicator-show {id}로 상세 확인)
+   # → 데이터셋별 strategy hints 참조 (catalog show {id})
+   # → idea-sources.md는 정적 문서 → catalog은 YAML 기반 동적 갱신
 ```
 
 #### 0-Z. 탐색 모드 선택
@@ -339,6 +350,15 @@ TF    | 적합 전략 유형           | 비용 영향 | 주의점
 
 `src/market/indicators/` 패키지 53개 공유 지표. 중복 구현 금지.
 전체 목록: `src/market/indicators/__init__.py` 참조.
+
+**Catalog 기반 탐색 (권장):**
+
+```bash
+uv run mcbot catalog indicators --unused --potential high  # 미사용 고잠재력 지표 우선 검토
+uv run mcbot catalog indicator-show {id}                   # 상세: alpha potential, notes, params
+```
+
+미사용 지표를 우선 활용하여 참신성을 확보한다. 신규 지표 구현 전 Catalog 확인 필수.
 
 #### 4-D. 설계 문서 작성
 
@@ -695,7 +715,8 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 - [ ] 비용 추정: 연간 거래비용/총수익 < 30%
 - [ ] ShortMode + TF 적합성 확인
 - [ ] 활성 전략 상관관계 평가됨 (`pipeline list --status ACTIVE`)
-- [ ] 지표 `src/market/indicators/`에서 선택
+- [ ] 지표 `src/market/indicators/`에서 선택 (Catalog 미사용 고잠재력 우선)
+- [ ] Data Catalog 탐색됨 (`catalog indicators --unused`, `catalog list`, `catalog failure-patterns`)
 - [ ] 설계 문서 17개 항목 작성됨
 - [ ] Derivatives 필요 시 Silver _deriv 가용성 확인
 - [ ] On-chain/Sentiment 데이터 활용 여부 검토 (22개 데이터셋 가용)

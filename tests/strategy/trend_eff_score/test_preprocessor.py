@@ -33,7 +33,9 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 
 class TestPreprocess:
-    def test_output_columns(self, sample_ohlcv_df: pd.DataFrame, config: TrendEffScoreConfig) -> None:
+    def test_output_columns(
+        self, sample_ohlcv_df: pd.DataFrame, config: TrendEffScoreConfig
+    ) -> None:
         result = preprocess(sample_ohlcv_df, config)
         required = {
             "returns",

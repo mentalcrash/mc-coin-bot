@@ -812,9 +812,7 @@ class TestWsStatusCallback:
         """첫 데이터 수신 시 on_ws_status(connected=True) 호출."""
         ts1 = _TS_BASE
 
-        exchange = MockExchange(
-            [[_candle(ts1, 100, 105, 95, 102, 1000)]]
-        )
+        exchange = MockExchange([[_candle(ts1, 100, 105, 95, 102, 1000)]])
         client = _make_mock_client(exchange)
 
         callback = MagicMock()

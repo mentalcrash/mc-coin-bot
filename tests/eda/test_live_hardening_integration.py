@@ -333,9 +333,7 @@ class TestReconcilerBalanceSync:
         """입금 시 balance drift >= 2% → RM peak sync 스킵 (peak 오염 방지)."""
         client = _make_mock_futures_client()
         # PM equity=10000, 거래소=12000 (입금 $2000) → drift 20%
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 12000.0, "free": 11500.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 12000.0, "free": 11500.0}})
 
         config = _make_config()
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
@@ -362,9 +360,7 @@ class TestReconcilerBalanceSync:
         """drift < 2% → RM peak sync 정상 수행."""
         client = _make_mock_futures_client()
         # PM equity=10000, 거래소=10100 → drift 1%
-        client.fetch_balance = AsyncMock(
-            return_value={"USDT": {"total": 10100.0, "free": 9600.0}}
-        )
+        client.fetch_balance = AsyncMock(return_value={"USDT": {"total": 10100.0, "free": 9600.0}})
 
         config = _make_config()
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)

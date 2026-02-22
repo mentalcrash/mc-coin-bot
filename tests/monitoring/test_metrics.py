@@ -1432,9 +1432,7 @@ class TestStrategyPnlAttribution:
         after_profit = _sample(
             "mcbot_strategy_realized_profit_usdt_total", {"strategy": "anchor-mom"}
         )
-        after_loss = _sample(
-            "mcbot_strategy_realized_loss_usdt_total", {"strategy": "anchor-mom"}
-        )
+        after_loss = _sample("mcbot_strategy_realized_loss_usdt_total", {"strategy": "anchor-mom"})
         assert after_profit is not None
         assert after_profit >= before_profit + 300.0
         assert after_loss is not None

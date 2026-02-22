@@ -1,0 +1,15 @@
+id: 70
+title: 'Drawdown 회복 시그널: 극저빈도 + MDD 폭발'
+body: 'DD-Recovery-Phase 전략: 드로다운 후 50% 회복 시 진입. Best Sharpe 0.75 (DOGE). 3/5 에셋 MDD
+  > 50% (BTC 55.8%, BNB 58.5%, SOL 52.3%). 회복 시점 시그널이 이미 반등 후 진입해 추가 수익 제한, 하락장에서
+  MDD 방어 불가.'
+category: strategy-design
+tags:
+- drawdown
+- behavioral
+- mdd
+strategies:
+- dd-recovery-phase
+timeframes:
+- 1D
+added_at: '2026-02-22'

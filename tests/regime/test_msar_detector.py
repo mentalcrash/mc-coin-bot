@@ -210,8 +210,11 @@ class TestConvergenceTracking:
     def test_convergence_rate_initial(self) -> None:
         """학습 전 convergence_rate = 1.0."""
         cfg = MSARDetectorConfig(
-            k_regimes=2, order=1, min_train_window=120,
-            sliding_window=0, switching_ar=False,
+            k_regimes=2,
+            order=1,
+            min_train_window=120,
+            sliding_window=0,
+            switching_ar=False,
         )
         detector = MSARDetector(cfg)
         assert detector.convergence_rate == 1.0
@@ -220,8 +223,12 @@ class TestConvergenceTracking:
     def test_convergence_rate_after_training(self) -> None:
         """학습 후 convergence_rate가 0~1 범위."""
         cfg = MSARDetectorConfig(
-            k_regimes=2, order=1, min_train_window=120,
-            retrain_interval=50, sliding_window=0, switching_ar=False,
+            k_regimes=2,
+            order=1,
+            min_train_window=120,
+            retrain_interval=50,
+            sliding_window=0,
+            switching_ar=False,
         )
         detector = MSARDetector(cfg)
         closes = _make_trending_series(300)

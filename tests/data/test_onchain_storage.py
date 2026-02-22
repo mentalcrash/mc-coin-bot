@@ -15,11 +15,13 @@ from src.data.onchain.storage import OnchainBronzeStorage, OnchainSilverProcesso
 def _make_stablecoin_df(n: int = 5) -> pd.DataFrame:
     """테스트용 stablecoin DataFrame 생성."""
     dates = pd.date_range("2024-01-01", periods=n, freq="D", tz="UTC")
-    return pd.DataFrame({
-        "date": dates,
-        "total_circulating_usd": [100_000_000_000 + i * 1_000_000 for i in range(n)],
-        "source": ["defillama"] * n,
-    })
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "total_circulating_usd": [100_000_000_000 + i * 1_000_000 for i in range(n)],
+            "source": ["defillama"] * n,
+        }
+    )
 
 
 def _make_settings(tmp_path: Path) -> IngestionSettings:
@@ -68,11 +70,13 @@ class TestOnchainBronzeStorage:
 
         # Append with overlap (last 2 of df1 + 2 new)
         dates = pd.date_range("2024-01-02", periods=4, freq="D", tz="UTC")
-        df2 = pd.DataFrame({
-            "date": dates,
-            "total_circulating_usd": [200_000_000_000 + i * 1_000_000 for i in range(4)],
-            "source": ["defillama"] * 4,
-        })
+        df2 = pd.DataFrame(
+            {
+                "date": dates,
+                "total_circulating_usd": [200_000_000_000 + i * 1_000_000 for i in range(4)],
+                "source": ["defillama"] * 4,
+            }
+        )
         storage.append(df2, "defillama", "stablecoin_total", dedup_col="date")
 
         loaded = storage.load("defillama", "stablecoin_total")
@@ -133,11 +137,13 @@ class TestOnchainSilverProcessor:
         # Create df with duplicate dates
         dates = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC")
         dup_dates = [*list(dates), dates[1]]  # duplicate Jan 2
-        df = pd.DataFrame({
-            "date": dup_dates,
-            "total_circulating_usd": [100, 200, 300, 250],
-            "source": ["defillama"] * 4,
-        })
+        df = pd.DataFrame(
+            {
+                "date": dup_dates,
+                "total_circulating_usd": [100, 200, 300, 250],
+                "source": ["defillama"] * 4,
+            }
+        )
         bronze.save(df, "defillama", "stablecoin_dedup")
 
         path = processor.process("defillama", "stablecoin_dedup")
@@ -156,11 +162,13 @@ class TestOnchainSilverProcessor:
             pd.Timestamp("2024-01-01", tz="UTC"),
             pd.Timestamp("2024-01-02", tz="UTC"),
         ]
-        df = pd.DataFrame({
-            "date": dates,
-            "total_circulating_usd": [300, 100, 200],
-            "source": ["defillama"] * 3,
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "total_circulating_usd": [300, 100, 200],
+                "source": ["defillama"] * 3,
+            }
+        )
         bronze.save(df, "defillama", "stablecoin_sort")
 
         processor.process("defillama", "stablecoin_sort")
@@ -204,11 +212,13 @@ class TestOnchainSilverProcessor:
         processor = OnchainSilverProcessor(settings, bronze)
 
         dates = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC")
-        df = pd.DataFrame({
-            "date": dates,
-            "value": [Decimal(72), Decimal(68), Decimal(75)],
-            "source": ["test"] * 3,
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "value": [Decimal(72), Decimal(68), Decimal(75)],
+                "source": ["test"] * 3,
+            }
+        )
         bronze.save(df, "test_src", "decimal_test")
         processor.process("test_src", "decimal_test")
 

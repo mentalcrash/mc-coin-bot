@@ -112,9 +112,9 @@ def main() -> None:
     all_results: dict[str, list[dict[str, Any]]] = {}
 
     for strat in STRATEGIES:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Strategy: {strat}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         results = []
         for symbol in SYMBOLS:

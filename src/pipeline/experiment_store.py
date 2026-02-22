@@ -87,7 +87,9 @@ class ExperimentStore:
         self._cache[strategy_name] = records
         return records
 
-    def get_latest(self, strategy_name: str, phase_id: str | None = None) -> ExperimentRecord | None:
+    def get_latest(
+        self, strategy_name: str, phase_id: str | None = None
+    ) -> ExperimentRecord | None:
         """가장 최근 실험 기록 반환.
 
         Args:

@@ -178,9 +178,7 @@ class StrategyPod:
         """시그널 발행 가능 여부 (active + 에셋 존재)."""
         if not self.is_active:
             return False
-        return not (
-            self._asset_selector is not None and self._asset_selector.all_excluded
-        )
+        return not (self._asset_selector is not None and self._asset_selector.all_excluded)
 
     @property
     def warmup_periods(self) -> int:

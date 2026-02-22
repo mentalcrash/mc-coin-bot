@@ -116,7 +116,10 @@ class DistributionDriftDetector:
             self._recent_returns = self._recent_returns[-self._window_size :]
 
         # 최소 샘플 미달 → NORMAL
-        if len(self._recent_returns) < _MIN_RECENT_SAMPLES or len(self._reference_returns) < _MIN_RECENT_SAMPLES:
+        if (
+            len(self._recent_returns) < _MIN_RECENT_SAMPLES
+            or len(self._reference_returns) < _MIN_RECENT_SAMPLES
+        ):
             return DriftCheckResult(
                 severity=DriftSeverity.NORMAL,
                 ks_statistic=0.0,

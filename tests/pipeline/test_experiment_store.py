@@ -120,15 +120,9 @@ class TestExperimentStore:
 
     def test_get_latest_filtered(self, tmp_path: Path) -> None:
         store = ExperimentStore(base_dir=tmp_path)
-        r1 = _make_record(
-            phase="P4", ts=datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC)
-        )
-        r2 = _make_record(
-            phase="P5", ts=datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)
-        )
-        r3 = _make_record(
-            phase="P4", ts=datetime(2026, 1, 20, 12, 0, 0, tzinfo=UTC)
-        )
+        r1 = _make_record(phase="P4", ts=datetime(2026, 1, 10, 8, 0, 0, tzinfo=UTC))
+        r2 = _make_record(phase="P5", ts=datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC))
+        r3 = _make_record(phase="P4", ts=datetime(2026, 1, 20, 12, 0, 0, tzinfo=UTC))
         store.save(r1)
         store.save(r2)
         store.save(r3)

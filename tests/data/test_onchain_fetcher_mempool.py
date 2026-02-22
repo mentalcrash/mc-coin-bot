@@ -60,7 +60,14 @@ class TestFetchMempoolMining:
         df = await fetcher.fetch_mempool_mining()
 
         assert len(df) == 2
-        expected_cols = ["timestamp", "avg_hashrate", "difficulty", "block_height", "adjustment", "source"]
+        expected_cols = [
+            "timestamp",
+            "avg_hashrate",
+            "difficulty",
+            "block_height",
+            "adjustment",
+            "source",
+        ]
         assert list(df.columns) == expected_cols
 
     @pytest.mark.asyncio()
@@ -157,9 +164,7 @@ class TestFetchMempoolMining:
         assert df["source"].iloc[0] == "mempool_space"
 
     @pytest.mark.asyncio()
-    async def test_url_with_interval(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_url_with_interval(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """올바른 URL과 interval 파라미터로 호출."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"hashrates": [], "difficulty": []}
@@ -185,9 +190,7 @@ class TestFetchMempoolMining:
         assert called_url.endswith("/all")
 
     @pytest.mark.asyncio()
-    async def test_difficulty_merge(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_difficulty_merge(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """difficulty 매칭 — 같은 timestamp 시 block_height/adjustment 포함."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -232,9 +235,7 @@ class TestFetchMempoolMining:
         assert df["avg_hashrate"].iloc[0] == Decimal(200)
 
     @pytest.mark.asyncio()
-    async def test_hashrates_only(
-        self, fetcher: OnchainFetcher, mock_client: AsyncMock
-    ) -> None:
+    async def test_hashrates_only(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
         """difficulty 없이 hashrates만 있는 경우."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
