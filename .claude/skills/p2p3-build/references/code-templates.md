@@ -1,4 +1,4 @@
-# Code Templates — p2-implement
+# Code Templates — p2p3-build
 
 > 각 파일의 완전한 코드 템플릿. `{placeholder}`는 전략별 값으로 대체.
 

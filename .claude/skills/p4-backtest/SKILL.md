@@ -25,7 +25,7 @@ argument-hint: <strategy-name> [--from p4a|p4b]
 - 단순 threshold 비교가 아닌 **경제적 의미 해석** — 숫자 뒤의 이유를 찾는다
 - FAIL 시 **구체적 사유 + 수정 방향** 제시 (단순 "FAIL" 판정 금지)
 - Phase 간 **결과 일관성 추적** — P4A Sharpe -> P4B OOS Sharpe -> P5/P6 흐름 확인
-- 모든 결과를 **CTREND 선례**와 비교하여 상대적 위치 파악
+- Phase 간 **결과 일관성 추적** — 숫자의 절대값보다 Phase 간 감쇠 패턴이 중요
 
 ---
 
@@ -56,7 +56,7 @@ ls src/strategy/{name_underscore}/  # config.py, preprocessor.py, signal.py, str
 cat strategies/{strategy_name}.yaml  # phases.P3.status: PASS 확인
 ```
 
-YAML 없으면 `uv run mcbot pipeline migrate`. P3 PASS 없으면 `/p3-audit` 먼저 실행.
+YAML 없으면 `uv run mcbot pipeline migrate`. P3 PASS 없으면 `/p2p3-build --from p3` 먼저 실행.
 
 ### 0-3. Silver 데이터 존재
 
@@ -120,15 +120,6 @@ Sharpe/Sortino/Calmar, CAGR, MDD, Trades, Win Rate, Profit Factor, Alpha/Beta(vs
 [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) 참조.
 핵심: Best Asset 순서 패턴 (SOL>BTC>BNB>ETH>DOGE가 추세추종 일반), Beta < 0.3이면 BTC 독립 알파.
 
-### CTREND 비교 (참조점)
-
-| 지표 | CTREND Best (SOL) | 현재 전략 Best |
-|------|-------------------|---------------|
-| Sharpe | 2.05 | ? |
-| CAGR | +97.8% | ? |
-| MDD | -27.7% | ? |
-| Trades | 288 | ? |
-
 ### YAML 갱신 (필수)
 
 ```bash
@@ -165,11 +156,11 @@ uv run mcbot backtest validate \
 
 ### 판정 기준
 
-| 조건 | 기준 | CTREND 참조 |
-|------|------|------------|
-| OOS Sharpe | >= 0.2 | 1.78 |
-| Decay | < 60% | 33.7% |
-| OOS Trades | >= 15 | -- |
+| 조건 | 기준 |
+|------|------|
+| OOS Sharpe | >= 0.2 |
+| Decay | < 60% |
+| OOS Trades | >= 15 |
 
 상세: [references/phase-criteria.md](references/phase-criteria.md)
 
@@ -252,7 +243,7 @@ uv run mcbot pipeline report
 
 ## 참조 문서
 
-- [references/phase-criteria.md](references/phase-criteria.md) — Phase별 정량 기준 + CTREND 비교 + CLI 명령
+- [references/phase-criteria.md](references/phase-criteria.md) — Phase별 정량 기준 + CLI 명령
 - [references/quant-interpretation-guide.md](references/quant-interpretation-guide.md) — 시니어 퀀트 해석 패턴
 - [references/report-template.md](references/report-template.md) — 리포트 출력 형식
 - `pipeline report` — 전략 상황판 (CLI)
