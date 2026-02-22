@@ -1,19 +1,9 @@
 # CLAUDE.md
 
-이 파일은 Claude Code가 이 저장소의 코드를 작업할 때 참고하는 가이드입니다.
+**MC Coin Bot** — EDA 기반 암호화폐 퀀트 트레이딩 시스템.
 
----
-
-## 프로젝트 개요
-
-**MC Coin Bot**은 이벤트 기반 아키텍처(EDA)로 구축된 암호화폐 퀀트 트레이딩 시스템입니다.
-
-**핵심 철학:**
-
-- **이벤트 기반 아키텍처:** 모든 컴포넌트는 EventBus를 통해 이벤트로 통신
-- **무상태 전략 / 유상태 실행:** 전략은 시그널만 생성, 실행 시스템이 포지션·리스크·주문 관리
-- **안전 우선 (PM/RM/OMS):** Portfolio Manager → Risk Manager → OMS 3단계 방어
-- **멱등성 & Fail-Safe:** 모든 주문은 client order ID로 멱등하게 처리
+핵심 철학: 이벤트 기반(EventBus) 통신, 무상태 전략 / 유상태 실행,
+PM→RM→OMS 3단계 방어, client order ID 멱등성.
 
 ---
 
@@ -56,67 +46,9 @@
 - Type hints 모든 함수에 필수
 - .env 파일 절대 커밋 금지
 - 모든 전략은 expected values 포함한 백테스트 필수
-
-## Zero-Tolerance Lint Policy
-
-모든 코드는 Ruff/Pyright 에러 0개를 유지해야 합니다.
-
-```bash
-uv run ruff check --fix . && uv run ruff format .
-uv run pyright src/
-uv run pytest --cov=src
-```
-
-> `# noqa`, `# type: ignore` 사용 금지 (정당한 사유 없이)
-
-## Markdown Lint Policy
-
-모든 Markdown 문서는 markdownlint 검사를 통과해야 합니다.
-
-```bash
-markdownlint-cli2 --fix "**/*.md"
-```
-
----
-
-## 환경 변수
-
-`.env.example`을 `.env`로 복사 후 설정:
-
-```bash
-# Binance API (필수)
-BINANCE_API_KEY=
-BINANCE_SECRET=
-
-# Discord Bot (필수 — 알림 + 양방향 명령)
-DISCORD_BOT_TOKEN=
-DISCORD_GUILD_ID=
-DISCORD_TRADE_LOG_CHANNEL_ID=
-DISCORD_ALERTS_CHANNEL_ID=
-DISCORD_DAILY_REPORT_CHANNEL_ID=
-
-# Data Directories (선택 — 기본값 있음)
-# BRONZE_DIR=data/bronze
-# SILVER_DIR=data/silver
-# LOG_DIR=logs
-```
-
----
-
-## Rules Navigation
-
-상세 규칙은 `.claude/rules/` 참조:
-
-| File | Scope | Description |
-|------|-------|-------------|
-| [commands.md](.claude/rules/commands.md) | `**` | CLI 명령어 (ingest/backtest/eda/live/pipeline/audit/catalog) |
-| [lint.md](.claude/rules/lint.md) | `src/**`, `tests/**` | Ruff/Pyright 규칙 + 빈출 위반 해결법 |
-| [strategy.md](.claude/rules/strategy.md) | `src/strategy/**` | BaseStrategy API, Registry, Gotchas |
-| [exchange.md](.claude/rules/exchange.md) | `src/exchange/**` | CCXT + BinanceFuturesClient + 예외 계층 |
-| [data.md](.claude/rules/data.md) | `src/data/**`, `src/catalog/**` | 메달리온 (OHLCV + Derivatives + Catalog) |
-| [models.md](.claude/rules/models.md) | `src/models/**` | Pydantic V2 규칙 |
-| [backtest.md](.claude/rules/backtest.md) | `src/backtest/**` | VBT + TieredValidator + Advisor |
-| [testing.md](.claude/rules/testing.md) | `tests/**` | pytest + EDA 이벤트 테스트 패턴 |
+- Zero-Tolerance Lint: → [lint.md](.claude/rules/lint.md)
+- Markdown Lint: `markdownlint-cli2 --fix "**/*.md"`
+- 환경 변수: `.env.example` 참조
 
 ---
 
@@ -127,7 +59,7 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=
 ```
 [Backtest] 1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
 [Live]     WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
-[Multi-TF] 1m → MultiTimeframeCandleAggregator → BAR(4h,1D,...) → Orchestrator(per-pod TF routing) → SIGNAL → PM
+[Multi-TF] 1m → MultiTimeframeCandleAggregator → BAR(4h,1D,...) → Orchestrator → SIGNAL → PM
 ```
 
 ### 의존성 흐름 (단방향)
@@ -138,19 +70,10 @@ CLI → EDA, Backtest, Pipeline → Strategy, Market, Regime → Data, Exchange,
 Catalog → (standalone, Data/EDA에서 선택적 참조)
 ```
 
-### 핵심 금지 사항
-
-- `float` for prices/amounts → use `Decimal`
-- `iterrows()`, loops on DataFrame → use vectorized ops
-- `inplace=True` → use immutable operations
-- `except:` → use specific exceptions
-
 ## Gotchas
 
 - Binance API rate limit: 1200 req/min (초과 시 IP 밴)
-- 소수점 정밀도: Decimal 모듈 사용 필수, float 금지
 - `ccxt.RateLimitExceeded`는 `NetworkError` 서브클래스 → except 순서 주의
 - EventBus `flush()` 호출 필수 (bar-by-bar 동기 처리 보장)
-- `TYPE_CHECKING` import는 런타임 사용 불가
 - Equity 계산: `cash + long_notional - short_notional` (notional에 unrealized 포함)
 - 복잡한 아키텍처 변경 전 반드시 clarifying questions 요청할 것

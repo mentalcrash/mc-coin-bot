@@ -3,233 +3,36 @@ paths:
   - "**"
 ---
 
-# CLI Commands
+# CLI Commands (Quick Reference)
 
-## Environment Setup
+## Setup
 
 ```bash
-# Install dependencies
 uv sync --group dev --group research
-
-# Activate virtual environment
-source .venv/bin/activate
 ```
 
-## Code Quality
+## Quality Gates
 
 ```bash
-# Lint check
-uv run ruff check .
-
-# Auto-fix lint issues
 uv run ruff check --fix . && uv run ruff format .
-
-# Type check (strict mode)
 uv run pyright src/
-```
-
-## Testing
-
-```bash
-# Run all tests (기본: -n auto 병렬 + 60s timeout)
 uv run pytest
-
-# 순차 실행 (디버깅, pdb 사용 시)
-uv run pytest -p no:xdist
-
-# With coverage
-uv run pytest --cov=src --cov-report=html
-
-# Specific test file
-uv run pytest tests/unit/test_portfolio.py
-
-# Pattern matching
-uv run pytest -k "test_tsmom"
-
-# 마커 기반 필터링 (자동 마커: conftest.py 디렉토리 매핑)
-uv run pytest -m strategy          # 전략 테스트만
-uv run pytest -m unit              # 단위 테스트만
-uv run pytest -m "not slow"        # 느린 테스트 제외
-uv run pytest -m "unit or strategy" # 복합 필터
 ```
 
-## Data Ingestion (Medallion Architecture)
+## EDA Run
 
 ```bash
-# Bronze → Silver full pipeline (OHLCV 1m)
-uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
-
-# Individual layers
-uv run mcbot ingest bronze BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest silver BTC/USDT --year 2024 --year 2025
-
-# Validate data integrity
-uv run mcbot ingest validate data/silver/BTC_USDT_1m_2025.parquet
-
-# Bulk download (top N symbols)
-uv run mcbot ingest bulk-download --top 100 --year 2024 --year 2025
-
-# Data status
-uv run mcbot ingest info
-
-# Derivatives (Funding Rate, OI, LS Ratio, Taker Ratio)
-uv run mcbot ingest derivatives pipeline BTC/USDT --year 2024 --year 2025
-uv run mcbot ingest derivatives batch                        # All 16 assets (2020-2026)
-uv run mcbot ingest derivatives batch --tier 1 -y 2026       # Tier 1 (8) — full 6-type
-uv run mcbot ingest derivatives batch --tier 2 --fr-only     # Tier 2 (8) — FR only
-uv run mcbot ingest derivatives batch --dry-run              # Preview targets
-uv run mcbot ingest derivatives info BTC/USDT --year 2024 --year 2025
-
-# On-chain (DeFiLlama, Coin Metrics, Fear & Greed, Blockchain.com, Etherscan, mempool)
-uv run mcbot ingest onchain pipeline defillama stablecoin_total       # Single dataset
-uv run mcbot ingest onchain pipeline coinmetrics btc_metrics
-uv run mcbot ingest onchain batch --type all                          # All 22 datasets
-uv run mcbot ingest onchain batch --type stablecoin                   # By category
-uv run mcbot ingest onchain batch --type coinmetrics
-uv run mcbot ingest onchain batch --dry-run                           # Preview targets
-uv run mcbot ingest onchain info                                      # Data inventory
-uv run mcbot ingest onchain info --type sentiment                     # By category
-
-# Macro (FRED, yfinance, CoinGecko — 15 datasets, GLOBAL scope)
-uv run mcbot ingest macro pipeline fred dxy                           # FRED single series
-uv run mcbot ingest macro pipeline yfinance spy                       # yfinance single ticker
-uv run mcbot ingest macro pipeline coingecko global_metrics           # CoinGecko
-uv run mcbot ingest macro batch --type fred                           # FRED all (7)
-uv run mcbot ingest macro batch --type yfinance                       # yfinance all (6)
-uv run mcbot ingest macro batch --type all                            # All (15)
-uv run mcbot ingest macro info                                        # Data inventory
-
-# Options (Deribit — 6 datasets, GLOBAL scope)
-uv run mcbot ingest options pipeline deribit btc_dvol                 # Single dataset
-uv run mcbot ingest options batch                                     # All (6)
-uv run mcbot ingest options info                                      # Data inventory
-
-# Extended Derivatives (Coinalyze + Hyperliquid — 10 datasets, PER-ASSET scope)
-uv run mcbot ingest deriv-ext pipeline coinalyze btc_agg_oi           # Single dataset
-uv run mcbot ingest deriv-ext pipeline hyperliquid hl_asset_contexts
-uv run mcbot ingest deriv-ext batch --type coinalyze                  # Coinalyze (8)
-uv run mcbot ingest deriv-ext batch --type hyperliquid                # Hyperliquid (2)
-uv run mcbot ingest deriv-ext batch --type all                        # All (10)
-uv run mcbot ingest deriv-ext info                                    # Data inventory
+uv run mcbot eda run config/default.yaml          # Backtest
+uv run mcbot eda run-live config/paper.yaml --mode paper  # Paper trading
 ```
 
-## Backtest (VBT — Vectorized)
+## Full CLI Reference
 
 ```bash
-# List available strategies
-uv run mcbot backtest strategies
-
-# Strategy info
-uv run mcbot backtest info
-
-# Run backtest (YAML config 기반)
-uv run mcbot backtest run config/default.yaml
-uv run mcbot backtest run config/default.yaml --report    # QuantStats HTML
-uv run mcbot backtest run config/default.yaml --advisor   # Strategy Advisor
-uv run mcbot backtest run config/default.yaml -V          # Verbose
-
-# Parameter optimization (VW-TSMOM specific)
-uv run mcbot backtest optimize BTC/USDT
-
-# Overfitting validation
-uv run mcbot backtest validate -m quick       # IS/OOS Split
-uv run mcbot backtest validate -m milestone   # Walk-Forward (5-fold)
-uv run mcbot backtest validate -m final       # CPCV + DSR + PBO
-
-# Signal diagnosis
-uv run mcbot backtest diagnose BTC/USDT -s tsmom
-```
-
-## EDA Backtest (Event-Driven — Live Parity)
-
-```bash
-# EDA backtest (1m → target TF aggregation, single/multi auto-detect)
-uv run mcbot eda run config/default.yaml
-uv run mcbot eda run config/default.yaml --report         # QuantStats
-uv run mcbot eda run config/default.yaml --mode shadow    # Signal logging only
-uv run mcbot eda run config/default.yaml -V               # Verbose
-```
-
-## Live Trading
-
-```bash
-# Paper mode — WebSocket real-time data + simulated execution
-uv run mcbot eda run-live config/paper.yaml --mode paper
-
-# Shadow mode — signal logging only, no execution
-uv run mcbot eda run-live config/paper.yaml --mode shadow
-
-# Live mode — Binance USDT-M Futures real orders (Hedge Mode)
-# ⚠️ Real funds! Confirmation prompt will appear.
-uv run mcbot eda run-live config/paper.yaml --mode live
-
-# Options
-# --db-path <path>       SQLite path for state persistence
-# -V / --verbose         Verbose output
-```
-
-## Pipeline Management
-
-```bash
-# Strategy status overview
-uv run mcbot pipeline status
-uv run mcbot pipeline table             # Full gate progress table
-uv run mcbot pipeline report            # Auto-generate dashboard
-uv run mcbot pipeline list              # Strategy list with filters
-uv run mcbot pipeline show ctrend       # Strategy details
-
-# Strategy lifecycle
-uv run mcbot pipeline create            # Create new strategy YAML
-uv run mcbot pipeline record            # Record gate result
-uv run mcbot pipeline update-status     # Change strategy status
-
-# Lessons management (30 lessons in lessons/*.yaml)
-uv run mcbot pipeline lessons-list                      # All lessons
-uv run mcbot pipeline lessons-list -c strategy-design   # Category filter
-uv run mcbot pipeline lessons-list -t ML                # Tag filter
-uv run mcbot pipeline lessons-list -s ctrend            # Strategy filter
-uv run mcbot pipeline lessons-list --tf 1H              # Timeframe filter
-uv run mcbot pipeline lessons-show 1                    # Lesson details
-uv run mcbot pipeline lessons-add --title "제목" --body "설명" -c strategy-design -t tag1
-```
-
-## Data Catalog
-
-```bash
-# Dataset 목록
-uv run mcbot catalog list                      # 전체 목록 (75 datasets)
-uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
-uv run mcbot catalog list --group macro_rates  # 그룹 필터 (stablecoin, tvl, macro_rates, macro_volatility, ...)
-
-# Dataset 상세
-uv run mcbot catalog show btc_metrics          # 상세 (columns, enrichment, strategy_hints)
-uv run mcbot catalog show fear_greed
-```
-
-## Audit
-
-```bash
-# Snapshots
-uv run mcbot audit list                         # All snapshots
-uv run mcbot audit show 2026-02-13              # Specific snapshot
-uv run mcbot audit latest                       # Latest snapshot
-uv run mcbot audit trend                        # Metric trends
-
-# Findings
-uv run mcbot audit findings                     # All findings
-uv run mcbot audit findings --status open       # Open findings
-uv run mcbot audit findings --severity critical # Critical findings
-uv run mcbot audit finding-show 1               # Finding details
-uv run mcbot audit resolve-finding 1            # Resolve finding
-
-# Actions
-uv run mcbot audit actions                      # All actions
-uv run mcbot audit actions --priority P0        # Urgent actions
-uv run mcbot audit action-show 1                # Action details
-uv run mcbot audit update-action 1 --status completed  # Complete action
-
-# Create new entries
-uv run mcbot audit add-finding                  # Add finding
-uv run mcbot audit add-action                   # Add action
-uv run mcbot audit create-snapshot              # Create snapshot from YAML
+uv run mcbot --help                # Top-level commands
+uv run mcbot ingest --help         # Data ingestion (Bronze/Silver/Derivatives/Onchain/Macro/Options/DerivExt)
+uv run mcbot backtest --help       # VBT backtest + validation + optimization
+uv run mcbot pipeline --help       # Strategy lifecycle + lessons
+uv run mcbot catalog --help        # Data catalog (75 datasets)
+uv run mcbot audit --help          # Architecture audit
 ```

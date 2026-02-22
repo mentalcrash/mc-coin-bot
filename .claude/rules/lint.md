@@ -16,73 +16,45 @@ paths:
 
 | # | Rule | Check |
 |---|------|-------|
-| 1 | Import 순서: StdLib → Third Party → `src.*` | ✓ |
-| 2 | 미사용 import/변수 없음 (F401, F841) | ✓ |
-| 3 | Double quotes (`"`) 사용 | ✓ |
-| 4 | 암시적 문자열 연결 금지 (ISC001) | ✓ |
-| 5 | `inplace=True` 금지 (PD002) | ✓ |
-| 6 | `except:` 금지 → 구체적 예외 (TRY002) | ✓ |
-| 7 | `async def` 내 블로킹 호출 금지 (ASYNC) | ✓ |
-| 8 | `os.path` 대신 `pathlib.Path` (PTH) | ✓ |
-| 9 | `len(x) > 0` → `if x:` (SIM) | ✓ |
-| 10 | 모든 함수에 타입 힌트 | ✓ |
+| 1 | Import 순서: StdLib → Third Party → `src.*` | |
+| 2 | 미사용 import/변수 없음 (F401, F841) | |
+| 3 | Double quotes (`"`) 사용 | |
+| 4 | `inplace=True` 금지 (PD002) | |
+| 5 | `except:` 금지 → 구체적 예외 (TRY002) | |
+| 6 | `async def` 내 블로킹 호출 금지 (ASYNC) | |
+| 7 | `os.path` 대신 `pathlib.Path` (PTH) | |
+| 8 | 모든 함수에 타입 힌트 | |
 
 ## Pyright Checklist (Strict Mode)
 
-| # | Rule | Check |
-|---|------|-------|
-| 1 | 모든 함수 인자/반환 타입 명시 | ✓ |
-| 2 | `X \| None` 문법 사용 (Optional 아님) | ✓ |
-| 3 | 내장 제네릭: `list[]`, `dict[]` | ✓ |
-| 4 | None 가능 타입은 narrowing 후 사용 | ✓ |
-| 5 | 금융 데이터는 `Decimal` (float 금지) | ✓ |
+| # | Rule |
+|---|------|
+| 1 | 모든 함수 인자/반환 타입 명시 |
+| 2 | `X \| None` 문법 사용 (Optional 아님) |
+| 3 | 내장 제네릭: `list[]`, `dict[]` |
+| 4 | None 가능 타입은 narrowing 후 사용 |
+| 5 | 금융 데이터는 `Decimal` (float 금지) |
 
-## Example
+## Common Violations & Fixes
 
-```python
-# ✅ Good
-from decimal import Decimal
-from pathlib import Path
+| Rule | Fix |
+|------|-----|
+| PLR0912 (branches > 12) | 서브메서드 추출 |
+| PLR0913 (args > 5) | Config/dataclass로 묶기 |
+| C901 (complexity > 10) | 함수 분할, early return |
+| PLR0911 (returns 과다) | Guard clause → early return |
 
-from loguru import logger
+## Data Quality Rules (SSOT)
 
-from src.models import Order
-
-async def process_order(order_id: str, price: Decimal | None) -> None:
-    if price is None:
-        logger.warning(f"Order {order_id}: price is None")
-        return
-    await asyncio.sleep(0.1)
-    logger.info(f"Processing: {order_id} at {price}")
-
-
-# ❌ Bad
-import time  # ASYNC101
-from src.models import Order  # I001: wrong order
-
-def process(id):  # missing types
-    time.sleep(1)  # blocking in async context
-    print("done")  # use logger
-```
-
-## Common Lint Violations & Fixes
-
-| Rule | Description | Fix |
-|------|-------------|-----|
-| PLR0912 | Too many branches (> 12) | 서브메서드로 추출 |
-| PLR0913 | Too many arguments (> 5) | Config/dataclass 객체로 묶기 |
-| C901 | Too complex (> 10) | 함수 분할, early return 활용 |
-| PLR0911 | Too many return statements | Guard clause → early return |
+- `float` for prices/amounts → `Decimal` 필수
+- `iterrows()`, loops on DataFrame → vectorized ops
+- `inplace=True` → immutable operations
+- `except:` → specific exceptions
 
 ## Workflow
 
 ```bash
-# 1. Auto-fix style
 uv run ruff check --fix . && uv run ruff format .
-
-# 2. Type check
 uv run pyright src/
-
-# 3. Run tests
 uv run pytest --cov=src
 ```
