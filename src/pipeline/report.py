@@ -389,11 +389,15 @@ def _summarize_criteria(p: PhaseCriteria) -> str:
 
 
 def _phase_letter(record: StrategyRecord, pid: PhaseId) -> str:
-    """Phase 결과를 P/F/- 단일 문자로."""
+    """Phase 결과를 P/W/F/- 단일 문자로."""
     result = record.phases.get(pid)
     if result is None:
         return " "
-    return "P" if result.status == PhaseVerdict.PASS else "F"
+    if result.status == PhaseVerdict.PASS:
+        return "P"
+    if result.status == PhaseVerdict.WATCH:
+        return "W"
+    return "F"
 
 
 def _extract_note(record: StrategyRecord) -> str:
@@ -434,6 +438,8 @@ def _phase_badge(record: StrategyRecord, pid: PhaseId) -> str:
         return "[dim]-[/dim]"
     if result.status == PhaseVerdict.PASS:
         return "[green]P[/green]"
+    if result.status == PhaseVerdict.WATCH:
+        return "[yellow]W[/yellow]"
     return "[red]F[/red]"
 
 

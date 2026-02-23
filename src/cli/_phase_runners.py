@@ -37,11 +37,30 @@ _DEFAULT_END = datetime(2025, 12, 31, tzinfo=UTC)
 _DEFAULT_CAPITAL = Decimal(100_000)
 _RESULTS_DIR = Path("results")
 
-# Phase 4 PASS thresholds
+# Phase 4 PASS thresholds — Path A (기본)
 _P4_MIN_SHARPE = 0.7
 _P4_MIN_CAGR = 15.0
 _P4_MAX_MDD = 50.0
 _P4_MIN_TRADES = 30
+
+# Phase 4 PASS thresholds — Path B (high-Sharpe 대안)
+_P4_ALT_MIN_SHARPE = 1.0
+_P4_ALT_MIN_CAGR = 10.0
+
+# Phase 4 WATCH thresholds (salvageable)
+_P4_WATCH_MIN_SHARPE = 0.5
+_P4_WATCH_MIN_CAGR = 0.0  # > 0%
+_P4_WATCH_MAX_MDD = 50.0
+_P4_IMMEDIATE_FAIL_MDD = 60.0
+
+# Phase 4 WATCH immediate fail thresholds
+_P4_IMMEDIATE_FAIL_MIN_TRADES = 20
+
+# Phase 6B thresholds
+_P6B_PASS_MIN_OOS_SHARPE = 0.3
+_P6B_PASS_MIN_SUPPLEMENTARY = 2
+_P6B_WATCH_MIN_OOS_SHARPE = 0.2
+_P6B_WATCH_MIN_SUPPLEMENTARY = 1
 
 # Phase 5 plateau detection
 _PLATEAU_MIN_COUNT = 2
@@ -295,6 +314,116 @@ def _run_phase4_single(
         return entry
 
 
+def _p4_triage(
+    best_sharpe: float,
+    best_cagr: float,
+    best_mdd: float,
+    best_trades: int,
+    all_sharpes: list[float],
+) -> tuple[str, str, list[str]]:
+    """P4 결과를 PASS / WATCH / FAIL로 분류.
+
+    Returns:
+        (verdict, reason, improvement_hints) 튜플.
+        verdict: "PASS" | "WATCH" | "FAIL"
+    """
+    hints: list[str] = []
+
+    # 1. Immediate fail
+    if best_mdd > _P4_IMMEDIATE_FAIL_MDD:
+        return "FAIL", f"MDD {best_mdd:.1f}% > {_P4_IMMEDIATE_FAIL_MDD}% (파산 위험)", []
+    if all(s < 0 for s in all_sharpes):
+        return "FAIL", "전 에셋 Sharpe < 0 (구조적 결함)", []
+    if best_trades < _P4_IMMEDIATE_FAIL_MIN_TRADES and best_cagr <= 0:
+        return (
+            "FAIL",
+            f"Trades {best_trades} < {_P4_IMMEDIATE_FAIL_MIN_TRADES} AND CAGR {best_cagr:.1f}% <= 0",
+            [],
+        )
+
+    # 2. PASS check
+    common_ok = best_mdd < _P4_MAX_MDD and best_trades > _P4_MIN_TRADES
+    path_a = best_sharpe > _P4_MIN_SHARPE and best_cagr > _P4_MIN_CAGR
+    path_b = best_sharpe > _P4_ALT_MIN_SHARPE and best_cagr > _P4_ALT_MIN_CAGR
+    if common_ok and (path_a or path_b):
+        pass_path = "A" if path_a else "B"
+        return "PASS", f"Path {pass_path} 충족", []
+
+    # 3. WATCH check (salvageable)
+    if (
+        best_sharpe >= _P4_WATCH_MIN_SHARPE
+        and best_cagr > _P4_WATCH_MIN_CAGR
+        and best_mdd < _P4_WATCH_MAX_MDD
+    ):
+        reason_parts: list[str] = []
+        if best_sharpe <= _P4_MIN_SHARPE:
+            reason_parts.append(f"Sharpe {best_sharpe:.2f} (need >{_P4_MIN_SHARPE})")
+            hints.append("vol_target 조정 또는 에셋 필터링으로 Sharpe 개선 시도")
+        if best_cagr <= _P4_MIN_CAGR:
+            reason_parts.append(f"CAGR {best_cagr:+.1f}% (need >{_P4_MIN_CAGR}%)")
+            hints.append("진입 조건 완화 또는 leverage 조정으로 CAGR 개선 시도")
+        if best_trades <= _P4_MIN_TRADES:
+            reason_parts.append(f"Trades {best_trades} (need >{_P4_MIN_TRADES})")
+            hints.append("신호 빈도 증가: lookback 단축 또는 임계값 완화")
+        reason = "Close miss: " + ", ".join(reason_parts) if reason_parts else "조건 근소 미달"
+        return "WATCH", reason, hints
+
+    # 4. Hard fail
+    return "FAIL", f"Sharpe {best_sharpe:.2f}, CAGR {best_cagr:+.1f}% — 개선 여지 부족", []
+
+
+def _p6b_triage(  # pyright: ignore[reportUnusedFunction]
+    oos_sharpe: float,
+    supplementary_pass: int,
+    supplementary_total: int,
+) -> tuple[str, str, list[str]]:
+    """P6B 결과를 PASS / WATCH / FAIL로 분류.
+
+    Args:
+        oos_sharpe: CPCV OOS Sharpe
+        supplementary_pass: 보충 검증 통과 수
+        supplementary_total: 보충 검증 총 수
+
+    Returns:
+        (verdict, reason, hints) 튜플.
+    """
+    # 1. PASS
+    if oos_sharpe >= _P6B_PASS_MIN_OOS_SHARPE and supplementary_pass >= _P6B_PASS_MIN_SUPPLEMENTARY:
+        return (
+            "PASS",
+            f"OOS Sharpe {oos_sharpe:.2f} >= {_P6B_PASS_MIN_OOS_SHARPE}, supplementary {supplementary_pass}/{supplementary_total}",
+            [],
+        )
+
+    # 2. WATCH
+    watch_a = (
+        oos_sharpe >= _P6B_WATCH_MIN_OOS_SHARPE
+        and supplementary_pass >= _P6B_WATCH_MIN_SUPPLEMENTARY
+    )
+    watch_b = (
+        oos_sharpe >= _P6B_PASS_MIN_OOS_SHARPE
+        and supplementary_pass == _P6B_WATCH_MIN_SUPPLEMENTARY
+    )
+    if watch_a or watch_b:
+        hints: list[str] = []
+        if oos_sharpe < _P6B_PASS_MIN_OOS_SHARPE:
+            hints.append("WFA fold 수 확대 또는 훈련 윈도우 조정으로 OOS 개선")
+        if supplementary_pass < _P6B_PASS_MIN_SUPPLEMENTARY:
+            hints.append("PBO/DSR/MC 중 미통과 항목 개별 분석 필요")
+        return (
+            "WATCH",
+            f"OOS Sharpe {oos_sharpe:.2f}, supplementary {supplementary_pass}/{supplementary_total}",
+            hints,
+        )
+
+    # 3. FAIL
+    return (
+        "FAIL",
+        f"OOS Sharpe {oos_sharpe:.2f}, supplementary {supplementary_pass}/{supplementary_total}",
+        [],
+    )
+
+
 def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
     """Phase 4 결과를 전략 YAML에 기록."""
     from src.pipeline.models import AssetMetrics, PhaseId, PhaseVerdict, StrategyStatus
@@ -311,30 +440,48 @@ def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
     best_mdd = abs(best.get("max_drawdown") or 0)
     best_trades = best.get("total_trades") or 0
 
-    verdict = (
-        PhaseVerdict.PASS
-        if (
-            best_sharpe > _P4_MIN_SHARPE
-            and best_cagr > _P4_MIN_CAGR
-            and best_mdd < _P4_MAX_MDD
-            and best_trades > _P4_MIN_TRADES
-        )
-        else PhaseVerdict.FAIL
-    )
-
-    all_sharpes = [r.get("sharpe_ratio") or 0 for r in sorted_results]
+    all_sharpes: list[float] = [float(r.get("sharpe_ratio") or 0) for r in sorted_results]
     median_sharpe = round(statistics.median(all_sharpes), 2) if all_sharpes else 0.0
 
-    details = {
+    # Triage: PASS / WATCH / FAIL
+    verdict_str, verdict_reason, improvement_hints = _p4_triage(
+        best_sharpe,
+        best_cagr,
+        best_mdd,
+        best_trades,
+        all_sharpes,
+    )
+    verdict = PhaseVerdict(verdict_str)
+
+    # Pass path (표시용)
+    path_a = best_sharpe > _P4_MIN_SHARPE and best_cagr > _P4_MIN_CAGR
+    path_b = best_sharpe > _P4_ALT_MIN_SHARPE and best_cagr > _P4_ALT_MIN_CAGR
+    pass_path = "A" if path_a else ("B" if path_b else "—")
+
+    # Triage label
+    triage_label = (
+        "passed"
+        if verdict == PhaseVerdict.PASS
+        else ("salvageable" if verdict == PhaseVerdict.WATCH else "terminal")
+    )
+
+    details: dict[str, Any] = {
         "best_asset": best["symbol"],
         "sharpe": round(best_sharpe, 2),
         "cagr": round(best_cagr, 1),
         "mdd": round(best_mdd, 1),
         "trades": best_trades,
         "median_sharpe": median_sharpe,
+        "pass_path": pass_path,
+        "verdict_reason": verdict_reason,
+        "triage": triage_label,
     }
+    if improvement_hints:
+        details["improvement_hints"] = improvement_hints
+
     rationale = (
-        f"{best['symbol']} Sharpe {best_sharpe:.2f}, CAGR {best_cagr:+.1f}%, MDD -{best_mdd:.1f}%"
+        f"{best['symbol']} Sharpe {best_sharpe:.2f}, CAGR {best_cagr:+.1f}%, "
+        f"MDD -{best_mdd:.1f}% [Path {pass_path}] — {verdict_reason}"
     )
 
     store.record_phase(strategy_name, PhaseId.P4, verdict, details=details, rationale=rationale)

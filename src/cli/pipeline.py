@@ -54,6 +54,8 @@ def _phase_badge_colored(record: StrategyRecord, pid: PhaseId) -> str:
         return "[dim]-[/dim]"
     if result.status == PhaseVerdict.PASS:
         return "[green]P[/green]"
+    if result.status == PhaseVerdict.WATCH:
+        return "[yellow]W[/yellow]"
     return "[red]F[/red]"
 
 
@@ -411,7 +413,9 @@ def record(
     store.record_phase(name, pid, pv, details=details, rationale=rationale)
     console.print(f"[green]Recorded {phase} {verdict} for {name}[/green]")
 
-    if pv == PhaseVerdict.FAIL and not no_retire:
+    if pv == PhaseVerdict.WATCH:
+        console.print("[yellow]WATCH — status unchanged (TESTING 유지, 재시도 가능)[/yellow]")
+    elif pv == PhaseVerdict.FAIL and not no_retire:
         store.update_status(name, StrategyStatus.RETIRED)
         console.print("[yellow]Status → RETIRED[/yellow]")
     elif pv == PhaseVerdict.FAIL and no_retire:
@@ -1310,6 +1314,8 @@ def _print_strategy_table(records: list[StrategyRecord]) -> None:
         phase = str(r.current_phase) if r.current_phase else "-"
         if r.fail_phase:
             phase = f"{r.fail_phase} [red]FAIL[/red]"
+        elif r.watch_phase:
+            phase = f"{r.watch_phase} [yellow]WATCH[/yellow]"
         elif r.current_phase and r.next_phase:
             phase = f"{r.current_phase} → {r.next_phase}"
         table.add_row(
@@ -1346,6 +1352,8 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
     # Next phase info
     if r.fail_phase:
         console.print(f"[red]Pipeline: BLOCKED at {r.fail_phase}[/red]\n")
+    elif r.watch_phase:
+        console.print(f"[yellow]Pipeline: WATCH at {r.watch_phase} (재시도 가능)[/yellow]\n")
     elif r.next_phase:
         console.print(f"[yellow]Next Phase: {r.next_phase}[/yellow]\n")
     else:
@@ -1384,7 +1392,11 @@ def _print_strategy_detail(record: StrategyRecord) -> None:
         dt.add_column("Verdict")
         dt.add_column("Rationale")
         for d in r.decisions:
-            v_color = "green" if d.verdict == PhaseVerdict.PASS else "red"
+            v_color = (
+                "green"
+                if d.verdict == PhaseVerdict.PASS
+                else ("yellow" if d.verdict == PhaseVerdict.WATCH else "red")
+            )
             dt.add_row(
                 str(d.date), str(d.phase), f"[{v_color}]{d.verdict}[/{v_color}]", d.rationale
             )

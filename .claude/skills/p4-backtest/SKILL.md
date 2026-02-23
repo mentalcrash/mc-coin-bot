@@ -100,16 +100,28 @@ uv run mcbot backtest run {strategy_name} {SYMBOL} \
 
 Sharpe/Sortino/Calmar, CAGR, MDD, Trades, Win Rate, Profit Factor, Alpha/Beta(vs BTC B&H) -- 모두 `metrics.*` / `benchmark.*`에서 수집.
 
-### 판정 기준
+### 판정 기준 (3단계 Triage)
 
-**PASS 조건** (Best Asset 기준): Sharpe > 0.7, CAGR > 15%, MDD < 50%, Trades > 30
+**PASS 조건** (Best Asset 기준, OR 경로):
 
-**즉시 폐기** (전 에셋 해당 시):
+- **Path A**: Sharpe > 0.7 AND CAGR > 15%
+- **Path B**: Sharpe > 1.0 AND CAGR > 10%
+- **공통**: MDD < 50% AND Trades > 30
 
-1. MDD > 60% — 전 에셋
-1. Sharpe < 0 — 전 에셋
-1. Trades < 20 + 수익 음수
+**WATCH 조건** (salvageable — TESTING 유지):
+
+- Sharpe >= 0.5 AND CAGR > 0% AND MDD < 50%
+- PASS 미달이지만 파라미터 조정으로 개선 가능
+- `details.improvement_hints`에 구체적 개선 방향 기록
+
+**즉시 FAIL** (terminal — RETIRED):
+
+1. MDD > 60%
+1. 전 에셋 Sharpe < 0
+1. Trades < 20 + CAGR <= 0
 1. 80%+ 단일 거래 의존
+
+**Hard FAIL**: WATCH 조건도 미달 (Sharpe < 0.5 등)
 
 ### 비용 민감도
 

@@ -265,6 +265,35 @@ class TestRationaleFieldsRoundtrip:
         assert loaded.meta.rationale_references[0].type == RationaleRefType.PAPER
         assert loaded.meta.rationale_references[0].title == "Moskowitz 2012"
 
+    def test_watch_yaml_roundtrip(self, store: StrategyStore) -> None:
+        """WATCH YAML 직렬화/역직렬화."""
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="watch-test",
+                display_name="Watch Test",
+                category="Test",
+                timeframe="1D",
+                short_mode="DISABLED",
+                status=StrategyStatus.TESTING,
+                created_at=date(2026, 1, 1),
+            ),
+            phases={
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(
+                    status=PhaseVerdict.WATCH,
+                    date=date(2026, 1, 15),
+                    details={"triage": "salvageable", "verdict_reason": "Close miss"},
+                ),
+            },
+        )
+        store.save(record)
+        store._cache.clear()
+        loaded = store.load("watch-test")
+        assert loaded.phases[PhaseId.P4].status == PhaseVerdict.WATCH
+        assert loaded.watch_phase == "P4"
+        assert loaded.fail_phase is None
+        assert loaded.phases[PhaseId.P4].details["triage"] == "salvageable"
+
     def test_without_rationale_fields(self, store: StrategyStore) -> None:
         """기존 YAML (새 필드 없음) 하위호환."""
         record = StrategyRecord(

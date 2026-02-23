@@ -57,6 +57,7 @@ class PhaseVerdict(StrEnum):
     """Phase 판정 결과."""
 
     PASS = "PASS"
+    WATCH = "WATCH"
     FAIL = "FAIL"
 
 
@@ -185,7 +186,7 @@ class StrategyRecord(BaseModel):
             if result.status == PhaseVerdict.PASS:
                 last_pass = pid
             else:
-                break  # FAIL 만나면 중단
+                break  # FAIL/WATCH 만나면 중단
         return last_pass
 
     @computed_field  # type: ignore[prop-decorator]
@@ -195,6 +196,16 @@ class StrategyRecord(BaseModel):
         for pid in PHASE_ORDER:
             result = self.phases.get(pid)
             if result is not None and result.status == PhaseVerdict.FAIL:
+                return pid
+        return None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def watch_phase(self) -> str | None:
+        """WATCH 판정된 Phase (있으면)."""
+        for pid in PHASE_ORDER:
+            result = self.phases.get(pid)
+            if result is not None and result.status == PhaseVerdict.WATCH:
                 return pid
         return None
 

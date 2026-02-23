@@ -25,7 +25,7 @@ argument-hint: <strategy-name> [--from p5a|p5b|p6a|p6b]
 - 단순 threshold 비교가 아닌 **경제적 의미 해석** -- 숫자 뒤의 이유를 찾는다
 - FAIL 시 **구체적 사유 + 수정 방향** 제시 (단순 "FAIL" 판정 금지)
 - Phase 간 **결과 일관성 추적** -- P4 Sharpe -> P5A IS Sharpe -> P5B Plateau -> P6 WFA 흐름
-- 모든 결과를 **CTREND 선례**와 비교하여 상대적 위치 파악
+- Phase 간 **결과 일관성 추적** — 숫자의 절대값보다 Phase 간 감쇠 패턴이 중요
 
 ---
 
@@ -185,7 +185,7 @@ uv run mcbot pipeline phase5-stability {strategy_name} --json
 [references/quant-interpretation-guide.md](../p4-backtest/references/quant-interpretation-guide.md) 참조.
 핵심: 넓은 고원 = 로버스트, 좁은 봉우리 = 과적합 위험. vol_target Sharpe 불변은 정상 (레버리지 스케일링).
 
-CTREND 비교: [references/phase-criteria.md](../p4-backtest/references/phase-criteria.md) 참조.
+판정 기준: [references/phase-criteria.md](../p4-backtest/references/phase-criteria.md) 참조.
 
 **FAIL -> Step F** | **PASS -> Step 3**
 
@@ -195,7 +195,7 @@ CTREND 비교: [references/phase-criteria.md](../p4-backtest/references/phase-cr
 
 ### 실행
 
-Best Asset에 대해 WFA (3-fold expanding window) 실행:
+Best Asset에 대해 WFA (5-fold expanding window) 실행:
 
 ```bash
 uv run mcbot backtest validate \
@@ -214,11 +214,11 @@ uv run mcbot backtest validate \
 
 ### 판정 기준
 
-| 조건 | 기준 | CTREND 참조 |
-|------|------|------------|
-| WFA OOS Sharpe | >= 0.3 | 1.49 |
-| WFA Decay | < 50% | 39% |
-| WFA Consistency | >= 50% | 67% |
+| 조건 | 기준 |
+|------|------|
+| WFA OOS Sharpe | >= 0.3 |
+| WFA Decay | < 50% |
+| WFA Consistency | >= 50% |
 
 ### 퀀트 해석
 
@@ -260,13 +260,36 @@ uv run mcbot backtest validate \
 | MC p-value | Monte Carlo 통계적 유의성 |
 | MC 95% CI | Monte Carlo 95% 신뢰구간 |
 
-### 판정 기준
+### 판정 기준: 3단계 Triage (PASS / WATCH / FAIL)
 
-| 조건 | 기준 | CTREND 참조 |
-|------|------|------------|
-| DSR | > 0.5 | 1.00 |
-| MC p-value | < 0.10 | 0.000 |
-| PBO | 이중 경로 (아래 참조) | 60% (경로 B PASS) |
+**PASS** (OOS Sharpe >= 0.3 AND 보충 2/4 이상):
+
+| 조건 | 기준 |
+|------|------|
+| CPCV OOS Sharpe | >= 0.3 |
+| 보충 검증 | >= 2/4 통과 |
+
+**WATCH** (salvageable — TESTING 유지):
+
+| 조건 | 기준 |
+|------|------|
+| 경로 A | OOS Sharpe >= 0.2 AND 보충 >= 1/4 |
+| 경로 B | OOS Sharpe >= 0.3 AND 보충 == 1/4 |
+
+WATCH 시 `improvement_hints`에 미통과 항목별 개선 방향 기록.
+
+**FAIL** (terminal — RETIRED):
+
+- OOS Sharpe < 0.2 OR 보충 == 0/4
+
+**보충 4개 항목**:
+
+| # | 조건 | 기준 |
+|---|------|------|
+| 1 | Sharpe Decay | <= 50% |
+| 2 | PBO | 이중 경로 (아래 참조) |
+| 3 | DSR | > 0.5 |
+| 4 | MC p-value | < 0.10 |
 
 ### PBO 이중 경로
 
@@ -281,10 +304,9 @@ PBO는 다음 **두 경로 중 하나**를 충족하면 PASS:
 그러나 실전에서 중요한 것은 **"어떤 파라미터를 골라도 OOS에서 수익이 나는가"** (CPCV robustness).
 경로 B는 파라미터 과적합이 있지만, 기저 전략 alpha가 견고한 경우를 구제한다.
 
-**적용 예시**: CTREND (PBO 60%, 전 fold OOS 양수, MC p=0.000) -> 경로 B PASS.
-Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) -> 경로 B PASS (PBO < 80% 충족).
+**적용 예시**: Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) -> 경로 B PASS (PBO < 80% 충족).
 
-**FAIL -> Step F** | **PASS -> Step S**
+**FAIL -> Step F** | **WATCH -> TESTING 유지 (재시도)** | **PASS -> Step S**
 
 ---
 
@@ -378,27 +400,9 @@ Next: `/p7-live` (Phase 7: EDA Parity 검증)
 
 ---
 
-## CTREND 참조 벤치마크
-
-| Phase | 핵심 지표 | CTREND 결과 | 판정 |
-|:-----:|----------|------------|:----:|
-| P5A | Optimization | Completed | PASS |
-| P5B | 파라미터 | 4/4 PASS | PASS |
-| P6A | WFA OOS Sharpe | 1.49 | PASS |
-| P6A | WFA Decay | 39% | PASS |
-| P6A | WFA Consistency | 67% | PASS |
-| P6B | PBO | 60% | PASS (경로 B) |
-| P6B | DSR (batch) | 1.00 | PASS |
-| P6B | MC p-value | 0.000 | PASS |
-
-> CTREND은 PBO 60%로 경로 A(< 40%) FAIL이나, 전 CPCV fold OOS 양수 + MC p=0.000으로
-> 경로 B를 통해 PASS. Anchor-Mom도 PBO 80%이나 동일 경로 B PASS.
-
----
-
 ## 참조 문서
 
-- [references/phase-criteria.md](../p4-backtest/references/phase-criteria.md) -- Phase별 정량 기준 + CTREND 비교 + CLI 명령
+- [references/phase-criteria.md](../p4-backtest/references/phase-criteria.md) -- Phase별 정량 기준 + CLI 명령
 - [references/quant-interpretation-guide.md](../p4-backtest/references/quant-interpretation-guide.md) -- 시니어 퀀트 해석 패턴
 - [references/report-template.md](../p4-backtest/references/report-template.md) -- 리포트 출력 형식
 - `pipeline report` -- 전략 상황판 (CLI)

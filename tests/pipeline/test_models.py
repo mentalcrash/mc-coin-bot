@@ -308,3 +308,67 @@ class TestNextPhase:
             }
         )
         assert record.next_phase == "P2"
+
+
+class TestWatchVerdict:
+    def test_watch_enum_value(self) -> None:
+        """WATCH == 'WATCH'."""
+        assert PhaseVerdict.WATCH == "WATCH"
+        assert PhaseVerdict("WATCH") is PhaseVerdict.WATCH
+
+    def test_watch_not_in_fail_phase(self) -> None:
+        """WATCH Phase → fail_phase is None."""
+        record = _make_record(
+            {
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.WATCH, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.fail_phase is None
+
+    def test_watch_phase_property(self) -> None:
+        """watch_phase computed field."""
+        record = _make_record(
+            {
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.WATCH, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.watch_phase == "P4"
+
+    def test_next_phase_returns_watch_phase(self) -> None:
+        """WATCH = next_phase (재시도 허용)."""
+        record = _make_record(
+            {
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P2: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.WATCH, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.next_phase == "P4"
+
+    def test_current_phase_stops_at_watch(self) -> None:
+        """WATCH → PASS 체인 중단."""
+        record = _make_record(
+            {
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P2: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P3: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.WATCH, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.current_phase == "P3"
+
+    def test_fail_blocks_even_with_watch(self) -> None:
+        """FAIL > WATCH 우선 — fail_phase가 있으면 next_phase=None."""
+        record = _make_record(
+            {
+                PhaseId.P1: PhaseResult(status=PhaseVerdict.PASS, date=date(2026, 1, 1)),
+                PhaseId.P4: PhaseResult(status=PhaseVerdict.WATCH, date=date(2026, 1, 1)),
+                PhaseId.P5: PhaseResult(status=PhaseVerdict.FAIL, date=date(2026, 1, 1)),
+            }
+        )
+        assert record.fail_phase == "P5"
+        assert record.watch_phase == "P4"
+        assert record.next_phase is None

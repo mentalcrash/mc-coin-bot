@@ -12,6 +12,8 @@ from typer.testing import CliRunner
 from src.cli._phase_runners import (
     P5_STRATEGIES,
     P5_WEIGHT_PAIRS,
+    _p4_triage,
+    _p6b_triage,
     analyze_sweep,
     resolve_timeframe,
 )
@@ -232,7 +234,7 @@ class TestAnalyzeSweep:
 
 class TestUpdateYamlP4:
     def test_pass_verdict(self, tmp_path: Path) -> None:
-        """P4 PASS -> YAML 업데이트 + asset_performance 기록."""
+        """P4 PASS (Path A) -> YAML 업데이트 + asset_performance 기록."""
         store = StrategyStore(base_dir=tmp_path)
         record = StrategyRecord(
             meta=StrategyMeta(
@@ -273,6 +275,190 @@ class TestUpdateYamlP4:
         assert updated.phases[PhaseId.P4].status == PhaseVerdict.PASS
         assert len(updated.asset_performance) == 1
         assert updated.asset_performance[0].symbol == "SOL/USDT"
+
+    def test_pass_path_a(self, tmp_path: Path) -> None:
+        """Path A PASS: Sharpe 0.8 > 0.7, CAGR 20% > 15%."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="path-a",
+                display_name="A",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        results = [
+            {
+                "symbol": "BTC/USDT",
+                "sharpe_ratio": 0.8,
+                "cagr": 0.20,
+                "max_drawdown": 30.0,
+                "total_trades": 50,
+                "total_return": 80.0,
+                "profit_factor": 1.3,
+                "win_rate": 50.0,
+                "sortino_ratio": 1.0,
+                "calmar_ratio": 1.0,
+            },
+        ]
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("path-a", results)
+        updated = store.load("path-a")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.PASS
+        assert updated.phases[PhaseId.P4].details["pass_path"] == "A"
+
+    def test_pass_path_b(self, tmp_path: Path) -> None:
+        """Path B PASS: Sharpe 1.2 > 1.0, CAGR 12% > 10% (but < 15%)."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="path-b",
+                display_name="B",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        results = [
+            {
+                "symbol": "ETH/USDT",
+                "sharpe_ratio": 1.2,
+                "cagr": 0.12,
+                "max_drawdown": 25.0,
+                "total_trades": 60,
+                "total_return": 48.0,
+                "profit_factor": 1.4,
+                "win_rate": 52.0,
+                "sortino_ratio": 1.5,
+                "calmar_ratio": 1.0,
+            },
+        ]
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("path-b", results)
+        updated = store.load("path-b")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.PASS
+        assert updated.phases[PhaseId.P4].details["pass_path"] == "B"
+
+    def test_watch_both_paths_miss(self, tmp_path: Path) -> None:
+        """양쪽 PASS 미달, WATCH 조건 충족: Sharpe 0.5, CAGR 8% → WATCH."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="both-fail",
+                display_name="BF",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        results = [
+            {
+                "symbol": "BTC/USDT",
+                "sharpe_ratio": 0.5,
+                "cagr": 0.08,
+                "max_drawdown": 30.0,
+                "total_trades": 50,
+                "total_return": 30.0,
+                "profit_factor": 1.1,
+                "win_rate": 45.0,
+                "sortino_ratio": 0.6,
+                "calmar_ratio": 0.4,
+            },
+        ]
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("both-fail", results)
+        updated = store.load("both-fail")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.WATCH
+        assert updated.phases[PhaseId.P4].details["triage"] == "salvageable"
+
+    def test_fail_mdd_exceeds(self, tmp_path: Path) -> None:
+        """공통 조건 FAIL: MDD 55% > 50% → 양쪽 모두 FAIL."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="mdd-fail",
+                display_name="MF",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        results = [
+            {
+                "symbol": "SOL/USDT",
+                "sharpe_ratio": 1.5,
+                "cagr": 0.25,
+                "max_drawdown": 55.0,
+                "total_trades": 80,
+                "total_return": 100.0,
+                "profit_factor": 1.8,
+                "win_rate": 58.0,
+                "sortino_ratio": 2.0,
+                "calmar_ratio": 1.5,
+            },
+        ]
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("mdd-fail", results)
+        updated = store.load("mdd-fail")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.FAIL
+
+    def test_watch_edge_neither_path(self, tmp_path: Path) -> None:
+        """Edge: Sharpe 0.8 CAGR 12% → Path A FAIL, Path B FAIL, but WATCH (salvageable)."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="edge-fail",
+                display_name="EF",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.IMPLEMENTED,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+        results = [
+            {
+                "symbol": "BTC/USDT",
+                "sharpe_ratio": 0.8,
+                "cagr": 0.12,
+                "max_drawdown": 30.0,
+                "total_trades": 50,
+                "total_return": 48.0,
+                "profit_factor": 1.3,
+                "win_rate": 50.0,
+                "sortino_ratio": 1.0,
+                "calmar_ratio": 0.8,
+            },
+        ]
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("edge-fail", results)
+        updated = store.load("edge-fail")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.WATCH
+        assert updated.phases[PhaseId.P4].details["triage"] == "salvageable"
 
     def test_fail_verdict_retires(self, tmp_path: Path) -> None:
         """P4 FAIL -> RETIRED 상태 전환."""
@@ -611,3 +797,145 @@ class TestParallelPhase4:
             )
 
             mock_par.assert_called_once()
+
+
+# =============================================================================
+# _p4_triage tests
+# =============================================================================
+
+
+class TestP4Triage:
+    def test_p4_triage_pass(self) -> None:
+        """Path A PASS: Sharpe 0.8 > 0.7, CAGR 20% > 15%, MDD 30% < 50%, Trades 50 > 30."""
+        verdict, reason, hints = _p4_triage(
+            best_sharpe=0.8,
+            best_cagr=20.0,
+            best_mdd=30.0,
+            best_trades=50,
+            all_sharpes=[0.8, 0.5],
+        )
+        assert verdict == "PASS"
+        assert "Path A" in reason
+        assert hints == []
+
+    def test_p4_triage_watch(self) -> None:
+        """Sharpe 0.55, CAGR 8% → WATCH (salvageable)."""
+        verdict, reason, hints = _p4_triage(
+            best_sharpe=0.55,
+            best_cagr=8.0,
+            best_mdd=30.0,
+            best_trades=25,
+            all_sharpes=[0.55, 0.3],
+        )
+        assert verdict == "WATCH"
+        assert "Close miss" in reason
+        assert len(hints) > 0
+
+    def test_p4_triage_fail_mdd(self) -> None:
+        """MDD 65% → immediate FAIL."""
+        verdict, reason, _hints = _p4_triage(
+            best_sharpe=1.5,
+            best_cagr=30.0,
+            best_mdd=65.0,
+            best_trades=100,
+            all_sharpes=[1.5],
+        )
+        assert verdict == "FAIL"
+        assert "MDD" in reason
+
+    def test_p4_triage_fail_all_negative(self) -> None:
+        """전 에셋 Sharpe < 0."""
+        verdict, reason, _hints = _p4_triage(
+            best_sharpe=-0.1,
+            best_cagr=-5.0,
+            best_mdd=40.0,
+            best_trades=50,
+            all_sharpes=[-0.1, -0.5],
+        )
+        assert verdict == "FAIL"
+        assert "구조적 결함" in reason
+
+    def test_p4_triage_fail_below_watch(self) -> None:
+        """Sharpe 0.3 → FAIL (WATCH 기준 0.5 미달)."""
+        verdict, _reason, _hints = _p4_triage(
+            best_sharpe=0.3,
+            best_cagr=5.0,
+            best_mdd=30.0,
+            best_trades=40,
+            all_sharpes=[0.3, 0.1],
+        )
+        assert verdict == "FAIL"
+
+    def test_p4_watch_does_not_retire(self, tmp_path: Path) -> None:
+        """WATCH → TESTING 유지 (RETIRED 안 됨)."""
+        store = StrategyStore(base_dir=tmp_path)
+        record = StrategyRecord(
+            meta=StrategyMeta(
+                name="watch-strat",
+                display_name="Watch",
+                category="Test",
+                timeframe="1D",
+                short_mode="FULL",
+                status=StrategyStatus.TESTING,
+                created_at=date(2026, 1, 1),
+            ),
+        )
+        store.save(record)
+
+        results = [
+            {
+                "symbol": "BTC/USDT",
+                "sharpe_ratio": 0.55,
+                "cagr": 0.08,
+                "max_drawdown": 30.0,
+                "total_trades": 25,
+                "total_return": 30.0,
+                "profit_factor": 1.1,
+                "win_rate": 45.0,
+                "sortino_ratio": 0.6,
+                "calmar_ratio": 0.4,
+            },
+        ]
+
+        with patch(_STORE_PATH, return_value=store):
+            from src.cli._phase_runners import _update_yaml_p4
+
+            _update_yaml_p4("watch-strat", results)
+
+        updated = store.load("watch-strat")
+        assert updated.phases[PhaseId.P4].status == PhaseVerdict.WATCH
+        assert updated.meta.status == StrategyStatus.TESTING
+        assert updated.phases[PhaseId.P4].details["triage"] == "salvageable"
+
+
+# =============================================================================
+# _p6b_triage tests
+# =============================================================================
+
+
+class TestP6bTriage:
+    def test_p6b_triage_pass(self) -> None:
+        """OOS 0.4, supp 3/4 → PASS."""
+        verdict, reason, hints = _p6b_triage(
+            oos_sharpe=0.4, supplementary_pass=3, supplementary_total=4
+        )
+        assert verdict == "PASS"
+        assert "0.4" in reason
+        assert hints == []
+
+    def test_p6b_triage_watch(self) -> None:
+        """OOS 0.25, supp 1/4 → WATCH."""
+        verdict, reason, hints = _p6b_triage(
+            oos_sharpe=0.25, supplementary_pass=1, supplementary_total=4
+        )
+        assert verdict == "WATCH"
+        assert "0.25" in reason
+        assert len(hints) > 0
+
+    def test_p6b_triage_fail(self) -> None:
+        """OOS 0.1, supp 0/4 → FAIL."""
+        verdict, _reason, hints = _p6b_triage(
+            oos_sharpe=0.1, supplementary_pass=0, supplementary_total=4
+        )
+        assert verdict == "FAIL"
+        assert hints == []

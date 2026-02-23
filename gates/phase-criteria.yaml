@@ -118,20 +118,35 @@ phases:
     cli_command: "run {config}"
     threshold:
       pass_metrics:
-        - name: Sharpe
+        # Path A (기본) OR Path B (high-Sharpe 대안) + 공통 조건
+        # Path A: Sharpe > 0.7 AND CAGR > 15%
+        # Path B: Sharpe > 1.0 AND CAGR > 10%
+        # 공통: MDD < 50% AND Trades > 30
+        - name: "Path A Sharpe"
           operator: ">"
           value: 0.7
-        - name: CAGR
+          description: "Path A — 기본 경로"
+        - name: "Path A CAGR"
           operator: ">"
           value: 15.0
+          unit: "%"
+        - name: "Path B Sharpe"
+          operator: ">"
+          value: 1.0
+          description: "Path B — high-Sharpe 대안"
+        - name: "Path B CAGR"
+          operator: ">"
+          value: 10.0
           unit: "%"
         - name: MDD
           operator: "<"
           value: 50.0
           unit: "%"
+          description: "공통 조건"
         - name: Trades
           operator: ">"
           value: 30
+          description: "공통 조건"
         - name: OOS Sharpe
           operator: ">="
           value: 0.2
@@ -167,7 +182,13 @@ phases:
           reason: "수익성 없음 + 통계적 무의미"
         - condition: "수익 80%+ 단일 거래"
           reason: "운으로 인한 성과 (concentration risk)"
-      watch_rule: "PASS 조건 일부 미달이지만 Sharpe >= 0.5 AND CAGR > 0%"
+      watch:
+        description: "PASS 조건 일부 미달이나 개선 가능한 전략 (TESTING 유지)"
+        conditions:
+          - "Sharpe >= 0.5"
+          - "CAGR > 0%"
+          - "MDD < 50%"
+        outcome: "TESTING 유지 + 구체적 개선 힌트 제공"
 
   # ─── Phase 5: Robustness ─────────────────────────────────────────
   - phase_id: P5
@@ -194,29 +215,56 @@ phases:
   # ─── Phase 6: Deep Validation ────────────────────────────────────
   - phase_id: P6
     name: Deep Validation
-    description: "WFA + CPCV + PBO + DSR 통계적 유의성 검증"
+    description: >
+      P6A WFA (5-fold) + P6B CPCV (필수: OOS Sharpe >= 0.3 + 보충 2/4:
+      Decay/PBO/DSR/MC 중 2개 이상 통과)
     phase_type: threshold
     cli_command: "validate -m milestone/final"
     threshold:
       pass_metrics:
+        # P6A: WFA (5-fold expanding)
         - name: WFA OOS Sharpe
           operator: ">="
           value: 0.3
+          description: "P6A — 5-fold expanding window 평균"
         - name: WFA Sharpe Decay
           operator: "<"
           value: 50.0
           unit: "%"
+          description: "P6A — IS → OOS"
         - name: WFA Consistency
           operator: ">="
           value: 50.0
           unit: "%"
-          description: "양의 OOS Sharpe + Decay < 50% 비율"
-        - name: DSR
+          description: "P6A — 양의 OOS Sharpe + Decay < 50% 비율"
+        # P6B 필수
+        - name: CPCV OOS Sharpe
+          operator: ">="
+          value: 0.3
+          description: "P6B 필수 — 미달 시 즉시 FAIL"
+        # P6B 보충 (2/4 이상 통과)
+        - name: Sharpe Decay (supplementary)
+          operator: "<="
+          value: 50.0
+          unit: "%"
+          description: "P6B 보충 1/4"
+        - name: PBO (supplementary)
+          operator: "<"
+          value: 0.40
+          description: "P6B 보충 2/4 — Path A(<40%) or Path B(<80% + all fold OOS>0 + MC p<0.05)"
+        - name: DSR (supplementary)
           operator: ">"
           value: 0.5
-        - name: Monte Carlo p-value
+          description: "P6B 보충 3/4"
+        - name: MC p-value (supplementary)
           operator: "<"
           value: 0.10
+          description: "P6B 보충 4/4"
+      watch:
+        description: "P6B 근소 미달 — 개선 가능 (TESTING 유지)"
+        conditions:
+          - "(OOS Sharpe >= 0.2 AND supplementary >= 1/4) OR (OOS Sharpe >= 0.3 AND supplementary == 1/4)"
+        outcome: "TESTING 유지 + 미통과 항목별 개선 힌트"
 
   # ─── Phase 7: Live Readiness ─────────────────────────────────────
   - phase_id: P7
