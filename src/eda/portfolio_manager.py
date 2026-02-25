@@ -858,7 +858,8 @@ class EDAPortfolioManager:
             await self._emit_close_order(pos, bar.correlation_id, "stop-loss", fill_price=sl_price)
             return
         # Trailing stop (1m bar에서 즉시 체크 — stop level 가격에 청산)
-        if self._config.use_trailing_stop:
+        # use_intrabar_trailing_stop=False → TF bar에서만 TS 체크 (VBT parity 개선)
+        if self._config.use_trailing_stop and self._config.use_intrabar_trailing_stop:
             self._update_peak_trough(pos, bar)
             if atr is not None:
                 ts_price = self._check_trailing_stop(pos, bar, atr)

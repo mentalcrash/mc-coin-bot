@@ -129,6 +129,10 @@ class PortfolioManagerConfig(BaseModel):
         default=True,
         description="Intrabar 가격(High/Low)으로 손절 체크 (False: Close 기준)",
     )
+    use_intrabar_trailing_stop: bool = Field(
+        default=True,
+        description="1m intrabar에서 Trailing Stop 체크 여부 (False: TF bar에서만 TS 체크)",
+    )
 
     # ==========================================================================
     # Exchange Safety Net (거래소 안전망 — Live 모드 전용)
