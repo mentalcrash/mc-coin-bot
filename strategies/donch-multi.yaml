@@ -88,7 +88,31 @@ phases:
       vbt_mdd: 1.99
       eda_trades: 20.0
       vbt_trades: 23.0
-asset_performance: []
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.71
+  cagr: 10.38
+  mdd: 12.37
+  trades: 138
+  profit_factor: 1.62
+- symbol: BTC/USDT
+  sharpe: 0.71
+  cagr: 9.91
+  mdd: 19.28
+  trades: 139
+  profit_factor: 1.41
+- symbol: SOL/USDT
+  sharpe: 0.59
+  cagr: 7.90
+  mdd: 17.01
+  trades: 143
+  profit_factor: 1.36
+- symbol: DOGE/USDT
+  sharpe: 0.42
+  cagr: 5.36
+  mdd: 19.84
+  trades: 106
+  profit_factor: 1.28
 decisions:
 - date: '2026-02-25'
   phase: P1
