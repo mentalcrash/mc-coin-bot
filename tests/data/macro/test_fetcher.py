@@ -108,14 +108,14 @@ class TestMacroFetcher:
 
     async def test_all_fred_series_defined(self) -> None:
         """모든 FRED 시리즈가 정의되어 있는지."""
-        assert len(FRED_SERIES) == 6  # gold removed (FRED series discontinued 2022-01)
+        assert len(FRED_SERIES) == 12  # 6 original + 6 Tier 1 (t10yie, bamlhy, walcl, icsa, effr, wti)
         assert "dxy" in FRED_SERIES
         assert "vix" in FRED_SERIES
         assert "m2" in FRED_SERIES
 
     async def test_all_yfinance_tickers_defined(self) -> None:
         """모든 yfinance 티커가 정의되어 있는지."""
-        assert len(YFINANCE_TICKERS) == 6
+        assert len(YFINANCE_TICKERS) == 9  # 6 original + 3 Tier 1 (btc_f, ibit, eem)
         assert "spy" in YFINANCE_TICKERS
         assert "hyg" in YFINANCE_TICKERS
 

@@ -48,6 +48,8 @@ from src.market.indicators.microstructure import (
     liquidation_asymmetry as liquidation_asymmetry,
     liquidation_cascade_score as liquidation_cascade_score,
     order_flow_imbalance as order_flow_imbalance,
+    taker_buy_ratio as taker_buy_ratio,
+    taker_cvd as taker_cvd,
     vpin as vpin,
 )
 from src.market.indicators.onchain import (
@@ -162,6 +164,8 @@ __all__ = [
     "squeeze_detect",
     "stablecoin_supply_ratio",
     "stochastic",
+    "taker_buy_ratio",
+    "taker_cvd",
     "trend_strength",
     "tvl_stablecoin_ratio",
     "vol_percentile_rank",

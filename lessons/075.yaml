@@ -1,0 +1,17 @@
+id: 75
+title: 'CGO(Capital Gains Overhang) 전략: OHLCV turnover로 reference price 추정 시 6/8 에셋
+  Sharpe 음수'
+body: 'Grinblatt-Han(2005) turnover-weighted reference price는 실제 투자자별 보유기간·매수가 분포를
+  요구하나, crypto OHLCV volume은 개별 투자자 정보를 포함하지 않아 proxy 품질이 낮다. 결과: Best AVAX Sharpe
+  0.50, 6/8 에셋 Sharpe 음수. 행동재무학 논문 alpha가 전통 시장(주식 turnover 데이터)에서만 유효할 수 있음.'
+category: strategy-design
+tags:
+- behavioral-finance
+- CGO
+- disposition
+- reference-price
+strategies:
+- disposition-cgo
+timeframes:
+- 1D
+added_at: '2026-02-23'

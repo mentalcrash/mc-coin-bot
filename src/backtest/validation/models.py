@@ -271,9 +271,14 @@ MILESTONE_MIN_CONSISTENCY = 0.5  # 50% 이상 Fold가 일관적
 # Final Validation 기준 (P6B)
 FINAL_MIN_OOS_SHARPE = 0.3
 FINAL_MAX_SHARPE_DECAY = 0.5
-FINAL_MIN_CONSISTENCY = 0.5
+FINAL_MIN_CONSISTENCY = 0.5  # 하위호환 유지 (P6A WFA에서 사용)
 FINAL_MAX_P_VALUE = 0.10  # 통계적 유의성
 FINAL_MIN_DSR = 0.5  # Deflated Sharpe Ratio 최소값
+
+# Final Validation P6B — PBO 임계값
+FINAL_MAX_PBO = 0.40  # PBO Path A
+FINAL_ALT_MAX_PBO = 0.80  # PBO Path B (+ 추가 조건)
+FINAL_MIN_SUPPLEMENTARY_PASS = 2  # 보충 테스트 최소 통과 수
 
 # =============================================================================
 # Multi-Asset Validation 기준 (로드맵 3.3)

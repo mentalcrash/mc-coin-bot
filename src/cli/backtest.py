@@ -1962,9 +1962,13 @@ def validate(
         start_date = datetime(min(year), 1, 1, tzinfo=UTC)
         end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
 
+        from src.cli._phase_runners import resolve_timeframe
+
+        timeframe = resolve_timeframe(strategy_name)
+
         multi_data = data_service.get_multi(
             symbols=symbol_list,
-            timeframe="1D",
+            timeframe=timeframe,
             start=start_date,
             end=end_date,
         )

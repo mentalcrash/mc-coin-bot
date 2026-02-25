@@ -1,0 +1,71 @@
+version: 2
+meta:
+  name: vrp-regime-trend
+  display_name: VRP-Regime Trend
+  category: Volatility Risk Premium
+  timeframe: 8H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-25'
+  retired_at: '2026-02-25'
+  economic_rationale: BTC/ETH 옵션시장의 구조적 VRP(~14% 연환산, S&P 7배)를 regime indicator로 활용.
+    IV-RV spread high 시 trend-following 강화, collapse 시 방어. Deribit DVOL + 8H GK RV
+    결합.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      score: 26
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      tests: 51.0
+      registry: vrp-regime-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-25'
+    details:
+      best_asset: AVAX/USDT
+      sharpe: 0.46
+      cagr: 7.77
+      mdd: 33.48
+asset_performance: []
+decisions:
+- date: '2026-02-25'
+  phase: P1
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-25'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 vrp-regime-trend. Ruff/Pyright 0 error.
+- date: '2026-02-25'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-02-25'
+  phase: P4
+  verdict: FAIL
+  rationale: P4A Hard FAIL — Best AVAX Sharpe 0.46<0.5. BTC DVOL GLOBAL적용 VRP약화. ETH
+    MDD 57%>50%. CAGR최대 7.77%

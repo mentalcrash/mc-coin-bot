@@ -25,7 +25,7 @@ argument-hint: <strategy-name> [--symbol SYMBOL] [--period 1y|2y]
 - **정합성 우선**: VBT와 EDA 결과의 불일치 원인을 구조적으로 분석
 - **라이브 관점**: "이 시스템으로 실거래해도 안전한가?" 판단
 - **수치 근거**: 모든 판정에 구체적 수치 비교 동반
-- **CTREND 선례 비교**: P7 통과 유일 전략과의 상대적 위치 파악
+- **Anchor-Mom 선례 비교**: P7 통과 전략과의 상대적 위치 파악
 
 ---
 
@@ -48,7 +48,7 @@ VBT = 이상적 벡터화 실행, EDA = 실전 시뮬레이션 (bar-by-bar). 결
 
 | 인수 | 필수 | 설명 | 예시 |
 |------|:----:|------|------|
-| `strategy_name` | O | registry key (kebab-case) | `ctrend` |
+| `strategy_name` | O | registry key (kebab-case) | `anchor-mom` |
 | `--symbol` | X | 검증 심볼 (기본: YAML Best Asset) | `SOL/USDT` |
 | `--period` | X | 검증 기간 (기본: `1y`) | `1y`, `2y` |
 
@@ -171,7 +171,7 @@ uv run mcbot eda run config/{strategy_name}_p7_{period}.yaml
 | **수익률 편차** | < **20%** | 필수 |
 | **거래 수 비율** | 0.5x ~ 2.0x | 필수 |
 
-> **CTREND 선례**: Trades 0.25x (PM threshold 구조적 필터링). 구조적 사유면 기준 미달도 PASS 가능.
+> **Anchor-Mom 선례**: 구조적 사유(PM threshold 필터링 등)면 기준 미달도 PASS 가능.
 
 ### 3-4. 거래 수 괴리 분석
 
@@ -179,7 +179,7 @@ uv run mcbot eda run config/{strategy_name}_p7_{period}.yaml
 
 | 원인 | 구조적? | 판정 |
 |------|:------:|------|
-| PM `rebalance_threshold` 필터링 | O | PASS (CTREND 선례) |
+| PM `rebalance_threshold` 필터링 | O | PASS (구조적 사유) |
 | RM `max_order_size` 거부 | O | PASS (안전 기제) |
 | 전략 로직 버그 / 데이터 불일치 | X | FAIL |
 | EWM/rolling 초기화 차이 | △ | fast mode 재실행 후 재판정 |
@@ -294,19 +294,6 @@ uv run mcbot pipeline report
 
 ---
 
-## Step 8: CTREND 비교
-
-| 지표 | VBT | EDA | 편차 | 교훈 |
-|------|-----|-----|------|------|
-| Sharpe | 2.05 | 2.82 | +37.6% | PM threshold 비용 절감 |
-| CAGR | +97.8% | +173.8% | +77.7% | 거래 감소 + TS 효과 |
-| MDD | 27.7% | 19.8% | -28.5% | Trailing stop ATR 3.0x |
-| Trades | 288 | 72 | -75.0% | rebalance_threshold 10% |
-
-현재 전략과 비교: Sharpe 편차 방향, 거래 수 비율, MDD 개선 여부, 실행 모드.
-
----
-
 ## 리포트 출력
 
 리포트 형식: [references/report-template.md](references/report-template.md) 참조.
@@ -318,3 +305,14 @@ uv run mcbot pipeline report
 - [references/parity-criteria.md](references/parity-criteria.md) — Parity 정량 기준 + 괴리 원인 카탈로그
 - [references/live-readiness-checklist.md](references/live-readiness-checklist.md) — 라이브 준비 7항목 상세 검증 패턴
 - [references/report-template.md](references/report-template.md) — P7 리포트 출력 형식
+
+---
+
+## Phase Completion Protocol
+
+P7은 파이프라인 최종 단계. 완료 후 반드시 수행:
+
+1. 현황 확인: `uv run mcbot pipeline next --name {strategy_name}`
+1. Dashboard 갱신: `uv run mcbot pipeline report`
+1. 사용자에게 최종 결과 보고:
+   "P7 결과: {요약}. ACTIVE 전환 완료 / FAIL 사유: {reason}"

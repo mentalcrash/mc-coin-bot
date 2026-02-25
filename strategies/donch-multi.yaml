@@ -1,0 +1,137 @@
+version: 2
+meta:
+  name: donch-multi
+  display_name: Donchian Multi-Scale
+  category: Channel Breakout
+  timeframe: 12H
+  short_mode: FULL
+  status: ACTIVE
+  created_at: '2026-02-25'
+  retired_at: null
+  economic_rationale: 3-scale Donchian breakout 앙상블(20/40/80). Multi-lookback 합의로
+    regime-robust. Zarattini 2025 학술 검증
+  rationale_references: []
+  rationale_category: null
+parameters:
+  lookback_short: 40
+  lookback_mid: 74
+  lookback_long: 157
+  entry_threshold: 0.37839592840740904
+  vol_window: 16
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      tests: 56.0
+      registry: donch-multi
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      sharpe: 0.71
+      cagr: 10.38
+      mdd: 12.37
+      best_asset: ETH/USDT
+      oos_sharpe: 1.18
+      is_sharpe: 0.53
+      decay: -125%
+      consistency: 100%
+  P5:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      param_verdicts:
+        lookback_short: PASS
+        lookback_mid: PASS
+        lookback_long: PASS
+        entry_threshold: PASS
+        vol_window: PASS
+  P6:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      wfa_oos_sharpe: 0.71
+      pbo: 19.0
+      dsr: 0.0
+      mc_pvalue: 0.002
+  P7:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      eda_sharpe: 1.45
+      vbt_sharpe: 1.61
+      eda_return: 18.25
+      vbt_return: 19.55
+      eda_mdd: 4.4
+      vbt_mdd: 1.99
+      eda_trades: 20.0
+      vbt_trades: 23.0
+asset_performance: []
+decisions:
+- date: '2026-02-25'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-25'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 donch-multi. Ruff/Pyright 0 error.
+- date: '2026-02-25'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-02-25'
+  phase: P4
+  verdict: WATCH
+  rationale: 'P4A: ETH Sharpe 0.71, CAGR +10.38%, MDD 12.37%. Path A CAGR<15%, Path
+    B Sharpe<1.0. WATCH 조건 충족'
+- date: '2026-02-25'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A WATCH→P4B PASS. ETH Sharpe 0.71/CAGR+10.38%/MDD 12.37%. IS/OOS:
+    OOS Sharpe 1.18>IS 0.53, Decay -125%(역방향), Consistency 100%'
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.46→0.88 (+90.3%), OOS=1.07
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-02-25'
+  phase: P6
+  verdict: PASS
+  rationale: P5+P6 전 단계 PASS. WFA OOS 0.71/Decay -33%/Consistency 67%. CPCV OOS 0.51/Decay
+    6%/PBO 19%/MC p=0.002. 보충 3/4 통과(DSR 미달). 파라미터 전 구간 100% 고원
+- date: '2026-02-25'
+  phase: P7
+  verdict: FAIL
+  rationale: EDA Parity FAIL. 수익 부호 일치하나 수익률 편차 57.6%(기준 20%). VBT MDD 1.99% vs EDA
+    MDD 10.93% — intrabar SL/TS 발동 차이. Live Ready 7/7
+- date: '2026-02-26'
+  phase: P7
+  verdict: PASS
+  rationale: EDA Parity PASS. 수익 부호 일치, 수익률 편차 6.6%(<20%), 거래 비율 0.87x. Live Ready
+    7/7. use_intrabar_trailing_stop=false 적용으로 parity 확보

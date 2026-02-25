@@ -1,0 +1,176 @@
+version: 2
+meta:
+  name: z-mom
+  display_name: Z-Momentum (MACD-V)
+  category: Volatility-Normalized Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-24'
+  economic_rationale: ATR-정규화 MACD(MACD-V) + 명시적 flat zone. Vol-anchoring bias 교정.
+    NAAIM/CMT 이중 수상 방법론(Spiroglou 2022). 크립토 12H 미적용.
+  rationale_references: []
+  rationale_category: Behavioral Finance
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 64.0
+      registry: z-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-24'
+    details:
+      oos_sharpe: -0.17
+      decay: 115.0
+      is_sharpe: 1.19
+      consistency: 0.0
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.28
+  cagr: 3.9
+  mdd: 38.1
+  trades: 100
+  profit_factor: 1.12
+  win_rate: 50.0
+  sortino: 0.18
+  calmar: 0.1
+  alpha: 42.6
+  beta: -0.05
+- symbol: BNB/USDT
+  sharpe: 0.11
+  cagr: 0.2
+  mdd: 29.3
+  trades: 82
+  profit_factor: 1.05
+  win_rate: 48.8
+  sortino: 0.06
+  calmar: 0.01
+  alpha: -62.7
+  beta: -0.05
+- symbol: BTC/USDT
+  sharpe: 0.77
+  cagr: 15.2
+  mdd: 24.5
+  trades: 100
+  profit_factor: 1.53
+  win_rate: 51.0
+  sortino: 0.49
+  calmar: 0.62
+  alpha: -1.6
+  beta: -0.03
+- symbol: SOL/USDT
+  sharpe: -0.15
+  cagr: -5.5
+  mdd: 41.0
+  trades: 87
+  profit_factor: 0.87
+  win_rate: 43.7
+  sortino: -0.08
+  calmar: 0.13
+  alpha: 9.7
+  beta: -0.02
+- symbol: DOGE/USDT
+  sharpe: 0.82
+  cagr: 17.7
+  mdd: 15.5
+  trades: 77
+  profit_factor: 1.68
+  win_rate: 48.1
+  sortino: 0.59
+  calmar: 1.14
+  alpha: 124.7
+  beta: 0.02
+- symbol: ADA/USDT
+  sharpe: 0.21
+  cagr: 2.2
+  mdd: 29.8
+  trades: 91
+  profit_factor: 1.08
+  win_rate: 42.9
+  sortino: 0.12
+  calmar: 0.07
+  alpha: 85.8
+  beta: 0.02
+- symbol: AVAX/USDT
+  sharpe: 0.24
+  cagr: 3.0
+  mdd: 28.1
+  trades: 81
+  profit_factor: 1.11
+  win_rate: 42.0
+  sortino: 0.17
+  calmar: 0.11
+  alpha: 104.8
+  beta: 0.02
+- symbol: LINK/USDT
+  sharpe: -0.16
+  cagr: -5.2
+  mdd: 35.5
+  trades: 84
+  profit_factor: 0.88
+  win_rate: 39.3
+  sortino: -0.11
+  calmar: 0.15
+  alpha: 20.1
+  beta: -0.01
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 z-mom. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 자동수정 없음.
+- date: '2026-02-24'
+  phase: P4
+  verdict: WATCH
+  rationale: 'ADA Sharpe 0.71 양호하나 Trades 18<30, CAGR 4.6%<15% PASS미달. WATCH: flat_zone/vol_target
+    조정시 개선 가능'
+- date: '2026-02-24'
+  phase: P4
+  verdict: WATCH
+  rationale: 'P4A: ADA Sharpe 0.71 CAGR 4.6% Trades 18<30 PASS미달. P4B: OOS Sharpe
+    1.43 PASS (역전, fold 1개). WATCH: flat_zone/vol_target 조정 가능'
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: DOGE/USDT Sharpe 0.82, CAGR +1770.9%, MDD -15.5% [Path A] — Path A 충족
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: DOGE/USDT Sharpe 0.82, CAGR +17.7%, MDD -15.5% [Path A] — Path A 충족
+- date: '2026-02-24'
+  phase: P4
+  verdict: FAIL
+  rationale: P4B IS/OOS FAIL — DOGE OOS Sharpe -0.17 Decay 115%, BTC OOS -0.11 Decay
+    110%. 2024H2-2025 구간 전략 무효

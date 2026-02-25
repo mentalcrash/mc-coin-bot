@@ -158,6 +158,51 @@ class TestRuntimeSymbols:
         assert abs(weight - 1.0 / 3) < 1e-6
 
 
+class TestDroppedAssetReentryBlocked:
+    """Drop된 에셋의 재진입 차단 테스트 (스펙: 재진입 불가)."""
+
+    def test_dropped_asset_stays_in_runtime_symbols(self) -> None:
+        """cleanup_excluded_asset() 후에도 _runtime_symbols에 잔존 → add_asset 차단."""
+        pod = _make_pod(symbols=("BTC/USDT", "ETH/USDT", "SOL/USDT"))
+        pod._buffers["SOL/USDT"] = [{"close": 50.0}]
+        pod._timestamps["SOL/USDT"] = []
+
+        pod.cleanup_excluded_asset("SOL/USDT")
+
+        # 버퍼는 정리되지만 _runtime_symbols에 잔존
+        assert "SOL/USDT" not in pod._buffers
+        assert pod.accepts_symbol("SOL/USDT") is True  # still in _runtime_symbols
+
+    def test_readd_dropped_asset_returns_false(self) -> None:
+        """drop된 에셋에 add_asset 호출 시 False (재진입 차단)."""
+        pod = _make_pod(
+            symbols=("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+            max_assets=5,
+            with_selector=True,
+        )
+
+        # Simulate drop
+        assert pod._asset_selector is not None
+        pod._asset_selector.flag_permanently_excluded("SOL/USDT")
+        pod.cleanup_excluded_asset("SOL/USDT")
+
+        # Re-add attempt → blocked (_runtime_symbols에 잔존)
+        assert pod.add_asset("SOL/USDT") is False
+
+    def test_selector_permanently_excluded_blocks_readd(self) -> None:
+        """AssetSelector.add_symbol()은 기존 심볼을 무시 (permanently_excluded 포함)."""
+        cfg = AssetSelectorConfig(enabled=True, min_active_assets=1)
+        selector = AssetSelector(config=cfg, symbols=("BTC/USDT", "ETH/USDT"))
+
+        selector.flag_permanently_excluded("ETH/USDT")
+        assert selector.multipliers["ETH/USDT"] == 0.0
+
+        # add_symbol은 기존 states에 있으면 no-op
+        selector.add_symbol("ETH/USDT")
+        assert selector.multipliers["ETH/USDT"] == 0.0  # 변화 없음
+        assert selector.asset_states["ETH/USDT"] == AssetLifecycleState.COOLDOWN
+
+
 class TestAssetSelectorExtensions:
     """AssetSelector add_symbol / flag_permanently_excluded."""
 
@@ -188,6 +233,7 @@ class TestAssetSelectorExtensions:
         selector = AssetSelector(config=cfg, symbols=("BTC/USDT", "ETH/USDT"))
         selector.flag_permanently_excluded("ETH/USDT")
         selector.flag_permanently_excluded("ETH/USDT")  # no-op
+
 
 
 class TestIntraPodAllocatorExtensions:

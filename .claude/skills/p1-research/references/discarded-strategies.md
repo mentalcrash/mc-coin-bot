@@ -1,10 +1,10 @@
-# Discarded Strategies — 폐기 전략 목록 (2026-02-10)
+# Discarded Strategies — 폐기 전략 목록 (2026-02-23)
 
 이 파일은 p1-research 스킬에서 중복 회피를 위해 참조한다.
 **동일 접근법 재시도는 금지**하며, 차별화 포인트를 명시해야 한다.
 
 > 최신 현황은 `pipeline report`로 확인.
-> 총 146개 전략 중 **활성 1개 (Anchor-Mom)**, **폐기 145개**.
+> 총 151개 전략 중 **활성 1개 (Anchor-Mom)**, **폐기 150개**.
 
 ---
 
@@ -42,7 +42,7 @@
 | GK Breakout | `gk-breakout` | 0.77 | 0.39 | 59% | Garman-Klass, Decay 59% |
 | Vol Structure | `vol-structure` | 1.18 | 0.59 | 57% | Short/long vol ratio, Decay 57% |
 
-## Phase 4A 실패 — Sharpe/CAGR 미달 (5개)
+## Phase 4A 실패 — Sharpe/CAGR 미달 (6개)
 
 | 전략 | Registry | Sharpe | CAGR | 실패 사유 |
 |------|----------|--------|------|----------|
@@ -51,6 +51,7 @@
 | Kalman-Trend | `kalman-trend` | 0.78 | +19.4% | Sharpe < 1.0, CAGR -0.6%p 미달. DOGE 거래 0건 |
 | BB-RSI | `bb-rsi` | 0.59 | +4.6% | CAGR < 20% |
 | Entropy-Switch | `entropy-switch` | 0.52 | +11.1% | 전 에셋 Sharpe < 1.0. 레짐 필터만으로 alpha 생성 불가 |
+| Multi-Source Composite | `multi-source-composite` | 0.67 | +17.1% | WATCH→RETIRED. 6/8 에셋 음수 Sharpe. Volume/close proxy ≠ stablecoin flow → 직교성 훼손. F&G momentum 방향 사용 부적절(#58). 교훈 #76 |
 
 ## Phase 4A 실패 — 전 에셋 Sharpe 음수/0 근접 (12개)
 
@@ -102,7 +103,7 @@
 
 > 최신 교훈은 `pipeline lessons-list`로 확인.
 
-1. **앙상블 > 단일지표**: ML 앙상블의 낮은 Decay가 단일 팩터 대비 일반화 우수. 단, CTREND는 look-ahead bias로 RETIRED (교훈 #068) — resolved_end 패턴 필수
+1. **앙상블 > 단일지표**: ML 앙상블의 낮은 Decay가 단일 팩터 대비 일반화 우수. 단, ML 전략은 look-ahead bias 주의 (교훈 #068) — resolved_end 패턴 필수
 1. **IS Sharpe ≠ 실전 성과**: P4A PASS 전략 24개 중 P6까지 도달한 전략은 4개뿐
 1. **SOL/USDT = Best Asset**: 높은 변동성 + 추세 지속성이 모멘텀/앙상블 전략에 유리
 1. **CAGR > 20% 필터의 위력**: 안정적이나 수익 낮은 전략 조기 제거
@@ -131,3 +132,4 @@
 | 전통금융→크립토 전이 | Session-Breakout, Liq-Momentum, Hour-Season | 시장 구조 차이로 edge 소멸 |
 | 데이터 부재 전략 | Copula Pairs | 인프라 미구축 → 무기한 보류 = 폐기 (Funding Carry는 인프라 구축 완료로 재시도 대기) |
 | 밈코인 FULL Short | VWAP-Disposition | DOGE 급등 시 MDD 무한대 |
+| OHLCV proxy로 multi-source 위장 | Multi-Source Composite | Volume/close ≠ stablecoin flow. 직교성 훼손 → OHLCV-only 전략으로 전락 |

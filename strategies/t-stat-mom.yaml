@@ -1,0 +1,71 @@
+version: 2
+meta:
+  name: t-stat-mom
+  display_name: T-Stat Momentum
+  category: Statistical Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-24'
+  economic_rationale: 수익률 t-statistic 기반 통계적 유의성 모멘텀. Multi-lookback t-stat blend
+    + tanh 연속 포지션. std/sqrt(N) 정규화로 vol 자동 적응 내재.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 58.0
+      registry: t-stat-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-24'
+    details:
+      sharpe: 0.22
+      cagr: 2.1
+      best_asset: ADA/USDT
+      mdd: 16.9
+      trades: 132.0
+asset_performance: []
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 t-stat-mom. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-02-24'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: Best ADA/USDT Sharpe 0.22 < 0.5 (WATCH 미달). 8개 에셋 평균 Sharpe
+    -0.01. t-stat blend 시그널 변별력 부족'

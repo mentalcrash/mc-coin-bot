@@ -83,7 +83,7 @@ class TestEnrichmentNanCheck:
 
     def test_drop_suggestion_when_nan_above_80_pct(self, service: MarketDataService) -> None:
         """NaN 비율이 80% 초과 시 drop 제안 경고."""
-        df = _make_df(100, {"macro_gold": 0.9})
+        df = _make_df(100, {"macro_dxy": 0.9})
 
         warnings: list[str] = []
         handler_id = logger.add(lambda msg: warnings.append(str(msg)), level="WARNING")
@@ -94,7 +94,7 @@ class TestEnrichmentNanCheck:
 
         assert len(warnings) == 1
         assert "consider dropping" in warnings[0]
-        assert "macro_gold" in warnings[0]
+        assert "macro_dxy" in warnings[0]
 
     def test_multiple_columns_reported(self, service: MarketDataService) -> None:
         """여러 컬럼의 NaN 비율이 각각 올바른 카테고리로 보고된다."""

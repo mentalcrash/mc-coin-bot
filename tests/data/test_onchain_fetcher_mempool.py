@@ -1,4 +1,4 @@
-"""Tests for mempool.space mining data fetcher."""
+"""Tests for mempool.space mining + Lightning data fetcher."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pandas as pd
 import pytest
 
-from src.data.onchain.fetcher import MEMPOOL_API_URL, OnchainFetcher
+from src.data.onchain.fetcher import MEMPOOL_API_URL, MEMPOOL_LIGHTNING_URL, OnchainFetcher
 
 
 @pytest.fixture()
@@ -249,3 +249,115 @@ class TestFetchMempoolMining:
         assert len(df) == 1
         assert df["difficulty"].iloc[0] == Decimal(0)
         assert df["block_height"].iloc[0] is None
+
+
+# ---------------------------------------------------------------------------
+# fetch_mempool_lightning
+# ---------------------------------------------------------------------------
+
+
+class TestFetchMempoolLightning:
+    @pytest.mark.asyncio()
+    async def test_success(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        """정상 응답 — channel_count + total_capacity 파싱."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "added": 1704067200,
+                "channel_count": 60000,
+                "total_capacity": 500000000000,
+                "tor_nodes": 9000,
+            },
+            {
+                "added": 1704153600,
+                "channel_count": 60100,
+                "total_capacity": 501000000000,
+                "tor_nodes": 9010,
+            },
+        ]
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert len(df) == 2
+        expected_cols = ["timestamp", "channel_count", "total_capacity", "source"]
+        assert list(df.columns) == expected_cols
+
+    @pytest.mark.asyncio()
+    async def test_empty_response(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        """빈 리스트 → empty DataFrame with columns."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert df.empty
+        assert "total_capacity" in df.columns
+
+    @pytest.mark.asyncio()
+    async def test_non_list_response(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        """list가 아닌 응답 → empty DataFrame."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"error": "unexpected"}
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert df.empty
+
+    @pytest.mark.asyncio()
+    async def test_total_capacity_is_decimal(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        """total_capacity는 Decimal 타입."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {"added": 1704067200, "channel_count": 60000, "total_capacity": 500000000000},
+        ]
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert isinstance(df["total_capacity"].iloc[0], Decimal)
+
+    @pytest.mark.asyncio()
+    async def test_source_column(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        """source 컬럼은 'mempool_space' 고정."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {"added": 1704067200, "channel_count": 100, "total_capacity": 1000},
+        ]
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert df["source"].iloc[0] == "mempool_space"
+
+    @pytest.mark.asyncio()
+    async def test_skip_non_dict_entries(
+        self, fetcher: OnchainFetcher, mock_client: AsyncMock
+    ) -> None:
+        """dict가 아닌 entry skip."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            "unexpected",
+            {"added": 1704067200, "channel_count": 100, "total_capacity": 1000},
+        ]
+        mock_client.get.return_value = mock_response
+
+        df = await fetcher.fetch_mempool_lightning()
+
+        assert len(df) == 1
+
+    @pytest.mark.asyncio()
+    async def test_url_with_interval(self, fetcher: OnchainFetcher, mock_client: AsyncMock) -> None:
+        """올바른 URL과 interval 파라미터로 호출."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_client.get.return_value = mock_response
+
+        await fetcher.fetch_mempool_lightning(interval="1y")
+
+        called_url = mock_client.get.call_args[0][0]
+        assert called_url == f"{MEMPOOL_LIGHTNING_URL}/1y"

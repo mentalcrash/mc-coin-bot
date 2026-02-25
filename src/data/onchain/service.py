@@ -64,6 +64,7 @@ _TVL_DEFS: list[tuple[str, str]] = [
 
 _DEX_DEFS: list[tuple[str, str]] = [
     ("defillama", "dex_volume"),
+    ("defillama", "fees_total"),
 ]
 
 _COINMETRICS_DEFS: list[tuple[str, str]] = [
@@ -84,6 +85,11 @@ _ETHERSCAN_DEFS: list[tuple[str, str]] = [
 
 _MEMPOOL_DEFS: list[tuple[str, str]] = [
     ("mempool_space", "mining"),
+    ("mempool_space", "lightning_capacity"),
+]
+
+_BEACONCHA_DEFS: list[tuple[str, str]] = [
+    ("beaconcha_in", "eth_staking_apr"),
 ]
 
 ONCHAIN_BATCH_DEFINITIONS: dict[str, list[tuple[str, str]]] = {
@@ -95,6 +101,7 @@ ONCHAIN_BATCH_DEFINITIONS: dict[str, list[tuple[str, str]]] = {
     "blockchain": _BLOCKCHAIN_DEFS,
     "etherscan": _ETHERSCAN_DEFS,
     "mempool": _MEMPOOL_DEFS,
+    "beaconcha": _BEACONCHA_DEFS,
 }
 
 
@@ -135,6 +142,8 @@ async def _route_defillama(fetcher: OnchainFetcher, name: str) -> pd.DataFrame |
         return await fetcher.fetch_tvl(chain)
     if name == "dex_volume":
         return await fetcher.fetch_dex_volume()
+    if name == "fees_total":
+        return await fetcher.fetch_fees_total()
     return None
 
 
@@ -146,6 +155,7 @@ SOURCE_DATE_COLUMNS: dict[str, str] = {
     "blockchain_com": "timestamp",
     "etherscan": "timestamp",
     "mempool_space": "timestamp",
+    "beaconcha_in": "timestamp",
 }
 
 # Source별 publication lag (일): T+lag 이후 데이터 접근 가능 (look-ahead bias 방지)
@@ -156,12 +166,40 @@ SOURCE_LAG_DAYS: dict[str, int] = {
     "blockchain_com": 1,  # T+1 ~12:00 UTC
     "etherscan": 0,  # 스냅샷 (near real-time)
     "mempool_space": 0,  # near real-time
+    "beaconcha_in": 0,  # 스냅샷 (near real-time)
 }
 
 
 def get_date_col(source: str) -> str:
     """source에 해당하는 date column 이름 반환."""
     return SOURCE_DATE_COLUMNS.get(source, "date")
+
+
+async def _route_btc_infra(fetcher: OnchainFetcher, source: str, name: str) -> pd.DataFrame | None:
+    """BTC 인프라 소스 라우팅 (blockchain_com, mempool_space, beaconcha_in)."""
+    if source == "blockchain_com" and name.startswith("bc_"):
+        return await fetcher.fetch_blockchain_chart(name.removeprefix("bc_"))
+    if source == "mempool_space":
+        if name == "mining":
+            return await fetcher.fetch_mempool_mining()
+        if name == "lightning_capacity":
+            return await fetcher.fetch_mempool_lightning()
+    if source == "beaconcha_in" and name == "eth_staking_apr":
+        return await fetcher.fetch_eth_staking_apr()
+    return None
+
+
+async def _route_misc(fetcher: OnchainFetcher, source: str, name: str) -> pd.DataFrame | None:
+    """비-DeFiLlama 소스 라우팅 (내부 헬퍼)."""
+    if source == "coinmetrics":
+        asset = name.removesuffix("_metrics")
+        return await fetcher.fetch_coinmetrics(asset)
+    if source == "alternative_me" and name == "fear_greed":
+        return await fetcher.fetch_fear_greed()
+    if source == "etherscan" and name == "eth_supply":
+        api_key = get_settings().etherscan_api_key.get_secret_value()
+        return await fetcher.fetch_eth_supply(api_key)
+    return await _route_btc_infra(fetcher, source, name)
 
 
 async def _do_route_fetch(fetcher: OnchainFetcher, source: str, name: str) -> pd.DataFrame:
@@ -172,25 +210,11 @@ async def _do_route_fetch(fetcher: OnchainFetcher, source: str, name: str) -> pd
     """
     if source == "defillama":
         result = await _route_defillama(fetcher, name)
-        if result is not None:
-            return result
-    elif source == "coinmetrics":
-        asset = name.removesuffix("_metrics")
-        return await fetcher.fetch_coinmetrics(asset)
-    elif source == "alternative_me":
-        if name == "fear_greed":
-            return await fetcher.fetch_fear_greed()
-    elif source == "blockchain_com":
-        if name.startswith("bc_"):
-            chart_name = name.removeprefix("bc_")
-            return await fetcher.fetch_blockchain_chart(chart_name)
-    elif source == "etherscan":
-        if name == "eth_supply":
-            api_key = get_settings().etherscan_api_key.get_secret_value()
-            return await fetcher.fetch_eth_supply(api_key)
-    elif source == "mempool_space":
-        if name == "mining":
-            return await fetcher.fetch_mempool_mining()
+    else:
+        result = await _route_misc(fetcher, source, name)
+
+    if result is not None:
+        return result
 
     msg = f"Unknown route: {source}/{name}"
     raise ValueError(msg)

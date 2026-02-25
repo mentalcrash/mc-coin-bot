@@ -1,0 +1,78 @@
+version: 2
+meta:
+  name: er-trend
+  display_name: ER Trend
+  category: Efficiency Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-24'
+  economic_rationale: 가격 경로 효율성(Efficiency Ratio) 기반 정보 캐스케이드 모멘텀. Multi-lookback
+    ER × direction으로 추세 품질 포착. 군집행동/레버리지 청산 증폭 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 61.0
+      registry: er-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-24'
+    details:
+      sub_phase: P4B
+      is_sharpe: 1.06
+      oos_sharpe: 0.08
+      decay: 92.3
+      oos_trades: 33.0
+      consistency: 0.0
+asset_performance: []
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 er-trend. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. 자동수정: exit_threshold dead parameter 제거. Warning 1건 (W3
+    regime concentration)'
+- date: '2026-02-24'
+  phase: P4
+  verdict: WATCH
+  rationale: P4A WATCH — Best AVAX Sharpe 0.68 (PASS 0.7 미달), CAGR +7.2%. Beta~0 독립알파.
+    파라미터 최적화 여지.
+- date: '2026-02-24'
+  phase: P4
+  verdict: FAIL
+  rationale: P4B FAIL — IS/OOS Decay 92.3% (한계 60%). OOS Sharpe 0.08. IS 과적합 확정. ER
+    momentum이 특정 시장 국면에 의존적.

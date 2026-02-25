@@ -1,0 +1,124 @@
+version: 2
+meta:
+  name: fragility-mom
+  display_name: Fragility-Aware Momentum
+  category: Volatility Meta-Regime
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-25'
+  retired_at: '2026-02-25'
+  economic_rationale: VoV가 regime 전환 감지기. Low VoV=안정→추세 신뢰. High VoV=전환→축소. GK vol
+    percentile로 추세 확인도 조절. 과신→취약성 축적의 행동편향 활용.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  gk_window: 63
+  vov_window: 59
+  vov_percentile_window: 412
+  gk_vol_percentile_window: 248
+  mom_lookback: 75
+  vol_window: 86
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      tests: 51.0
+      registry: fragility-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      oos_sharpe: 1.25
+      is_sharpe: -0.72
+      decay: -274.0
+      consistency: 100.0
+      overfit_prob: 0.0
+      sharpe: 0.64
+      cagr: 9.77
+      best_asset: ETH/USDT
+      mdd: 20.39
+      trades: 371.0
+  P5:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      plateau_pass: 6/6
+      stability_pass: 6/6
+  P6:
+    status: FAIL
+    date: '2026-02-25'
+    details:
+      cpcv_oos_sharpe: -0.43
+      pbo: 28.0
+      dsr: 0.0
+      mc_pvalue: 0.983
+asset_performance: []
+decisions:
+- date: '2026-02-25'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-25'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 fragility-mom. Ruff/Pyright 0 error.
+- date: '2026-02-25'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W5=WARNING(vov-mom과 상관 검증 필요). 1건
+- date: '2026-02-25'
+  phase: P4
+  verdict: WATCH
+  rationale: 'P4A: Best ETH Sharpe 0.64 CAGR +9.8% MDD 20.4%. 8개 중 6개 Sharpe<0. PASS
+    미달이나 ETH에서 유의미.'
+- date: '2026-02-25'
+  phase: P4
+  verdict: PASS
+  rationale: P4A WATCH(ETH Sharpe 0.64 CAGR +9.8%) + P4B PASS(OOS Sharpe 1.25, IS/OOS
+    역전). Regime 의존적이나 OOS 양호.
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe -0.72→1.45 (+302.0%), OOS=1.75
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: P5A IS 1.45 OOS 1.75 (+302%). P5B 6/6 파라미터 고원+안정 PASS. gk_vol_pctile_window
+    전범위 불변, vol_window 넓은 고원
+- date: '2026-02-25'
+  phase: P6
+  verdict: PASS
+  rationale: P6A WFA OOS Sharpe 0.49 (>=0.3), Decay -163% (역전), Consistency 67% (>=50%).
+    P6B 결과 대기
+- date: '2026-02-25'
+  phase: P6
+  verdict: FAIL
+  rationale: 'P6B FAIL: CPCV OOS Sharpe -0.43 (<0.2 terminal). MC p=0.983, DSR=0.00.
+    WFA 3-fold에서 양수였으나 CPCV 10-fold에서 alpha 소실. 특정 구간 의존'

@@ -135,32 +135,7 @@ winrate_deviation = eda_winrate - vbt_winrate
 
 ---
 
-## 5. CTREND 선례 분석
-
-### 편차 패턴
-
-| 지표 | 편차 | 카탈로그 | 설명 |
-|------|------|---------|------|
-| Sharpe +37.6% | EDA > VBT | A1 | PM threshold 필터링으로 비용 절감 |
-| CAGR +77.7% | EDA > VBT | A1+A2 | 거래 감소 + trailing stop 효과 |
-| MDD -28.5% | EDA < VBT | A2 | Trailing stop ATR 3.0x 방어 |
-| Trades -75.0% | 0.25x | A1 | rebalance_threshold 10% 필터링 |
-
-### 판정 근거
-
-1. **수익 부호 일치**: 양쪽 모두 강한 양수 (97.8% vs 173.8%)
-1. **편차 > 20%**: 있으나, PM/RM 구조적 차이로 설명 가능
-1. **거래 수 0.25x**: 기준(0.5x) 미달이나, PM threshold의 구조적 필터링으로 예외 허용
-
-### 시사점
-
-- PM rebalance_threshold는 거래 수를 크게 감소시키지만, 성과 향상으로 이어짐
-- 거래 수 기준(0.5x~2.0x)은 "구조적 사유 면책" 조항이 필수
-- EDA > VBT는 PM/RM 효과이며, 라이브에서도 동일하게 적용됨
-
----
-
-## 6. TF별 검증 주의사항
+## 5. TF별 검증 주의사항
 
 ### 1D TF
 

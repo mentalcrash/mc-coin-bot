@@ -1,0 +1,17 @@
+id: 81
+title: On-chain 전략의 EMA fallback PASS 함정 — best asset이 on-chain 미사용 에셋
+body: 'onflow-trend P4A best=AVAX(Sharpe 0.86)이나 AVAX에 on-chain 데이터 없음. EMA fallback
+  경로만 동작하여 on-chain 파라미터 5개 전부 dead parameter(Sharpe 불변). BTC/ETH on-chain 활성 시 Sharpe
+  0/-0.35. P5B에서 dead parameter 탐지로 FAIL. 교훈: on-chain 전략은 P4에서 on-chain 활성 에셋만 best_asset
+  후보로 허용해야'
+category: strategy-design
+tags:
+- on-chain
+- fallback
+- dead-parameter
+- best-asset
+strategies:
+- onflow-trend
+timeframes:
+- 8H
+added_at: '2026-02-25'

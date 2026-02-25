@@ -131,6 +131,55 @@ def liquidation_asymmetry(
     return result
 
 
+def taker_cvd(
+    taker_buy_base_volume: pd.Series,
+    volume: pd.Series,
+) -> pd.Series:
+    """Taker 기반 Cumulative Volume Delta.
+
+    CVD = cumsum(taker_buy - taker_sell) = cumsum(2*taker_buy - volume).
+    상승: 매수 주도, 하락: 매도 주도.
+
+    Args:
+        taker_buy_base_volume: Taker 매수 base asset 거래량 (Binance klines col 9).
+        volume: 전체 거래량.
+
+    Returns:
+        누적 CVD 시리즈.
+    """
+    delta: pd.Series = 2.0 * taker_buy_base_volume - volume  # type: ignore[assignment]
+    result: pd.Series = delta.cumsum()  # type: ignore[assignment]
+    return result
+
+
+def taker_buy_ratio(
+    taker_buy_base_volume: pd.Series,
+    volume: pd.Series,
+    window: int = 14,
+) -> pd.Series:
+    """Rolling taker buy ratio = rolling_sum(taker_buy) / rolling_sum(volume).
+
+    > 0.5: buyer-dominant, < 0.5: seller-dominant.
+
+    Args:
+        taker_buy_base_volume: Taker 매수 base asset 거래량.
+        volume: 전체 거래량.
+        window: Rolling 윈도우 (기본 14).
+
+    Returns:
+        Taker buy ratio 시리즈 (0~1).
+    """
+    rolling_buy: pd.Series = taker_buy_base_volume.rolling(  # type: ignore[assignment]
+        window=window, min_periods=window
+    ).sum()
+    rolling_vol: pd.Series = volume.rolling(  # type: ignore[assignment]
+        window=window, min_periods=window
+    ).sum()
+    rolling_vol_safe = rolling_vol.replace(0, np.nan)
+    result: pd.Series = rolling_buy / rolling_vol_safe  # type: ignore[assignment]
+    return result
+
+
 def order_flow_imbalance(
     taker_buy_volume: pd.Series,
     taker_sell_volume: pd.Series,

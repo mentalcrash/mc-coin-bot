@@ -1,0 +1,116 @@
+version: 2
+meta:
+  name: mvrv-cycle-trend
+  display_name: MVRV Cycle Trend
+  category: Multi-Source
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-24'
+  economic_rationale: MVRV Z-Score 사이클 레짐 필터 + 12H multi-lookback momentum. BTC/ETH
+    전용. 정보 비대칭(on-chain valuation) 기반. SSRN 5225612 학술 검증.
+  rationale_references: []
+  rationale_category: On-chain Valuation
+parameters:
+  mvrv_zscore_window: 128
+  mvrv_bull_threshold: 0.9816550844584789
+  mvrv_bear_threshold: 5.163554099603076
+  mom_fast: 7
+  mom_slow: 66
+  mom_blend_weight: 0.6230882565938684
+  vol_window: 186
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 65.0
+      registry: mvrv-cycle-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      best_asset: ETH/USDT
+      oos_sharpe: 1.91
+      is_sharpe: 0.9
+      decay: -112.0
+      oos_trades: 71.0
+      consistency: 100.0
+  P5:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      param_verdicts:
+        mvrv_zscore_window: PASS
+        mvrv_bull_threshold: PASS
+        mvrv_bear_threshold: PASS
+        mom_fast: PASS
+        mom_slow: PASS
+        mom_blend_weight: PASS
+        vol_window: PASS
+  P6:
+    status: FAIL
+    date: '2026-02-24'
+    details:
+      wfa_oos_sharpe: 0.11
+      wfa_decay: -117.0
+      wfa_consistency: 67.0
+asset_performance: []
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 mvrv-cycle-trend. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 1건 (W3 regime concentration)
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A: ETH/USDT Sharpe 1.03, CAGR +26.4%, MDD 30.9%. Path B PASS. Beta
+    0.06 (BTC독립). 8/8 MDD<50%. P4B 진행 대기.'
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: P4B IS/OOS PASS — OOS Sharpe 1.91 > IS 0.90. Negative decay (OOS>IS).
+    71 OOS trades. ETH/USDT 12H best asset.
+- date: '2026-02-24'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.90→0.97 (+7.1%), OOS=1.18
+- date: '2026-02-24'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-02-24'
+  phase: P6
+  verdict: FAIL
+  rationale: WFA OOS Sharpe 0.11 < 0.30. Fold0(2022) -1.04. IS Sharpe avg -0.67. 2022
+    crypto winter 적응 실패.

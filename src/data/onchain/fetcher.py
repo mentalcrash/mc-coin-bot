@@ -72,6 +72,10 @@ WEI_PER_ETH = Decimal(1000000000000000000)
 
 # mempool.space API
 MEMPOOL_API_URL = "https://mempool.space/api/v1"
+MEMPOOL_LIGHTNING_URL = "https://mempool.space/api/v1/lightning/statistics"
+
+# beaconcha.in API (ETH staking)
+BEACONCHA_API_URL = "https://beaconcha.in/api/v1"
 
 # Top 5 chains for stablecoin analysis
 DEFI_CHAINS = ["Ethereum", "Tron", "BSC", "Arbitrum", "Solana"]
@@ -397,6 +401,40 @@ class OnchainFetcher:
         logger.info(f"Fetched {len(df)} DEX volume records")
         return df
 
+    async def fetch_fees_total(self) -> pd.DataFrame:
+        """Fetch daily aggregate protocol fees (DeFiLlama).
+
+        API: GET {DEFILLAMA_API_URL}/overview/fees
+
+        Returns:
+            DataFrame with columns [date, fees_usd, source]
+        """
+        url = f"{DEFILLAMA_API_URL}/overview/fees"
+        logger.info(f"Fetching total protocol fees from {url}")
+
+        response = await self._client.get(url)
+        data = response.json()
+
+        chart = data.get("totalDataChart", []) if isinstance(data, dict) else []
+        if not chart:
+            logger.warning("Empty totalDataChart in fees response")
+            return pd.DataFrame(columns=pd.Index(["date", "fees_usd", "source"]))
+
+        rows: list[dict[str, object]] = []
+        for entry in chart:
+            ts, fees = entry[0], entry[1]
+            rows.append(
+                {
+                    "date": pd.Timestamp.fromtimestamp(int(ts), tz="UTC"),
+                    "fees_usd": Decimal(str(fees)),
+                    "source": "defillama",
+                }
+            )
+
+        df = pd.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} total protocol fees records")
+        return df
+
     async def fetch_fear_greed(self) -> pd.DataFrame:
         """Fetch Fear & Greed Index history (Alternative.me).
 
@@ -438,7 +476,7 @@ class OnchainFetcher:
         return df
 
     async def fetch_blockchain_chart(
-        self, chart_name: str, timespan: str = "5years"
+        self, chart_name: str, timespan: str = "all"
     ) -> pd.DataFrame:
         """Fetch Blockchain.com Chart data (BTC network health).
 
@@ -626,4 +664,94 @@ class OnchainFetcher:
 
         df = pd.DataFrame(rows)
         logger.info(f"Fetched {len(df)} mempool.space mining records")
+        return df
+
+    async def fetch_mempool_lightning(self, interval: str = "all") -> pd.DataFrame:
+        """Fetch Lightning Network statistics from mempool.space.
+
+        API: GET /api/v1/lightning/statistics/{interval}
+
+        Args:
+            interval: 기간 ("1m", "3m", "6m", "1y", "2y", "3y", "all")
+
+        Returns:
+            DataFrame with columns [timestamp, channel_count, total_capacity, source]
+        """
+        url = f"{MEMPOOL_LIGHTNING_URL}/{interval}"
+        columns = pd.Index(["timestamp", "channel_count", "total_capacity", "source"])
+        logger.info(f"Fetching mempool.space Lightning stats (interval={interval})")
+
+        response = await self._client.get(url)
+        data = response.json()
+
+        if not isinstance(data, list):
+            logger.warning("Non-list response from mempool.space Lightning")
+            return pd.DataFrame(columns=columns)
+
+        if not data:
+            logger.warning("Empty Lightning statistics from mempool.space")
+            return pd.DataFrame(columns=columns)
+
+        rows: list[dict[str, object]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            ts = entry.get("added")
+            if ts is None:
+                continue
+            rows.append(
+                {
+                    "timestamp": pd.Timestamp.fromtimestamp(int(ts), tz="UTC"),
+                    "channel_count": entry.get("channel_count", 0),
+                    "total_capacity": Decimal(str(entry.get("total_capacity", 0))),
+                    "source": "mempool_space",
+                }
+            )
+
+        if not rows:
+            return pd.DataFrame(columns=columns)
+
+        df = pd.DataFrame(rows)
+        logger.info(f"Fetched {len(df)} mempool.space Lightning records")
+        return df
+
+    async def fetch_eth_staking_apr(self) -> pd.DataFrame:
+        """Fetch ETH staking APR snapshot from beaconcha.in.
+
+        API: GET /api/v1/ethstore/latest
+        스냅샷 API — 현재 시점의 ETH staking APR 1행 반환.
+
+        Returns:
+            DataFrame with columns [timestamp, avg_apr, cl_apr, el_apr, source]
+        """
+        url = f"{BEACONCHA_API_URL}/ethstore/latest"
+        columns = pd.Index(["timestamp", "avg_apr", "cl_apr", "el_apr", "source"])
+        logger.info(f"Fetching ETH staking APR from {url}")
+
+        response = await self._client.get(url)
+        data = response.json()
+
+        if not isinstance(data, dict):
+            logger.warning("Non-dict response from beaconcha.in ethstore")
+            return pd.DataFrame(columns=columns)
+
+        if data.get("status") != "OK":
+            logger.warning(f"beaconcha.in API non-OK status: {data.get('status')}")
+            return pd.DataFrame(columns=columns)
+
+        result = data.get("data")
+        if not isinstance(result, dict):
+            logger.warning("Non-dict data field from beaconcha.in ethstore")
+            return pd.DataFrame(columns=columns)
+
+        row: dict[str, object] = {
+            "timestamp": pd.Timestamp.now(tz="UTC").floor("s"),
+            "avg_apr": Decimal(str(result.get("apr", 0))),
+            "cl_apr": Decimal(str(result.get("cl_apr", 0))),
+            "el_apr": Decimal(str(result.get("el_apr", 0))),
+            "source": "beaconcha_in",
+        }
+
+        df = pd.DataFrame([row])
+        logger.info(f"Fetched ETH staking APR: avg={row['avg_apr']}")
         return df

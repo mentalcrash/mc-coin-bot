@@ -1,0 +1,104 @@
+version: 2
+meta:
+  name: onflow-trend
+  display_name: OnFlow Trend
+  category: On-chain Information
+  timeframe: 8H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-25'
+  retired_at: '2026-02-25'
+  economic_rationale: 거래소 순입출금이 informed trader 매매 의도 반영. 대규모 출금=축적, 입금=분배. MVRV z-score
+    macro cycle 확인. 8H OHLCV primary + 1D On-chain context. BTC/ETH 전용.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  flow_zscore_window: 142
+  flow_long_z: -1.615107696953485
+  flow_exit_z: 0.5833855717159258
+  mvrv_undervalued: 1.037423099843201
+  mvrv_overheated: 2.441932098846999
+  trend_ema_fast: 8
+  trend_ema_slow: 16
+  vol_window: 95
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      tests: 55.0
+      registry: onflow-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      best_asset: AVAX/USDT
+      sharpe: 0.86
+      cagr: 24.51
+      mdd: 31.7
+      oos_sharpe: 0.52
+      decay: 32.5
+      is_sharpe: 0.77
+      consistency: 100.0
+  P5:
+    status: FAIL
+    date: '2026-02-25'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-25'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-25'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 onflow-trend. Ruff/Pyright 0 error.
+- date: '2026-02-25'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-02-25'
+  phase: P4
+  verdict: PASS
+  rationale: P4A PASS — AVAX Sharpe 0.86 CAGR+24.51% MDD 31.7%. 단 BTC/ETH on-chain
+    활성 시 Sharpe 0/-0.35 (alpha 부재). Best는 EMA fallback 경로
+- date: '2026-02-25'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4B PASS — OOS Sharpe 0.52 Decay 32.5% Consistency 100%. 주의: AVAX는 EMA
+    fallback(on-chain 미사용). On-chain alpha 미입증'
+- date: '2026-02-25'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.77→1.53 (+99.5%), OOS=0.21
+- date: '2026-02-25'
+  phase: P5
+  verdict: FAIL
+  rationale: 'FAIL: flow_long_z'
+- date: '2026-02-25'
+  phase: P5
+  verdict: FAIL
+  rationale: P5B FAIL — flow_long_z ±20% stable NO. AVAX Best Asset은 on-chain 미사용(EMA
+    fallback). On-chain 파라미터 5개 dead parameter. 실질 단순 EMA 추세추종

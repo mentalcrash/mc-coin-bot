@@ -1,0 +1,17 @@
+id: 82
+title: 'VoV(vol-of-vol) 레짐 필터: ETH에서만 유효, 일반화 실패'
+body: 'fragility-mom P4A: VoV percentile + GK vol conviction 조합. ETH Sharpe 0.64/CAGR
+  9.8%로 유일 양호하나 나머지 6/8 에셋 Sharpe<0. VoV=변동성의 2차 미분이라 에셋별 변동성 구조 차이에 극히 민감. ETH의 상대적
+  안정적 vol 구조에서만 VoV 레짐이 작동.'
+category: strategy-design
+tags:
+- VoV
+- vol-of-vol
+- fragility
+- generalization
+- ETH-specific
+strategies:
+- fragility-mom
+timeframes:
+- 12H
+added_at: '2026-02-25'

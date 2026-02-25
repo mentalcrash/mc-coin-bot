@@ -25,6 +25,7 @@ DERIBIT_DATASETS: dict[str, str] = {
     "eth_dvol": "ETH",
     "btc_pc_ratio": "BTC",
     "btc_hist_vol": "BTC",
+    "eth_hist_vol": "ETH",
     "btc_term_structure": "BTC",
     "btc_max_pain": "BTC",
 }
@@ -531,7 +532,7 @@ async def route_fetch(
         return await fetcher.fetch_dvol(currency)
     if name == "btc_pc_ratio":
         return await fetcher.fetch_pc_ratio(currency)
-    if name == "btc_hist_vol":
+    if name.endswith("_hist_vol"):
         return await fetcher.fetch_hist_vol(currency)
     if name == "btc_term_structure":
         return await fetcher.fetch_term_structure(currency)

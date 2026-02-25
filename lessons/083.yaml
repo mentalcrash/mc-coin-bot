@@ -1,0 +1,18 @@
+id: 83
+title: 'WFA PASS → CPCV FAIL 괴리: 3-fold OOS 양수가 10-fold에서 소실'
+body: 'fragility-mom: WFA 3-fold OOS Sharpe 0.49 (PASS) → CPCV 10-fold OOS Sharpe
+  -0.43 (FAIL). IS/OOS 역전 패턴(IS 음수, OOS 양수)이 소수 fold에서만 재현. CPCV 10개 fold 중 3개만 OOS
+  양수(30%). MC p=0.983, DSR=0.00. 원인: 특정 시간구간(2024-2025)에서만 유효한 regime 의존 alpha. WFA
+  expanding window가 해당 구간을 OOS로 배치하여 양수, CPCV는 다양한 조합으로 평균화하여 노출. 교훈: WFA Consistency
+  67%로 겨우 통과한 전략은 CPCV에서 붕괴 가능성 높음.'
+category: pipeline-process
+tags:
+- wfa
+- cpcv
+- regime-dependent
+- fold-sensitivity
+strategies:
+- fragility-mom
+timeframes:
+- 12H
+added_at: '2026-02-25'

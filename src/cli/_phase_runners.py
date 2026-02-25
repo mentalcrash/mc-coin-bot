@@ -436,7 +436,7 @@ def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
     sorted_results = sorted(results, key=lambda x: x.get("sharpe_ratio") or 0, reverse=True)
     best = sorted_results[0]
     best_sharpe = best.get("sharpe_ratio") or 0
-    best_cagr = (best.get("cagr") or 0) * 100
+    best_cagr = best.get("cagr") or 0
     best_mdd = abs(best.get("max_drawdown") or 0)
     best_trades = best.get("total_trades") or 0
 
@@ -490,7 +490,7 @@ def _update_yaml_p4(strategy_name: str, results: list[dict[str, Any]]) -> None:
         AssetMetrics(
             symbol=r["symbol"],
             sharpe=round(r.get("sharpe_ratio") or 0, 2),
-            cagr=round((r.get("cagr") or 0) * 100, 1),
+            cagr=round(r.get("cagr") or 0, 1),
             mdd=round(abs(r.get("max_drawdown") or 0), 1),
             trades=r.get("total_trades") or 0,
             profit_factor=round(r["profit_factor"], 2) if r.get("profit_factor") else None,

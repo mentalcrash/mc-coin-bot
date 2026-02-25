@@ -101,6 +101,13 @@ sources:
     lag_days: 0
     rate_limit_per_min: 60
 
+  - id: beaconcha_in
+    name: beaconcha.in (ETH Beacon Chain)
+    api_url: https://beaconcha.in/api/v1
+    date_column: timestamp
+    lag_days: 0
+    rate_limit_per_min: 8
+
 datasets:
   # ─── OHLCV ──────────────────────────────────────────────────────────
   - id: ohlcv_1m
@@ -117,6 +124,22 @@ datasets:
       - "모든 전략의 기본 입력 데이터"
       - "CandleAggregator로 상위 TF 변환 (1D, 4H, 1H)"
       - "volume spike → 변동성 확대 시그널"
+
+  - id: binance_taker_buy_base_volume
+    name: Binance Taker Buy Base Volume
+    data_type: ohlcv
+    source_id: binance_spot
+    batch_group: ohlcv
+    description: "Binance klines column 9 — Taker 매수 base asset 거래량 (1m 원본)"
+    resolution: 1m
+    available_since: "2017-08-17"
+    storage_path: "data/silver/{SYMBOL}_1m_{YEAR}.parquet"
+    columns: [taker_buy_base_volume]
+    strategy_hints:
+      - "CVD = cumsum(2*taker_buy - volume) → 매수/매도 주도 방향"
+      - "taker_buy_ratio > 0.5 → buyer dominant"
+      - "CVD-Price divergence → contrarian signal"
+    notes: "BVC 근사 대체 (Lesson #15). 동일 klines API 호출에서 추가 비용 없이 캡처."
 
   # ─── Derivatives ────────────────────────────────────────────────────
   - id: funding_rate
@@ -463,6 +486,27 @@ datasets:
       rename_map:
         volume_usd: oc_dex_volume_usd
 
+  - id: fees_total
+    name: DeFi Protocol Fees Total
+    data_type: onchain
+    source_id: defillama
+    batch_group: dex
+    description: "전체 DeFi 프로토콜 일별 수수료 수익 (DeFiLlama)"
+    resolution: 1d
+    available_since: "2019-01-01"
+    storage_path: "data/silver/onchain/defillama/fees_total.parquet"
+    columns: [fees_usd]
+    fetch_key: fees_total
+    strategy_hints:
+      - "Fees 급증 → 온체인 활동 활발, 강세 신호"
+      - "Fees 추세 하락 → DeFi 활동 감소, risk-off"
+      - "Fees/TVL 비율 → DeFi 자본 효율성"
+    enrichment:
+      scope: global
+      columns: [fees_usd]
+      rename_map:
+        fees_usd: oc_fees_usd
+
   # ─── On-chain: Coin Metrics ────────────────────────────────────────
   - id: btc_metrics
     name: BTC On-chain Metrics
@@ -611,6 +655,29 @@ datasets:
       columns: [eth_supply, eth2_staking]
       rename_map: {}
 
+  # ─── On-chain: beaconcha.in ────────────────────────────────────────
+  - id: eth_staking_apr
+    name: ETH Staking APR
+    data_type: onchain
+    source_id: beaconcha_in
+    batch_group: beaconcha
+    description: "ETH Staking APR 스냅샷 (Consensus + Execution Layer, beaconcha.in)"
+    resolution: snapshot
+    available_since: "2022-09-15"
+    storage_path: "data/silver/onchain/beaconcha_in/eth_staking_apr.parquet"
+    columns: [avg_apr, cl_apr, el_apr]
+    fetch_key: eth_staking_apr
+    strategy_hints:
+      - "Staking APR 상승 → ETH 매도 압력 감소 (staking 유인)"
+      - "APR 급락 → validator exit 가능성, 단기 매도 압력"
+      - "CL vs EL APR 비율 → MEV 수익 비중 변화"
+    enrichment:
+      scope: asset
+      target_assets: [ETH]
+      columns: [avg_apr]
+      rename_map:
+        avg_apr: oc_eth_staking_apr
+
   # ─── On-chain: Mempool ─────────────────────────────────────────────
   - id: mining
     name: BTC Mining Stats
@@ -631,6 +698,27 @@ datasets:
       target_assets: [BTC]
       columns: [avg_hashrate, difficulty]
       rename_map: {}
+
+  - id: lightning_capacity
+    name: Lightning Network Capacity
+    data_type: onchain
+    source_id: mempool_space
+    batch_group: mempool
+    description: "Lightning Network 채널 수 + 총 용량 (sats, mempool.space)"
+    resolution: 1d
+    available_since: "2018-01-01"
+    storage_path: "data/silver/onchain/mempool_space/lightning_capacity.parquet"
+    columns: [channel_count, total_capacity]
+    fetch_key: lightning_capacity
+    strategy_hints:
+      - "Lightning capacity 증가 → BTC 네트워크 채택 가속"
+      - "채널 수 감소 + 용량 증가 → 대형 채널 통합 (기관화)"
+    enrichment:
+      scope: asset
+      target_assets: [BTC]
+      columns: [total_capacity]
+      rename_map:
+        total_capacity: oc_ln_capacity
 
   # ─── Macro: FRED ──────────────────────────────────────────────────
   - id: fred_dxy
@@ -653,26 +741,6 @@ datasets:
       columns: [value]
       rename_map:
         value: macro_dxy
-
-  - id: fred_gold
-    name: Gold Price (London PM Fix)
-    data_type: macro
-    source_id: fred
-    batch_group: fred
-    description: "Gold Fixing Price in London Bullion Market (GOLDAMGBD228NLBM)"
-    resolution: 1d
-    available_since: "1968-04-01"
-    storage_path: "data/silver/macro/fred/gold.parquet"
-    columns: [value]
-    fetch_key: gold
-    strategy_hints:
-      - "Gold 상승 + BTC 상승 → 인플레이션 헤지 내러티브"
-      - "Gold/BTC 비율 → 디지털 골드 서사 강도"
-    enrichment:
-      scope: global
-      columns: [value]
-      rename_map:
-        value: macro_gold
 
   - id: fred_dgs10
     name: 10-Year Treasury Yield
@@ -776,6 +844,130 @@ datasets:
       columns: [value]
       rename_map:
         value: macro_m2
+
+  - id: fred_t10yie
+    name: 10-Year Breakeven Inflation Rate
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "10-Year Breakeven Inflation Rate (T10YIE) — 실질금리 산출 핵심"
+    resolution: 1d
+    available_since: "2003-01-02"
+    storage_path: "data/silver/macro/fred/t10yie.parquet"
+    columns: [value]
+    fetch_key: t10yie
+    strategy_hints:
+      - "실질금리 = DGS10 - T10YIE → BTC 기회비용"
+      - "T10YIE 상승 → 인플레이션 기대 → BTC 헤지 내러티브 강화"
+      - "실질금리 하락 → risk-on 환경, crypto 강세"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_t10yie
+
+  - id: fred_bamlhy
+    name: ICE BofA US High Yield OAS
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "ICE BofA US High Yield OAS (BAMLH0A0HYM2) — 크레딧 스프레드 (bps)"
+    resolution: 1d
+    available_since: "1996-12-31"
+    storage_path: "data/silver/macro/fred/bamlhy.parquet"
+    columns: [value]
+    fetch_key: bamlhy
+    strategy_hints:
+      - "스프레드 확대 → risk-off, crypto 약세 선행지표"
+      - "스프레드 축소 → risk-on, 유동성 완화"
+      - "HYG ETF close보다 정밀한 크레딧 리스크 측정"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_hy_spread
+
+  - id: fred_walcl
+    name: Fed Total Assets (Balance Sheet)
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "Federal Reserve Total Assets (WALCL, Weekly)"
+    resolution: 1w
+    available_since: "2002-12-18"
+    storage_path: "data/silver/macro/fred/walcl.parquet"
+    columns: [value]
+    fetch_key: walcl
+    strategy_hints:
+      - "자산 증가 → QE/유동성 확대 → BTC 강세"
+      - "자산 감소 → QT/유동성 긴축 → BTC 약세 압력"
+      - "M2보다 민감한 연준 유동성 직접 측정"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_fed_assets
+
+  - id: fred_icsa
+    name: Initial Jobless Claims
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "Initial Claims (ICSA, Weekly, Seasonally Adjusted)"
+    resolution: 1w
+    available_since: "1967-01-07"
+    storage_path: "data/silver/macro/fred/icsa.parquet"
+    columns: [value]
+    fetch_key: icsa
+    strategy_hints:
+      - "급증 → 고용 악화, 경기침체 선행"
+      - "하락 추세 → 고용 견조, risk-on 유지"
+      - "regime filter로 활용 (claims z-score)"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_initial_claims
+
+  - id: fred_effr
+    name: Effective Federal Funds Rate
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "Effective Federal Funds Rate (EFFR, Daily)"
+    resolution: 1d
+    available_since: "2000-07-03"
+    storage_path: "data/silver/macro/fred/effr.parquet"
+    columns: [value]
+    fetch_key: effr
+    strategy_hints:
+      - "EFFR vs DGS2 괴리 → 금리 기대 vs 현실 gap"
+      - "EFFR 인하 시작 → risk-on 전환 신호"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_effr
+
+  - id: fred_wti
+    name: WTI Crude Oil Price
+    data_type: macro
+    source_id: fred
+    batch_group: fred
+    description: "Crude Oil Prices: West Texas Intermediate (DCOILWTICO, Daily)"
+    resolution: 1d
+    available_since: "1986-01-02"
+    storage_path: "data/silver/macro/fred/wti.parquet"
+    columns: [value]
+    fetch_key: wti
+    strategy_hints:
+      - "유가 급등 → 인플레이션 우려 → BTC 양방향 영향"
+      - "에너지 비용 → BTC 채굴 비용 간접 프록시"
+    enrichment:
+      scope: global
+      columns: [value]
+      rename_map:
+        value: macro_wti
 
   # ─── Macro: yfinance ──────────────────────────────────────────────
   - id: yf_spy
@@ -898,6 +1090,68 @@ datasets:
       rename_map:
         close: macro_hyg_close
 
+  - id: yf_btc_f
+    name: CME Bitcoin Futures (Front Month)
+    data_type: macro
+    source_id: yfinance
+    batch_group: yfinance
+    description: "CME Bitcoin Futures — 기관 sentiment 프록시 (BTC=F)"
+    resolution: 1d
+    available_since: "2017-12-18"
+    storage_path: "data/silver/macro/yfinance/btc_f.parquet"
+    columns: [close]
+    fetch_key: btc_f
+    strategy_hints:
+      - "CME basis (futures/spot - 1) → 기관 투기 심리"
+      - "Contango → 정상 시장, Backwardation → 공포/급락"
+      - "CME premium z-score → 기관 포지셔닝 극단값"
+    enrichment:
+      scope: global
+      columns: [close]
+      rename_map:
+        close: macro_btcf_close
+
+  - id: yf_ibit
+    name: IBIT (iShares Bitcoin Trust ETF)
+    data_type: macro
+    source_id: yfinance
+    batch_group: yfinance
+    description: "iShares Bitcoin Trust ETF — BTC ETF 기관 자금 흐름 프록시"
+    resolution: 1d
+    available_since: "2024-01-11"
+    storage_path: "data/silver/macro/yfinance/ibit.parquet"
+    columns: [close]
+    fetch_key: ibit
+    strategy_hints:
+      - "IBIT volume 급증 → 기관 수요 확대"
+      - "IBIT premium/discount → ETF 시장 심리"
+      - "주의: 2024-01+ only, backtest window 2년 미만"
+    enrichment:
+      scope: global
+      columns: [close]
+      rename_map:
+        close: macro_ibit_close
+
+  - id: yf_eem
+    name: EEM (Emerging Markets ETF)
+    data_type: macro
+    source_id: yfinance
+    batch_group: yfinance
+    description: "iShares MSCI Emerging Markets ETF — EM risk appetite 프록시"
+    resolution: 1d
+    available_since: "1996-04-11"
+    storage_path: "data/silver/macro/yfinance/eem.parquet"
+    columns: [close]
+    fetch_key: eem
+    strategy_hints:
+      - "EEM 약세 → EM 자금 이탈, crypto 동반 약세 경향"
+      - "EEM-SPY 상대강도 → EM vs DM 선호도"
+    enrichment:
+      scope: global
+      columns: [close]
+      rename_map:
+        close: macro_eem_close
+
   # ─── Options: Deribit ──────────────────────────────────────────
   - id: deribit_btc_dvol
     name: BTC DVOL (30-Day Implied Volatility)
@@ -978,6 +1232,26 @@ datasets:
       columns: [vol_30d]
       rename_map:
         vol_30d: opt_btc_rv30d
+
+  - id: deribit_eth_hist_vol
+    name: ETH Historical Volatility
+    data_type: options
+    source_id: deribit
+    batch_group: deribit
+    description: "Deribit ETH 실현변동성 (7/30/60/90/120/180/365D)"
+    resolution: 1d
+    available_since: "2021-01-01"
+    storage_path: "data/silver/options/deribit/eth_hist_vol.parquet"
+    columns: [vol_7d, vol_30d, vol_60d, vol_90d, vol_120d, vol_180d, vol_365d]
+    fetch_key: eth_hist_vol
+    strategy_hints:
+      - "ETH IV-RV spread → ETH 옵션 프리미엄"
+      - "ETH RV vs BTC RV 비율 → 상대 변동성 트레이딩"
+    enrichment:
+      scope: global
+      columns: [vol_30d]
+      rename_map:
+        vol_30d: opt_eth_rv30d
 
   - id: deribit_btc_term_structure
     name: BTC Futures Term Structure

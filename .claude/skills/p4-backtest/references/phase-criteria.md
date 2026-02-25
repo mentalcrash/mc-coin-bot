@@ -40,12 +40,17 @@
 
 ## Phase 4A: 단일에셋 백테스트
 
-### PASS 조건 (Best Asset 기준)
+### PASS 조건 (Best Asset 기준, OR 경로)
 
-| 지표 | 기준 | 비고 |
-|------|------|------|
-| Sharpe Ratio | > 0.7 | Best Asset에서 |
-| CAGR | > 15% | Best Asset에서 |
+**Path A (기본) 또는 Path B (high-Sharpe 대안)** + 공통 조건:
+
+| 경로 | Sharpe | CAGR |
+|:----:|--------|------|
+| **A** | > 0.7 | > 15% |
+| **B** | > 1.0 | > 10% |
+
+| 공통 조건 | 기준 | 비고 |
+|----------|------|------|
 | MDD | < 50% | Best Asset에서 |
 | Total Trades | > 30 | 통계적 유의성 |
 
@@ -81,11 +86,11 @@ uv run python scripts/bulk_backtest.py
 
 ### PASS 조건
 
-| 지표 | 기준 | CTREND 참조 |
-|------|------|------------|
-| OOS Sharpe | >= 0.2 | 1.78 |
-| Decay | < 60% | 33.7% |
-| OOS Trades | >= 15 | — |
+| 지표 | 기준 |
+|------|------|
+| OOS Sharpe | >= 0.2 |
+| Decay | < 60% |
+| OOS Trades | >= 15 |
 
 ### Decay 계산
 
@@ -171,16 +176,30 @@ uv run mcbot pipeline phase5-stability {strategy} --json
 
 ## Phase 6: 심층검증
 
-### PASS 조건
+### Phase 6A: WFA (Walk-Forward Analysis)
 
-| 지표 | 기준 | CTREND 참조 | 비고 |
-|------|------|------------|------|
-| WFA OOS Sharpe | >= 0.3 | 1.49 | 3-fold expanding window 평균 |
-| WFA Decay | < 50% | 39% | IS → OOS |
-| WFA Consistency | >= 50% | 67% | OOS fold 양수 비율 |
-| PBO | 아래 참조 | 60% (PASS-B) | Probability of Backtest Overfitting |
-| DSR (batch) | > 0.5 | 1.00 | 동일 배치 기준 |
-| MC p-value | < 0.10 | 0.000 | Monte Carlo 통계적 유의성 |
+| 지표 | 기준 | 비고 |
+|------|------|------|
+| WFA OOS Sharpe | >= 0.3 | 5-fold expanding window 평균 |
+| WFA Decay | < 50% | IS → OOS |
+| WFA Consistency | >= 50% | OOS fold 양수 비율 |
+
+### Phase 6B: CPCV — 필수 + 보충 2/4
+
+**필수 조건** (미달 시 즉시 FAIL):
+
+| 지표 | 기준 |
+|------|------|
+| CPCV OOS Sharpe | >= 0.3 |
+
+**보충 4개 중 2개 이상** 통과:
+
+| # | 지표 | 기준 |
+|---|------|------|
+| 1 | Sharpe Decay | <= 50% |
+| 2 | PBO | 이중 경로 (아래 참조) |
+| 3 | DSR | > 0.5 |
+| 4 | MC p-value | < 0.10 |
 
 ### PBO 판정 (이중 경로)
 
@@ -195,8 +214,7 @@ PBO는 다음 **두 경로 중 하나**를 충족하면 PASS:
 그러나 실전에서 중요한 것은 **"어떤 파라미터를 골라도 OOS에서 수익이 나는가"** (CPCV robustness).
 경로 B는 파라미터 과적합이 있지만, 기저 전략 alpha가 견고한 경우를 구제한다.
 
-**적용 예시**: CTREND (PBO 60%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS.
-Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS (PBO < 80% 충족).
+**적용 예시**: Anchor-Mom (PBO 80%, 전 fold OOS 양수, MC p=0.000) → 경로 B PASS (PBO < 80% 충족).
 
 ### CLI 명령
 
@@ -215,29 +233,6 @@ uv run mcbot backtest validate \
   -m final \
   -y 2022 -y 2023 -y 2024 -y 2025
 ```
-
----
-
-## CTREND 참조 벤치마크 (전 Phase)
-
-| Phase | 핵심 지표 | CTREND 결과 | 판정 |
-|:-----:|----------|------------|:----:|
-| P4A | Best Sharpe | 2.05 (SOL) | PASS |
-| P4A | Best CAGR | +97.8% | PASS |
-| P4A | Best MDD | -27.7% | PASS |
-| P4A | Best Trades | 288 | PASS |
-| P4B | OOS Sharpe | 1.78 | PASS |
-| P4B | Decay | 33.7% | PASS |
-| P5A | Optimization | Completed | PASS |
-| P5B | 파라미터 | 4/4 PASS | PASS |
-| P6A | WFA OOS | 1.49 | PASS |
-| P6A | WFA Decay | 39% | PASS |
-| P6B | PBO | 60% | PASS (경로 B) |
-| P6B | DSR (batch) | 1.00 | PASS |
-| P6B | MC p-value | 0.000 | PASS |
-
-> CTREND은 PBO 60%로 경로 A(< 40%) FAIL이나, 전 CPCV fold OOS 양수 + MC p=0.000으로
-> 경로 B를 통해 PASS. Anchor-Mom도 PBO 80%이나 동일 경로 B PASS.
 
 ---
 

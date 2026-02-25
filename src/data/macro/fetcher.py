@@ -1,7 +1,7 @@
 """Macro data fetcher — FRED API + yfinance.
 
-FRED: 7 시리즈 (DXY, Gold, DGS10, DGS2, T10Y2Y, VIX, M2)
-yfinance: 6 ETF (SPY, QQQ, GLD, TLT, UUP, HYG)
+FRED: 12 시리즈 (DXY, DGS10, DGS2, T10Y2Y, VIX, M2, T10YIE, BAMLHY, WALCL, ICSA, EFFR, WTI)
+yfinance: 9 ETF/Futures (SPY, QQQ, GLD, TLT, UUP, HYG, BTC=F, IBIT, EEM)
 
 Rules Applied:
     - #12 Data Engineering: Vectorized DataFrame 변환
@@ -35,6 +35,12 @@ FRED_SERIES: dict[str, str] = {
     "t10y2y": "T10Y2Y",
     "vix": "VIXCLS",
     "m2": "M2SL",
+    "t10yie": "T10YIE",  # 10Y Breakeven Inflation Rate
+    "bamlhy": "BAMLH0A0HYM2",  # ICE BofA US High Yield OAS
+    "walcl": "WALCL",  # Fed Total Assets (Balance Sheet)
+    "icsa": "ICSA",  # Initial Jobless Claims
+    "effr": "EFFR",  # Effective Federal Funds Rate
+    "wti": "DCOILWTICO",  # WTI Crude Oil Price
 }
 
 # yfinance 티커 매핑: name → ticker
@@ -45,6 +51,9 @@ YFINANCE_TICKERS: dict[str, str] = {
     "tlt": "TLT",
     "uup": "UUP",
     "hyg": "HYG",
+    "btc_f": "BTC=F",  # CME Bitcoin Futures (Front Month)
+    "ibit": "IBIT",  # iShares Bitcoin Trust ETF
+    "eem": "EEM",  # iShares MSCI Emerging Markets ETF
 }
 
 # CoinGecko 데이터셋 매핑: name → endpoint

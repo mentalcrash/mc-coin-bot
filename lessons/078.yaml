@@ -1,0 +1,17 @@
+id: 78
+title: 't-stat blend(multi-lookback) 12H 전략: std/sqrt(N) 정규화 내재 vol 적응만으로는 alpha 부족'
+body: 't-statistic 기반 모멘텀(fast/mid/slow lookback blend + tanh 연속화). 이론적으로 vol 자동 적응이
+  내재되나, 실제 8개 에셋 P4A Best Sharpe 0.22 (ADA/USDT). 4/8 에셋 Sharpe 음수. MDD는 16-31%로 양호하나
+  CAGR -5~+2%로 alpha 생성 불충분. 교훈 #9 z-score 한계의 연장선 — 통계적 유의성 검정 자체가 trading signal로
+  직접 변환 시 변별력 부족.'
+category: strategy-design
+tags:
+- t-statistic
+- momentum
+- multi-lookback
+- vol-normalization
+strategies:
+- t-stat-mom
+timeframes:
+- 12H
+added_at: '2026-02-24'

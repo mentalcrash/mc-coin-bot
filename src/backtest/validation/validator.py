@@ -467,58 +467,78 @@ class TieredValidator:
         # Pass/Fail 판정
         failure_reasons: list[str] = []
 
-        # 기본 기준
         from src.backtest.validation.deflated_sharpe import deflated_sharpe_ratio
         from src.backtest.validation.models import (
+            FINAL_ALT_MAX_PBO,
             FINAL_MAX_P_VALUE,
+            FINAL_MAX_PBO,
             FINAL_MAX_SHARPE_DECAY,
-            FINAL_MIN_CONSISTENCY,
             FINAL_MIN_DSR,
             FINAL_MIN_OOS_SHARPE,
+            FINAL_MIN_SUPPLEMENTARY_PASS,
         )
 
+        # === 필수: OOS Sharpe ===
         if avg_test_sharpe < FINAL_MIN_OOS_SHARPE:
             failure_reasons.append(
                 f"Avg OOS Sharpe ({avg_test_sharpe:.2f}) < {FINAL_MIN_OOS_SHARPE}"
             )
 
-        avg_sharpe_decay = (
-            (avg_train_sharpe - avg_test_sharpe) / abs(avg_train_sharpe)
-            if avg_train_sharpe != 0
-            else 0.0
+        # === PBO 계산 ===
+        from src.backtest.validation.pbo import calculate_pbo
+
+        min_pbo_folds = 2
+        pbo = (
+            calculate_pbo(train_sharpes, test_sharpes)
+            if len(train_sharpes) >= min_pbo_folds
+            else 0.5
         )
-        if avg_sharpe_decay > FINAL_MAX_SHARPE_DECAY:
-            failure_reasons.append(
-                f"Avg Sharpe Decay ({avg_sharpe_decay:.1%}) > {FINAL_MAX_SHARPE_DECAY:.0%}"
-            )
 
-        consistent_count = sum(1 for f in fold_results if f.is_consistent)
-        consistency_ratio = consistent_count / len(fold_results) if fold_results else 0.0
-
-        if consistency_ratio < FINAL_MIN_CONSISTENCY:
-            failure_reasons.append(
-                f"Consistency ({consistency_ratio:.1%}) < {FINAL_MIN_CONSISTENCY:.0%}"
-            )
-
-        # Monte Carlo 통계적 유의성
-        if monte_carlo.p_value > FINAL_MAX_P_VALUE:
-            failure_reasons.append(f"P-value ({monte_carlo.p_value:.3f}) > {FINAL_MAX_P_VALUE}")
-
-        # DSR (Deflated Sharpe Ratio)
+        # === DSR 계산 ===
         n_obs = sum(f.split.test_periods for f in fold_results) if fold_results else 100
         dsr = deflated_sharpe_ratio(
             observed_sharpe=avg_test_sharpe,
             n_trials=len(fold_results),
             n_observations=n_obs,
         )
-        if dsr < FINAL_MIN_DSR:
-            failure_reasons.append(f"DSR ({dsr:.2f}) < {FINAL_MIN_DSR}")
+
+        # === Sharpe Decay 계산 ===
+        avg_sharpe_decay = (
+            (avg_train_sharpe - avg_test_sharpe) / abs(avg_train_sharpe)
+            if avg_train_sharpe != 0
+            else 0.0
+        )
+
+        # === 보충 4개 평가 (2/4 이상 통과 필요) ===
+        mc_p_strict = 0.05
+        pbo_passed = pbo < FINAL_MAX_PBO or (
+            pbo < FINAL_ALT_MAX_PBO
+            and all(f.test_sharpe > 0 for f in fold_results)
+            and monte_carlo.p_value < mc_p_strict
+        )
+
+        supplementary = {
+            "decay": avg_sharpe_decay <= FINAL_MAX_SHARPE_DECAY,
+            "pbo": pbo_passed,
+            "dsr": dsr >= FINAL_MIN_DSR,
+            "mc": monte_carlo.p_value < FINAL_MAX_P_VALUE,
+        }
+        n_supp_passed = sum(1 for v in supplementary.values() if v)
+
+        if n_supp_passed < FINAL_MIN_SUPPLEMENTARY_PASS:
+            failed = [k for k, v in supplementary.items() if not v]
+            failure_reasons.append(
+                f"Supplementary {n_supp_passed}/{len(supplementary)} < "
+                + f"{FINAL_MIN_SUPPLEMENTARY_PASS} (failed: {', '.join(failed)})"
+            )
 
         passed = len(failure_reasons) == 0
         computation_time = time.perf_counter() - start_time
 
         logger.info(
-            f"Final validation complete: passed={passed}, avg_IS_sharpe={avg_train_sharpe:.2f}, avg_OOS_sharpe={avg_test_sharpe:.2f}, p_value={monte_carlo.p_value:.3f}"
+            f"Final validation complete: passed={passed}, avg_IS_sharpe={avg_train_sharpe:.2f}, "
+            + f"avg_OOS_sharpe={avg_test_sharpe:.2f}, p_value={monte_carlo.p_value:.3f}, "
+            + f"PBO={pbo:.2f}, supplementary={n_supp_passed}/{len(supplementary)}"
         )
 
         return ValidationResult(

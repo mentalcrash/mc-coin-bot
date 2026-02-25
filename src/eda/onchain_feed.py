@@ -582,6 +582,7 @@ _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
     ),
     ("defillama", "tvl_total", ["tvl_usd"], {"tvl_usd": "oc_tvl_usd"}),
     ("defillama", "dex_volume", ["volume_usd"], {"volume_usd": "oc_dex_volume_usd"}),
+    ("defillama", "fees_total", ["fees_usd"], {"fees_usd": "oc_fees_usd"}),
     ("alternative_me", "fear_greed", ["value"], {"value": "oc_fear_greed"}),
 ]
 
@@ -589,7 +590,6 @@ _GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
 # deprecated: catalog로 마이그레이션 중 — fallback용으로 유지
 MACRO_GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
     ("fred", "dxy", ["value"], {"value": "macro_dxy"}),
-    ("fred", "gold", ["value"], {"value": "macro_gold"}),
     ("fred", "dgs10", ["value"], {"value": "macro_dgs10"}),
     ("fred", "dgs2", ["value"], {"value": "macro_dgs2"}),
     ("fred", "t10y2y", ["value"], {"value": "macro_yield_curve"}),
@@ -601,6 +601,17 @@ MACRO_GLOBAL_SOURCES: list[tuple[str, str, list[str], dict[str, str]]] = [
     ("yfinance", "tlt", ["close"], {"close": "macro_tlt_close"}),
     ("yfinance", "uup", ["close"], {"close": "macro_uup_close"}),
     ("yfinance", "hyg", ["close"], {"close": "macro_hyg_close"}),
+    # FRED — Tier 1 추가 (2026-02-25)
+    ("fred", "t10yie", ["value"], {"value": "macro_t10yie"}),
+    ("fred", "bamlhy", ["value"], {"value": "macro_hy_spread"}),
+    ("fred", "walcl", ["value"], {"value": "macro_fed_assets"}),
+    ("fred", "icsa", ["value"], {"value": "macro_initial_claims"}),
+    ("fred", "effr", ["value"], {"value": "macro_effr"}),
+    ("fred", "wti", ["value"], {"value": "macro_wti"}),
+    # yfinance — Tier 1 추가
+    ("yfinance", "btc_f", ["close"], {"close": "macro_btcf_close"}),
+    ("yfinance", "ibit", ["close"], {"close": "macro_ibit_close"}),
+    ("yfinance", "eem", ["close"], {"close": "macro_eem_close"}),
     # CoinGecko
     ("coingecko", "global_metrics", ["btc_dominance"], {"btc_dominance": "macro_btc_dom"}),
     (

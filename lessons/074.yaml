@@ -1,0 +1,18 @@
+id: 74
+title: 'Squeeze breakout(BB inside KC) 조건부 전략: 극저빈도(15-23 trades/4yr) + 방향성 미약으로 7/8
+  에셋 Sharpe 음수'
+body: Squeeze(BB inside KC) 해제 자체가 희귀 이벤트 → 4년간 10-23 trades. KAMA direction + BB
+  position AND 조건 추가 시 유효 시그널 더 감소. Vol-target 스케일링이 작은 CAGR을 더 압축. Best asset ADA만
+  Sharpe 0.71이나 CAGR 6.4%/Trades 15로 P4A 미달. Squeeze release 후 방향 예측이 OHLCV만으로는 불충분하며,
+  크립토 변동성 구조에서 squeeze 자체가 추세 시작의 안정적 선행 지표가 아님.
+category: strategy-design
+tags:
+- squeeze
+- breakout
+- low-frequency
+- volatility-compression
+strategies:
+- squeeze-adaptive-breakout
+timeframes:
+- 1D
+added_at: '2026-02-23'

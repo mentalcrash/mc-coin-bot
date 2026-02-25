@@ -26,7 +26,10 @@ from src.backtest.validation.deflated_sharpe import (
 )
 from src.backtest.validation.levels import ValidationLevel
 from src.backtest.validation.models import (
+    FINAL_ALT_MAX_PBO,
+    FINAL_MAX_PBO,
     FINAL_MIN_DSR,
+    FINAL_MIN_SUPPLEMENTARY_PASS,
     MILESTONE_MAX_SHARPE_DECAY,
     MILESTONE_MIN_CONSISTENCY,
     MILESTONE_MIN_OOS_SHARPE,
@@ -58,7 +61,10 @@ from src.backtest.validation.splitters import (
 from src.backtest.validation.validator import TieredValidator
 
 __all__ = [
+    "FINAL_ALT_MAX_PBO",
+    "FINAL_MAX_PBO",
     "FINAL_MIN_DSR",
+    "FINAL_MIN_SUPPLEMENTARY_PASS",
     "MILESTONE_MAX_SHARPE_DECAY",
     "MILESTONE_MIN_CONSISTENCY",
     "MILESTONE_MIN_OOS_SHARPE",

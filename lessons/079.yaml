@@ -1,0 +1,17 @@
+id: 79
+title: 'Z-score 곱셈 복합(mom x vol x GK) 시그널: 축 정렬 빈도 낮고 비용에 취약'
+body: 3축 z-score 곱셈(모멘텀 x 거래량 x GK변동성)은 이론적으로 직교 정렬 시 강한 신호를 기대하지만, 12H 크립토에서 (1)
+  3축 동시 정렬 빈도가 낮아 연 ~100회 거래 발생(비용 민감), (2) Best Asset DOGE조차 Sharpe 0.36 WATCH 미달,
+  (3) 5/8 에셋 Sharpe 음수, (4) BTC MDD 80%. z-score 곱셈은 개별 축 신호 약화 시 전체를 0에 수렴시키는 감쇄
+  메커니즘이 오히려 약한 alpha를 더 약화시킨다.
+category: strategy-design
+tags:
+- z-score
+- composite
+- multiplication
+- GK-vol
+strategies:
+- comp-mom
+timeframes:
+- 12H
+added_at: '2026-02-24'

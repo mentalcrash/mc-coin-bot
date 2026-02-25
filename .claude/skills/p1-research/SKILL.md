@@ -50,10 +50,14 @@ allowed-tools:
    온체인 데이터(whale wallet, DEX 유동성, 거래소 간 자금 흐름),
    Derivatives(펀딩레이트, OI), 소셜 센티먼트 등 차별화된 데이터를 우선한다.
    — 현재 인프라: DerivativesDataService (FR/OI/LS Ratio/Taker Ratio)
-   — On-chain: OnchainDataService (22 datasets + 12 CoinMetrics, oc_*auto-enrich in EDA)
+   — On-chain: OnchainDataService (23 datasets + 12 CoinMetrics, oc_*auto-enrich in EDA)
    — 주요 oc_* 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
-     oc_stablecoin_total_circulating_usd, oc_tvl_usd, oc_fear_greed,
-     oc_adractcnt, oc_txcnt, oc_mktcap_usd, oc_supply 등
+     oc_stablecoin_total_usd, oc_tvl_usd, oc_dex_volume_usd, oc_fees_usd,
+     oc_fear_greed, oc_adractcnt, oc_txcnt, oc_mktcap_usd, oc_supply 등
+   — Macro: MacroDataService (23 datasets — FRED 12 + yfinance 9 + CoinGecko 2)
+   — 주요 macro_* 컬럼: macro_dxy, macro_vix, macro_gs10, macro_m2,
+     macro_t10yie, macro_hy_spread, macro_fed_assets, macro_initial_claims,
+     macro_effr, macro_wti, macro_btcf_close, macro_ibit_close, macro_eem_close 등
    — Sentiment: Fear & Greed Index (oc_fear_greed, 2018~)
 
 1. **거래 비용의 극사실적 모델링 (Realistic Cost Modeling)**:
@@ -66,7 +70,7 @@ allowed-tools:
 
 ### B. 운영 원칙 (Operational Principles)
 
-1. **참신성 추구**: 폐기된 45개 전략과 차별화. 동일 지표 조합 재시도 금지
+1. **참신성 추구**: 폐기된 150개+ 전략과 차별화. 동일 지표 조합 재시도 금지
 1. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
 1. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
 1. **적극적 Long/Short 활용 (One-way Mode)**: 거래소는 One-way Mode(심볼당 단일 방향, netting).
@@ -77,45 +81,65 @@ allowed-tools:
 1. **활성 전략 상관 최소화**: `pipeline list --status ACTIVE`로 동적 확인, 낮은 상관이 포트폴리오 가치 극대화
 1. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
 1. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
-1. **On-chain 데이터 우선 탐색**: OHLCV-only 전략보다 edge 감쇠 느림 (수월~수분기).
-    22개 데이터셋 + 12개 CoinMetrics 인프라 완비, 전략 0개 사용 중 → 최우선 탐색 영역.
-    idea-sources.md § 6.5에 구체적 전략 후보 (Stablecoin Flow, MVRV, Exchange Flow 등)
+1. **1D OHLCV 검색공간 고갈 (2026-02-24 확정)**:
+    92개 1D 전략 시도 → 0개 ACTIVE. OHLCV 5변수로 만들 수 있는 의미 있는 조합이 소진됨.
+    **1D OHLCV-only 신규 전략 발굴 중단.** 대신:
+    - 12H TF 전환 (Anchor-Mom이 검증, 3개 중 1개 ACTIVE = 33%)
+    - 1D On-chain/Derivatives/Macro 데이터 기반 전략 (47개 유휴 데이터셋 활용)
+    - 12H OHLCV signal + 1D On-chain context 결합 (Multi-Source Architecture)
+1. **Multi-Source Context Architecture (12H + 1D)**:
+    12H OHLCV로 가격 시그널(빠른 반응)을 생성하고,
+    1D On-chain/Macro를 확신도 가중치(느린 필터)로 사용하는 계층 구조.
+    On-chain 데이터는 본질적으로 1D 주기(MVRV, Exchange Flow 등)이므로
+    sub-daily 리샘플링은 불필요 — `merge_asof(direction="backward")`로 자동 병합됨.
+
+    ```
+    12H OHLCV  →  가격 시그널 (진입/청산 타이밍)
+         ↕
+    1D On-chain →  컨텍스트/확신도 (사이징 가중치)
+    ```
+
+1. **On-chain 데이터 적극 활용 (최우선)**:
+    OHLCV-only 전략보다 edge 감쇠 느림 (수주~수분기 vs 수일~수주).
+    60개 데이터셋 중 57개(95%) 유휴 → 최우선 탐색 영역.
+    - **Global (전 에셋)**: stablecoin supply, TVL, DEX volume, DeFi fees, Fear&Greed
+    - **BTC/ETH 전용**: MVRV, Exchange Flow, Hash Rate, Active Addresses
+    - **Macro (전 에셋)**: DXY, VIX, 10Y, M2, inflation BE, HY spread, Fed assets, claims, EFFR, WTI, BTC futures, IBIT, EEM
+    - BTC/ETH 전용 지표 사용 시 범용(5-에셋) 강제 금지 → BTC/ETH 전용 전략으로 설계
+    idea-sources.md § 6.5에 구체적 전략 후보 목록
 
 ## 워크플로우 (7단계)
 
 ### Step 0: 컨텍스트 수집
 
-시작 전 반드시 다음을 확인한다:
+시작 전 반드시 실행:
+
+```bash
+uv run mcbot pipeline p1-briefing --tf {TF}
+```
+
+출력 내용: (1) Pipeline Status, (2) TF 관련 교훈, (3) Anti-Patterns, (4) 유휴 데이터셋.
+교훈에서 명시된 안티패턴/실패 유형을 아이디어 생성 시 반드시 회피한다.
 
 ```
-1. 파이프라인 현황 확인 (필수 — CLI 사용)
-   uv run mcbot pipeline status    # 상태별 카운트 (ACTIVE/RETIRED/CANDIDATE 등)
-   uv run mcbot pipeline table     # 전체 전략 Phase 진행도
-
-2. 교훈 데이터 참조 (필수 — 실패 반복 방지)
-   uv run mcbot pipeline lessons-list              # 전체 교훈 목록
-   uv run mcbot pipeline lessons-list --tf {TF}    # 타겟 TF 관련 교훈 필터
-   uv run mcbot pipeline lessons-list -c strategy-design   # 전략 설계 교훈
-   uv run mcbot pipeline lessons-list -c market-structure  # 시장 구조 교훈
-   # → 교훈에서 명시된 안티패턴/실패 유형을 아이디어 생성 시 반드시 회피
-
-3. 타겟 타임프레임 확인 (미지정 시 사용자에게 질문)
-   - 1D (일봉): 가장 안정적, 비용 효율적. 프로젝트 주력. 유일한 P7 PASS가 1D
-   - 4H: 중간 빈도. 비용과 신호 밸런스
-   - 1H: 높은 빈도. Tier 5 4종 전멸 (교훈 #13~#16). 극히 신중하게 접근
+타겟 타임프레임 가이드 (미지정 시 사용자에게 질문):
+   - 12H (12시간): ⭐ **1순위 권장**. Anchor-Mom이 P7 PASS 검증. 3/152 시도 중 1 ACTIVE (33%)
+     하루 2회 판단 → 시그널 빈도 적절, 비용 합리적, 앵커링 심리주기 최적
+   - 1D + On-chain: **2순위**. 1D OHLCV는 고갈(92개 시도, 0 ACTIVE)되었으나,
+     On-chain/Derivatives/Macro 데이터 결합 시 새 검색공간. 47개 유휴 데이터셋 활용
+   - 8H: 실험적. 4H(비용사망)과 12H 사이 미탐색 영역. 인프라 지원됨
+   - 1D OHLCV-only: ⛔ **고갈 확정**. 92개 시도 → 0 ACTIVE. 추가 탐색 금지
+   - 4H 이하: ⛔ **사망 확정**. 40개 4H 전멸, 5개 1H 전멸. 비용 구조적 문제
+   - 2D/3D: ⛔ 거래 빈도 부족 (월 1~2건). 통계적 유의성 불가
    - 1m→aggregation: EDA 전용 (CandleAggregator 활용)
-
-4. 현재 포트폴리오 구성 확인
-   uv run mcbot pipeline list --status ACTIVE   # 활성 전략
-   # P7 도달까지: P4 통과율 ~50%, P4 IS/OOS 통과율 ~20%, P6 통과율 ~5%
 
 5. 폐기 전략 실패 패턴 확인 (필수)
    uv run mcbot pipeline list --status RETIRED   # YAML 기반 동적 조회
    references/discarded-strategies.md의 "실패 패턴 요약" 섹션 참조
    동일 접근법 재시도 금지
 
-6. On-chain/Sentiment 데이터 활용 검토 (권장 — 미탐색 블루오션)
-   uv run mcbot ingest onchain info              # 22개 데이터셋 인벤토리
+6. On-chain/Macro/Sentiment 데이터 활용 검토 (권장 — 미탐색 블루오션)
+   uv run mcbot ingest onchain info              # 23개 On-chain 데이터셋 인벤토리
    # → 전략 아이디어에 on-chain 데이터를 포함할 수 있는지 우선 검토
    # → idea-sources.md § 6.5 참조: Stablecoin Flow, MVRV, Exchange Flow,
    #   Fear&Greed, Network Activity 등 구체적 전략 후보 목록
@@ -183,7 +207,7 @@ allowed-tools:
 | 3 | 변동성 구조 | Realized vs implied vol, VoV, term structure |
 | 4 | 정보 이론 | Transfer entropy, mutual information, approximate entropy |
 | 5 | 행동 재무학 | Disposition effect, anchoring, herding |
-| 6 | 대안 데이터 | ✅ On-chain 22개 (stablecoin flow, TVL, DEX vol, fear&greed 등) |
+| 6 | 대안 데이터 | ✅ On-chain 23개 + Macro 23개 (stablecoin, TVL, DEX vol, fees, MVRV, DXY, VIX 등) |
 | 7 | Derivatives | ✅ FR(백테스팅 O), OI/LS/Taker(30일 제한), EDA auto-enrich |
 
 상세: [references/idea-sources.md](references/idea-sources.md)
@@ -232,9 +256,10 @@ allowed-tools:
       기존 26개 전략과 차별화 정도
       1=동일지표, 3=새조합, 5=새카테고리
 
-  [3] 데이터 확보 (Data Availability)          : _/5
-      1=외부API필수(미구축), 2=유료API필요, 3=파생계산,
-      4=Derivatives/On-chain(Silver 구축완료), 5=OHLCV직접
+  [3] 데이터 소스 차별화 (Data Source Edge)      : _/5
+      1=외부API필수(미구축), 2=OHLCV-only(고갈 영역),
+      3=OHLCV+파생계산, 4=Derivatives/Macro(Silver 구축완료),
+      5=On-chain/Sentiment 포함(edge 감쇠 느림, 47개 유휴)
 
   [4] 구현 복잡도 (Implementation Complexity)  : _/5
       1=인프라변경필요, 3=중간, 5=직관적
@@ -338,13 +363,19 @@ Full Short (2)      | 하락장 수익  | 평균회귀 원래| Vol 매도    | A
 #### 4-B. 타임프레임 적합성
 
 ```
-TF    | 적합 전략 유형           | 비용 영향 | 주의점
-──────|------------------------|----------|──────────────────
-1D    | Trend, Vol Structure   | 최소     | 거래 빈도 월 2건 이상 필수
-4H    | Mean Reversion, Micro  | 중간     | 비용 < 수익의 30%
-1H    | HF Mean Rev, Scalping  | 높음     | Maker-only 또는 낮은 빈도
-1m    | Intrabar SL/TS 전용    | N/A      | 전략 자체가 아닌 PM 보조
+TF    | 적합 전략 유형              | 비용 영향 | 주의점
+──────|---------------------------|----------|──────────────────
+12H   | ⭐ Trend + Anchoring       | 낮음     | 1순위. Anchor-Mom 검증. 하루 2회 판단
+1D+OC | On-chain Context 전략     | 최소     | 2순위. MVRV/Flow/TVL 등 1D 자연주기 데이터 결합
+8H    | Swing + Adaptive          | 중간-낮음 | 실험적. 4H↔12H 중간지대
+1D    | ⛔ OHLCV-only 고갈         | 최소     | 92개 시도→0 ACTIVE. On-chain 결합 시에만 탐색
+4H↓   | ⛔ 사망 확정               | 높음     | 40개 4H + 5개 1H 전멸. 비용 구조적
+1m    | Intrabar SL/TS 전용       | N/A      | 전략 자체가 아닌 PM 보조
 ```
+
+> **Multi-Source Architecture (12H+1D)**: 12H OHLCV 시그널 + 1D On-chain 컨텍스트
+> 결합 시 `merge_asof(direction="backward")`로 자동 병합. 하루 2개 12H 봉이
+> 같은 1D on-chain 값을 공유하며, publication lag(T+1) 자동 적용됨.
 
 #### 4-C. 사용 가능한 지표 라이브러리
 
@@ -370,19 +401,28 @@ uv run mcbot catalog indicator-show {id}                   # 상세: alpha poten
 4. 비효율 지속 이유 (왜 차익거래되지 않는가)
 5. 경제적 논거                6. 사용 지표 (라이브러리에서 선택)
 7. 시그널 생성 로직 (수식)    8. ShortMode: DISABLED/HEDGE_ONLY/FULL
-9. 타임프레임: 1D/4H/1H      10. 예상 거래 빈도 (건/년)
+9. 타임프레임: 12H/1D/8H     10. 예상 거래 빈도 (건/년)
 11. 예상 Sharpe 범위          12. 활성 전략 상관 예측: 낮음/중간/높음 (`pipeline list --status ACTIVE`)
 13. 비용 추정: 연간 거래비용 / 예상 총수익 비율 (< 30% 필수)
 14. 레짐 활용: 없음/패턴A/B/C (활용 시 컬럼+파라미터 명시)
 15. 데이터 요구사항: OHLCV only / Derivatives / On-chain / Sentiment
     (On-chain 주요 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
-     oc_stablecoin_total_circulating_usd, oc_tvl_usd, oc_fear_greed,
-     oc_adractcnt, oc_txcnt, oc_mktcap_usd — 전체 목록: docs/data-collection.md)
+     oc_stablecoin_total_usd, oc_tvl_usd, oc_dex_volume_usd, oc_fees_usd,
+     oc_fear_greed, oc_adractcnt, oc_txcnt, oc_mktcap_usd)
+    (Macro 주요 컬럼: macro_dxy, macro_vix, macro_gs10, macro_m2,
+     macro_t10yie, macro_hy_spread, macro_fed_assets, macro_initial_claims,
+     macro_effr, macro_wti, macro_btcf_close, macro_ibit_close, macro_eem_close)
+    (전체 목록: catalogs/datasets.yaml)
     (Multi-source 전략 시 SubSignalSpec 목록 기재:
      - column, transform, window, weight, invert)
 16. 백테스팅 데이터 가용성: 전 기간/30일 제한/미확보
     (On-chain: 2018~2020+ 소스별 상이, publication lag T+1 자동 적용)
 17. 앙상블 활용: 단독/서브 전략 후보/앙상블 전용
+18. Multi-Source Architecture: 해당 시 시그널 TF + 컨텍스트 TF 명시
+    (예: 12H OHLCV signal + 1D On-chain context)
+    - On-chain 에셋 범위: Global(전 에셋) vs BTC/ETH 전용 구분 필수
+    - BTC/ETH 전용 데이터(MVRV, Exchange Flow) 사용 시 → 5-에셋 범용 강제 금지
+    - Graceful degradation: oc_* 컬럼 부재 시 NaN → 중립(0) 처리 패턴 필수
 ```
 
 **활성 전략(Anchor-Mom 등)과 낮은 상관관계가 예상될수록 포트폴리오 가치가 높다.**
@@ -701,7 +741,10 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 | 13 | 비용 비율 > 30% | edge가 거래 비용에 잠식됨. 빈도 감소 또는 TF 상향 필요 |
 | 14 | OHLCV만으로 알파 기대 | 가격/거래량은 가장 빠르게 감쇠. Derivatives/On-chain/Sentiment 우선 (✅ 인프라 구축 완료) |
 | 15 | OHLCV-only + IC < 0.02 | On-chain/Macro/Options 인프라 활용 없이 약한 IC는 시간 낭비 |
-| 16 | ML 전략 look-ahead | forward_return 학습 시 `resolved_end = t - prediction_horizon + 1` 패턴 필수. CTREND 교훈 #068 참조 |
+| 16 | ML 전략 look-ahead | forward_return 학습 시 `resolved_end = t - prediction_horizon + 1` 패턴 필수 (교훈 #068) |
+| 17 | **1D OHLCV 추가 탐색** | **고갈 확정 (92개→0 ACTIVE)**. On-chain/Deriv 결합 없는 1D OHLCV-only 신규 전략 금지 |
+| 18 | 4H 이하 TF | 40개 4H + 5개 1H 전멸. 비용 구조적 문제로 alpha 잠식 |
+| 19 | On-chain 범용 강제 | BTC/ETH 전용 데이터(MVRV 등)를 5-에셋 범용으로 강제하면 edge 소멸 (교훈) |
 
 전체 목록: [references/discarded-strategies.md](references/discarded-strategies.md) + `uv run mcbot pipeline lessons-list`
 
@@ -719,11 +762,14 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 - [ ] Data Catalog 탐색됨 (`catalog indicators --unused`, `catalog list`, `catalog failure-patterns`)
 - [ ] 설계 문서 17개 항목 작성됨
 - [ ] Derivatives 필요 시 Silver _deriv 가용성 확인
-- [ ] On-chain/Sentiment 데이터 활용 여부 검토 (22개 데이터셋 가용)
+- [ ] On-chain/Macro/Sentiment 데이터 활용 여부 검토 (60개 데이터셋 가용)
 - [ ] IC Scanner 실행 여부 (p1-scan)
 - [ ] 데이터 소스 다양성 검토 (3+ 소스 우선)
 - [ ] Multi-source 시 SubSignalSpec 정의됨
 - [ ] 앙상블 기여도 평가됨 (약한 alpha + 낮은 상관 → 편입 후보 판정)
+- [ ] Multi-Source Architecture 해당 시: 시그널 TF + 컨텍스트 TF 명시
+- [ ] On-chain 에셋 범위 확인: Global vs BTC/ETH 전용 구분
+- [ ] 1D OHLCV-only 회피 확인 (On-chain/Deriv 결합 없으면 1D 탐색 금지)
 - [ ] `pipeline create` → YAML 생성됨
 - [ ] `pipeline report` → dashboard 갱신됨
 
@@ -739,3 +785,14 @@ Phase 1 PASS 아이디어는 `pipeline create` CLI로 YAML에 자동 등록 (Ste
 - [ ] `strategies/ens-{name}.yaml` 등록됨
 - [ ] 백테스트 config YAML 작성됨
 - [ ] Phase 4E 판정 완료 (Sharpe > Best 서브전략)
+
+---
+
+## Phase Completion Protocol
+
+Phase 완료 후 반드시 수행:
+
+1. 현황 확인: `uv run mcbot pipeline next --name {strategy_name}`
+1. 사용자에게 다음 Phase 진행 여부 질문:
+   "P1 결과: {요약}. 다음 Phase {next}로 진행하시겠습니까?"
+1. 승인 시 다음 스킬 즉시 호출 (`pipeline next` 출력의 skill 명령 참조)

@@ -224,6 +224,7 @@ class OptionsDataService:
             ("deribit", "eth_dvol", ["close"], {"close": "opt_eth_dvol"}),
             ("deribit", "btc_pc_ratio", ["pc_ratio"], {"pc_ratio": "opt_btc_pc_ratio"}),
             ("deribit", "btc_hist_vol", ["vol_30d"], {"vol_30d": "opt_btc_rv30d"}),
+            ("deribit", "eth_hist_vol", ["vol_30d"], {"vol_30d": "opt_eth_rv30d"}),
             ("deribit", "btc_term_structure", ["slope"], {"slope": "opt_btc_term_slope"}),
         ]
 

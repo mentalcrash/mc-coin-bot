@@ -132,6 +132,28 @@ touch tests/strategy/{name_snake}/__init__.py
 
 OHLCV 외 Derivatives 데이터 필요 시: [references/derivatives-implementation.md](references/derivatives-implementation.md) 참조.
 
+### Step 2.7: On-chain / Multi-Source 데이터 전략 (해당 시)
+
+On-chain, Macro, Options 데이터 활용 시: [references/onchain-implementation.md](references/onchain-implementation.md) 참조.
+
+**핵심 패턴: Multi-Source Context Architecture (12H + 1D)**
+
+```
+12H OHLCV  →  가격 시그널 (빠른 진입/청산 판단)
+     ↕          merge_asof(direction="backward")로 자동 병합
+1D On-chain →  컨텍스트/확신도 가중 (느린 시장 상태 필터)
+```
+
+| 데이터 소스 | 해상도 | 에셋 범위 | 병합 방식 |
+|-----------|:-----:|----------|---------|
+| OHLCV | 전략 TF | 전체 | 기본 DataFrame |
+| On-chain Global | 1D | 전체 에셋 | `merge_asof` + pub lag T+1 |
+| On-chain BTC/ETH | 1D | BTC/ETH만 | `merge_asof` + pub lag T+1 |
+| Derivatives | 5m→1h | 전체 | `merge_asof` |
+| Macro | 1D | 글로벌 | `merge_asof` + pub lag T+1~14 |
+
+**Graceful Degradation 필수**: `oc_*` 컬럼 부재 시 NaN → 중립(0) 처리. `required_columns`에 포함하지 않음.
+
 ---
 
 ## Step 3: preprocessor.py 구현
@@ -360,6 +382,7 @@ P2에서 이미 프리스캔(C1,C5,C7)과 look-ahead bias 테스트를 통과한
 
 P2 Step 9에서 scan_strategy.sh + 수동 C1/C5/C7 + look-ahead bias 테스트를 이미 수행.
 P3는 이를 **재확인하되, 추가로**:
+
 - C2(Data Leakage), C3(Survivorship), C4(Vectorization), C6(Cost Model) 심층 검증
 - ML 전략의 training loop 상세 추적 (resolved_end 패턴)
 - Warning W1-W7 체계적 기록
@@ -753,8 +776,20 @@ uv run mcbot pipeline report
 | [references/implementation-checklist.md](references/implementation-checklist.md) | 구현 체크리스트 + 폐기 패턴 + 테스트 목록 |
 | [references/regime-implementation.md](references/regime-implementation.md) | 레짐 적응형 구현 가이드 |
 | [references/derivatives-implementation.md](references/derivatives-implementation.md) | Derivatives 데이터 구현 가이드 |
+| [references/onchain-implementation.md](references/onchain-implementation.md) | On-chain / Multi-Source 데이터 구현 가이드 |
 | [references/critical-checklist.md](references/critical-checklist.md) | C1-C7 상세 검증 패턴 |
 | [references/warning-checklist.md](references/warning-checklist.md) | W1-W7 경고 체크리스트 |
 | [references/report-template.md](references/report-template.md) | Phase 3 리포트 형식 |
 | [.claude/rules/strategy.md](../../rules/strategy.md) | 전략 개발 규칙 |
 | [src/strategy/base.py](../../../src/strategy/base.py) | BaseStrategy ABC |
+
+---
+
+## Phase Completion Protocol
+
+Phase 완료 후 반드시 수행:
+
+1. 현황 확인: `uv run mcbot pipeline next --name {strategy_name}`
+1. 사용자에게 다음 Phase 진행 여부 질문:
+   "P2/P3 결과: {요약}. 다음 Phase {next}로 진행하시겠습니까?"
+1. 승인 시 다음 스킬 즉시 호출 (`pipeline next` 출력의 skill 명령 참조)

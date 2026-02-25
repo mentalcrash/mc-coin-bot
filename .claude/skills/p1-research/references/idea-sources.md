@@ -574,7 +574,7 @@ GitHub: shep-analytics/gt_score
        — 레짐 적응 가능: volatile 레짐에서 disposition effect 강화
 
 2순위: ML 앙상블 변형 (다른 모델/피처셋)
-       — 주의: CTREND는 look-ahead bias로 전량 RETIRED (교훈 #068)
+       — 주의: ML 전략은 look-ahead bias 주의 (교훈 #068) — resolved_end 패턴 필수
        — Random Forest, XGBoost, 다른 feature 조합 탐색
        — resolved_end 패턴 필수, 활성 전략과 높은 상관 시 포트폴리오 가치 제한
        — 레짐 적응 가능: regime feature를 ML 입력에 추가

@@ -9,6 +9,8 @@ Commands:
     - update-status: 전략 상태 변경
     - report: Dashboard 자동 생성
     - table: 모든 전략 현황 표
+    - p1-briefing: P1 리서치 시작 전 컨텍스트 브리핑
+    - next: 전략별 다음 수행 Phase + 실행 방법 안내
 """
 
 from __future__ import annotations
@@ -1293,6 +1295,243 @@ def phase5_stability(
     from src.cli._phase_runners import run_phase5_stability
 
     run_phase5_stability(strategies=strategies, save_json=save_json, console=console)
+
+
+# ─── Phase action mapping ────────────────────────────────────────────
+
+_PHASE_ACTIONS: dict[str, tuple[str, str]] = {
+    "P1": ("pipeline p1-check {name}", "/p1-research"),
+    "P2": ("-", "/p2p3-build {name}"),
+    "P3": ("-", "/p2p3-build {name} --from p3"),
+    "P4": ("pipeline phase4-run {name}", "/p4-backtest {name}"),
+    "P5": ("pipeline phase5-run {name}", "/p5p6-validate {name}"),
+    "P6": ("-", "/p5p6-validate {name} --from p6a"),
+    "P7": ("-", "/p7-live {name}"),
+}
+
+
+# ─── Briefing / Next commands ────────────────────────────────────────
+
+
+@app.command(name="p1-briefing")
+def p1_briefing(
+    timeframe: Annotated[str, typer.Option("--tf", help="Target timeframe")],
+) -> None:
+    """P1 리서치 시작 전 컨텍스트 브리핑."""
+    from pathlib import Path
+
+    from src.catalog.models import DataType
+    from src.catalog.store import DataCatalogStore
+    from src.pipeline.lesson_models import LessonCategory
+    from src.pipeline.lesson_store import LessonStore
+
+    store = StrategyStore()
+    lesson_store = LessonStore()
+
+    # ─── [1] Pipeline Status ─────────────────────────────────────────
+    records = store.load_all()
+    counts: dict[StrategyStatus, int] = {}
+    for r in records:
+        counts[r.meta.status] = counts.get(r.meta.status, 0) + 1
+
+    console.print(f"\n[bold]═══ P1 Briefing: {timeframe} ═══[/bold]\n")
+
+    status_parts = []
+    for s in StrategyStatus:
+        c = counts.get(s, 0)
+        color = _STATUS_COLORS[s]
+        status_parts.append(f"[{color}]{s}: {c}[/{color}]")
+    console.print("[bold][1] Pipeline Status[/bold]")
+    console.print(f"  {' | '.join(status_parts)}\n")
+
+    # ─── [2] Lessons for TF ──────────────────────────────────────────
+    tf_lessons = lesson_store.filter_by_timeframe(timeframe)
+    design_lessons = lesson_store.filter_by_category(LessonCategory.STRATEGY_DESIGN)
+    # Union (dedup by id)
+    seen_ids: set[int] = set()
+    combined: list[object] = []
+    for lesson in tf_lessons + design_lessons:
+        if lesson.id not in seen_ids:
+            seen_ids.add(lesson.id)
+            combined.append(lesson)
+    combined.sort(key=lambda rec: rec.id)  # type: ignore[attr-defined]
+
+    console.print(f"[bold][2] Lessons for {timeframe}[/bold] ({len(combined)} hits)")
+    if combined:
+        for lesson in combined:
+            console.print(
+                f"  #{lesson.id:03d} {lesson.title:<45s} {lesson.category}"  # type: ignore[attr-defined]
+            )
+    else:
+        console.print("  [dim]No matching lessons.[/dim]")
+    console.print()
+
+    # ─── [3] Anti-Patterns ───────────────────────────────────────────
+    discarded_path = Path(".claude/skills/p1-research/references/discarded-strategies.md")
+    console.print("[bold][3] Anti-Patterns[/bold]")
+    if discarded_path.exists():
+        content = discarded_path.read_text(encoding="utf-8")
+        _print_anti_patterns(content)
+    else:
+        console.print("  [dim]discarded-strategies.md not found.[/dim]")
+    console.print()
+
+    # ─── [4] Available Alternative Data Sources ──────────────────────
+    try:
+        catalog_store = DataCatalogStore()
+        all_datasets = catalog_store.load_all()
+        alt_types = {
+            DataType.ONCHAIN,
+            DataType.DERIVATIVES,
+            DataType.MACRO,
+            DataType.OPTIONS,
+            DataType.DERIV_EXT,
+        }
+        alt_datasets = [d for d in all_datasets if d.data_type in alt_types]
+
+        by_type: dict[str, list[str]] = {}
+        for d in alt_datasets:
+            key = d.data_type.value.replace("_", " ").title()
+            by_type.setdefault(key, []).append(d.id)
+
+        console.print(
+            f"[bold][4] Available Alternative Data Sources[/bold] ({len(alt_datasets)} datasets)"
+        )
+        for dtype, ids in sorted(by_type.items()):
+            preview = ", ".join(ids[:_MAX_PREVIEW_IDS])
+            extra = len(ids) - _MAX_PREVIEW_IDS
+            suffix = f", ... (+{extra})" if extra > 0 else ""
+            console.print(f"  {dtype}: {preview}{suffix}")
+    except FileNotFoundError:
+        console.print("[bold][4] Available Alternative Data Sources[/bold]")
+        console.print("  [dim]catalogs/datasets.yaml not found.[/dim]")
+
+
+_MAX_PREVIEW_IDS = 8
+_ANTI_PATTERN_MIN_COLS = 4
+
+
+def _print_anti_patterns(content: str) -> None:
+    """discarded-strategies.md에서 실패 패턴 요약 테이블 추출."""
+    marker = "### 실패 패턴 요약"
+    idx = content.find(marker)
+    if idx == -1:
+        console.print("  [dim]Anti-pattern summary section not found.[/dim]")
+        return
+
+    section = content[idx:]
+    for raw_line in section.split("\n"):
+        stripped = raw_line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # Skip header and separator rows
+        if stripped.startswith("| 패턴") or stripped.startswith("|--"):
+            continue
+        parts = [p.strip() for p in stripped.split("|")]
+        # | pattern | strategies | conclusion | → parts = ['', pattern, strategies, conclusion, '']
+        if len(parts) >= _ANTI_PATTERN_MIN_COLS:
+            pattern = parts[1]
+            conclusion = parts[3]
+            console.print(f"  - {pattern} → {conclusion}")
+
+
+@app.command(name="next")
+def next_action(
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Strategy name")] = None,
+    status_filter: Annotated[str | None, typer.Option("--status", "-s")] = None,
+) -> None:
+    """전략별 다음 수행 Phase + 실행 방법 안내."""
+    store = StrategyStore()
+
+    if name:
+        try:
+            record = store.load(name)
+        except FileNotFoundError:
+            console.print(f"[red]Strategy not found: {name}[/red]")
+            raise typer.Exit(code=1) from None
+        _print_next_detail(record)
+        return
+
+    records = store.load_all()
+    if status_filter:
+        try:
+            sf = StrategyStatus(status_filter)
+        except ValueError:
+            console.print(f"[red]Invalid status: {status_filter}[/red]")
+            raise typer.Exit(code=1) from None
+        records = [r for r in records if r.meta.status == sf]
+
+    actionable = [r for r in records if r.next_phase is not None]
+    complete = [
+        r
+        for r in records
+        if r.next_phase is None and r.fail_phase is None and r.meta.status != StrategyStatus.RETIRED
+    ]
+
+    if not actionable and not complete:
+        console.print("[green]All strategies are either complete or blocked.[/green]")
+        return
+
+    console.print("\n[bold]═══ Next Actions ═══[/bold]\n")
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Strategy", style="bold", min_width=18)
+    table.add_column("Status", width=12)
+    table.add_column("Next", justify="center", width=6)
+    table.add_column("Action")
+
+    for r in sorted(actionable, key=lambda x: (x.meta.status, x.meta.name)):
+        np = r.next_phase
+        assert np is not None
+        color = _STATUS_COLORS.get(r.meta.status, "white")
+        _, skill = _PHASE_ACTIONS.get(np, ("-", "-"))
+        action = skill.replace("{name}", r.meta.name)
+        table.add_row(
+            r.meta.name,
+            f"[{color}]{r.meta.status}[/{color}]",
+            np,
+            action,
+        )
+
+    for r in complete:
+        color = _STATUS_COLORS.get(r.meta.status, "white")
+        table.add_row(
+            r.meta.name,
+            f"[{color}]{r.meta.status}[/{color}]",
+            "-",
+            "[dim](complete)[/dim]",
+        )
+
+    console.print(table)
+
+
+def _print_next_detail(record: StrategyRecord) -> None:
+    """단일 전략의 다음 Phase 상세 출력."""
+    r = record
+    np = r.next_phase
+    color = _STATUS_COLORS.get(r.meta.status, "white")
+
+    if np is None:
+        if r.fail_phase:
+            console.print(f"\n[red]═══ {r.meta.name}: BLOCKED at {r.fail_phase} ═══[/red]")
+            console.print(
+                f"  Status: [{color}]{r.meta.status}[/{color}] | Fail Phase: {r.fail_phase}"
+            )
+        else:
+            console.print(f"\n[green]═══ {r.meta.name}: COMPLETE ═══[/green]")
+            console.print(f"  Status: [{color}]{r.meta.status}[/{color}] | All phases passed")
+        return
+
+    current = r.current_phase or "-"
+    cli_cmd, skill_cmd = _PHASE_ACTIONS.get(np, ("-", "-"))
+    cli_cmd = cli_cmd.replace("{name}", r.meta.name)
+    skill_cmd = skill_cmd.replace("{name}", r.meta.name)
+
+    console.print(f"\n[bold]═══ {r.meta.name}: Next → {np} ═══[/bold]\n")
+    console.print(f"  Status: [{color}]{r.meta.status}[/{color}] | Current Phase: {current}")
+    if cli_cmd != "-":
+        console.print(f"  Recommended CLI: [cyan]uv run mcbot {cli_cmd}[/cyan]")
+    console.print(f"  Or use skill: [cyan]{skill_cmd}[/cyan]")
 
 
 # ─── Display helpers ─────────────────────────────────────────────────

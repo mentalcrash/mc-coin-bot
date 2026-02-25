@@ -1,0 +1,80 @@
+version: 2
+meta:
+  name: multi-source-composite
+  display_name: Multi-Source Directional Composite
+  category: Multi-Source
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-23'
+  retired_at: '2026-02-23'
+  economic_rationale: 3개 직교 데이터 소스(OHLCV momentum + stablecoin flow + F&G sentiment)
+    majority vote. 약한 알파의 포트폴리오 결합 이론 기반.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      score: 21
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      tests: 68.0
+      registry: multi-source-composite
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-23'
+    details:
+      sharpe: 0.6734
+      cagr: 17.09
+      best_asset: DOGE/USDT
+      mdd: 42.13
+      trades: 225.0
+      win_rate: 54.9
+      profit_factor: 1.45
+      positive_assets: 2/8
+asset_performance: []
+decisions:
+- date: '2026-02-23'
+  phase: P1
+  verdict: PASS
+  rationale: 21/30점
+- date: '2026-02-23'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 multi-source-composite. Ruff/Pyright 0 error.
+- date: '2026-02-23'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. Warning 1건 (W2: parameter count 14, P4B에서 모니터)'
+- date: '2026-02-23'
+  phase: P4
+  verdict: WATCH
+  rationale: 'WATCH(P4A) — Best DOGE/USDT Sharpe 0.67 (Path A miss: <0.7), CAGR +17.1%,
+    MDD 42.1%. 6/8 negative Sharpe. Yellow Flag: Best=DOGE noise matching risk.'
+- date: '2026-02-23'
+  phase: P4
+  verdict: FAIL
+  rationale: 'RETIRED — Volume/close proxy가 실제 stablecoin flow와 무관하여 직교성
+    훼손. F&G momentum 방향 사용 부적절(교훈 #58). 사실상 OHLCV-only 전략으로 전락.
+    교훈 #76 참조.'

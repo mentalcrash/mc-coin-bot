@@ -11,6 +11,8 @@ from src.market.indicators.microstructure import (
     liquidation_asymmetry,
     liquidation_cascade_score,
     order_flow_imbalance,
+    taker_buy_ratio,
+    taker_cvd,
     vpin,
 )
 
@@ -134,9 +136,9 @@ class TestLiquidationAsymmetry:
         liq_short = pd.Series([100.0, 100.0, 50.0])
 
         result = liquidation_asymmetry(liq_long, liq_short)
-        np.testing.assert_almost_equal(result.iloc[0], 0.0)   # 동일
+        np.testing.assert_almost_equal(result.iloc[0], 0.0)  # 동일
         np.testing.assert_almost_equal(result.iloc[1], -1.0)  # 숏만
-        np.testing.assert_almost_equal(result.iloc[2], 0.0)   # 동일
+        np.testing.assert_almost_equal(result.iloc[2], 0.0)  # 동일
 
     def test_range(self) -> None:
         """결과 범위 -1 ~ +1."""
@@ -183,7 +185,84 @@ class TestOrderFlowImbalance:
 
     def test_empty_series(self) -> None:
         """빈 시리즈."""
-        result = order_flow_imbalance(
-            pd.Series(dtype=float), pd.Series(dtype=float)
-        )
+        result = order_flow_imbalance(pd.Series(dtype=float), pd.Series(dtype=float))
+        assert len(result) == 0
+
+
+class TestTakerCvd:
+    """taker_cvd 테스트."""
+
+    def test_basic(self) -> None:
+        """CVD = cumsum(2*taker_buy - volume) 확인."""
+        taker_buy = pd.Series([60.0, 70.0, 40.0, 80.0])
+        volume = pd.Series([100.0, 100.0, 100.0, 100.0])
+
+        result = taker_cvd(taker_buy, volume)
+        # delta = [20, 40, -20, 60]
+        # cumsum = [20, 60, 40, 100]
+        expected = pd.Series([20.0, 60.0, 40.0, 100.0])
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+
+    def test_balanced(self) -> None:
+        """taker_buy = volume/2 → CVD = 0."""
+        volume = pd.Series([100.0, 200.0, 150.0])
+        taker_buy = volume / 2
+        result = taker_cvd(taker_buy, volume)
+        np.testing.assert_array_almost_equal(result.values, [0.0, 0.0, 0.0])
+
+    def test_all_buy(self) -> None:
+        """taker_buy = volume → CVD 단조증가."""
+        volume = pd.Series([100.0, 100.0, 100.0])
+        result = taker_cvd(volume, volume)
+        # delta = [100, 100, 100], cumsum = [100, 200, 300]
+        expected = pd.Series([100.0, 200.0, 300.0])
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+
+    def test_empty_series(self) -> None:
+        """빈 시리즈."""
+        result = taker_cvd(pd.Series(dtype=float), pd.Series(dtype=float))
+        assert len(result) == 0
+
+
+class TestTakerBuyRatio:
+    """taker_buy_ratio 테스트."""
+
+    def test_basic(self) -> None:
+        """rolling ratio 범위 확인."""
+        np.random.seed(42)
+        n = 30
+        volume = pd.Series(np.random.uniform(100, 1000, n))
+        taker_buy = volume * np.random.uniform(0.3, 0.7, n)
+
+        result = taker_buy_ratio(taker_buy, volume, window=14)
+        valid = result.dropna()
+        assert len(valid) > 0
+        assert valid.min() >= 0.0 - 1e-10
+        assert valid.max() <= 1.0 + 1e-10
+
+    def test_all_buy(self) -> None:
+        """taker_buy = volume → ratio = 1.0."""
+        volume = pd.Series([100.0] * 20)
+        result = taker_buy_ratio(volume, volume, window=14)
+        valid = result.dropna()
+        np.testing.assert_array_almost_equal(valid.values, [1.0] * len(valid))
+
+    def test_half_buy(self) -> None:
+        """taker_buy = volume/2 → ratio = 0.5."""
+        volume = pd.Series([200.0] * 20)
+        taker_buy = pd.Series([100.0] * 20)
+        result = taker_buy_ratio(taker_buy, volume, window=14)
+        valid = result.dropna()
+        np.testing.assert_array_almost_equal(valid.values, [0.5] * len(valid))
+
+    def test_zero_volume(self) -> None:
+        """volume=0 → NaN."""
+        taker_buy = pd.Series([0.0] * 14)
+        volume = pd.Series([0.0] * 14)
+        result = taker_buy_ratio(taker_buy, volume, window=14)
+        assert pd.isna(result.iloc[-1])
+
+    def test_empty_series(self) -> None:
+        """빈 시리즈."""
+        result = taker_buy_ratio(pd.Series(dtype=float), pd.Series(dtype=float))
         assert len(result) == 0

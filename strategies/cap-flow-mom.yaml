@@ -1,0 +1,146 @@
+version: 2
+meta:
+  name: cap-flow-mom
+  display_name: Capital Flow Momentum
+  category: Multi-Source Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-25'
+  economic_rationale: 12H OHLCV 듀얼스피드 ROC 모멘텀 + 1D Stablecoin supply ROC 확신도 가중. 자본
+    유입/유출 방향과 가격 모멘텀 정렬 시 확신도 강화, 괴리 시 감쇄. 정보 비대칭(stablecoin flow 미활용) 기반.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  fast_roc_period: 29
+  slow_roc_period: 40
+  roc_threshold: 0.02546965865450625
+  stablecoin_roc_window: 47
+  stablecoin_boost: 1.7031158936738722
+  stablecoin_dampen: 0.15346174545437835
+  vol_window: 60
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 26
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 59.0
+      registry: cap-flow-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      best_asset: ADA/USDT
+      sharpe: 0.93
+      cagr: 28.5
+      mdd: 30.2
+      trades: 397
+      win_rate: 46.7
+      profit_factor: 1.38
+      beta: -0.01
+      is_sharpe: 0.99
+      oos_sharpe: 1.15
+      decay: -15.8
+      consistency: 100.0
+      overfit_prob: 0.0
+  P5:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      param_verdicts:
+        fast_roc_period: PASS
+        slow_roc_period: PASS
+        roc_threshold: PASS
+        stablecoin_roc_window: PASS
+        stablecoin_boost: PASS
+        stablecoin_dampen: PASS
+        vol_window: PASS
+  P6:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      cpcv_oos_sharpe: 0.86
+      pbo: 8.0
+      dsr: 0.0
+      mc_pvalue: 0.0
+      mc_ci_lo: 0.676
+      mc_ci_hi: 1.037
+      supplementary: 3/4
+  P7:
+    status: FAIL
+    date: '2026-02-25'
+    details:
+      eda_sharpe: 0.35
+      vbt_sharpe: 0.68
+      eda_return: 6.41
+      vbt_return: 18.96
+      return_deviation: 66.2
+      trades_ratio: 1.0
+asset_performance: []
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 cap-flow-mom. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS: ADA/USDT Sharpe 0.93, CAGR +28.5%, MDD 30.2% — Path A. DOGE(0.89)
+    SOL(0.66) 추가 양호. Beta -0.01 BTC 독립 알파'
+- date: '2026-02-24'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4B PASS: IS/OOS 검증 통과 — OOS Sharpe 1.15 > IS 0.99, Decay -16% (OOS
+    개선), Consistency 100%, Overfit 0%'
+- date: '2026-02-24'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.99→1.18 (+18.9%), OOS=1.01
+- date: '2026-02-24'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-02-24'
+  phase: P6
+  verdict: PASS
+  rationale: 'P6A WFA PASS: OOS Sharpe 0.99, Decay -11%, Consistency 67%'
+- date: '2026-02-24'
+  phase: P6
+  verdict: PASS
+  rationale: 'P6B PASS: CPCV OOS 0.86, PBO 8%, MC p=0.000 — 보충 3/4 (DSR 미통과). P5+P6
+    전 단계 PASS'
+- date: '2026-02-25'
+  phase: P7
+  verdict: FAIL
+  rationale: P7 FAIL. 수익 부호 일치(+/+), 거래수 정합(32/32=1.0x), 수익률 편차 66.2% > 20% 기준 초과.
+    EDA PF 0.92 < 1.0 (VBT 1.44). 체결가격 차이+비용 반영으로 개별 트레이드 P&L 열화

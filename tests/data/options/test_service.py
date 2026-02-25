@@ -61,14 +61,14 @@ class TestOptionsDataService:
         """Deribit batch definitions."""
         service = OptionsDataService(settings, catalog=None)
         defs = service.get_batch_definitions("deribit")
-        assert len(defs) == 6
+        assert len(defs) == 7
         assert all(s == "deribit" for s, _ in defs)
 
     def test_batch_definitions_all(self, settings: IngestionSettings) -> None:
         """전체 batch definitions."""
         service = OptionsDataService(settings, catalog=None)
         defs = service.get_batch_definitions("all")
-        assert len(defs) == 6
+        assert len(defs) == 7
 
     def test_batch_definitions_invalid(self, settings: IngestionSettings) -> None:
         """잘못된 batch type."""
@@ -110,4 +110,4 @@ class TestOptionsDataService:
     def test_batch_definitions_constant(self) -> None:
         """OPTIONS_BATCH_DEFINITIONS 상수 확인."""
         assert "deribit" in OPTIONS_BATCH_DEFINITIONS
-        assert len(OPTIONS_BATCH_DEFINITIONS["deribit"]) == 6
+        assert len(OPTIONS_BATCH_DEFINITIONS["deribit"]) == 7

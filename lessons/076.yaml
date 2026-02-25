@@ -1,0 +1,17 @@
+id: 76
+title: Majority vote 약한 sub-signal 결합의 한계
+body: 3개 직교 소스(OHLCV momentum, stablecoin velocity proxy, F&G sentiment) majority
+  vote. 개별 sub-signal이 약하면(자체 Sharpe < 0.3) 결합해도 알파 부재. Volume/close ratio는 stablecoin
+  velocity proxy로 부적합. F&G delta는 contrarian이 아닌 momentum 방향으로 사용 시 noise. 8개 중 6개
+  음수 Sharpe, Best=DOGE(noise matching). 약한 알파의 포트폴리오 결합은 개별 알파 최소 존재 전제.
+category: strategy-design
+tags:
+- majority-vote
+- weak-alpha
+- multi-source
+- composite
+strategies:
+- multi-source-composite
+timeframes:
+- 1D
+added_at: '2026-02-23'

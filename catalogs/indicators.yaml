@@ -647,7 +647,7 @@ indicators:
     default_params: {window: 14}
     used_by: []
     alpha_potential: high
-    notes: "coinalyze_btc_cvd + OHLCV 사용"
+    notes: "taker_cvd (binance klines) 또는 coinalyze_btc_cvd + OHLCV 사용"
 
   - id: liquidation_cascade_score
     name: Liquidation Cascade Score
@@ -668,6 +668,26 @@ indicators:
     used_by: []
     alpha_potential: medium
     notes: "coinalyze_btc_liquidations 사용"
+
+  - id: taker_cvd
+    name: Taker CVD (Cumulative Volume Delta)
+    module: microstructure
+    category: microstructure
+    description: "Taker buy/sell 기반 누적 거래량 델타. CVD 상승=매수 주도, 하락=매도 주도"
+    default_params: {}
+    used_by: []
+    alpha_potential: high
+    notes: "binance_taker_buy_base_volume 기반. BVC 근사 대체 (Lesson #15)"
+
+  - id: taker_buy_ratio
+    name: Taker Buy Ratio
+    module: microstructure
+    category: microstructure
+    description: "Rolling taker buy / total volume 비율 (0~1). 0.5 기준 buyer/seller dominance"
+    default_params: {window: 14}
+    used_by: []
+    alpha_potential: high
+    notes: "binance_taker_buy_base_volume 기반"
 
   - id: order_flow_imbalance
     name: Order Flow Imbalance

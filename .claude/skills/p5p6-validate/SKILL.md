@@ -406,3 +406,14 @@ Next: `/p7-live` (Phase 7: EDA Parity 검증)
 - [references/quant-interpretation-guide.md](../p4-backtest/references/quant-interpretation-guide.md) -- 시니어 퀀트 해석 패턴
 - [references/report-template.md](../p4-backtest/references/report-template.md) -- 리포트 출력 형식
 - `pipeline report` -- 전략 상황판 (CLI)
+
+---
+
+## Phase Completion Protocol
+
+Phase 완료 후 반드시 수행:
+
+1. 현황 확인: `uv run mcbot pipeline next --name {strategy_name}`
+1. 사용자에게 다음 Phase 진행 여부 질문:
+   "P5/P6 결과: {요약}. 다음 Phase {next}로 진행하시겠습니까?"
+1. 승인 시 다음 스킬 즉시 호출 (`pipeline next` 출력의 skill 명령 참조)

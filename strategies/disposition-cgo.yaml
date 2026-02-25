@@ -1,0 +1,72 @@
+version: 2
+meta:
+  name: disposition-cgo
+  display_name: Disposition CGO
+  category: Behavioral Finance
+  timeframe: 1D
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-23'
+  retired_at: '2026-02-23'
+  economic_rationale: Grinblatt-Han(2005) turnover-weighted reference price 기반 Capital
+    Gains Overhang. Crypto retail 80%+ 시장에서 disposition effect underreaction drift
+    포착. Momentum confirmation (Frazzini 2006 overhang spread).
+  rationale_references: []
+  rationale_category: 행동재무학
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      tests: 55.0
+      registry: disposition-cgo
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-23'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-02-23'
+    details:
+      sub_phase: P4A
+      best_sharpe: 0.5
+      best_cagr: 11.02
+      best_asset: AVAX/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-23'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-23'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 disposition-cgo. Ruff/Pyright 0 error.
+- date: '2026-02-23'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 2건 (W3 regime concentration, W5 cgo-mom correlation).
+    자동수정 없음.
+- date: '2026-02-23'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 8에셋 중 6개 Sharpe 음수. Best AVAX Sharpe 0.50 < 0.70, CAGR 11.02%
+    < 15%. OHLCV volume으로 Grinblatt-Han reference price 추정 한계.'

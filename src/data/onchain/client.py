@@ -27,6 +27,7 @@ SOURCE_RATE_LIMITS: dict[str, int] = {
     "blockchain_com": 5,  # ~6 req/min → conservative 5
     "etherscan": 4,  # 5 calls/sec free tier, daily 1회 스냅샷 → 보수적 4/min
     "mempool_space": 8,  # ~10 req/min → 보수적 8
+    "beaconcha_in": 8,  # free tier ~10 req/min → 보수적 8
 }
 
 # Default retry configuration

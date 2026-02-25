@@ -1,0 +1,66 @@
+version: 2
+meta:
+  name: tq-mom
+  display_name: Trend Quality Momentum
+  category: Information-Theoretic
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-25'
+  retired_at: '2026-02-25'
+  economic_rationale: 'Hurst exponent(지속성)과 Fractal Dimension(복잡도) 조합으로 추세 품질 판별.
+    교훈 #61 검증: 필터로 유효. 높은 품질 추세에서만 momentum 진입.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      score: 21
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      tests: 52.0
+      registry: tq-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-25'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-02-25'
+    details: {}
+asset_performance: []
+decisions:
+- date: '2026-02-25'
+  phase: P1
+  verdict: PASS
+  rationale: 21/30점
+- date: '2026-02-25'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 tq-mom. Ruff/Pyright 0 error.
+- date: '2026-02-25'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. W5=WARNING(fractal_mom과 상관 검증 필요). 1건
+- date: '2026-02-25'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A: Best DOGE Sharpe 0.65 CAGR +2.7%. 전 에셋 CAGR<3%. Hurst/FD 필터 pass
+    rate 극저 -> 노출 부족 -> 수익 무의미.'

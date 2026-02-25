@@ -1,0 +1,70 @@
+version: 2
+meta:
+  name: comp-mom
+  display_name: Composite Momentum
+  category: Multi-Factor Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-24'
+  retired_at: '2026-02-24'
+  economic_rationale: 'OHLCV 5변수 3축 직교 분해: 가격 모멘텀(방향) × 거래량(참여도) × GK변동성(환경). 연속 곱셈으로
+    3축 정렬 시 강한 신호, 불일치 시 자연 감쇄. Risk-Managed Momentum 학술 기반.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      tests: 58.0
+      registry: comp-mom
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-24'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-24'
+    details:
+      sharpe: 0.36
+      cagr: 6.35
+      mdd: 28.23
+      best_asset: DOGE/USDT
+asset_performance: []
+decisions:
+- date: '2026-02-24'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-24'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 comp-mom. Ruff/Pyright 0 error.
+- date: '2026-02-24'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. 3축 직교 분해(mom x vol x GK) 복합 시그널 구조 안전.
+- date: '2026-02-24'
+  phase: P4
+  verdict: FAIL
+  rationale: P4A Hard FAIL — Best DOGE Sharpe 0.36 < 0.5 WATCH 미달. 5/8 Sharpe 음수.
+    BTC MDD 80%, LINK MDD 67%.

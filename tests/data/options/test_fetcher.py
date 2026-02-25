@@ -195,11 +195,12 @@ class TestOptionsFetcher:
 
     async def test_all_datasets_defined(self) -> None:
         """모든 Deribit 데이터셋이 정의되어 있는지."""
-        assert len(DERIBIT_DATASETS) == 6
+        assert len(DERIBIT_DATASETS) == 7
         assert "btc_dvol" in DERIBIT_DATASETS
         assert "eth_dvol" in DERIBIT_DATASETS
         assert "btc_pc_ratio" in DERIBIT_DATASETS
         assert "btc_hist_vol" in DERIBIT_DATASETS
+        assert "eth_hist_vol" in DERIBIT_DATASETS
         assert "btc_term_structure" in DERIBIT_DATASETS
         assert "btc_max_pain" in DERIBIT_DATASETS
 
@@ -220,6 +221,20 @@ class TestRouteFetch:
 
         df = await route_fetch(fetcher, "deribit", "btc_dvol")
         assert not df.empty
+
+    async def test_route_eth_hist_vol(self, mock_client: AsyncMock) -> None:
+        """ETH Historical Volatility 라우팅."""
+        hvol_data = {
+            "result": [
+                [1705276800000, 40.0, 50.0, 55.0, 58.0, 60.0, 62.0, 65.0],
+            ]
+        }
+        mock_client.get.return_value = _make_response(hvol_data)
+        fetcher = OptionsFetcher(mock_client)
+
+        df = await route_fetch(fetcher, "deribit", "eth_hist_vol")
+        assert not df.empty
+        assert df.iloc[0]["currency"] == "ETH"
 
     async def test_route_unknown_source(self, mock_client: AsyncMock) -> None:
         """알 수 없는 source."""

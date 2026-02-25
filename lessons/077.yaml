@@ -1,0 +1,19 @@
+id: 77
+title: MACD-V ATR정규화로도 IS/OOS Decay 억제 불가 — flat_zone 임계값 시장구조 취약
+body: 'Z-Momentum(MACD-V): MACD/ATR 변동성 정규화 + flat zone으로 noisy crossover 필터링. P4A
+  DOGE Sharpe 0.82 CAGR 17.7% PASS(Path A). 그러나 P4B IS 1.19→OOS -0.17 Decay 115%.
+  BTC도 IS 1.16→OOS -0.11 Decay 110%. ATR 정규화가 변동성 regime 차이는 교정하지만, flat_zone threshold(0.3)
+  고정값이 2024H2-2025 시장구조 변화에 부적합. #32 vardecomp-mom과 동일 패턴: threshold 기반 필터의 IS 과적합.
+  12H TF에서도 동일 취약성 확인.'
+category: pipeline-process
+tags:
+- macd-v
+- IS-OOS
+- decay
+- threshold-filter
+- vol-normalization
+strategies:
+- z-mom
+timeframes:
+- 12H
+added_at: '2026-02-24'
