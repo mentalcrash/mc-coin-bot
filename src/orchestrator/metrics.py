@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
-from prometheus_client import Enum as PromEnum, Gauge
+from prometheus_client import Gauge
 
 from src.orchestrator.netting import compute_netting_stats
 from src.orchestrator.risk_aggregator import (
@@ -68,14 +68,19 @@ pod_rolling_drawdown_30d_gauge = Gauge(
     ["pod_id"],
 )
 
-# Lifecycle Enum (5 states)
-_LIFECYCLE_STATES = ["incubation", "production", "warning", "probation", "retired"]
+# Lifecycle state → integer mapping (Gauge-based)
+_LIFECYCLE_STATE_TO_INT: dict[str, int] = {
+    "incubation": 0,
+    "production": 1,
+    "warning": 2,
+    "probation": 3,
+    "retired": 4,
+}
 
-pod_lifecycle_enum = PromEnum(
+pod_lifecycle_gauge = Gauge(
     "mcbot_pod_lifecycle_state",
-    "Pod lifecycle state",
+    "Pod lifecycle state (0=incubation,1=production,2=warning,3=probation,4=retired)",
     ["pod_id"],
-    states=_LIFECYCLE_STATES,
 )
 
 # ── Portfolio-level Gauges ───────────────────────────────────────
@@ -152,7 +157,9 @@ class OrchestratorMetrics:
             pod_drawdown_gauge.labels(pod_id=pid).set(pod.performance.current_drawdown)
             pod_rolling_sharpe_30d_gauge.labels(pod_id=pid).set(pod.rolling_sharpe)
             pod_rolling_drawdown_30d_gauge.labels(pod_id=pid).set(pod.rolling_drawdown)
-            pod_lifecycle_enum.labels(pod_id=pid).state(pod.state.value)
+            pod_lifecycle_gauge.labels(pod_id=pid).set(
+                _LIFECYCLE_STATE_TO_INT[pod.state.value]
+            )
 
         active_pods_gauge.set(self._orchestrator.active_pod_count)
 

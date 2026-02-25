@@ -373,7 +373,7 @@ groups:
 
       # 32. Pod Probation 진입
       - alert: PodInProbation
-        expr: mcbot_pod_lifecycle_state{mcbot_pod_lifecycle_state="probation"} == 1
+        expr: mcbot_pod_lifecycle_state == 3
         for: 0s
         labels:
           severity: warning

@@ -88,7 +88,7 @@ class TestPodAllocationGauge:
 
 class TestPodLifecycleState:
     def test_pod_lifecycle_state_updated(self) -> None:
-        """Pod lifecycle enum이 올바른 상태로 설정되는지 확인."""
+        """Pod lifecycle gauge가 올바른 정수값으로 설정되는지 확인."""
         pods = [
             _make_mock_pod("pod-x", state=LifecycleState.PRODUCTION),
             _make_mock_pod("pod-y", state=LifecycleState.WARNING),
@@ -97,21 +97,9 @@ class TestPodLifecycleState:
         metrics = OrchestratorMetrics(orch)
         metrics.update()
 
-        # Enum metric: mcbot_pod_lifecycle_state{pod_id="pod-x", mcbot_pod_lifecycle_state="production"} = 1.0
-        assert (
-            _sample(
-                "mcbot_pod_lifecycle_state",
-                {"pod_id": "pod-x", "mcbot_pod_lifecycle_state": "production"},
-            )
-            == 1.0
-        )
-        assert (
-            _sample(
-                "mcbot_pod_lifecycle_state",
-                {"pod_id": "pod-y", "mcbot_pod_lifecycle_state": "warning"},
-            )
-            == 1.0
-        )
+        # Gauge: production=1, warning=2
+        assert _sample("mcbot_pod_lifecycle_state", {"pod_id": "pod-x"}) == 1.0
+        assert _sample("mcbot_pod_lifecycle_state", {"pod_id": "pod-y"}) == 2.0
 
 
 class TestPodSharpeGauge:
