@@ -25,6 +25,7 @@ from rich.table import Table
 
 from src.config.universe import TIER1_SYMBOLS
 from src.pipeline.models import (
+    AssetMetrics,
     Decision,
     PhaseId,
     PhaseResult,
@@ -383,6 +384,31 @@ def _warn_low_category_success(store: StrategyStore, category: str) -> None:
         console.print(msg)
 
 
+def _parse_asset_flag(raw: str) -> AssetMetrics:
+    """Parse ``symbol=X,sharpe=X,cagr=X,mdd=X,trades=X[,pf=X,wr=X,...]`` into AssetMetrics."""
+    pairs: dict[str, str] = {}
+    for token in raw.split(","):
+        k, _, v = token.partition("=")
+        pairs[k.strip()] = v.strip()
+
+    aliases = {"pf": "profit_factor", "wr": "win_rate"}
+    resolved = {aliases.get(k, k): v for k, v in pairs.items()}
+
+    return AssetMetrics(
+        symbol=resolved["symbol"],
+        sharpe=float(resolved["sharpe"]),
+        cagr=float(resolved["cagr"]),
+        mdd=float(resolved["mdd"]),
+        trades=int(resolved["trades"]),
+        profit_factor=float(resolved["profit_factor"]) if "profit_factor" in resolved else None,
+        win_rate=float(resolved["win_rate"]) if "win_rate" in resolved else None,
+        sortino=float(resolved["sortino"]) if "sortino" in resolved else None,
+        calmar=float(resolved["calmar"]) if "calmar" in resolved else None,
+        alpha=float(resolved["alpha"]) if "alpha" in resolved else None,
+        beta=float(resolved["beta"]) if "beta" in resolved else None,
+    )
+
+
 @app.command()
 def record(
     name: Annotated[str, typer.Argument(help="Strategy name")],
@@ -391,6 +417,12 @@ def record(
     rationale: Annotated[str, typer.Option("--rationale", "-r", help="판정 사유")] = "",
     detail: Annotated[
         list[str] | None, typer.Option("--detail", "-d", help="key=value pairs")
+    ] = None,
+    asset: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--asset", "-a", help="에셋 성과: symbol=X,sharpe=X,cagr=X,mdd=X,trades=X[,pf=X]"
+        ),
     ] = None,
     no_retire: Annotated[
         bool, typer.Option("--no-retire", help="FAIL 시 자동 RETIRED 방지")
@@ -414,6 +446,11 @@ def record(
     pv = PhaseVerdict(verdict)
     store.record_phase(name, pid, pv, details=details, rationale=rationale)
     console.print(f"[green]Recorded {phase} {verdict} for {name}[/green]")
+
+    if asset:
+        metrics = [_parse_asset_flag(a) for a in asset]
+        store.set_asset_performance(name, metrics)
+        console.print(f"[green]Asset performance: {len(metrics)} 에셋 저장[/green]")
 
     if pv == PhaseVerdict.WATCH:
         console.print("[yellow]WATCH — status unchanged (TESTING 유지, 재시도 가능)[/yellow]")

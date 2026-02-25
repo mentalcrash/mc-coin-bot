@@ -138,8 +138,11 @@ Sharpe/Sortino/Calmar, CAGR, MDD, Trades, Win Rate, Profit Factor, Alpha/Beta(vs
 uv run mcbot pipeline record {strategy_name} \
   --phase P4A --verdict PASS \
   --detail "sharpe={best_sharpe}" --detail "cagr={best_cagr}" \
+  --asset "symbol={SYM},sharpe={X.XX},cagr={XX.X},mdd={XX.X},trades={N},pf={X.XX}" \
   --rationale "{Best Asset} Sharpe X.XX, CAGR +XX.X%"
 ```
+
+> `--asset` 플래그를 에셋별로 반복 (e.g. `--asset "symbol=ETH/USDT,..." --asset "symbol=BTC/USDT,..."`)
 
 **FAIL -> Step F** | **PASS -> Step 2**
 
@@ -238,8 +241,11 @@ uv run mcbot pipeline report
 uv run mcbot pipeline record {strategy_name} \
   --phase P4B --verdict PASS \
   --detail "oos_sharpe={X.XX}" --detail "decay={XX}%" \
+  --asset "symbol={SYM},sharpe={X.XX},cagr={XX.X},mdd={XX.X},trades={N},pf={X.XX}" \
   --rationale "IS/OOS 검증 PASS — OOS Sharpe X.XX, Decay XX%"
 ```
+
+> `--asset` 플래그를 에셋별로 반복하여 asset_performance 저장 (pipeline list 테이블 표시용)
 
 상태 `TESTING` 유지 (Phase 5 Robustness 대기).
 

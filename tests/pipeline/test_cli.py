@@ -642,6 +642,43 @@ class TestRecordNoRetire:
         # IMPLEMENTED + PASS -> TESTING 자동 전환
         assert record.meta.status == StrategyStatus.TESTING
 
+    def test_record_with_asset_performance(self, strategies_dir: Path) -> None:
+        self._create_implemented()
+        result = runner.invoke(
+            app,
+            [
+                "record",
+                "retire-test",
+                "--phase",
+                "P4",
+                "--verdict",
+                "PASS",
+                "--no-retire",
+                "--asset",
+                "symbol=ETH/USDT,sharpe=0.71,cagr=10.38,mdd=12.37,trades=138,pf=1.62",
+                "--asset",
+                "symbol=BTC/USDT,sharpe=0.55,cagr=8.2,mdd=15.1,trades=120",
+                "--rationale",
+                "P4 PASS",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "2 에셋 저장" in result.output
+
+        store = StrategyStore(base_dir=strategies_dir)
+        record = store.load("retire-test")
+        assert len(record.asset_performance) == 2
+        eth = record.asset_performance[0]
+        assert eth.symbol == "ETH/USDT"
+        assert eth.sharpe == 0.71
+        assert eth.cagr == 10.38
+        assert eth.mdd == 12.37
+        assert eth.trades == 138
+        assert eth.profit_factor == 1.62
+        btc = record.asset_performance[1]
+        assert btc.symbol == "BTC/USDT"
+        assert btc.profit_factor is None
+
 
 # ─── phases-list / phases-show commands ────────────────────────────────
 
