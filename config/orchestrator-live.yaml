@@ -31,6 +31,8 @@
 #   - symbols는 부팅 시 보장되는 seed 심볼 (surveillance가 런타임에 추가)
 #   - 탈락 에셋은 AssetSelector permanently_excluded 처리
 #   - Hedge Mode: 동일 심볼이 여러 Pod에 배정 가능 (분산 효과 확인 후 결정)
+#   - pinned_symbols: true → surveillance 심볼 추가/제거 차단 (config symbols만 사용)
+#     온체인 전략 등 특정 에셋 전용 데이터 의존 시 활용
 #
 # 배포 전 필수 검증:
 #   1. uv run mcbot orchestrate backtest config/orchestrator-live.yaml --report

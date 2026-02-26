@@ -236,6 +236,52 @@ class TestAssetSelectorExtensions:
 
 
 
+class TestPinnedSymbols:
+    """pinned_symbols=True인 Pod 테스트."""
+
+    def _make_pinned_pod(
+        self,
+        symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT"),
+    ) -> StrategyPod:
+        strategy = MagicMock()
+        strategy.name = "test"
+        strategy.config = None
+        config = PodConfig(
+            pod_id="pinned-pod",
+            strategy_name="test",
+            symbols=symbols,
+            pinned_symbols=True,
+            max_assets=10,
+        )
+        return StrategyPod(config=config, strategy=strategy, capital_fraction=0.5)
+
+    def test_add_asset_rejected(self) -> None:
+        """pinned Pod는 add_asset()을 거부한다."""
+        pod = self._make_pinned_pod()
+        assert pod.add_asset("SOL/USDT") is False
+        assert "SOL/USDT" not in pod.symbols
+
+    def test_config_symbols_only(self) -> None:
+        """pinned Pod는 config에 정의된 심볼만 보유한다."""
+        pod = self._make_pinned_pod(symbols=("BTC/USDT",))
+        pod.add_asset("ETH/USDT")
+        pod.add_asset("SOL/USDT")
+        assert pod.symbols == ("BTC/USDT",)
+
+    def test_accepts_config_symbols(self) -> None:
+        """pinned Pod는 기존 config 심볼은 정상 처리한다."""
+        pod = self._make_pinned_pod(symbols=("BTC/USDT", "ETH/USDT"))
+        assert pod.accepts_symbol("BTC/USDT") is True
+        assert pod.accepts_symbol("ETH/USDT") is True
+        assert pod.accepts_symbol("SOL/USDT") is False
+
+    def test_default_not_pinned(self) -> None:
+        """기본값은 pinned_symbols=False."""
+        pod = _make_pod(symbols=("BTC/USDT",))
+        assert pod.config.pinned_symbols is False
+        assert pod.add_asset("ETH/USDT") is True
+
+
 class TestIntraPodAllocatorExtensions:
     """IntraPodAllocator add_symbol."""
 

@@ -1264,3 +1264,101 @@ class TestVirtualPositionMixedShortMode:
         # unrealized = (55000 - 50000) * (-0.06) = -300
         # equity = 5000 - 300 = 4700
         assert mtm_b == pytest.approx(4700.0)
+
+
+# ── TestPinnedSymbolsUniverse ────────────────────────────────
+
+
+class TestPinnedSymbolsUniverse:
+    """pinned_symbols=True인 Pod는 universe update에서 제외됨."""
+
+    def _make_mixed_orch(self) -> StrategyOrchestrator:
+        """pinned Pod + unpinned Pod 혼합 Orchestrator."""
+        pinned_cfg = _make_pod_config(
+            "pod-pinned",
+            ("BTC/USDT",),
+            pinned_symbols=True,
+            max_assets=10,
+        )
+        normal_cfg = _make_pod_config(
+            "pod-normal",
+            ("ETH/USDT",),
+            max_assets=10,
+        )
+        config = _make_orchestrator_config((pinned_cfg, normal_cfg))
+        pinned_pod = StrategyPod(
+            config=pinned_cfg,
+            strategy=SimpleTestStrategy(),
+            capital_fraction=0.5,
+        )
+        pinned_pod._warmup = 3
+        normal_pod = StrategyPod(
+            config=normal_cfg,
+            strategy=SimpleTestStrategy(),
+            capital_fraction=0.5,
+        )
+        normal_pod._warmup = 3
+        allocator = CapitalAllocator(config)
+        return StrategyOrchestrator(config, [pinned_pod, normal_pod], allocator)
+
+    async def test_add_symbol_skips_pinned_pod(self) -> None:
+        """Surveillance added 심볼이 pinned Pod에 추가되지 않는다."""
+        orch = self._make_mixed_orch()
+        from src.orchestrator.surveillance import ScanResult
+
+        scan = ScanResult(
+            timestamp=datetime(2024, 6, 1, tzinfo=UTC),
+            qualified_symbols=("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+            added=("SOL/USDT",),
+            dropped=(),
+            retained=("BTC/USDT", "ETH/USDT"),
+            scan_duration_seconds=1.0,
+            total_scanned=10,
+        )
+
+        async def mock_warmup(
+            symbol: str, timeframe: str, limit: int
+        ) -> tuple[list[dict[str, float]], list[datetime]]:
+            return [], []
+
+        result = await orch.on_universe_update(scan, mock_warmup)
+
+        # pinned Pod에는 추가 안 됨
+        pinned_pod = orch._pods[0]
+        assert pinned_pod.config.pinned_symbols is True
+        assert "SOL/USDT" not in pinned_pod.symbols
+
+        # normal Pod에는 추가됨
+        normal_pod = orch._pods[1]
+        assert "SOL/USDT" in normal_pod.symbols
+        assert "pod-normal" in result
+        assert "pod-pinned" not in result
+
+    async def test_drop_symbol_skips_pinned_pod(self) -> None:
+        """Surveillance dropped 심볼이 pinned Pod에서 제거되지 않는다."""
+        orch = self._make_mixed_orch()
+        pinned_pod = orch._pods[0]
+
+        # pinned Pod의 BTC/USDT가 drop 대상이더라도 유지
+        from src.orchestrator.surveillance import ScanResult
+
+        scan = ScanResult(
+            timestamp=datetime(2024, 6, 1, tzinfo=UTC),
+            qualified_symbols=("ETH/USDT",),
+            added=(),
+            dropped=("BTC/USDT",),
+            retained=("ETH/USDT",),
+            scan_duration_seconds=1.0,
+            total_scanned=10,
+        )
+
+        async def mock_warmup(
+            symbol: str, timeframe: str, limit: int
+        ) -> tuple[list[dict[str, float]], list[datetime]]:
+            return [], []
+
+        await orch.on_universe_update(scan, mock_warmup)
+
+        # pinned Pod의 BTC/USDT는 여전히 존재
+        assert pinned_pod.accepts_symbol("BTC/USDT") is True
+        assert "BTC/USDT" in pinned_pod.symbols

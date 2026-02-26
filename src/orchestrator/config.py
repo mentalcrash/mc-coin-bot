@@ -291,7 +291,11 @@ class PodConfig(BaseModel):
         description="리밸런스 이탈 임계값",
     )
 
-    # Dynamic asset limit (surveillance용)
+    # Dynamic asset management
+    pinned_symbols: bool = Field(
+        default=False,
+        description="True → surveillance가 이 Pod에 심볼을 추가/제거하지 않음 (config symbols만 사용)",
+    )
     max_assets: int | None = Field(
         default=None,
         ge=1,

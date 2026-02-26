@@ -661,8 +661,11 @@ class StrategyPod:
             symbol: 추가할 심볼
 
         Returns:
-            True if added, False if duplicate or max_assets exceeded.
+            True if added, False if duplicate, pinned, or max_assets exceeded.
         """
+        if self._config.pinned_symbols:
+            return False
+
         if symbol in self._runtime_symbols:
             return False
 

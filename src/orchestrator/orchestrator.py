@@ -1095,9 +1095,11 @@ class StrategyOrchestrator:
         warmup_fn: Callable[..., Awaitable[tuple[list[dict[str, float]], list[datetime]]]],
         pod_additions: dict[str, list[str]],
     ) -> None:
-        """신규 심볼을 모든 활성 Pod에 추가."""
+        """신규 심볼을 모든 활성 Pod에 추가 (pinned Pod 제외)."""
         for idx, pod in enumerate(self._pods):
             if not pod.is_active:
+                continue
+            if pod.config.pinned_symbols:
                 continue
             if not pod.add_asset(symbol):
                 continue
@@ -1116,13 +1118,15 @@ class StrategyOrchestrator:
             pod_additions.setdefault(pod.pod_id, []).append(symbol)
 
     def _drop_symbol_from_pods(self, symbol: str) -> None:
-        """탈락 심볼을 모든 활성 Pod에서 permanently_excluded 처리.
+        """탈락 심볼을 모든 활성 Pod에서 permanently_excluded 처리 (pinned Pod 제외).
 
         _runtime_symbols는 유지하여 재진입을 차단하고,
         _symbol_pod_map에서 라우팅을 제거하여 불필요한 연산을 방지합니다.
         """
         for pod in self._pods:
             if not pod.is_active or not pod.accepts_symbol(symbol):
+                continue
+            if pod.config.pinned_symbols:
                 continue
             if pod.asset_selector is not None:
                 pod.asset_selector.flag_permanently_excluded(symbol)
