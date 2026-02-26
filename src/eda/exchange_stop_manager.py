@@ -70,12 +70,16 @@ class ExchangeStopManager:
         futures_client: BinanceFuturesClient,
         pm: EDAPortfolioManager,
         notification_queue: NotificationQueue | None = None,
+        *,
+        hedge_mode: bool = False,
     ) -> None:
         self._config = config
         self._client = futures_client
         self._pm = pm
         self._notification_queue: NotificationQueue | None = notification_queue
-        self._stops: dict[str, StopOrderState] = {}  # symbol → state
+        self._hedge_mode = hedge_mode
+        # key: symbol (one-way) or composite key (hedge)
+        self._stops: dict[str, StopOrderState] = {}
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록 (PM/OMS 이후 호출)."""
@@ -95,61 +99,85 @@ class ExchangeStopManager:
         """Fill 이벤트 처리: 진입 → stop 배치, 청산 → stop 취소."""
         assert isinstance(event, FillEvent)
         fill = event
-        symbol = fill.symbol
-        pos = self._pm.positions.get(symbol)
+
+        # Hedge mode: composite key, One-way: plain symbol
+        stop_key = self._pm._pos_key(fill.symbol, fill.pod_id) if self._hedge_mode else fill.symbol  # pyright: ignore[reportPrivateUsage]
+        pos = self._pm.positions.get(stop_key)
 
         if pos is not None and pos.is_open:
             # 포지션이 열려 있음 → 진입 또는 추가 진입
-            existing = self._stops.get(symbol)
+            existing = self._stops.get(stop_key)
             if existing is not None:
                 # Direction flip 감지: 기존 stop과 현재 포지션 방향이 다르면 교체
                 expected_side = "LONG" if pos.direction == Direction.LONG else "SHORT"
                 if existing.position_side != expected_side:
-                    await self._cancel_safety_stop(symbol)
-                    await self._place_safety_stop(symbol, pos)
+                    await self._cancel_safety_stop(stop_key)
+                    await self._place_safety_stop(stop_key, pos)
             else:
-                await self._place_safety_stop(symbol, pos)
+                await self._place_safety_stop(stop_key, pos)
         # 포지션 청산됨 → stop 취소
-        elif symbol in self._stops:
-            await self._cancel_safety_stop(symbol)
+        elif stop_key in self._stops:
+            await self._cancel_safety_stop(stop_key)
 
     async def _on_bar(self, event: AnyEvent) -> None:
         """Bar 이벤트: trailing stop price 업데이트 (throttled)."""
         assert isinstance(event, BarEvent)
         symbol = event.symbol
 
-        # 현재 관리 중인 stop이 없으면 skip
-        if symbol not in self._stops:
+        # 해당 심볼에 매칭되는 모든 stop key 수집
+        stop_keys = self._stop_keys_for_symbol(symbol)
+        if not stop_keys:
             return
 
-        pos = self._pm.positions.get(symbol)
-        if pos is None or not pos.is_open:
-            # 포지션이 사라졌으면 stop 취소
-            await self._cancel_safety_stop(symbol)
-            return
+        for stop_key in stop_keys:
+            pos = self._pm.positions.get(stop_key)
+            if pos is None or not pos.is_open:
+                # 포지션이 사라졌으면 stop 취소
+                await self._cancel_safety_stop(stop_key)
+                continue
 
-        new_stop_price = self._calculate_stop_price(pos)
-        if new_stop_price is None:
-            return
+            new_stop_price = self._calculate_stop_price(pos)
+            if new_stop_price is None:
+                continue
 
-        await self._update_stop_if_needed(symbol, new_stop_price)
+            await self._update_stop_if_needed(stop_key, new_stop_price)
+
+    # =========================================================================
+    # Key Helpers
+    # =========================================================================
+
+    def _stop_keys_for_symbol(self, symbol: str) -> list[str]:
+        """symbol에 매칭되는 모든 stop key 반환."""
+        if not self._hedge_mode:
+            return [symbol] if symbol in self._stops else []
+        return [k for k in self._stops if k == symbol or k.endswith(f"|{symbol}")]
+
+    @staticmethod
+    def _real_symbol(stop_key: str) -> str:
+        """stop_key에서 실제 거래소 심볼 추출."""
+        return stop_key.split("|", 1)[1] if "|" in stop_key else stop_key
 
     # =========================================================================
     # Exchange API Operations
     # =========================================================================
 
-    async def _place_safety_stop(self, symbol: str, pos: Position) -> None:
+    async def _place_safety_stop(self, stop_key: str, pos: Position) -> None:
         """포지션에 대한 거래소 안전망 stop 배치."""
         stop_price = self._calculate_stop_price(pos)
         if stop_price is None:
-            logger.debug("No safety stop for {} (system_stop_loss=None)", symbol)
+            logger.debug("No safety stop for {} (system_stop_loss=None)", stop_key)
             return
 
         position_side = "LONG" if pos.direction == Direction.LONG else "SHORT"
         close_side = "sell" if pos.direction == Direction.LONG else "buy"
-        client_order_id = f"{SAFETY_STOP_PREFIX}{symbol.replace('/', '-')}_{uuid.uuid4().hex[:8]}"
+        safe_id = stop_key.replace("/", "-").replace("|", "_")
+        client_order_id = f"{SAFETY_STOP_PREFIX}{safe_id}_{uuid.uuid4().hex[:8]}"
 
-        futures_symbol = self._client.to_futures_symbol(symbol)
+        real_symbol = self._real_symbol(stop_key)
+        futures_symbol = self._client.to_futures_symbol(real_symbol)
+
+        # Hedge mode → positionSide 전달
+        ps_param = position_side if self._hedge_mode else None
 
         try:
             result = await self._client.create_stop_market_order(
@@ -157,10 +185,11 @@ class ExchangeStopManager:
                 side=close_side,
                 stop_price=stop_price,
                 client_order_id=client_order_id,
+                position_side=ps_param,
             )
             exchange_order_id = result.get("id")
-            self._stops[symbol] = StopOrderState(
-                symbol=symbol,
+            self._stops[stop_key] = StopOrderState(
+                symbol=real_symbol,
                 exchange_order_id=exchange_order_id,
                 client_order_id=client_order_id,
                 stop_price=stop_price,
@@ -169,21 +198,21 @@ class ExchangeStopManager:
             )
             logger.info(
                 "Safety stop placed: {} {} @ {:.2f} (order={})",
-                symbol,
+                stop_key,
                 close_side,
                 stop_price,
                 exchange_order_id,
             )
         except Exception:
-            logger.exception("Failed to place safety stop for {}", symbol)
+            logger.exception("Failed to place safety stop for {}", stop_key)
             # 기존 state가 있으면 failure 카운트 증가
-            if symbol in self._stops:
-                self._stops[symbol].placement_failures += 1
-                await self._check_failure_threshold(symbol)
+            if stop_key in self._stops:
+                self._stops[stop_key].placement_failures += 1
+                await self._check_failure_threshold(stop_key)
 
-    async def _update_stop_if_needed(self, symbol: str, new_stop_price: float) -> None:
+    async def _update_stop_if_needed(self, stop_key: str, new_stop_price: float) -> None:
         """0.5%+ 변동 시에만 cancel+create로 업데이트. Ratchet 적용."""
-        state = self._stops.get(symbol)
+        state = self._stops.get(stop_key)
         if state is None:
             return
 
@@ -203,7 +232,9 @@ class ExchangeStopManager:
             return
 
         # Cancel + Create
-        futures_symbol = self._client.to_futures_symbol(symbol)
+        real_symbol = self._real_symbol(stop_key)
+        futures_symbol = self._client.to_futures_symbol(real_symbol)
+        ps_param = state.position_side if self._hedge_mode else None
         try:
             # 기존 stop 취소
             if state.exchange_order_id:
@@ -211,20 +242,21 @@ class ExchangeStopManager:
                     await self._client.cancel_order(state.exchange_order_id, futures_symbol)
                 except Exception:
                     logger.warning(
-                        "Failed to cancel old safety stop for {} (may already be cancelled)", symbol
+                        "Failed to cancel old safety stop for {} (may already be cancelled)",
+                        stop_key,
                     )
                 # Cancel 후 즉시 ID 초기화 — Create 실패 시에도 stale ID 방지
                 state.exchange_order_id = None
 
             # 새 stop 배치
-            client_order_id = (
-                f"{SAFETY_STOP_PREFIX}{symbol.replace('/', '-')}_{uuid.uuid4().hex[:8]}"
-            )
+            safe_id = stop_key.replace("/", "-").replace("|", "_")
+            client_order_id = f"{SAFETY_STOP_PREFIX}{safe_id}_{uuid.uuid4().hex[:8]}"
             result = await self._client.create_stop_market_order(
                 symbol=futures_symbol,
                 side=state.close_side,
                 stop_price=new_stop_price,
                 client_order_id=client_order_id,
+                position_side=ps_param,
             )
             state.exchange_order_id = result.get("id")
             state.client_order_id = client_order_id
@@ -234,30 +266,33 @@ class ExchangeStopManager:
 
             logger.debug(
                 "Safety stop updated: {} @ {:.2f} → {:.2f}",
-                symbol,
+                stop_key,
                 current_price,
                 new_stop_price,
             )
         except Exception:
-            logger.exception("Failed to update safety stop for {}", symbol)
+            logger.exception("Failed to update safety stop for {}", stop_key)
             state.placement_failures += 1
-            await self._check_failure_threshold(symbol)
+            await self._check_failure_threshold(stop_key)
 
-    async def _cancel_safety_stop(self, symbol: str) -> None:
-        """심볼의 안전망 stop 취소."""
-        state = self._stops.pop(symbol, None)
+    async def _cancel_safety_stop(self, stop_key: str) -> None:
+        """심볼/키의 안전망 stop 취소."""
+        state = self._stops.pop(stop_key, None)
         if state is None:
             return
 
         if state.exchange_order_id:
-            futures_symbol = self._client.to_futures_symbol(symbol)
+            real_symbol = self._real_symbol(stop_key)
+            futures_symbol = self._client.to_futures_symbol(real_symbol)
             try:
                 await self._client.cancel_order(state.exchange_order_id, futures_symbol)
-                logger.info("Safety stop cancelled: {} (order={})", symbol, state.exchange_order_id)
+                logger.info(
+                    "Safety stop cancelled: {} (order={})", stop_key, state.exchange_order_id
+                )
             except Exception:
                 logger.warning(
                     "Failed to cancel safety stop for {} (order={}) — may already be filled/cancelled",
-                    symbol,
+                    stop_key,
                     state.exchange_order_id,
                 )
 
@@ -400,20 +435,20 @@ class ExchangeStopManager:
     # Utilities
     # =========================================================================
 
-    async def _check_failure_threshold(self, symbol: str) -> None:
+    async def _check_failure_threshold(self, stop_key: str) -> None:
         """연속 실패 횟수 임계값 체크 + Discord CRITICAL 알림."""
-        state = self._stops.get(symbol)
+        state = self._stops.get(stop_key)
         if state is not None and state.placement_failures >= _MAX_PLACEMENT_FAILURES:
             logger.critical(
                 "SAFETY STOP FAILURE: {} consecutive failures for {} — safety net may be inactive!",
                 state.placement_failures,
-                symbol,
+                stop_key,
             )
             if self._notification_queue is not None:
                 from src.notification.formatters import format_safety_stop_failure_embed
                 from src.notification.models import ChannelRoute, NotificationItem, Severity
 
-                embed = format_safety_stop_failure_embed(symbol, state.placement_failures)
+                embed = format_safety_stop_failure_embed(stop_key, state.placement_failures)
                 await self._notification_queue.enqueue(
                     NotificationItem(
                         severity=Severity.CRITICAL,
@@ -435,45 +470,47 @@ class ExchangeStopManager:
         if not self._stops:
             return
 
-        symbols_to_remove: list[str] = []
-        for symbol, state in self._stops.items():
+        keys_to_remove: list[str] = []
+        for stop_key, state in self._stops.items():
             if state.exchange_order_id is None:
-                symbols_to_remove.append(symbol)
+                keys_to_remove.append(stop_key)
                 logger.warning(
-                    "Safety stop for {} has no exchange_order_id — removing stale state", symbol
+                    "Safety stop for {} has no exchange_order_id — removing stale state", stop_key
                 )
                 continue
 
-            futures_symbol = self._client.to_futures_symbol(symbol)
+            real_symbol = self._real_symbol(stop_key)
+            futures_symbol = self._client.to_futures_symbol(real_symbol)
             try:
                 open_orders = await self._client.fetch_open_orders(futures_symbol)
                 order_ids = {str(o.get("id", "")) for o in open_orders}
                 if state.exchange_order_id not in order_ids:
-                    symbols_to_remove.append(symbol)
+                    keys_to_remove.append(stop_key)
                     logger.warning(
                         "Safety stop for {} (order={}) not found on exchange — removing stale state",
-                        symbol,
+                        stop_key,
                         state.exchange_order_id,
                     )
                 else:
                     logger.info(
                         "Safety stop for {} verified on exchange (order={})",
-                        symbol,
+                        stop_key,
                         state.exchange_order_id,
                     )
             except Exception:
                 logger.warning(
-                    "Failed to verify safety stop for {} — retaining state conservatively", symbol
+                    "Failed to verify safety stop for {} — retaining state conservatively",
+                    stop_key,
                 )
 
-        for symbol in symbols_to_remove:
-            self._stops.pop(symbol, None)
+        for stop_key in keys_to_remove:
+            self._stops.pop(stop_key, None)
             # Discord WARNING 알림 (queue가 있을 때만)
             if self._notification_queue is not None:
                 from src.notification.formatters import format_safety_stop_stale_embed
                 from src.notification.models import ChannelRoute, NotificationItem, Severity
 
-                embed = format_safety_stop_stale_embed(symbol)
+                embed = format_safety_stop_stale_embed(stop_key)
                 await self._notification_queue.enqueue(
                     NotificationItem(
                         severity=Severity.WARNING,
@@ -482,15 +519,15 @@ class ExchangeStopManager:
                     )
                 )
 
-        if symbols_to_remove:
+        if keys_to_remove:
             logger.info(
                 "Safety stop verification: {} stale, {} retained",
-                len(symbols_to_remove),
+                len(keys_to_remove),
                 len(self._stops),
             )
 
     async def place_missing_stops(self) -> int:
-        """PM에 열린 포지션이 있지만 stop이 없는 심볼에 안전망 stop 배치.
+        """PM에 열린 포지션이 있지만 stop이 없는 키에 안전망 stop 배치.
 
         재시작 후 verify_exchange_stops()에서 stale stop이 제거된 경우,
         또는 reconciliation 후 새로운 포지션이 확인된 경우 호출합니다.
@@ -499,13 +536,13 @@ class ExchangeStopManager:
             배치된 stop 수
         """
         placed = 0
-        for symbol, pos in self._pm.positions.items():
+        for pos_key, pos in self._pm.positions.items():
             if not pos.is_open:
                 continue
-            if symbol in self._stops:
+            if pos_key in self._stops:
                 continue
-            await self._place_safety_stop(symbol, pos)
-            if symbol in self._stops:
+            await self._place_safety_stop(pos_key, pos)
+            if pos_key in self._stops:
                 placed += 1
         if placed:
             logger.info("Placed {} missing safety stops", placed)

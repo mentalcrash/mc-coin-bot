@@ -155,6 +155,7 @@ class LiveRunner:
         self._surveillance_config: Any = None  # SurveillanceConfig | None
         self._surveillance_task: asyncio.Task[None] | None = None
         self._start_time = time.monotonic()
+        self._hedge_mode: bool = False
 
     @classmethod
     def paper(
@@ -342,6 +343,8 @@ class LiveRunner:
         # Dummy strategy (LiveRunner 생성자 필수)
         dummy_strategy = TSMOMStrategy.from_params()
 
+        is_hedge = orchestrator_config.netting_mode == "hedge"
+
         runner = cls(
             strategy=dummy_strategy,
             feed=feed,
@@ -357,6 +360,7 @@ class LiveRunner:
         )
         runner._client = client
         runner._symbols = symbols
+        runner._hedge_mode = is_hedge
 
         # Orchestrator 생성
         pods = build_pods(orchestrator_config)
@@ -422,6 +426,7 @@ class LiveRunner:
         symbols = list(orchestrator_config.all_symbols)
         all_tfs = set(orchestrator_config.all_timeframes)
         multi_tf = len(all_tfs) > 1
+        is_hedge = orchestrator_config.netting_mode == "hedge"
         pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
         feed = LiveDataFeed(
             symbols,
@@ -429,7 +434,7 @@ class LiveRunner:
             client,
             target_timeframes=all_tfs if multi_tf else None,
         )
-        executor = LiveExecutor(futures_client)
+        executor = LiveExecutor(futures_client, hedge_mode=is_hedge)
 
         # Dummy strategy
         dummy_strategy = TSMOMStrategy.from_params()
@@ -450,6 +455,7 @@ class LiveRunner:
         runner._client = client
         runner._futures_client = futures_client
         runner._symbols = symbols
+        runner._hedge_mode = is_hedge
 
         # Orchestrator 생성
         pods = build_pods(orchestrator_config)
@@ -525,6 +531,7 @@ class LiveRunner:
                 initial_capital=capital,
                 asset_weights=self._asset_weights,
                 target_timeframe=self._target_timeframe,
+                hedge_mode=self._hedge_mode,
             )
             rm = EDARiskManager(
                 config=self._config,
@@ -851,7 +858,9 @@ class LiveRunner:
 
         from src.eda.exchange_stop_manager import ExchangeStopManager
 
-        mgr = ExchangeStopManager(self._config, self._futures_client, pm)
+        mgr = ExchangeStopManager(
+            self._config, self._futures_client, pm, hedge_mode=self._hedge_mode
+        )
 
         # 상태 복구
         if state_mgr is not None:
@@ -1304,7 +1313,7 @@ class LiveRunner:
         API 실패 시 빈 리스트 반환 (safety-first, 기존 동작 유지).
 
         Returns:
-            제거된 심볼 리스트
+            제거된 심볼/키 리스트
         """
         if self._mode != LiveMode.LIVE or self._futures_client is None:
             return []
@@ -1312,10 +1321,16 @@ class LiveRunner:
         from src.eda.reconciler import PositionReconciler
 
         try:
-            exchange_positions = await PositionReconciler.parse_exchange_positions(
-                self._futures_client, self._symbols
-            )
-            removed = pm.reconcile_with_exchange(exchange_positions)
+            if self._hedge_mode:
+                hedge_positions = await PositionReconciler.parse_exchange_positions_hedge(
+                    self._futures_client, self._symbols
+                )
+                removed = pm.reconcile_with_exchange_hedge(hedge_positions)
+            else:
+                exchange_positions = await PositionReconciler.parse_exchange_positions(
+                    self._futures_client, self._symbols
+                )
+                removed = pm.reconcile_with_exchange(exchange_positions)
         except Exception:
             logger.exception("Startup reconciliation failed — continuing with existing state")
             return []

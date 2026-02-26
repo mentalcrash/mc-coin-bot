@@ -100,6 +100,8 @@ class EDAPortfolioManager:
         initial_capital: float,
         asset_weights: dict[str, float] | None = None,
         target_timeframe: str = "1D",
+        *,
+        hedge_mode: bool = False,
     ) -> None:
         self._config = config
         self._initial_capital = initial_capital
@@ -113,6 +115,7 @@ class EDAPortfolioManager:
         self._stopped_this_bar: set[str] = set()
         self._current_bar_ts: datetime | None = None
         self._target_timeframe = target_timeframe
+        self._hedge_mode = hedge_mode
 
         # HWM (High Water Mark) 추적 — drawdown 계산용
         self._peak_equity: float = initial_capital
@@ -132,6 +135,31 @@ class EDAPortfolioManager:
 
         # Fill dedup: apply_fills()에서 처리된 fill은 _on_fill에서 스킵
         self._applied_fill_ids: set[UUID] = set()
+
+    # =========================================================================
+    # Hedge Mode Helpers (composite position key)
+    # =========================================================================
+    def _pos_key(self, symbol: str, pod_id: str | None = None) -> str:
+        """Composite position key. Hedge mode: 'pod_id|symbol', else: 'symbol'."""
+        if self._hedge_mode and pod_id is not None:
+            return f"{pod_id}|{symbol}"
+        return symbol
+
+    @staticmethod
+    def _symbol_from_key(key: str) -> str:
+        """Extract symbol from position key."""
+        return key.split("|", 1)[1] if "|" in key else key
+
+    @staticmethod
+    def _pod_id_from_key(key: str) -> str | None:
+        """Extract pod_id from position key. None if no pod."""
+        return key.split("|", 1)[0] if "|" in key else None
+
+    def _keys_for_symbol(self, symbol: str) -> list[str]:
+        """Find all position keys matching a symbol."""
+        if not self._hedge_mode:
+            return [symbol] if symbol in self._positions else []
+        return [k for k in self._positions if k == symbol or k.endswith(f"|{symbol}")]
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
@@ -328,6 +356,73 @@ class EDAPortfolioManager:
 
         return removed
 
+    def reconcile_with_exchange_hedge(
+        self,
+        exchange_positions: dict[str, dict[str, float]],
+    ) -> list[str]:
+        """Hedge mode: 거래소 실제 포지션과 PM composite key 상태를 비교하여 phantom 제거.
+
+        Composite key (pod_id|symbol)에서 symbol+direction을 추출하여
+        거래소 LONG/SHORT 포지션과 매칭합니다.
+
+        Args:
+            exchange_positions: {symbol: {"long_size": float, "short_size": float}}
+
+        Returns:
+            제거된 composite key 리스트
+        """
+        removed: list[str] = []
+
+        for pos_key, pos in list(self._positions.items()):
+            if not pos.is_open:
+                continue
+
+            real_symbol = self._symbol_from_key(pos_key)
+            ex_info = exchange_positions.get(real_symbol, {"long_size": 0.0, "short_size": 0.0})
+
+            # PM direction에 맞는 거래소 사이즈 선택
+            if pos.direction == Direction.LONG:
+                ex_size = ex_info["long_size"]
+            elif pos.direction == Direction.SHORT:
+                ex_size = ex_info["short_size"]
+            else:
+                ex_size = ex_info["long_size"] + ex_info["short_size"]
+
+            if ex_size > 0:
+                continue
+
+            # Phantom position: 거래소에 없으므로 PM에서 제거
+            logger.warning(
+                "Reconcile[hedge]: removing phantom {} (size={:.6f}, dir={})",
+                pos_key,
+                pos.size,
+                pos.direction.name,
+            )
+            pos.size = 0.0
+            pos.direction = Direction.NEUTRAL
+            pos.avg_entry_price = 0.0
+            pos.unrealized_pnl = 0.0
+            pos.current_weight = 0.0
+            pos.last_price = 0.0
+            pos.peak_price_since_entry = 0.0
+            pos.trough_price_since_entry = 0.0
+            pos.atr_values = []
+
+            # 부가 상태 정리
+            self._last_target_weights.pop(pos_key, None)
+            self._last_executed_targets.pop(pos_key, None)
+            self._pending_signals.pop(pos_key, None)
+            self._pending_close.discard(pos_key)
+            self._deferred_close_targets.pop(pos_key, None)
+            self._last_tf_atr.pop(pos_key, None)
+
+            removed.append(pos_key)
+
+        if removed:
+            logger.info("Reconcile[hedge]: removed {} phantom positions: {}", len(removed), removed)
+
+        return removed
+
     def sync_capital(self, exchange_equity: float) -> None:
         """LIVE 모드: 거래소 잔고 기준으로 capital 동기화.
 
@@ -406,6 +501,7 @@ class EDAPortfolioManager:
     async def _on_signal_inner(self, signal: SignalEvent) -> None:
         """_on_signal 본체 (tracing span 내부)."""
         symbol = signal.symbol
+        pos_key = self._pos_key(symbol, signal.pod_id)
 
         # 1. 에셋 가중치 적용
         asset_weight = self._asset_weights.get(symbol, 1.0)
@@ -420,24 +516,24 @@ class EDAPortfolioManager:
             target_weight = direction_sign * clamped
 
         # 3. target weight 저장 (per-bar rebalancing에서도 사용)
-        self._last_target_weights[symbol] = target_weight
+        self._last_target_weights[pos_key] = target_weight
 
         # 4. 배치 모드 vs 즉시 모드
         if self._batch_mode:
             # Deferred SL/TS close: target=0.0으로 수집 (fill at next bar's open)
-            if symbol in self._deferred_close_targets:
-                target_weight = self._deferred_close_targets.pop(symbol)
-            elif symbol in self._stopped_this_bar:
+            if pos_key in self._deferred_close_targets:
+                target_weight = self._deferred_close_targets.pop(pos_key)
+            elif pos_key in self._stopped_this_bar:
                 # SL bar의 일반 signal은 수집하지 않음 (VBT parity: SL bar에서 weight=0)
                 return
             # 새 timestamp → 이전 배치 flush
             if self._batch_ts is not None and signal.bar_timestamp != self._batch_ts:
                 await self._flush_signal_batch()
             self._batch_ts = signal.bar_timestamp
-            self._pending_signals[symbol] = target_weight
+            self._pending_signals[pos_key] = target_weight
         else:
             await self._evaluate_rebalance(
-                symbol, signal.correlation_id, source_strategy=signal.strategy_name
+                pos_key, signal.correlation_id, source_strategy=signal.strategy_name
             )
 
     async def _flush_signal_batch(self) -> None:
@@ -459,13 +555,16 @@ class EDAPortfolioManager:
             return
         threshold = self._config.rebalance_threshold
 
-        for symbol, target_weight in self._pending_signals.items():
+        for pos_key, target_weight in self._pending_signals.items():
+            real_symbol = self._symbol_from_key(pos_key)
+            pod_id = self._pod_id_from_key(pos_key)
+
             # stop-loss 후 재진입 방지 (deferred close target=0.0은 통과)
-            if symbol in self._stopped_this_bar and target_weight != 0.0:
+            if pos_key in self._stopped_this_bar and target_weight != 0.0:
                 continue
 
             # VBT parity: last_executed_target vs new_target 비교
-            last_executed = self._last_executed_targets.get(symbol, 0.0)
+            last_executed = self._last_executed_targets.get(pos_key, 0.0)
             change = abs(target_weight - last_executed)
 
             # VBT 동일 로직: threshold 초과 또는 첫 진입 (0→non-zero)
@@ -473,7 +572,7 @@ class EDAPortfolioManager:
                 continue
 
             # 주문 생성 (동일 equity 사용)
-            pos = self._positions.get(symbol)
+            pos = self._positions.get(pos_key)
             current_weight = pos.current_weight if pos else 0.0
             self._order_counter += 1
             delta_weight = target_weight - current_weight
@@ -485,18 +584,19 @@ class EDAPortfolioManager:
                 continue
 
             order = OrderRequestEvent(
-                client_order_id=f"batch-{symbol}-{self._order_counter}",
-                symbol=symbol,
+                client_order_id=f"batch-{real_symbol}-{self._order_counter}",
+                symbol=real_symbol,
                 side=side,  # type: ignore[arg-type]
                 target_weight=target_weight,
                 notional_usd=notional,
                 correlation_id=None,
                 source="PortfolioManager",
+                pod_id=pod_id,
             )
             await bus.publish(order)
 
             # 실행된 target 기록
-            self._last_executed_targets[symbol] = target_weight
+            self._last_executed_targets[pos_key] = target_weight
 
         self._pending_signals.clear()
 
@@ -511,11 +611,14 @@ class EDAPortfolioManager:
 
     async def _evaluate_rebalance(
         self,
-        symbol: str,
+        key: str,
         correlation_id: UUID | None,
         source_strategy: str = "rebalance",
     ) -> None:
         """저장된 target weight와 last executed 비교 → 리밸런스 주문 생성.
+
+        Args:
+            key: position key (hedge mode: 'pod_id|symbol', else: 'symbol')
 
         VBT parity: target vs last_executed_target 비교 (weight drift 무시).
         VBT의 apply_rebalance_threshold_numba와 동일한 로직으로,
@@ -525,27 +628,27 @@ class EDAPortfolioManager:
         assert bus is not None
 
         # stop-loss 후 같은 bar에서 재진입 방지 / SL/TS close 대기 중 → 재진입 방지
-        if symbol in self._stopped_this_bar or symbol in self._pending_close:
+        if key in self._stopped_this_bar or key in self._pending_close:
             return
 
-        target_weight = self._last_target_weights.get(symbol)
+        target_weight = self._last_target_weights.get(key)
         if target_weight is None:
             return
 
         # VBT parity: target vs last_executed (not current_weight vs target)
         # VBT의 apply_rebalance_threshold_numba와 동일: 신호 변화 < threshold면 무시
-        last_executed = self._last_executed_targets.get(symbol, 0.0)
+        last_executed = self._last_executed_targets.get(key, 0.0)
         change = abs(target_weight - last_executed)
         if change < self._config.rebalance_threshold:
             logger.debug(
                 "Rebalance skip: {} change={:.4f} < threshold={:.4f}",
-                symbol,
+                key,
                 change,
                 self._config.rebalance_threshold,
             )
             return
 
-        pos = self._positions.get(symbol)
+        pos = self._positions.get(key)
         current_weight = pos.current_weight if pos else 0.0
 
         # 주문 생성
@@ -553,15 +656,18 @@ class EDAPortfolioManager:
         if equity <= 0:
             return
 
+        real_symbol = self._symbol_from_key(key)
+        pod_id = self._pod_id_from_key(key)
+
         self._order_counter += 1
-        client_order_id = f"{source_strategy}-{symbol}-{self._order_counter}"
+        client_order_id = f"{source_strategy}-{real_symbol}-{self._order_counter}"
 
         delta_weight = target_weight - current_weight
         notional = abs(delta_weight) * equity
 
         # 최소 주문 크기 필터 (overflow fix로 생긴 tiny position 정리용)
         if notional < 1.0:
-            self._last_executed_targets[symbol] = target_weight
+            self._last_executed_targets[key] = target_weight
             return
 
         side: str = "BUY" if delta_weight > 0 else "SELL"
@@ -572,17 +678,18 @@ class EDAPortfolioManager:
 
         order = OrderRequestEvent(
             client_order_id=client_order_id,
-            symbol=symbol,
+            symbol=real_symbol,
             side=side,  # type: ignore[arg-type]
             target_weight=target_weight,
             notional_usd=notional,
             correlation_id=correlation_id,
             source="PortfolioManager",
+            pod_id=pod_id,
         )
         await bus.publish(order)
 
         # 실행된 target 기록 (VBT parity)
-        self._last_executed_targets[symbol] = target_weight
+        self._last_executed_targets[key] = target_weight
 
     async def _on_fill(self, event: AnyEvent) -> None:
         """FillEvent → 포지션/잔고 업데이트.
@@ -611,9 +718,10 @@ class EDAPortfolioManager:
         assert bus is not None
 
         symbol = fill.symbol
-        if symbol not in self._positions:
-            self._positions[symbol] = Position(symbol=symbol)
-        pos = self._positions[symbol]
+        pos_key = self._pos_key(symbol, fill.pod_id)
+        if pos_key not in self._positions:
+            self._positions[pos_key] = Position(symbol=symbol)
+        pos = self._positions[pos_key]
 
         fill_notional = fill.fill_price * fill.fill_qty
         is_buy = fill.side == "BUY"
@@ -625,8 +733,8 @@ class EDAPortfolioManager:
         self._apply_fill_to_position(pos, fill, fill_notional, is_buy=is_buy)
 
         # Close fill → _pending_close 해제 (포지션 종료 확인)
-        if not pos.is_open and symbol in self._pending_close:
-            self._pending_close.discard(symbol)
+        if not pos.is_open and pos_key in self._pending_close:
+            self._pending_close.discard(pos_key)
 
         # 현금 업데이트
         if is_buy:
@@ -784,6 +892,12 @@ class EDAPortfolioManager:
             self._current_bar_ts = bar.bar_timestamp
             self._stopped_this_bar.clear()
 
+        # Hedge mode: 별도 핸들러로 분기 (다중 포지션/심볼 처리)
+        if self._hedge_mode:
+            fn = self._on_intrabar_hedge if not is_tf_bar else self._on_tf_bar_hedge
+            await fn(bar)
+            return
+
         # 1m bar (intrabar): SL/TS 체크만 수행, rebalancing 생략
         if not is_tf_bar:
             await self._on_intrabar(bar)
@@ -830,6 +944,118 @@ class EDAPortfolioManager:
         # 7. Per-bar rebalancing (단일에셋 모드만 — 배치 모드는 signal에서 처리)
         if not self._batch_mode and bar.symbol in self._last_target_weights:
             await self._evaluate_rebalance(bar.symbol, bar.correlation_id)
+
+    # =========================================================================
+    # Hedge Mode Bar Handlers
+    # =========================================================================
+    async def _on_tf_bar_hedge(self, bar: BarEvent) -> None:
+        """Hedge mode TF bar: 심볼 매칭하는 모든 포지션 독립 처리."""
+        matching_keys = self._keys_for_symbol(bar.symbol)
+
+        for pos_key in matching_keys:
+            pos = self._positions.get(pos_key)
+            if pos is None or not pos.is_open:
+                continue
+
+            # ATR
+            atr = self._update_atr(pos, bar)
+            if atr is not None:
+                self._last_tf_atr[pos_key] = atr
+
+            # MTM
+            pos.last_price = bar.close
+            if pos.direction == Direction.LONG:
+                pos.unrealized_pnl = (bar.close - pos.avg_entry_price) * pos.size
+            elif pos.direction == Direction.SHORT:
+                pos.unrealized_pnl = (pos.avg_entry_price - bar.close) * pos.size
+
+            if pos_key in self._pending_close:
+                continue
+
+            # SL check (batch mode → deferred close)
+            sl_price = self._check_position_stop_loss(pos, bar)
+            if sl_price is not None:
+                self._stopped_this_bar.add(pos_key)
+                self._pending_signals.pop(pos_key, None)
+                self._deferred_close_targets[pos_key] = 0.0
+                self._last_target_weights[pos_key] = 0.0
+                logger.info(
+                    "stop-loss triggered for {} (deferred close): entry={:.2f} last={:.2f}",
+                    pos.symbol,
+                    pos.avg_entry_price,
+                    pos.last_price,
+                )
+                continue
+
+            # TS check (batch mode → deferred close)
+            if self._config.use_trailing_stop:
+                self._update_peak_trough(pos, bar)
+                if atr is not None:
+                    ts_price = self._check_trailing_stop(pos, bar, atr)
+                    if ts_price is not None:
+                        self._stopped_this_bar.add(pos_key)
+                        self._pending_signals.pop(pos_key, None)
+                        self._deferred_close_targets[pos_key] = 0.0
+                        self._last_target_weights[pos_key] = 0.0
+                        logger.info(
+                            "trailing-stop triggered for {} (deferred close): entry={:.2f} last={:.2f}",
+                            pos.symbol,
+                            pos.avg_entry_price,
+                            pos.last_price,
+                        )
+                        continue
+
+            # Weight update
+            equity = self.total_equity
+            if equity > 0:
+                direction_sign = 1.0 if pos.direction == Direction.LONG else -1.0
+                pos.current_weight = direction_sign * pos.notional / equity
+
+        await self._publish_balance_update(bar.correlation_id, timestamp=bar.bar_timestamp)
+
+    async def _on_intrabar_hedge(self, bar: BarEvent) -> None:
+        """Hedge mode intrabar: 심볼 매칭하는 모든 포지션 SL/TS 체크."""
+        for pos_key in self._keys_for_symbol(bar.symbol):
+            pos = self._positions.get(pos_key)
+            if pos is None or not pos.is_open:
+                continue
+            if pos_key in self._stopped_this_bar:
+                continue
+
+            atr = self._last_tf_atr.get(pos_key) if len(pos.atr_values) >= _ATR_PERIOD else None
+            pos.last_price = bar.close
+            if pos.direction == Direction.LONG:
+                pos.unrealized_pnl = (bar.close - pos.avg_entry_price) * pos.size
+            elif pos.direction == Direction.SHORT:
+                pos.unrealized_pnl = (pos.avg_entry_price - bar.close) * pos.size
+
+            # SL
+            sl_price = self._check_position_stop_loss(pos, bar)
+            if sl_price is not None:
+                self._stopped_this_bar.add(pos_key)
+                self._last_executed_targets[pos_key] = 0.0
+                pod_id = self._pod_id_from_key(pos_key)
+                await self._emit_close_order(
+                    pos, bar.correlation_id, "stop-loss", fill_price=sl_price, pod_id=pod_id
+                )
+                continue
+
+            # TS
+            if self._config.use_trailing_stop and self._config.use_intrabar_trailing_stop:
+                self._update_peak_trough(pos, bar)
+                if atr is not None:
+                    ts_price = self._check_trailing_stop(pos, bar, atr)
+                    if ts_price is not None:
+                        self._stopped_this_bar.add(pos_key)
+                        self._last_executed_targets[pos_key] = 0.0
+                        pod_id = self._pod_id_from_key(pos_key)
+                        await self._emit_close_order(
+                            pos,
+                            bar.correlation_id,
+                            "trailing-stop",
+                            fill_price=ts_price,
+                            pod_id=pod_id,
+                        )
 
     # =========================================================================
     # Intrabar Handler (1m bar → SL/TS only)
@@ -1003,6 +1229,8 @@ class EDAPortfolioManager:
         correlation_id: UUID | None,
         reason: str,
         fill_price: float | None = None,
+        *,
+        pod_id: str | None = None,
     ) -> None:
         """포지션 청산 주문 발행.
 
@@ -1011,6 +1239,7 @@ class EDAPortfolioManager:
             correlation_id: 이벤트 추적 ID
             reason: 청산 사유 ("stop-loss", "trailing-stop")
             fill_price: 체결 가격 (SL/TS: bar.close, None이면 executor 기본값)
+            pod_id: Hedge mode Pod 식별자
         """
         bus = self._bus
         assert bus is not None
@@ -1030,16 +1259,18 @@ class EDAPortfolioManager:
             price=fill_price,
             correlation_id=correlation_id,
             source="PortfolioManager",
+            pod_id=pod_id,
         )
         await bus.publish(order)
 
         # Close fill 수신 전까지 해당 심볼 주문 차단
-        self._pending_close.add(pos.symbol)
+        pos_key = self._pos_key(pos.symbol, pod_id)
+        self._pending_close.add(pos_key)
 
         # Batch mode: 이전 batch의 stale signal 제거 + last_executed 리셋
         if self._batch_mode:
-            self._pending_signals.pop(pos.symbol, None)
-            self._last_executed_targets[pos.symbol] = 0.0
+            self._pending_signals.pop(pos_key, None)
+            self._last_executed_targets[pos_key] = 0.0
         logger.info(
             "{} triggered for {} @ {}: entry={:.2f} last={:.2f}",
             reason,

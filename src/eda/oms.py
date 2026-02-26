@@ -162,16 +162,21 @@ class OMS:
         assert bus is not None
 
         # 모든 오픈 포지션에 대해 청산 주문 생성
+        from src.eda.portfolio_manager import EDAPortfolioManager
         from src.models.types import Direction
 
-        for symbol, pos in self._pm.positions.items():
+        for pos_key, pos in self._pm.positions.items():
             if not pos.is_open:
                 continue
 
+            # Composite key → 실제 symbol + pod_id 추출
+            real_symbol = EDAPortfolioManager._symbol_from_key(pos_key)  # pyright: ignore[reportPrivateUsage]
+            pod_id = EDAPortfolioManager._pod_id_from_key(pos_key)  # pyright: ignore[reportPrivateUsage]
+
             side = "SELL" if pos.direction == Direction.LONG else "BUY"
             close_order = OrderRequestEvent(
-                client_order_id=f"cb-close-{symbol}",
-                symbol=symbol,
+                client_order_id=f"cb-close-{pos_key}",
+                symbol=real_symbol,
                 side=side,  # type: ignore[arg-type]
                 target_weight=0.0,
                 notional_usd=pos.notional,
@@ -179,6 +184,7 @@ class OMS:
                 validated=True,
                 correlation_id=event.correlation_id,
                 source="OMS-CircuitBreaker",
+                pod_id=pod_id,
             )
 
             # 직접 실행 (RM 우회)

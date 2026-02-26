@@ -153,6 +153,36 @@ def attribute_fill(
     return result
 
 
+def attribute_fee(
+    fee: float,
+    pod_targets: dict[str, float],
+) -> dict[str, float]:
+    """거래소 수수료를 Pod별 abs(target) 비례로 배분합니다.
+
+    방향과 무관하게 절대 비중 비례로 수수료를 분배하며,
+    총합이 보존됩니다.
+
+    Args:
+        fee: 총 수수료
+        pod_targets: {pod_id: global_target_weight}
+
+    Returns:
+        {pod_id: attributed_fee} 매핑. 빈 타겟이면 빈 dict.
+    """
+    if not pod_targets:
+        return {}
+
+    matching = {pid: t for pid, t in pod_targets.items() if abs(t) > _MIN_WEIGHT}
+    if not matching:
+        return {}
+
+    total_abs = sum(abs(t) for t in matching.values())
+    if total_abs < _MIN_WEIGHT:
+        return {}
+
+    return {pid: fee * abs(t) / total_abs for pid, t in matching.items()}
+
+
 def compute_gross_leverage(net_weights: dict[str, float]) -> float:
     """넷 가중치에서 총 레버리지(gross exposure)를 계산합니다.
 

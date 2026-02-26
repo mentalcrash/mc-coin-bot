@@ -35,6 +35,7 @@ _EPSILON = 1e-12
 _MIN_METRICS_SAMPLES = 2
 _MIN_RETURN_BARS = 3  # return 계산에 필요한 최소 버퍼 크기
 _ROLLING_WINDOW = 30  # rolling Sharpe/DD 계산 윈도우 (일)
+_WEIGHT_CHANGE_THRESHOLD = 1e-6  # target weight 변경 감지 임계값
 
 
 # ── StrategyPod ──────────────────────────────────────────────────
@@ -314,6 +315,9 @@ class StrategyPod:
             weight = 0.0
         self._target_weights[symbol] = weight
 
+        # Virtual position 동기화: target에서 직접 포지션 설정
+        self.update_position_from_target(symbol, weight, bar_data["close"])
+
         return (direction, adjusted_strength)
 
     def get_target_weights(self) -> dict[str, float]:
@@ -384,6 +388,96 @@ class StrategyPod:
         )
 
         self._performance.trade_count += 1
+
+    def update_position_from_target(
+        self,
+        symbol: str,
+        target_weight: float,
+        price: float,
+    ) -> None:
+        """Target weight에서 직접 가상 포지션을 설정합니다.
+
+        거래소 fill과 무관하게 Pod이 target을 자기 포지션으로 인식하는
+        Virtual Position Layer의 핵심 메서드입니다.
+
+        Args:
+            symbol: 거래 심볼
+            target_weight: 시그널 기반 목표 가중치 (signed)
+            price: 현재 bar close price
+        """
+        if symbol not in self._positions:
+            self._positions[symbol] = PodPosition(
+                pod_id=self.pod_id,
+                symbol=symbol,
+            )
+
+        pos = self._positions[symbol]
+        old_qty = pos.quantity
+
+        # target_weight 미변경 시 스킵 (phantom trade 방지)
+        old_weight = pos.target_weight
+        if abs(target_weight - old_weight) < _WEIGHT_CHANGE_THRESHOLD:
+            return
+
+        # 가상 수량 계산: target_weight * base_equity / price
+        if self._base_equity < _EPSILON or price < _EPSILON:
+            target_qty = 0.0
+        else:
+            target_qty = target_weight * self._base_equity / price
+
+        signed_fill = target_qty - old_qty
+
+        # Realized PnL: 포지션 축소/방향 전환 시
+        realized_delta = self._compute_realized_pnl(
+            old_qty, signed_fill, price, pos.avg_entry_price
+        )
+
+        # 새 avg_entry_price 계산
+        new_avg = self._compute_new_avg_entry(
+            old_qty, pos.avg_entry_price, signed_fill, price, target_qty
+        )
+
+        new_notional = abs(target_qty) * price
+
+        self._positions[symbol] = PodPosition(
+            pod_id=self.pod_id,
+            symbol=symbol,
+            target_weight=target_weight,
+            global_weight=target_weight * self._capital_fraction,
+            notional_usd=new_notional,
+            unrealized_pnl=pos.unrealized_pnl,
+            realized_pnl=pos.realized_pnl + realized_delta,
+            avg_entry_price=new_avg,
+            quantity=target_qty,
+        )
+
+        self._performance.trade_count += 1
+
+    def attribute_fee(self, symbol: str, fee: float) -> None:
+        """거래소 수수료를 Pod 포지션에 귀속합니다.
+
+        Orchestrator._on_fill()에서 abs(target) 비례로 배분된 수수료를
+        해당 심볼의 realized_pnl에서 차감합니다.
+
+        Args:
+            symbol: 거래 심볼
+            fee: 배분된 수수료 (양수)
+        """
+        if symbol not in self._positions:
+            return
+
+        pos = self._positions[symbol]
+        self._positions[symbol] = PodPosition(
+            pod_id=pos.pod_id,
+            symbol=pos.symbol,
+            target_weight=pos.target_weight,
+            global_weight=pos.global_weight,
+            notional_usd=pos.notional_usd,
+            unrealized_pnl=pos.unrealized_pnl,
+            realized_pnl=pos.realized_pnl - fee,
+            avg_entry_price=pos.avg_entry_price,
+            quantity=pos.quantity,
+        )
 
     @staticmethod
     def _compute_realized_pnl(

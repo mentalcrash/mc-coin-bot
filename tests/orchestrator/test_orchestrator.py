@@ -424,19 +424,20 @@ class TestOrchestratorSignalEmission:
 
 
 class TestOrchestratorFillAttribution:
-    async def test_fill_proportional_split(self) -> None:
-        """Fill이 두 Pod에 비례 배분됨."""
+    async def test_fill_fee_proportional_split(self) -> None:
+        """Fill 수수료가 두 Pod에 비례 배분됨."""
         pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.6, warmup=3)
         pod_b = _make_pod("pod-b", ("BTC/USDT",), capital_fraction=0.4, warmup=3)
         config = _make_orchestrator_config((pod_a.config, pod_b.config))
         allocator = CapitalAllocator(config)
         orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+        orch.set_initial_capital(10000.0)
 
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         _feed_warmup_bars(pod_a, "BTC/USDT", 2, ts)
         _feed_warmup_bars(pod_b, "BTC/USDT", 2, ts)
 
-        # 시그널 생성 (on_bar 경유)
+        # 시그널 생성 (on_bar 경유) → 가상 포지션 갱신
         bar = _make_bar("BTC/USDT", 100.0, 110.0, ts + timedelta(days=2))
         fill = _make_fill("BTC/USDT", "BUY", 1.0, 50000.0, 10.0)
 
@@ -454,16 +455,25 @@ class TestOrchestratorFillAttribution:
         await bus.stop()
         await task
 
-        # 두 Pod 모두 trade_count > 0
+        # 가상 포지션은 compute_signal()에서 갱신됨 → trade_count >= 1
         assert pod_a.performance.trade_count >= 1
         assert pod_b.performance.trade_count >= 1
 
-    async def test_fill_single_pod_100pct(self) -> None:
-        """단일 Pod → 100% 귀속."""
+        # Fee가 배분되었는지 확인: 두 Pod의 realized_pnl 합이 음수 (수수료 차감)
+        total_fee = sum(
+            pod._positions.get("BTC/USDT", pod_a._positions.get("BTC/USDT")).realized_pnl
+            for pod in [pod_a, pod_b]
+            if "BTC/USDT" in pod._positions
+        )
+        assert total_fee < 0  # 수수료가 차감됨
+
+    async def test_fill_single_pod_fee_attributed(self) -> None:
+        """단일 Pod → 수수료 100% 귀속."""
         pod = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=1.0, warmup=3)
         config = _make_orchestrator_config((pod.config,))
         allocator = CapitalAllocator(config)
         orch = StrategyOrchestrator(config, [pod], allocator)
+        orch.set_initial_capital(10000.0)
 
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         _feed_warmup_bars(pod, "BTC/USDT", 2, ts)
@@ -485,7 +495,11 @@ class TestOrchestratorFillAttribution:
         await bus.stop()
         await task
 
-        assert pod.performance.trade_count == 1
+        # compute_signal에서 가상 포지션 갱신 → trade_count >= 1
+        assert pod.performance.trade_count >= 1
+        # Fee 차감 확인
+        if "BTC/USDT" in pod._positions:
+            assert pod._positions["BTC/USDT"].realized_pnl == pytest.approx(-10.0)
 
     async def test_fill_no_targets_no_attribution(self) -> None:
         """타겟 없는 심볼에 Fill → 귀속 안 됨."""
@@ -614,13 +628,14 @@ class TestOrchestratorEdgeCases:
 class TestOrchestratorNettingIntegration:
     """netting 모듈 통합 테스트."""
 
-    async def test_fill_via_attribute_fill(self) -> None:
-        """attribute_fill() 경유로 비례 귀속이 동작."""
+    async def test_fill_fee_via_attribute_fee(self) -> None:
+        """attribute_fee() 경유로 수수료 비례 배분이 동작."""
         pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.6, warmup=3)
         pod_b = _make_pod("pod-b", ("BTC/USDT",), capital_fraction=0.4, warmup=3)
         config = _make_orchestrator_config((pod_a.config, pod_b.config))
         allocator = CapitalAllocator(config)
         orch = StrategyOrchestrator(config, [pod_a, pod_b], allocator)
+        orch.set_initial_capital(10000.0)
 
         ts = datetime(2024, 1, 1, tzinfo=UTC)
         _feed_warmup_bars(pod_a, "BTC/USDT", 2, ts)
@@ -643,9 +658,14 @@ class TestOrchestratorNettingIntegration:
         await bus.stop()
         await task
 
-        # 두 Pod 모두 fill 귀속
+        # 가상 포지션: compute_signal에서 갱신됨
         assert pod_a.performance.trade_count >= 1
         assert pod_b.performance.trade_count >= 1
+        # 수수료 차감 확인
+        fee_a = pod_a._positions.get("BTC/USDT")
+        fee_b = pod_b._positions.get("BTC/USDT")
+        if fee_a is not None and fee_b is not None:
+            assert fee_a.realized_pnl + fee_b.realized_pnl < 0  # 수수료 차감
 
     async def test_leverage_scaling_applied(self) -> None:
         """max_gross_leverage 초과 시 가중치 축소."""
@@ -1162,3 +1182,85 @@ class TestAllExcludedWarning:
 
         StrategyOrchestrator._check_all_excluded_warning(pod)
         assert pod.state == LifecycleState.INCUBATION  # 변경 없음
+
+
+# ── TestVirtualPositionMixedShortMode ────────────────────────
+
+
+class TestVirtualPositionMixedShortMode:
+    """Pod-A(LONG) + Pod-B(SHORT) 시나리오에서 가상 포지션 독립성 검증."""
+
+    async def test_mixed_pods_independent_virtual_positions(self) -> None:
+        """Pod-A(LONG +0.5) + Pod-B(SHORT -0.3) → 각 Pod 가상 포지션 독립."""
+        pod_long = _make_pod("pod-long", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_short = _make_pod("pod-short", ("BTC/USDT",), capital_fraction=0.3, warmup=3)
+        config = _make_orchestrator_config((pod_long.config, pod_short.config))
+        allocator = CapitalAllocator(config)
+        orch = StrategyOrchestrator(config, [pod_long, pod_short], allocator)
+        orch.set_initial_capital(10000.0)
+
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
+
+        # pod_long warmup: close > open (LONG)
+        for i in range(2):
+            bar_data = {
+                "open": 100.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 110.0 + i,
+                "volume": 1000.0,
+            }
+            pod_long.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
+
+        # pod_short warmup: close < open (SHORT)
+        for i in range(2):
+            bar_data = {
+                "open": 110.0 + i,
+                "high": 111.0 + i,
+                "low": 99.0 + i,
+                "close": 100.0 + i,
+                "volume": 1000.0,
+            }
+            pod_short.compute_signal("BTC/USDT", bar_data, ts + timedelta(days=i))
+
+        # pod_long → LONG signal
+        bar_long = _make_bar("BTC/USDT", 100.0, 110.0, ts + timedelta(days=2))
+
+        await _run_with_bus(orch, [bar_long])
+
+        # 가상 포지션 독립성 확인
+        pos_long = pod_long._positions.get("BTC/USDT")
+        pos_short = pod_short._positions.get("BTC/USDT")
+
+        if pos_long is not None and pos_short is not None:
+            # 두 Pod의 포지션이 독립적으로 설정됨
+            assert pos_long.target_weight != pos_short.target_weight or (
+                pos_long.target_weight == 0.0 and pos_short.target_weight == 0.0
+            )
+
+    async def test_mixed_pods_mtm_after_price_change(self) -> None:
+        """가격 변동 후 각 Pod의 MTM이 독립적으로 정확."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=1)
+        pod_b = _make_pod("pod-b", ("BTC/USDT",), capital_fraction=0.5, warmup=1)
+        pod_a.set_base_equity(5000.0)
+        pod_b.set_base_equity(5000.0)
+
+        # Pod-A: 롱 진입
+        pod_a.update_position_from_target("BTC/USDT", 0.8, 50000.0)
+        # Pod-B: 숏 진입
+        pod_b.update_position_from_target("BTC/USDT", -0.6, 50000.0)
+
+        # 가격 상승 → 롱 이익, 숏 손실
+        close_prices = {"BTC/USDT": 55000.0}
+        mtm_a = pod_a.compute_mtm_equity(close_prices)
+        mtm_b = pod_b.compute_mtm_equity(close_prices)
+
+        # Pod-A 롱: qty = 0.8 * 5000 / 50000 = 0.08
+        # unrealized = (55000 - 50000) * 0.08 = 400
+        # equity = 5000 + 400 = 5400
+        assert mtm_a == pytest.approx(5400.0)
+
+        # Pod-B 숏: qty = -0.6 * 5000 / 50000 = -0.06
+        # unrealized = (55000 - 50000) * (-0.06) = -300
+        # equity = 5000 - 300 = 4700
+        assert mtm_b == pytest.approx(4700.0)

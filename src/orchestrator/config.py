@@ -9,7 +9,7 @@ Rules Applied:
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -578,6 +578,10 @@ class OrchestratorConfig(BaseModel):
     )
 
     # Netting
+    netting_mode: Literal["signal", "hedge"] = Field(
+        default="signal",
+        description="signal: 기존 넷팅, hedge: Pod별 독립 시그널 발행",
+    )
     netting_offset_warning_threshold: float = Field(
         default=0.5,
         ge=0.0,

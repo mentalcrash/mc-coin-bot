@@ -238,6 +238,7 @@ class EDARiskManager:
             validated=True,
             correlation_id=order.correlation_id,
             source="RiskManager",
+            pod_id=order.pod_id,
         )
         await bus.publish(validated_order)
 

@@ -158,6 +158,7 @@ class BacktestExecutor:
             fill_timestamp=fill_ts,
             correlation_id=order.correlation_id,
             source="BacktestExecutor",
+            pod_id=order.pod_id,
         )
 
 
@@ -193,25 +194,35 @@ class LiveExecutor:
 
     ExecutorPort Protocol 만족. Market order → 즉시 체결 → FillEvent 반환.
     One-way Mode reduceOnly 매핑 + direction-flip 분할 처리.
+    Hedge Mode: positionSide(LONG/SHORT) 매핑, reduceOnly 미사용.
 
-    reduceOnly 결정 로직:
+    reduceOnly 결정 로직 (One-way):
         1. order.price is not None (SL/TS exit) → reduceOnly=True
         2. order.target_weight == 0 (flat close) → reduceOnly=True
         3. Direction-flip (LONG→SHORT or SHORT→LONG) → reduceOnly close만 실행
         4. 같은 방향 entry/increase → reduceOnly=False
 
+    Hedge mode position_side 결정 로직:
+        1. SL/TS exit (order.price) → 현재 방향의 positionSide
+        2. Flat close (target_weight == 0) → 현재 방향의 positionSide
+        3. Entry/Increase: target_weight > 0 → LONG, < 0 → SHORT
+
     Args:
         futures_client: BinanceFuturesClient 인스턴스
+        hedge_mode: True → Hedge Mode (positionSide 사용)
     """
 
     def __init__(
         self,
         futures_client: BinanceFuturesClient,
         metrics: LiveExecutorMetrics | None = None,
+        *,
+        hedge_mode: bool = False,
     ) -> None:
         self._client = futures_client
         self._pm: EDAPortfolioManager | None = None
         self._metrics = metrics
+        self._hedge_mode = hedge_mode
 
     def set_pm(self, pm: EDAPortfolioManager) -> None:
         """PortfolioManager 참조 설정 (LiveRunner에서 호출)."""
@@ -256,23 +267,38 @@ class LiveExecutor:
         futures_symbol = BinanceFuturesClient.to_futures_symbol(order.symbol)
 
         try:
-            reduce_only, is_flip_close = self._resolve_reduce_only(order)
-
-            logger.info(
-                "LiveExecutor: {} {} {} notional=${:.2f} reduceOnly={} flip_close={}",
-                order.symbol,
-                order.side,
-                order.client_order_id,
-                order.notional_usd,
-                reduce_only,
-                is_flip_close,
-            )
-
-            return await self._execute_single(
-                order=order,
-                futures_symbol=futures_symbol,
-                reduce_only=reduce_only,
-            )
+            if self._hedge_mode:
+                position_side = self._resolve_hedge_position_side(order)
+                logger.info(
+                    "LiveExecutor[hedge]: {} {} {} notional=${:.2f} positionSide={}",
+                    order.symbol,
+                    order.side,
+                    order.client_order_id,
+                    order.notional_usd,
+                    position_side,
+                )
+                return await self._execute_single(
+                    order=order,
+                    futures_symbol=futures_symbol,
+                    reduce_only=False,
+                    position_side=position_side,
+                )
+            else:
+                reduce_only, is_flip_close = self._resolve_reduce_only(order)
+                logger.info(
+                    "LiveExecutor: {} {} {} notional=${:.2f} reduceOnly={} flip_close={}",
+                    order.symbol,
+                    order.side,
+                    order.client_order_id,
+                    order.notional_usd,
+                    reduce_only,
+                    is_flip_close,
+                )
+                return await self._execute_single(
+                    order=order,
+                    futures_symbol=futures_symbol,
+                    reduce_only=reduce_only,
+                )
         except Exception:
             logger.exception(
                 "LiveExecutor: Failed to execute order {}",
@@ -284,7 +310,7 @@ class LiveExecutor:
         self,
         order: OrderRequestEvent,
     ) -> tuple[bool, bool]:
-        """reduceOnly / is_flip_close 결정.
+        """reduceOnly / is_flip_close 결정 (One-way mode).
 
         Returns:
             (reduce_only, is_flip_close) 튜플
@@ -314,6 +340,40 @@ class LiveExecutor:
         # 4. 같은 방향 entry/increase
         return False, False
 
+    def _resolve_hedge_position_side(self, order: OrderRequestEvent) -> str:
+        """Hedge mode: positionSide 결정.
+
+        Returns:
+            "LONG" or "SHORT"
+        """
+        from src.models.types import Direction
+
+        if self._pm is None:
+            msg = "LiveExecutor._resolve_hedge_position_side called without PM set"
+            raise RuntimeError(msg)
+
+        # Hedge mode에서 PM positions는 composite key 사용
+        pos_key = self._pm._pos_key(order.symbol, order.pod_id)  # pyright: ignore[reportPrivateUsage]
+        pos = self._pm.positions.get(pos_key)
+        current_dir = pos.direction if pos and pos.is_open else Direction.NEUTRAL
+
+        # 1. SL/TS exit (price 설정) → 현재 방향의 positionSide
+        if order.price is not None:
+            if current_dir == Direction.SHORT:
+                return "SHORT"
+            return "LONG"
+
+        # 2. Flat close (target_weight == 0) → 현재 방향의 positionSide
+        if order.target_weight == 0:
+            if current_dir == Direction.SHORT:
+                return "SHORT"
+            return "LONG"
+
+        # 3. Entry/Increase
+        if order.target_weight > 0:
+            return "LONG"
+        return "SHORT"
+
     async def _fetch_fresh_price(self, futures_symbol: str) -> float | None:
         """거래소에서 실시간 가격 조회.
 
@@ -335,6 +395,7 @@ class LiveExecutor:
         order: OrderRequestEvent,
         futures_symbol: str,
         reduce_only: bool,
+        position_side: str | None = None,
     ) -> FillEvent | None:
         """단일 주문 실행 + FillEvent 생성.
 
@@ -342,6 +403,7 @@ class LiveExecutor:
             order: 주문 요청
             futures_symbol: "BTC/USDT:USDT" 형태
             reduce_only: 청산 전용 여부
+            position_side: Hedge mode "LONG"/"SHORT" (None → One-way)
 
         Returns:
             FillEvent 또는 실패 시 None
@@ -350,9 +412,16 @@ class LiveExecutor:
             msg = "LiveExecutor._execute_single called without PM set"
             raise RuntimeError(msg)
 
-        # 수량 계산
-        if reduce_only:
-            pos = self._pm.positions.get(order.symbol)
+        # 수량 계산: hedge mode에서는 composite key로 포지션 조회
+        is_close = reduce_only or (
+            position_side is not None and (order.price is not None or order.target_weight == 0)
+        )
+        if is_close:
+            if self._hedge_mode:
+                pos_key = self._pm._pos_key(order.symbol, order.pod_id)  # pyright: ignore[reportPrivateUsage]
+                pos = self._pm.positions.get(pos_key)
+            else:
+                pos = self._pm.positions.get(order.symbol)
             amount = pos.size if pos and pos.is_open else order.notional_usd / 50000.0
         else:
             # 실시간 가격 조회 → fallback: PM last_price
@@ -390,6 +459,7 @@ class LiveExecutor:
             amount=amount,
             reduce_only=reduce_only,
             client_order_id=order.client_order_id,
+            position_side=position_side,
         )
 
         # 주문 확인: status != "closed"면 fetch_order로 재확인
@@ -479,4 +549,5 @@ class LiveExecutor:
             fill_timestamp=datetime.now(UTC),
             correlation_id=order.correlation_id,
             source="LiveExecutor",
+            pod_id=order.pod_id,
         )

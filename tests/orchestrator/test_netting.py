@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src.orchestrator.netting import (
+    attribute_fee,
     attribute_fill,
     compute_deltas,
     compute_gross_leverage,
@@ -151,6 +152,46 @@ class TestAttributeFill:
         # abs(-0.3)/(0.3+0.1) = 0.75, abs(-0.1)/(0.3+0.1) = 0.25
         assert result["pod-a"][0] == pytest.approx(0.75)
         assert result["pod-b"][0] == pytest.approx(0.25)
+
+
+# ── TestAttributeFee ──────────────────────────────────────────
+
+
+class TestAttributeFee:
+    """attribute_fee() — 수수료 비례 배분."""
+
+    def test_single_pod_100pct(self) -> None:
+        """단일 Pod → 수수료 전액 귀속."""
+        result = attribute_fee(10.0, {"pod-a": 0.5})
+        assert result["pod-a"] == pytest.approx(10.0)
+
+    def test_two_pods_proportional(self) -> None:
+        """두 Pod → abs 비례 배분."""
+        result = attribute_fee(10.0, {"pod-a": 0.6, "pod-b": 0.4})
+        assert result["pod-a"] == pytest.approx(6.0)
+        assert result["pod-b"] == pytest.approx(4.0)
+
+    def test_opposite_direction_abs_proportional(self) -> None:
+        """반대 방향 Pod도 abs 비례 배분."""
+        result = attribute_fee(10.0, {"pod-a": 0.3, "pod-b": -0.1})
+        total_abs = 0.3 + 0.1
+        assert result["pod-a"] == pytest.approx(10.0 * 0.3 / total_abs)
+        assert result["pod-b"] == pytest.approx(10.0 * 0.1 / total_abs)
+
+    def test_empty_targets(self) -> None:
+        """빈 타겟 → 빈 결과."""
+        result = attribute_fee(10.0, {})
+        assert result == {}
+
+    def test_zero_targets(self) -> None:
+        """모든 타겟 0 → 빈 결과."""
+        result = attribute_fee(10.0, {"pod-a": 0.0})
+        assert result == {}
+
+    def test_fee_sum_preserved(self) -> None:
+        """배분 수수료 총합 = 원본 수수료."""
+        result = attribute_fee(15.0, {"pod-a": 0.5, "pod-b": -0.3, "pod-c": 0.2})
+        assert sum(result.values()) == pytest.approx(15.0)
 
 
 # ── TestComputeGrossLeverage ───────────────────────────────────

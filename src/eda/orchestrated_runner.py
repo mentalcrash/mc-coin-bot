@@ -73,6 +73,7 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
         system_stop_loss=pm_stop_loss,
         use_trailing_stop=use_ts,
         trailing_stop_atr_multiplier=ts_multiplier,
+        use_intrabar_trailing_stop=False,  # 교훈 #086: VBT-EDA parity 필수
         rebalance_threshold=rebalance_threshold,
         cash_sharing=True,
         cost_model=CostModel(
@@ -246,11 +247,13 @@ class OrchestratedRunner:
             self._all_timeframes,
             key=lambda tf: timeframe_to_seconds(tf),
         )
+        is_hedge = orch_config.netting_mode == "hedge"
         pm = EDAPortfolioManager(
             config=pm_config,
             initial_capital=self._initial_capital,
             asset_weights=asset_weights,
             target_timeframe=shortest_tf,
+            hedge_mode=is_hedge,
         )
         rm = EDARiskManager(
             config=pm_config,

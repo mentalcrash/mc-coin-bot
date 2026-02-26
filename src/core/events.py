@@ -121,6 +121,7 @@ class SignalEvent(BaseModel):
     direction: Direction
     strength: float
     bar_timestamp: datetime
+    pod_id: str | None = None
 
 
 # ==========================================================================
@@ -158,6 +159,7 @@ class OrderRequestEvent(BaseModel):
     notional_usd: float
     price: float | None = None
     validated: bool = False
+    pod_id: str | None = None
 
 
 class OrderAckEvent(BaseModel):
@@ -227,6 +229,7 @@ class FillEvent(BaseModel):
     fill_qty: float
     fee: float = 0.0
     fill_timestamp: datetime
+    pod_id: str | None = None
 
 
 # ==========================================================================

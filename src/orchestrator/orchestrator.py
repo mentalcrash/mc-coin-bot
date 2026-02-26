@@ -31,7 +31,7 @@ from src.core.events import (
 )
 from src.models.types import Direction
 from src.orchestrator.netting import (
-    attribute_fill,
+    attribute_fee,
     compute_netting_stats,
     scale_weights_to_leverage,
 )
@@ -93,6 +93,7 @@ class StrategyOrchestrator:
         self._target_timeframe = target_timeframe
         self._notification: OrchestratorNotificationEngine | None = notification
         self._bus: EventBus | None = None
+        self._netting_mode = config.netting_mode
 
         # Per-pod TF routing: accepted TF set
         if target_timeframe is not None:
@@ -160,6 +161,22 @@ class StrategyOrchestrator:
 
     # ── Event Handlers ───────────────────────────────────────────
 
+    def _update_close_price_tracking(self, symbol: str, close: float, bar_date: date) -> None:
+        """Day boundary 감지 + close price 저장 + correlation history 관리."""
+        if self._last_day_date is not None and bar_date != self._last_day_date:
+            self._pending_day_change = True
+            self._day_end_close_prices = dict(self._last_close_prices)
+        self._last_day_date = bar_date
+
+        self._last_close_prices[symbol] = close
+
+        if symbol not in self._close_price_history:
+            self._close_price_history[symbol] = []
+        self._close_price_history[symbol].append(close)
+        lookback = self._config.correlation_lookback
+        if len(self._close_price_history[symbol]) > lookback:
+            self._close_price_history[symbol] = self._close_price_history[symbol][-lookback:]
+
     async def _on_bar(self, event: AnyEvent) -> None:
         """BarEvent 핸들러: Pod 라우팅 → 시그널 수집 → 넷팅."""
         assert isinstance(event, BarEvent)
@@ -171,29 +188,15 @@ class StrategyOrchestrator:
 
         symbol = bar.symbol
 
-        # Day boundary detection — MTM은 signal flush 시점으로 지연
-        # (모든 심볼의 close price가 갱신된 후 기록)
-        bar_date = bar.bar_timestamp.date()
-        if self._last_day_date is not None and bar_date != self._last_day_date:
-            self._pending_day_change = True
-            # Snapshot: 전일 모든 심볼의 close price (day boundary 직전 상태)
-            self._day_end_close_prices = dict(self._last_close_prices)
-        self._last_day_date = bar_date
-
-        # Close price 저장 (snapshot 이후 갱신)
-        self._last_close_prices[symbol] = bar.close
-
-        # Close price history for asset-level correlation
-        if symbol not in self._close_price_history:
-            self._close_price_history[symbol] = []
-        self._close_price_history[symbol].append(bar.close)
-        lookback = self._config.correlation_lookback
-        if len(self._close_price_history[symbol]) > lookback:
-            self._close_price_history[symbol] = self._close_price_history[symbol][-lookback:]
+        # Day boundary detection + close price 추적
+        self._update_close_price_tracking(symbol, bar.close, bar.bar_timestamp.date())
 
         # 1. 새 bar_timestamp → 이전 배치 flush
         if self._pending_bar_ts is not None and bar.bar_timestamp != self._pending_bar_ts:
-            await self._flush_net_signals()
+            if self._netting_mode == "hedge":
+                await self._flush_hedge_signals()
+            else:
+                await self._flush_net_signals()
 
         self._pending_bar_ts = bar.bar_timestamp
 
@@ -243,12 +246,24 @@ class StrategyOrchestrator:
         self._check_rebalance(bar.bar_timestamp)
 
     async def _on_fill(self, event: AnyEvent) -> None:
-        """FillEvent 핸들러: netting.attribute_fill()로 비례 귀속."""
+        """FillEvent 핸들러: 수수료만 Pod에 비례 귀속.
+
+        Pod 포지션은 compute_signal() 시점에 가상으로 이미 갱신되므로,
+        fill에서는 수수료만 abs(target) 비례로 배분합니다.
+
+        Hedge mode: pod_id 직접 귀속 (넷팅 없으므로 비례 배분 불필요).
+        """
         assert isinstance(event, FillEvent)
         fill = event
 
+        # Hedge mode: 직접 귀속
+        if self._netting_mode == "hedge" and fill.pod_id is not None:
+            pod = self._find_pod(fill.pod_id)
+            if pod is not None:
+                pod.attribute_fee(fill.symbol, fill.fee)
+            return
+
         symbol = fill.symbol
-        is_buy = fill.side == "BUY"
 
         # 심볼에 대한 Pod별 타겟 수집
         pod_targets: dict[str, float] = {}
@@ -259,25 +274,11 @@ class StrategyOrchestrator:
         if not pod_targets:
             return
 
-        attributed = attribute_fill(
-            symbol,
-            fill.fill_qty,
-            fill.fill_price,
-            fill.fee,
-            pod_targets,
-            is_buy=is_buy,
-        )
-
-        for pod_id, (attr_qty, attr_price, attr_fee) in attributed.items():
+        attributed_fees = attribute_fee(fill.fee, pod_targets)
+        for pod_id, pod_fee in attributed_fees.items():
             pod = self._find_pod(pod_id)
             if pod is not None:
-                pod.update_position(
-                    symbol,
-                    attr_qty,
-                    attr_price,
-                    attr_fee,
-                    is_buy=is_buy,
-                )
+                pod.attribute_fee(symbol, pod_fee)
 
     # ── Signal Emission ──────────────────────────────────────────
 
@@ -363,9 +364,111 @@ class StrategyOrchestrator:
         self._pending_net_weights.clear()
         self._pending_bar_ts = None
 
+    def _compute_hedge_gross_scale(
+        self,
+        risk_breached: bool,
+        recovery_fraction: float,
+    ) -> float:
+        """Hedge mode: 전체 Pod의 gross leverage scale 계산."""
+        all_weights: dict[str, float] = {}
+        for pod_targets in self._last_pod_targets.values():
+            for sym, raw_w in pod_targets.items():
+                effective_w = 0.0 if risk_breached else raw_w
+                if recovery_fraction > 0 and not risk_breached:
+                    effective_w = raw_w * recovery_fraction
+                all_weights[sym] = all_weights.get(sym, 0.0) + abs(effective_w)
+
+        total_gross = sum(all_weights.values())
+        if total_gross > self._config.max_gross_leverage and total_gross > _MIN_NET_WEIGHT:
+            return self._config.max_gross_leverage / total_gross
+        return 1.0
+
+    @staticmethod
+    def _apply_risk_scaling(
+        weight: float,
+        risk_breached: bool,
+        recovery_fraction: float,
+        gross_scale: float,
+    ) -> float:
+        """Risk defense + gross leverage scaling 적용."""
+        if risk_breached:
+            return 0.0
+        scaled = weight * recovery_fraction if recovery_fraction > 0 else weight
+        return scaled * gross_scale
+
+    @staticmethod
+    def _weight_to_signal(weight: float) -> tuple[Direction, float]:
+        """Weight → (Direction, strength) 변환."""
+        abs_weight = abs(weight)
+        if abs_weight < _MIN_NET_WEIGHT:
+            return Direction.NEUTRAL, 0.0
+        if weight > 0:
+            return Direction.LONG, abs_weight
+        return Direction.SHORT, abs_weight
+
+    async def _flush_hedge_signals(self) -> None:
+        """Hedge Mode: Pod별 독립 시그널 발행 (넷팅 없음).
+
+        각 Pod의 시그널을 pod_id 태그와 함께 독립 발행합니다.
+        동일 심볼에 대한 반대 방향 포지션이 가능합니다.
+        """
+        bus = self._bus
+        if bus is None or self._pending_bar_ts is None:
+            return
+
+        # Day change MTM
+        if self._pending_day_change:
+            self._record_pod_daily_returns(self._day_end_close_prices)
+            self._pending_day_change = False
+
+        # 이번 배치에서 변경된 심볼
+        changed_symbols = set(self._pending_net_weights.keys())
+
+        # Layer 2: Per-pod aggregate leverage cap
+        self._apply_per_pod_leverage_cap()
+
+        # Risk defense
+        risk_breached = self._risk_breached
+        recovery_fraction = 0.0
+        if not risk_breached and self._risk_recovery_step > 0:
+            recovery_fraction = self._risk_recovery_step / self._config.risk_recovery_steps
+
+        gross_scale = self._compute_hedge_gross_scale(risk_breached, recovery_fraction)
+
+        # Per-pod 시그널 발행
+        for pod_id, symbol_weights in self._last_pod_targets.items():
+            for symbol, raw_weight in symbol_weights.items():
+                if symbol not in changed_symbols:
+                    continue
+
+                scaled = self._apply_risk_scaling(
+                    raw_weight,
+                    risk_breached,
+                    recovery_fraction,
+                    gross_scale,
+                )
+                direction, strength = self._weight_to_signal(scaled)
+
+                signal = SignalEvent(
+                    symbol=symbol,
+                    strategy_name=_ORCHESTRATOR_SOURCE,
+                    direction=direction,
+                    strength=strength,
+                    bar_timestamp=self._pending_bar_ts,
+                    source=_ORCHESTRATOR_SOURCE,
+                    pod_id=pod_id,
+                )
+                await bus.publish(signal)
+
+        self._pending_net_weights.clear()
+        self._pending_bar_ts = None
+
     async def flush_pending_signals(self) -> None:
         """외부(Runner)에서 호출: 누적 시그널 flush."""
-        await self._flush_net_signals()
+        if self._netting_mode == "hedge":
+            await self._flush_hedge_signals()
+        else:
+            await self._flush_net_signals()
 
     # ── Rebalance ────────────────────────────────────────────────
 
@@ -819,6 +922,11 @@ class StrategyOrchestrator:
     def risk_contributions_history(self) -> list[dict[str, object]]:
         """리스크 기여도 이력."""
         return self._risk_contributions_history
+
+    @property
+    def netting_mode(self) -> str:
+        """넷팅 모드 ("signal" 또는 "hedge")."""
+        return self._netting_mode
 
     @property
     def last_pod_targets(self) -> dict[str, dict[str, float]]:

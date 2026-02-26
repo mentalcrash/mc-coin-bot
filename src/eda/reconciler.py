@@ -219,6 +219,49 @@ class PositionReconciler:
 
         return result
 
+    @staticmethod
+    async def parse_exchange_positions_hedge(
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+    ) -> dict[str, dict[str, float]]:
+        """거래소 포지션을 Hedge mode용으로 파싱.
+
+        Hedge mode에서 CCXT는 동일 심볼에 LONG/SHORT 별도 row를 반환합니다.
+
+        Args:
+            futures_client: BinanceFuturesClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            {symbol: {"long_size": float, "short_size": float}}
+        """
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
+
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
+        exchange_positions = await futures_client.fetch_positions(futures_symbols)
+
+        result: dict[str, dict[str, float]] = {}
+        for pos in exchange_positions:
+            sym = str(pos.get("symbol", ""))
+            spot_sym = sym.split(":")[0] if ":" in sym else sym
+            contracts = abs(float(pos.get("contracts", 0)))
+            side = str(pos.get("side", "")).lower()
+
+            if contracts <= 0:
+                continue
+
+            if spot_sym not in result:
+                result[spot_sym] = {"long_size": 0.0, "short_size": 0.0}
+
+            if side == "long":
+                result[spot_sym]["long_size"] = contracts
+            elif side == "short":
+                result[spot_sym]["short_size"] = contracts
+
+        return result
+
     async def _compare(
         self,
         pm: EDAPortfolioManager,

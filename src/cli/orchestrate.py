@@ -269,10 +269,12 @@ def launch_orchestrated_live(
             if mode == "live":
                 from src.exchange.binance_futures_client import BinanceFuturesClient
 
+                is_hedge = orch_config.netting_mode == "hedge"
                 async with BinanceFuturesClient() as futures_client:
                     await futures_client.setup_account(
                         symbols,
                         leverage=round(orch_config.max_gross_leverage),
+                        hedged=is_hedge,
                     )
                     runner = LiveRunner.orchestrated_live(
                         orchestrator_config=orch_config,
