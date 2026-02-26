@@ -1,6 +1,6 @@
-"""Capital Flow Momentum 전략.
+"""VWR Asymmetric Multi-Scale 전략.
 
-12H 듀얼스피드 ROC 모멘텀 + 1D Stablecoin supply ROC 확신도 가중.
+3-scale VWR 앙상블 + 비대칭 임계값으로 crypto drift 비대칭성 활용.
 """
 
 from __future__ import annotations
@@ -16,29 +16,28 @@ if TYPE_CHECKING:
 
     from src.strategy.types import StrategySignals
 
-from src.strategy.cap_flow_mom.config import CapFlowMomConfig
-from src.strategy.cap_flow_mom.preprocessor import preprocess
-from src.strategy.cap_flow_mom.signal import generate_signals
+from src.strategy.vwr_asym_multi.config import VwrAsymMultiConfig
+from src.strategy.vwr_asym_multi.preprocessor import preprocess
+from src.strategy.vwr_asym_multi.signal import generate_signals
 
 
-@register("cap-flow-mom")
-class CapFlowMomStrategy(BaseStrategy):
-    """Capital Flow Momentum 전략 구현.
+@register("vwr-asym-multi")
+class VwrAsymMultiStrategy(BaseStrategy):
+    """VWR Asymmetric Multi-Scale 전략 구현.
 
-    12H OHLCV 듀얼스피드 ROC + 1D Stablecoin supply ROC 확신도 가중.
-    자본 유입/유출 방향과 가격 모멘텀 정렬 시 확신도 강화, 괴리 시 감쇄.
+    12H Volume-Weighted Returns 다중스케일(10/21/42) z-score 앙상블에
+    비대칭 long/short 임계값을 적용하여 crypto 구조적 drift 비대칭을 반영한다.
     """
 
-    def __init__(self, config: CapFlowMomConfig | None = None) -> None:
-        self._config = config or CapFlowMomConfig()
+    def __init__(self, config: VwrAsymMultiConfig | None = None) -> None:
+        self._config = config or VwrAsymMultiConfig()
 
     @property
     def name(self) -> str:
-        return "cap-flow-mom"
+        return "vwr-asym-multi"
 
     @property
     def required_columns(self) -> list[str]:
-        # OHLCV만 필수. On-chain은 optional (부재 시 중립 처리)
         return ["open", "high", "low", "close", "volume"]
 
     @property
@@ -63,16 +62,18 @@ class CapFlowMomStrategy(BaseStrategy):
         }
 
     @classmethod
-    def from_params(cls, **params: Any) -> CapFlowMomStrategy:
-        config = CapFlowMomConfig(**params)
+    def from_params(cls, **params: Any) -> BaseStrategy:
+        config = VwrAsymMultiConfig(**params)
         return cls(config=config)
 
     def get_startup_info(self) -> dict[str, str]:
         return {
-            "fast_roc_period": str(self._config.fast_roc_period),
-            "slow_roc_period": str(self._config.slow_roc_period),
-            "roc_threshold": str(self._config.roc_threshold),
-            "stablecoin_boost": str(self._config.stablecoin_boost),
+            "lookbacks": (
+                f"{self._config.lookback_short}/"
+                f"{self._config.lookback_mid}/"
+                f"{self._config.lookback_long}"
+            ),
+            "thresholds": (f"L={self._config.long_threshold}/S={self._config.short_threshold}"),
             "vol_target": str(self._config.vol_target),
             "short_mode": self._config.short_mode.name,
         }

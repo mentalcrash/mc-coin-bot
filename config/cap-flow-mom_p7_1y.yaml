@@ -1,0 +1,36 @@
+# Capital Flow Momentum — P7 EDA Parity 검증 (1년)
+# ADA/USDT 12H, 2025-01-01 ~ 2026-01-01
+
+backtest:
+  symbols:
+    - ADA/USDT
+  timeframe: "12H"
+  start: "2025-01-01"
+  end: "2026-01-01"
+  capital: 100000.0
+
+strategy:
+  name: cap-flow-mom
+  params:
+    fast_roc_period: 29
+    slow_roc_period: 40
+    roc_threshold: 0.02546965865450625
+    stablecoin_roc_window: 47
+    stablecoin_boost: 1.7031158936738722
+    stablecoin_dampen: 0.15346174545437835
+    vol_window: 60
+    short_mode: 2            # ShortMode.FULL
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10
+  system_stop_loss: 0.10
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  use_intrabar_trailing_stop: false
+  cost_model:
+    maker_fee: 0.0002
+    taker_fee: 0.0004
+    slippage: 0.0005
+    funding_rate_8h: 0.0001
+    market_impact: 0.0002

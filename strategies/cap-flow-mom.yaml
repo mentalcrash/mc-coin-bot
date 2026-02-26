@@ -7,7 +7,7 @@ meta:
   short_mode: FULL
   status: RETIRED
   created_at: '2026-02-24'
-  retired_at: '2026-02-25'
+  retired_at: '2026-02-26'
   economic_rationale: 12H OHLCV 듀얼스피드 ROC 모멘텀 + 1D Stablecoin supply ROC 확신도 가중. 자본
     유입/유출 방향과 가격 모멘텀 정렬 시 확신도 강화, 괴리 시 감쇄. 정보 비대칭(stablecoin flow 미활용) 기반.
   rationale_references: []
@@ -90,13 +90,13 @@ phases:
       supplementary: 3/4
   P7:
     status: FAIL
-    date: '2026-02-25'
+    date: '2026-02-26'
     details:
-      eda_sharpe: 0.35
+      eda_sharpe: 0.33
       vbt_sharpe: 0.68
-      eda_return: 6.41
+      eda_return: 5.26
       vbt_return: 18.96
-      return_deviation: 66.2
+      return_deviation: 72.3
       trades_ratio: 1.0
 asset_performance: []
 decisions:
@@ -144,3 +144,8 @@ decisions:
   verdict: FAIL
   rationale: P7 FAIL. 수익 부호 일치(+/+), 거래수 정합(32/32=1.0x), 수익률 편차 66.2% > 20% 기준 초과.
     EDA PF 0.92 < 1.0 (VBT 1.44). 체결가격 차이+비용 반영으로 개별 트레이드 P&L 열화
+- date: '2026-02-26'
+  phase: P7
+  verdict: FAIL
+  rationale: P7 재검증 FAIL. 수익부호 일치(+/+), 거래수 32/32=1.0x, 수익률 편차 72.3% >> 20%. EDA PF
+    0.90 < 1.0. 체결가격 차이+비용 반영으로 edge 소실

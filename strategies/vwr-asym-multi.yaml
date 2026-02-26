@@ -1,0 +1,117 @@
+version: 2
+meta:
+  name: vwr-asym-multi
+  display_name: VWR Asymmetric Multi-Scale
+  category: Volume-Weighted Trend
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-26'
+  retired_at: '2026-02-26'
+  economic_rationale: 12H Volume-Weighted Returns 다중스케일 앙상블 + 비대칭 임계값(long≠short).
+    정보 비대칭(volume weight = 기관 방향성) + crypto 구조적 drift 비대칭성 활용. arXiv:2602.11708 참조.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      tests: 59.0
+      registry: vwr-asym-multi
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-02-26'
+    details:
+      sharpe: 0.38
+      cagr: 7.27
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.3
+  cagr: -16.01
+  mdd: 59.87
+  trades: 520
+  profit_factor: 0.86
+- symbol: ETH/USDT
+  sharpe: -0.27
+  cagr: -16.59
+  mdd: 64.36
+  trades: 493
+  profit_factor: 0.84
+- symbol: BNB/USDT
+  sharpe: -0.47
+  cagr: -22.28
+  mdd: 70.96
+  trades: 507
+  profit_factor: 0.77
+- symbol: SOL/USDT
+  sharpe: 0.05
+  cagr: -6.84
+  mdd: 48.71
+  trades: 498
+  profit_factor: 0.95
+- symbol: DOGE/USDT
+  sharpe: 0.38
+  cagr: 7.27
+  mdd: 55.53
+  trades: 498
+  profit_factor: 1.15
+- symbol: LINK/USDT
+  sharpe: -0.76
+  cagr: -30.03
+  mdd: 80.21
+  trades: 518
+  profit_factor: 0.68
+- symbol: ADA/USDT
+  sharpe: 0.31
+  cagr: 4.07
+  mdd: 48.5
+  trades: 501
+  profit_factor: 1.1
+- symbol: AVAX/USDT
+  sharpe: 0.06
+  cagr: -6.04
+  mdd: 47.99
+  trades: 513
+  profit_factor: 0.97
+decisions:
+- date: '2026-02-26'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-26'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 vwr-asym-multi. Ruff/Pyright 0 error.
+- date: '2026-02-26'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 2건 (W2 param count monitor, W7 rolling_zscore
+    custom impl)
+- date: '2026-02-26'
+  phase: P4
+  verdict: FAIL
+  rationale: P4A FAIL — Best(DOGE) Sharpe 0.38 < 0.5 WATCH 미달. 6/8 에셋 Sharpe 음수, 4/8
+    MDD>60%. VWR z-score 비대칭 임계값 비효과적

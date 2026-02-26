@@ -1,0 +1,22 @@
+id: 85
+title: 'Derivatives Filter on Trend Strategy: FR crowd filter가 유효 추세까지 억제한다'
+body: >-
+  donch-multi(Sharpe 1.61)에 funding rate z-score crowd filter를 적용한
+  donch-filtered가 Best ETH Sharpe 0.87로 46% 열화. FR 과열 시 동일 방향
+  진입을 억제하는 로직이 false breakout뿐 아니라 유효 추세 진입도 함께 차단.
+  MDD 9.4%로 지나치게 보수적(vol_target 0.35 대비 MDD/VT 0.27). threshold를
+  높이면 donch-multi와 동일체, 낮추면 더 악화하는 딜레마. 대안데이터(derivatives)를
+  단독 alpha로든 기존 전략 필터로든 추세 추종에 부가가치를 만들지 못함을 재확인.
+  교훈 #65(deriv-primary 일괄 FAIL) + #12(레짐 필터 양면성) 종합 확장.
+category: strategy-design
+tags:
+  - derivatives
+  - funding-rate
+  - crowd-filter
+  - trend-following
+  - alpha-destruction
+strategies:
+  - donch-filtered
+timeframes:
+  - 12H
+added_at: '2026-02-26'

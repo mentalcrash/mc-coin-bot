@@ -1,0 +1,128 @@
+version: 2
+meta:
+  name: donch-cascade
+  display_name: Donchian Cascade MTF
+  category: Channel Breakout (MTF)
+  timeframe: 4H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-26'
+  retired_at: '2026-02-26'
+  economic_rationale: '12H-equivalent Donchian breakout을 4H 해상도로 감지하여 진입 타이밍 최적화.
+    3-scale consensus (donch-multi 동일)로 방향 결정 후, 4H EMA momentum confirmation으로 false
+    breakout 필터링. 최대 8시간 조기 브레이크아웃 감지로 진입 비용 절감 기대.
+
+    '
+  rationale_references:
+  - type: prior_strategy
+    title: Donch-Multi (12H ACTIVE, Sharpe 1.61) 기반 MTF 확장
+    source: donch-multi
+    url: ''
+    relevance: 12H Donchian 3-scale consensus → 4H cascade entry
+  - type: lesson
+    title: 'MTF cascade: 12H direction + 4H entry timing'
+    source: ''
+    url: ''
+    relevance: HTF 방향 + LTF 진입 타이밍 최적화
+  rationale_category: null
+parameters:
+  lookback_short: 20
+  lookback_mid: 40
+  lookback_long: 80
+  entry_threshold: 0.34
+  htf_multiplier: 3
+  confirm_ema_period: 5
+  max_wait_bars: 3
+  vol_target: 0.35
+  vol_window: 90
+  short_mode: 2
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      score: 22
+      max_score: 30
+      notes: 'Donch-Multi 12H ACTIVE 기반 MTF 확장. 12H channel 수학적 동치 (4H, 3x lookback).
+        IC 사전검증 생략 (기존 ACTIVE 전략 파생).
+
+        '
+  P2:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      notes: '전략 코드 구현 완료: config/preprocessor/signal/strategy 4모듈 + 49 tests PASS'
+  P3:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      notes: Registry 등록 + from_params 구현 + recommended_config 완료
+  P4:
+    status: FAIL
+    date: '2026-02-26'
+    details:
+      sub_phase: P4A
+      best_sharpe: 0.95
+      best_cagr: 10.94
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.3
+  cagr: -2.91
+  mdd: 22.67
+  trades: 198
+  profit_factor: 0.89
+- symbol: ETH/USDT
+  sharpe: 0.11
+  cagr: 0.56
+  mdd: 15.75
+  trades: 194
+  profit_factor: 1.04
+- symbol: BNB/USDT
+  sharpe: -0.61
+  cagr: -5.58
+  mdd: 30.03
+  trades: 179
+  profit_factor: 0.76
+- symbol: SOL/USDT
+  sharpe: -0.25
+  cagr: -2.94
+  mdd: 17.39
+  trades: 216
+  profit_factor: 0.88
+- symbol: DOGE/USDT
+  sharpe: 0.35
+  cagr: 3.16
+  mdd: 14.04
+  trades: 153
+  profit_factor: 1.17
+- symbol: LINK/USDT
+  sharpe: -0.15
+  cagr: -1.62
+  mdd: 13.57
+  trades: 184
+  profit_factor: 0.91
+- symbol: ADA/USDT
+  sharpe: 0.95
+  cagr: 10.94
+  mdd: 11.43
+  trades: 181
+  profit_factor: 1.53
+- symbol: AVAX/USDT
+  sharpe: -0.42
+  cagr: -4.57
+  mdd: 27.72
+  trades: 188
+  profit_factor: 0.79
+decisions:
+- date: '2026-02-26'
+  phase: P1
+  verdict: PASS
+  rationale: 'Donch-Multi (Sharpe 1.61) 기반 MTF cascade. 4H 해상도로 진입 타이밍 최적화 + EMA confirmation
+    필터.
+
+    '
+- date: '2026-02-26'
+  phase: P4
+  verdict: FAIL
+  rationale: P4A FAIL — Best ADA Sharpe 0.95 (Path A/B 미달). 5/8 Sharpe<0. 4H cascade
+    비용 > 조기진입 이점. 4H TF 구조적 한계 재확인

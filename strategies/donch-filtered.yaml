@@ -1,0 +1,119 @@
+version: 2
+meta:
+  name: donch-filtered
+  display_name: Donchian Filtered (FR Crowd)
+  category: Channel Breakout (Filtered)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-26'
+  retired_at: '2026-02-26'
+  economic_rationale: Donch-Multi 3-scale consensus에 funding rate crowd filter 적용.
+    과열 포지셔닝(fr_zscore 극단값) 시 동일 방향 진입 억제로 false breakout 필터링. Derivatives 데이터 없으면
+    pure donch-multi 동작.
+  rationale_references:
+  - type: prior_strategy
+    title: Donch-Multi (12H ACTIVE, Sharpe 1.61) 기반 필터 확장
+    source: donch-multi
+    url: ''
+    relevance: 3-scale Donchian consensus 로직 재사용
+  - type: lesson
+    title: 대안데이터 단독 alpha 부재 → 필터로 활용
+    source: ''
+    url: ''
+    relevance: 158개+ 전략에서 대안데이터 단독 edge 0건, 기존 ACTIVE 전략 필터로 활용
+  rationale_category: null
+parameters:
+  lookback_short: 20
+  lookback_mid: 40
+  lookback_long: 80
+  entry_threshold: 0.34
+  vol_target: 0.35
+  vol_window: 30
+  short_mode: 2
+  fr_ma_window: 3
+  fr_zscore_window: 90
+  fr_suppress_threshold: 1.5
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      notes: Donch-Multi (Sharpe 1.61, ACTIVE) 파생 전략. IC 사전검증 생략 (기존 ACTIVE 전략 기반).
+        Crowd filter로 false breakout 억제 가설.
+  P2:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      notes: '전략 코드 구현 완료: config/preprocessor/signal/strategy 4모듈 + tests PASS'
+  P3:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      notes: Registry 등록 + from_params 구현 + recommended_config 완료
+  P4:
+    status: FAIL
+    date: '2026-02-26'
+    details:
+      sharpe: 0.87
+      cagr: 12.42
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 0.87
+  cagr: 12.4
+  mdd: 9.4
+  trades: 118
+  profit_factor: 1.89
+- symbol: BTC/USDT
+  sharpe: 0.56
+  cagr: 6.9
+  mdd: 18.3
+  trades: 118
+  profit_factor: 1.36
+- symbol: SOL/USDT
+  sharpe: 0.56
+  cagr: 6.6
+  mdd: 15.5
+  trades: 122
+  profit_factor: 1.35
+- symbol: DOGE/USDT
+  sharpe: 0.55
+  cagr: 6.6
+  mdd: 16.8
+  trades: 89
+  profit_factor: 1.42
+- symbol: BNB/USDT
+  sharpe: 0.3
+  cagr: 3.4
+  mdd: 23.0
+  trades: 116
+  profit_factor: 1.23
+- symbol: ADA/USDT
+  sharpe: 0.15
+  cagr: 1.1
+  mdd: 15.8
+  trades: 119
+  profit_factor: 1.07
+- symbol: LINK/USDT
+  sharpe: -0.38
+  cagr: -5.2
+  mdd: 23.3
+  trades: 111
+  profit_factor: 0.73
+- symbol: AVAX/USDT
+  sharpe: -0.75
+  cagr: -8.6
+  mdd: 41.2
+  trades: 113
+  profit_factor: 0.6
+decisions:
+- date: '2026-02-26'
+  phase: P1
+  verdict: PASS
+  rationale: Donch-Multi (Sharpe 1.61) 기반 FR crowd filter 확장. 과열 포지셔닝 억제로 false breakout
+    감소 기대.
+- date: '2026-02-26'
+  phase: P4
+  verdict: FAIL
+  rationale: Best ETH Sharpe 0.87 PASS 미달. 원본 donch-multi(1.61) 대비 46% Sharpe 열화.
+    FR crowd filter가 alpha 훼손

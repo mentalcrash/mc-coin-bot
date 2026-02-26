@@ -62,6 +62,8 @@ import src.strategy.dir_vol_trend  # 전략 등록 side effect
 import src.strategy.disp_breakout  # 전략 등록 side effect
 import src.strategy.disposition_cgo  # 전략 등록 side effect
 import src.strategy.dist_mom  # 전략 등록 side effect
+import src.strategy.donch_cascade  # 전략 등록 side effect
+import src.strategy.donch_filtered  # 전략 등록 side effect
 import src.strategy.donch_multi  # 전략 등록 side effect
 import src.strategy.donchian  # 전략 등록 side effect
 import src.strategy.donchian_ensemble  # 전략 등록 side effect
@@ -185,6 +187,7 @@ import src.strategy.vr_regime  # 전략 등록 side effect
 import src.strategy.vrp_regime_trend  # 전략 등록 side effect
 import src.strategy.vrp_trend  # 전략 등록 side effect
 import src.strategy.vw_tsmom  # 전략 등록 side effect
+import src.strategy.vwr_asym_multi  # 전략 등록 side effect
 import src.strategy.vwap_disposition  # 전략 등록 side effect
 import src.strategy.vwap_trend_cross  # 전략 등록 side effect
 import src.strategy.xsmom  # 전략 등록 side effect

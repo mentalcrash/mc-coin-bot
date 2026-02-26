@@ -1,0 +1,17 @@
+id: 84
+title: 'HTF→LTF Cascade Entry: 4H 해상도 격하는 12H edge를 파괴한다'
+body: donch-multi 12H(Sharpe 1.61)의 4H cascade 확장(donch-cascade)이 Best ADA Sharpe
+  0.95에 그침. 12H 방향 + 4H EMA confirmation으로 진입 타이밍 최적화를 시도했으나, 4H bar 빈도에서의 거래 비용 증가(연
+  150-216회)가 8시간 조기 진입 이점을 압도. 5/8 에셋 Sharpe < 0. HTF에서 작동하는 전략을 LTF로 cascade하면 noise
+  exposure 증가 + 비용 증가 → net alpha 감소.
+category: strategy-design
+tags:
+- MTF
+- cascade
+- 4H
+- cost-drag
+strategies:
+- donch-cascade
+timeframes:
+- 4H
+added_at: '2026-02-26'
