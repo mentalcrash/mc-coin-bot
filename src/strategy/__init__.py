@@ -160,6 +160,7 @@ import src.strategy.t_stat_mom  # 전략 등록 side effect
 import src.strategy.trend_eff_score  # 전략 등록 side effect
 import src.strategy.trend_persist  # 전략 등록 side effect
 import src.strategy.trend_quality_mom  # 전략 등록 side effect
+import src.strategy.tri_channel_trend  # 전략 등록 side effect
 import src.strategy.tq_mom  # 전략 등록 side effect
 import src.strategy.tsmom  # 전략 등록 side effect
 import src.strategy.ttm_squeeze  # 전략 등록 side effect

@@ -1,0 +1,14 @@
+id: 86
+title: HEDGE_ONLY ShortMode의 EDA parity 구조적 한계
+body: 'tri-channel-trend P7: HEDGE_ONLY Return parity 81.1% (부호 반전). DISABLED 전환 후
+  1.5%. 원인: drawdown<-7% 조건이 1m→12H 집계 차이에 민감. Long-only가 parity 안정.'
+category: pipeline-process
+tags:
+- eda-parity
+- short-mode
+- hedge-only
+strategies:
+- tri-channel-trend
+timeframes:
+- 12H
+added_at: '2026-02-26'

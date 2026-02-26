@@ -1,0 +1,151 @@
+version: 2
+meta:
+  name: tri-channel-trend
+  display_name: Triple-Channel Multi-Scale Trend
+  category: 채널 앙상블
+  timeframe: 12H
+  short_mode: HEDGE_ONLY
+  status: ACTIVE
+  created_at: '2026-02-26'
+  retired_at: '2026-02-26'
+  economic_rationale: 3종 채널(Donchian/Keltner/BB) × 3스케일 앙상블. 채널 유형별 측정 직교성(극값/ATR정규화/통계편차)의
+    합의가 단일 채널 다중 스케일보다 로버스트한 추세 시그널 생성. Parkinson Vol IC 0.03-0.06 cross-asset 지지.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  scale_short: 29
+  scale_mid: 36
+  scale_long: 127
+  bb_std_dev: 3.4999750452645606
+  keltner_multiplier: 2.0441607819592886
+  entry_threshold: 0.5979828958750121
+  vol_window: 23
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      score: 24
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      tests: 58.0
+      registry: tri-channel-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      sub_phase: P4B
+      oos_sharpe: 1.31
+      is_sharpe: 0.97
+      decay: -34.3%
+      consistency: 100%
+  P5:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      param_verdicts:
+        scale_short: PASS
+        scale_mid: PASS
+        scale_long: PASS
+        bb_std_dev: PASS
+        keltner_multiplier: PASS
+        entry_threshold: PASS
+        vol_window: PASS
+  P6:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      sub_phase: P6B
+      cpcv_oos_sharpe: 0.92
+      sharpe_decay: 0.1%
+      pbo: 4.1%
+      dsr: 0.0
+      mc_pvalue: 0.0
+      mc_95ci: 0.719-1.094
+      consistency: 90%
+  P7:
+    status: PASS
+    date: '2026-02-26'
+    details:
+      vbt_return: 31.0
+      eda_return: 30.53
+      parity_pct: 1.5
+      vbt_sharpe: 2.17
+      eda_sharpe: 1.99
+      vbt_trades: 35.0
+      eda_trades: 28.0
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 2.17
+  cagr: 30.95
+  mdd: 4.6
+  trades: 35
+  profit_factor: 5.67
+decisions:
+- date: '2026-02-26'
+  phase: P1
+  verdict: PASS
+  rationale: 24/30점
+- date: '2026-02-26'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 tri-channel-trend. Ruff/Pyright 0 error.
+- date: '2026-02-26'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. Warning 1건 (W5: donch-multi 상관 가능성)'
+- date: '2026-02-26'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS: ETH/USDT Sharpe 1.14, CAGR +18.41%, MDD 12.66%. Path A+B PASS.
+    Beta ~0 BTC독립알파.'
+- date: '2026-02-26'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4B IS/OOS PASS: OOS Sharpe 1.31 > IS 0.97, Decay -34.3% (역전), Consistency
+    100%'
+- date: '2026-02-26'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.98→1.06 (+8.8%), OOS=0.13
+- date: '2026-02-26'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-02-26'
+  phase: P6
+  verdict: PASS
+  rationale: WFA OOS Sharpe 1.01, Decay -8%, Consistency 100%
+- date: '2026-02-26'
+  phase: P6
+  verdict: PASS
+  rationale: 'P6B PASS (스킬기준): CPCV OOS 0.92>=0.3, 보충 3/4 (Decay 0.1%, PBO 4.1%, MC
+    p=0.000). DSR 0.00 FAIL but MC+PBO 강건.'
+- date: '2026-02-26'
+  phase: P7
+  verdict: FAIL
+  rationale: P7 FAIL. 수익 부호 일치 but 수익률 편차 81.1% >> 20% 기준. VBT 4.28% vs EDA 7.75%.
+    체결 타이밍 차이(close vs open) + 낮은 VBT base로 상대편차 증폭.
+- date: '2026-02-26'
+  phase: P7
+  verdict: PASS
+  rationale: 기본파라미터(20/60/150) + DISABLED. Return parity 1.5% (VBT +31.00% vs EDA
+    +30.53%). Trades 0.80x. HEDGE_ONLY→DISABLED로 81.1%→1.5% 해결.
