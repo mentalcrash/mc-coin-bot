@@ -13,6 +13,7 @@ import pytest
 
 from src.data.market_data import MultiSymbolData
 from src.eda.orchestrated_runner import OrchestratedRunner, _compute_pod_metrics, _derive_pm_config
+from src.eda.smart_executor_config import SmartExecutorConfig
 from src.orchestrator.config import OrchestratorConfig, PodConfig
 from src.orchestrator.models import AllocationMethod
 from src.orchestrator.pod import StrategyPod
@@ -408,6 +409,42 @@ class TestPMConfigDerivation:
 
         pm_config = OrchestratedRunner.derive_pm_config(orch_config)
         assert pm_config.system_stop_loss == pytest.approx(0.225)
+
+    def test_derive_pm_config_smart_execution_passthrough(self) -> None:
+        """smart_execution이 OrchestratorConfig → PM config로 전달."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        se_config = SmartExecutorConfig(enabled=True, limit_timeout_seconds=60.0)
+        orch_config = _make_orch_config((pod_a,), smart_execution=se_config)
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.smart_execution.enabled is True
+        assert pm_config.smart_execution.limit_timeout_seconds == 60.0
+
+    def test_derive_pm_config_smart_execution_default_disabled(self) -> None:
+        """smart_execution 미설정 시 기본값 disabled."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        orch_config = _make_orch_config((pod_a,))
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.smart_execution.enabled is False
+
+    def test_derive_pm_config_maker_fee_separation(self) -> None:
+        """maker_fee_bps 설정 시 maker/taker 분리."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        orch_config = _make_orch_config((pod_a,), cost_bps=4.0, maker_fee_bps=2.0)
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.cost_model.taker_fee == pytest.approx(0.0004)
+        assert pm_config.cost_model.maker_fee == pytest.approx(0.0002)
+
+    def test_derive_pm_config_maker_fee_none_fallback(self) -> None:
+        """maker_fee_bps=None → cost_bps와 동일."""
+        pod_a = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        orch_config = _make_orch_config((pod_a,), cost_bps=8.0)
+
+        pm_config = _derive_pm_config(orch_config)
+        assert pm_config.cost_model.taker_fee == pytest.approx(0.0008)
+        assert pm_config.cost_model.maker_fee == pytest.approx(0.0008)
 
 
 class TestPodMetricsComputation:

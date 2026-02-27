@@ -55,7 +55,7 @@ orchestrator:
   netting_mode: hedge                   # Pod별 독립 포지션 (넷팅 없음)
 
   # ── Allocation ──────────────────────────────────────────────
-  allocation_method: equal_weight       # 3 Pod → 33.3% each
+  allocation_method: inverse_volatility  # 변동성 역수 가중 → 리스크 균등화
   kelly_fraction: 0.25
   kelly_confidence_ramp: 180
 
@@ -70,7 +70,8 @@ orchestrator:
   max_portfolio_volatility: 0.25
   max_single_pod_risk_pct: 0.50        # 3-Pod → 각 50% 상한
   daily_loss_limit: 0.03
-  cost_bps: 4.0
+  cost_bps: 4.0                          # Taker: 0.04%
+  maker_fee_bps: 2.0                     # Maker: 0.02% (Binance VIP0)
 
   # ── Correlation ─────────────────────────────────────────────
   correlation_lookback: 90
@@ -92,6 +93,16 @@ orchestrator:
     consecutive_loss_months: 6
     rolling_sharpe_floor: 0.3
     probation_days: 30
+
+  # ── Smart Execution ─────────────────────────────────────────
+  smart_execution:
+    enabled: true
+    limit_timeout_seconds: 30            # Limit 대기 30초
+    price_offset_bps: 1.0               # bid/ask 대비 1bp offset
+    max_price_deviation_pct: 0.3         # 0.3% 이상 이탈 시 취소
+    poll_interval_seconds: 2.0           # 2초 간격 상태 확인
+    max_concurrent_limit_orders: 4
+    fallback_to_market: true             # timeout 시 market fallback
 
   # ── Surveillance ────────────────────────────────────────────
   surveillance:
@@ -145,6 +156,12 @@ orchestrator:
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
+      asset_selector:
+        enabled: true
+        hard_exclude_sharpe: -1.0        # Sharpe < -1.0 즉시 제외
+        hard_exclude_drawdown: 0.25      # DD > 25% 즉시 제외
+        min_exclusion_bars: 30           # 최소 30봉(15일) cooldown
+        min_active_assets: 0             # 전멸 허용 → Pod retirement 트리거
 
     # ────────────────────────────────────────────────────────
     # Pod 2: Donch-Multi — Donchian Multi-Scale (12H, FULL)
@@ -181,6 +198,12 @@ orchestrator:
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
+      asset_selector:
+        enabled: true
+        hard_exclude_sharpe: -1.0
+        hard_exclude_drawdown: 0.25
+        min_exclusion_bars: 30
+        min_active_assets: 0
 
     # ────────────────────────────────────────────────────────
     # Pod 3: Tri-Channel — Triple-Channel Multi-Scale (12H, HEDGE_ONLY)
@@ -218,3 +241,9 @@ orchestrator:
       use_trailing_stop: true
       trailing_stop_atr_multiplier: 3.0
       rebalance_threshold: 0.10
+      asset_selector:
+        enabled: true
+        hard_exclude_sharpe: -1.0
+        hard_exclude_drawdown: 0.25
+        min_exclusion_bars: 30
+        min_active_assets: 0

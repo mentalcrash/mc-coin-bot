@@ -68,6 +68,11 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
     ts_multiplier = max(p.trailing_stop_atr_multiplier for p in orch_config.pods)
     rebalance_threshold = min(p.rebalance_threshold for p in orch_config.pods)
 
+    # Maker/Taker 분리: maker_fee_bps 없으면 cost_bps(taker)와 동일
+    maker_bps = (
+        orch_config.maker_fee_bps if orch_config.maker_fee_bps is not None else orch_config.cost_bps
+    )
+
     return PortfolioManagerConfig(
         max_leverage_cap=orch_config.max_gross_leverage,
         system_stop_loss=pm_stop_loss,
@@ -78,9 +83,10 @@ def _derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig
         cash_sharing=True,
         cost_model=CostModel(
             taker_fee=orch_config.cost_bps / 10000,
-            maker_fee=orch_config.cost_bps / 10000,
+            maker_fee=maker_bps / 10000,
             slippage=0.0001,
         ),
+        smart_execution=orch_config.smart_execution,
     )
 
 

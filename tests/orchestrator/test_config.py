@@ -261,7 +261,7 @@ class TestAssetSelectorConfig:
         assert asc.include_confirmation_bars == 3
         assert asc.min_exclusion_bars == 30
         assert asc.ramp_steps == 3
-        assert asc.min_active_assets == 2
+        assert asc.min_active_assets == 0
 
     def test_frozen(self) -> None:
         asc = AssetSelectorConfig()

@@ -13,6 +13,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.eda.smart_executor_config import SmartExecutorConfig
 from src.orchestrator.asset_allocator import AssetAllocationConfig
 from src.orchestrator.models import AllocationMethod, RebalanceTrigger
 from src.orchestrator.surveillance import SurveillanceConfig
@@ -115,9 +116,9 @@ class AssetSelectorConfig(BaseModel):
 
     # Safety
     min_active_assets: int = Field(
-        default=2,
-        ge=1,
-        description="최소 활성 에셋 수",
+        default=0,
+        ge=0,
+        description="최소 활성 에셋 수 (0 → 전멸 허용, Pod retirement 트리거 가능)",
     )
 
     # Absolute thresholds (cross-sectional과 독립)
@@ -597,7 +598,12 @@ class OrchestratorConfig(BaseModel):
     cost_bps: float = Field(
         default=4.0,
         ge=0.0,
-        description="거래 비용 (bps)",
+        description="거래 비용 — Taker (bps)",
+    )
+    maker_fee_bps: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Maker 비용 (bps). None → cost_bps와 동일",
     )
 
     # Turnover constraint
@@ -610,6 +616,12 @@ class OrchestratorConfig(BaseModel):
     risk_defense_bypass_turnover: bool = Field(
         default=True,
         description="Risk defense 시 turnover 제약 우회 (기본: True)",
+    )
+
+    # Smart Execution
+    smart_execution: SmartExecutorConfig = Field(
+        default_factory=SmartExecutorConfig,
+        description="Limit order 우선 실행 설정 (enabled=False 기본)",
     )
 
     # Surveillance
