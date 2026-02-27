@@ -1,0 +1,54 @@
+version: 2
+meta:
+  name: fr-event-mtf-8h
+  display_name: FR Event Trigger Multi-TF
+  category: Derivatives Event-Driven
+  timeframe: 8H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-27'
+  economic_rationale: FR z-score 극단값 event trigger + 12H EMA trend context. Event-driven
+    연 20-40건. BIS WP1087 carry alpha
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details:
+      sharpe: 0.0
+      cagr: 0.0
+asset_performance: []
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-27'
+  phase: P2
+  verdict: PASS
+  rationale: '코드 구현 완료: config/preprocessor/signal/strategy 4파일'
+- date: '2026-02-27'
+  phase: P3
+  verdict: PASS
+  rationale: registry 등록, import 정상, FR graceful degradation 확인
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: 전 에셋 Trades=0. FR 데이터 없이 시그널 불가 — 대안데이터 단독 alpha 부재 재확인

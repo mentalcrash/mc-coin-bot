@@ -1,0 +1,17 @@
+id: 90
+title: 6H 비용 페널티(cost penalty)로도 비용벽 미돌파 — signal-level cost filter 한계
+body: 'cost-channel-6h: Tri-Channel 구조 + cost hysteresis(theta=0.3)로 불필요 전환 억제 시도.
+  그러나 전 에셋 연 150-230회 거래 발생(2x cost 적용). Best ETH Sharpe 0.96이지만 CAGR 13.4%로 P4A FAIL.
+  6H TF에서는 시그널 자체의 전환 빈도가 구조적으로 높아 signal-level cost filter만으로는 거래 빈도를 충분히 줄일 수 없음.
+  교훈 #19(6H 구조적 실패)의 cost-aware 변형 실패 확인.'
+category: strategy-design
+tags:
+- 6H
+- cost-penalty
+- overtrading
+- channel-breakout
+strategies:
+- cost-channel-6h
+timeframes:
+- 6H
+added_at: '2026-02-27'

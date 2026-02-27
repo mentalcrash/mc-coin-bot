@@ -1,0 +1,103 @@
+version: 2
+meta:
+  name: cost-channel-6h
+  display_name: Cost-Penalized Multi-Scale Channel
+  category: Cost-Aware Channel Ensemble
+  timeframe: 6H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-27'
+  economic_rationale: Signal-level cost penalty로 6H 비용벽 돌파. Tri-Channel 3채널x3스케일 구조
+    + cost hysteresis
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 25
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details:
+      sharpe: 0.96
+      cagr: 13.4
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 0.37
+  cagr: 4.4
+  mdd: 23.4
+  trades: 914
+  profit_factor: 1.13
+- symbol: ETH/USDT
+  sharpe: 0.96
+  cagr: 13.4
+  mdd: 13.8
+  trades: 788
+  profit_factor: 1.46
+- symbol: BNB/USDT
+  sharpe: -0.25
+  cagr: -4.8
+  mdd: 31.3
+  trades: 852
+  profit_factor: 0.92
+- symbol: SOL/USDT
+  sharpe: 0.65
+  cagr: 9.2
+  mdd: 17.1
+  trades: 628
+  profit_factor: 1.31
+- symbol: DOGE/USDT
+  sharpe: 0.52
+  cagr: 7.6
+  mdd: 22.3
+  trades: 619
+  profit_factor: 1.26
+- symbol: LINK/USDT
+  sharpe: -0.27
+  cagr: -4.6
+  mdd: 32.4
+  trades: 679
+  profit_factor: 0.9
+- symbol: ADA/USDT
+  sharpe: 0.42
+  cagr: 5.7
+  mdd: 21.7
+  trades: 704
+  profit_factor: 1.18
+- symbol: AVAX/USDT
+  sharpe: 0.31
+  cagr: 3.6
+  mdd: 19.1
+  trades: 632
+  profit_factor: 1.15
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 25/30점
+- date: '2026-02-27'
+  phase: P2
+  verdict: PASS
+  rationale: '코드 구현 완료: config/preprocessor/signal/strategy 4파일'
+- date: '2026-02-27'
+  phase: P3
+  verdict: PASS
+  rationale: registry 등록, import 정상, 코드 검증 완료
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: 'Best ETH Sharpe 0.96 CAGR 13.4% — Path A/B 미달. 6H 비용벽: 전 에셋 연 150-230회(2x
+    cost). cost penalty 불충분'

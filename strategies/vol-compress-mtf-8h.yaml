@@ -1,0 +1,102 @@
+version: 2
+meta:
+  name: vol-compress-mtf-8h
+  display_name: Vol Compression Breakout Multi-TF
+  category: Volatility Breakout
+  timeframe: 8H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-27'
+  economic_rationale: Yang-Zhang vol 단기/장기 비율로 변동성 압축 탐지 + Donchian 돌파 + 12H 모멘텀 방향
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details:
+      sharpe: 0.78
+      cagr: 5.7
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.79
+  cagr: -6.1
+  mdd: 23.6
+  trades: 227
+  profit_factor: 0.72
+- symbol: ETH/USDT
+  sharpe: -0.18
+  cagr: -1.5
+  mdd: 18.0
+  trades: 150
+  profit_factor: 0.96
+- symbol: BNB/USDT
+  sharpe: -0.89
+  cagr: -7.2
+  mdd: 33.2
+  trades: 203
+  profit_factor: 0.63
+- symbol: SOL/USDT
+  sharpe: 0.78
+  cagr: 5.7
+  mdd: 12.2
+  trades: 88
+  profit_factor: 1.81
+- symbol: DOGE/USDT
+  sharpe: 0.42
+  cagr: 3.5
+  mdd: 9.1
+  trades: 124
+  profit_factor: 1.31
+- symbol: LINK/USDT
+  sharpe: -0.02
+  cagr: -0.2
+  mdd: 10.0
+  trades: 49
+  profit_factor: 1.0
+- symbol: ADA/USDT
+  sharpe: -0.26
+  cagr: -2.9
+  mdd: 18.9
+  trades: 140
+  profit_factor: 0.89
+- symbol: AVAX/USDT
+  sharpe: 0.33
+  cagr: 2.3
+  mdd: 14.1
+  trades: 82
+  profit_factor: 1.3
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-27'
+  phase: P2
+  verdict: PASS
+  rationale: '코드 구현 완료: config/preprocessor/signal/strategy 4파일'
+- date: '2026-02-27'
+  phase: P3
+  verdict: PASS
+  rationale: registry 등록, import 정상, Yang-Zhang vol 로직 확인
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: Best SOL Sharpe 0.78 CAGR 5.7% — Path A/B 미달. 5/8 Sharpe<0. 8H TF 구조적
+    실패 재확인

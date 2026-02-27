@@ -1,0 +1,103 @@
+version: 2
+meta:
+  name: asymmetric-trend-8h
+  display_name: Asymmetric Multi-Scale Momentum
+  category: Asymmetric Momentum
+  timeframe: 8H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-27'
+  economic_rationale: '방향별 비대칭 lookback: 상승=느린확인(15/30/63), 하락=빠른반응(3/6/15). 크립토 return
+    비대칭 직접 반영'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details:
+      sharpe: 1.1
+      cagr: 35.5
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.86
+  cagr: -25.2
+  mdd: 75.3
+  trades: 622
+  profit_factor: 0.76
+- symbol: ETH/USDT
+  sharpe: -0.18
+  cagr: -9.3
+  mdd: 55.5
+  trades: 587
+  profit_factor: 0.94
+- symbol: BNB/USDT
+  sharpe: -0.13
+  cagr: -8.3
+  mdd: 53.2
+  trades: 621
+  profit_factor: 0.96
+- symbol: SOL/USDT
+  sharpe: 0.15
+  cagr: -0.1
+  mdd: 39.6
+  trades: 575
+  profit_factor: 1.02
+- symbol: DOGE/USDT
+  sharpe: 0.43
+  cagr: 9.4
+  mdd: 50.0
+  trades: 598
+  profit_factor: 1.15
+- symbol: LINK/USDT
+  sharpe: -0.43
+  cagr: -14.8
+  mdd: 59.7
+  trades: 573
+  profit_factor: 0.87
+- symbol: ADA/USDT
+  sharpe: 0.36
+  cagr: 6.4
+  mdd: 31.0
+  trades: 592
+  profit_factor: 1.1
+- symbol: AVAX/USDT
+  sharpe: 1.1
+  cagr: 35.5
+  mdd: 24.2
+  trades: 537
+  profit_factor: 1.32
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-02-27'
+  phase: P2
+  verdict: PASS
+  rationale: '코드 구현 완료: config/preprocessor/signal/strategy 4파일'
+- date: '2026-02-27'
+  phase: P3
+  verdict: PASS
+  rationale: registry 등록, import 정상, 비대칭 lookback 로직 확인
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: AVAX 단독 Sharpe 1.10 but 5/8 Sharpe<0 (BTC -0.86), MDD>50% 다수. 8H TF 구조적
+    실패 + AVAX 단일에셋 의존

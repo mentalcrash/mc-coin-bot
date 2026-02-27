@@ -34,6 +34,7 @@ import src.strategy.anti_corr_mom  # 전략 등록 side effect
 import src.strategy.aroc_mom  # 전략 등록 side effect
 import src.strategy.asym_semivar_mr  # 전략 등록 side effect
 import src.strategy.asym_vol_resp  # 전략 등록 side effect
+import src.strategy.asymmetric_trend_8h  # 전략 등록 side effect
 import src.strategy.atf_3h  # 전략 등록 side effect
 import src.strategy.autocorr_mom  # 전략 등록 side effect
 import src.strategy.bb_rsi  # 전략 등록 side effect
@@ -53,6 +54,7 @@ import src.strategy.cmf_persist  # 전략 등록 side effect
 import src.strategy.comp_mom  # 전략 등록 side effect
 import src.strategy.complexity_trend  # 전략 등록 side effect
 import src.strategy.conviction_trend_composite  # 전략 등록 side effect
+import src.strategy.cost_channel_6h  # 전략 등록 side effect
 import src.strategy.copula_pairs  # 전략 등록 side effect
 import src.strategy.ctrend  # 전략 등록 side effect
 import src.strategy.ctrend_x  # 전략 등록 side effect
@@ -91,6 +93,7 @@ import src.strategy.fg_persist_break  # 전략 등록 side effect
 import src.strategy.flow_imbalance  # 전략 등록 side effect
 import src.strategy.fr_carry_vol  # 전략 등록 side effect
 import src.strategy.fr_cond_mom  # 전략 등록 side effect
+import src.strategy.fr_event_mtf_8h  # 전략 등록 side effect
 import src.strategy.fr_pred  # 전략 등록 side effect
 import src.strategy.fr_press_trend  # 전략 등록 side effect
 import src.strategy.fr_quality_mom  # 전략 등록 side effect
@@ -176,6 +179,7 @@ import src.strategy.vol_adaptive  # 전략 등록 side effect
 import src.strategy.vol_asym_trend  # 전략 등록 side effect
 import src.strategy.vol_climax  # 전략 등록 side effect
 import src.strategy.vol_compress_brk  # 전략 등록 side effect
+import src.strategy.vol_compress_mtf_8h  # 전략 등록 side effect
 import src.strategy.vol_confirm_mom  # 전략 등록 side effect
 import src.strategy.vol_impulse_mom  # 전략 등록 side effect
 import src.strategy.vol_ratio_trend  # 전략 등록 side effect
