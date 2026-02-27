@@ -5,9 +5,9 @@ meta:
   category: Channel Ensemble
   timeframe: 8H
   short_mode: HEDGE_ONLY
-  status: CANDIDATE
+  status: RETIRED
   created_at: '2026-02-27'
-  retired_at: null
+  retired_at: '2026-02-27'
   economic_rationale: DWT(db4) level-2 denoising으로 8H close 노이즈 제거 후 DC/KC/BB 3채널x3스케일
     앙상블. Wavelet이 SNR을 12H급으로 끌어올려 8H에서도 tri-channel 패턴 작동.
   rationale_references: []
@@ -24,6 +24,33 @@ phases:
     status: PASS
     date: '2026-02-27'
     details: {}
+  P5:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      best_asset: ETH/USDT
+      oos_sharpe: 0.79
+      is_oos_decay: 0.32
+      results:
+        ETH_USDT:
+          is_sharpe: 1.16
+          oos_sharpe: 0.79
+          decay: 0.32
+          verdict: PASS
+        BTC_USDT:
+          is_sharpe: 1.27
+          oos_sharpe: 0.71
+          decay: 0.44
+          verdict: WATCH
+        DOGE_USDT:
+          is_sharpe: 1.38
+          oos_sharpe: 0.69
+          decay: 0.5
+          verdict: WATCH
+  P6:
+    status: FAIL
+    date: '2026-02-27'
+    details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-27'
@@ -34,3 +61,12 @@ decisions:
   phase: P4
   verdict: PASS
   rationale: 'Wavelet-denoised 8H tri-channel: 8H TF에서 유일하게 Sharpe > 1.0 달성'
+- date: '2026-02-27'
+  phase: P5
+  verdict: PASS
+  rationale: ETH OOS Sharpe 0.79 (Decay 32%), BTC WATCH (44%), DOGE WATCH (50%)
+- date: '2026-02-27'
+  phase: P6
+  verdict: FAIL
+  rationale: 'P6B FAIL: CPCV OOS Sharpe 0.17 (<0.2), DSR 0.00, MC p=0.168 (>0.10),
+    보충 0/4. 10-fold 중 4 fold OOS 음수. 8H TF wavelet denoising으로도 CPCV 로버스트니스 미달'

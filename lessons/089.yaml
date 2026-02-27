@@ -1,0 +1,19 @@
+id: 89
+title: Wavelet denoising(DWT)이 TF 한계를 극복하지 못함 — 8H SNR 개선으로도 CPCV OOS 0.17
+body: 'DWT(db4) level-2 denoising으로 8H close 노이즈를 제거해 P5 OOS Sharpe 0.79(Decay 32%)
+  달성했으나, CPCV 10-fold에서 OOS 0.17로 추락. WFA 3-fold OOS 0.35(PASS)와 10-fold 0.17(FAIL)의
+  괴리(교훈 #83 패턴). Wavelet은 단일 split에서 SNR을 높여 국소적 성능을 개선하지만, 다수 fold에서의 일반화(시장 레짐 변화)에는
+  무력. 8H TF의 구조적 문제(교훈: VRP-Regime P4 FAIL, OnFlow P5 FAIL)가 preprocessing 기법으로 해결되지
+  않음 확인.'
+category: strategy-design
+tags:
+- wavelet
+- denoising
+- 8h
+- CPCV
+- fold-sensitivity
+strategies:
+- wavelet-channel-8h
+timeframes:
+- 8H
+added_at: '2026-02-27'
