@@ -234,7 +234,10 @@ class OrchestratedRunner:
             target_timeframe=self._target_timeframe,
             target_timeframes=self._all_timeframes if multi_tf else None,
         )
-        executor = BacktestExecutor(cost_model=pm_config.cost_model)
+        executor = BacktestExecutor(
+            cost_model=pm_config.cost_model,
+            smart_execution=pm_config.smart_execution.enabled,
+        )
 
         # asset_weights: Pod이 1/N 정규화 완료 → PM은 uniform 1.0
         all_symbols = list(orch_config.all_symbols)

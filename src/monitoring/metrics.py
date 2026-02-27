@@ -470,6 +470,91 @@ class PrometheusLiveExecutorMetrics:
 
 
 # ==========================================================================
+# SmartExecutor Counters
+# ==========================================================================
+smart_limit_placed_counter = Counter(
+    "mcbot_smart_limit_placed_total",
+    "Limit orders placed by SmartExecutor",
+    ["symbol"],
+)
+smart_limit_filled_counter = Counter(
+    "mcbot_smart_limit_filled_total",
+    "Limit orders fully filled",
+    ["symbol"],
+)
+smart_limit_timeout_counter = Counter(
+    "mcbot_smart_limit_timeout_total",
+    "Limit orders timed out",
+    ["symbol"],
+)
+smart_market_fallback_counter = Counter(
+    "mcbot_smart_market_fallback_total",
+    "Market fallback after limit timeout/deviation",
+    ["symbol"],
+)
+smart_partial_fill_merged_counter = Counter(
+    "mcbot_smart_partial_fill_merged_total",
+    "Partial limit + market fills merged (VWAP)",
+    ["symbol"],
+)
+
+
+# ==========================================================================
+# SmartExecutorMetrics — SmartExecutor 계측 Protocol
+# ==========================================================================
+@runtime_checkable
+class SmartExecutorMetrics(Protocol):
+    """SmartExecutor 내부 이벤트 메트릭 콜백 Protocol.
+
+    SmartExecutor에 주입하여 관심사 분리.
+    """
+
+    def on_limit_placed(self, symbol: str) -> None:
+        """Limit 주문 배치."""
+        ...
+
+    def on_limit_filled(self, symbol: str) -> None:
+        """Limit 주문 완전 체결."""
+        ...
+
+    def on_limit_timeout(self, symbol: str) -> None:
+        """Limit 주문 타임아웃."""
+        ...
+
+    def on_market_fallback(self, symbol: str) -> None:
+        """Market fallback 발생."""
+        ...
+
+    def on_partial_fill_merged(self, symbol: str) -> None:
+        """Partial limit + market fill VWAP merge."""
+        ...
+
+
+class PrometheusSmartExecutorMetrics:
+    """Prometheus 기반 SmartExecutor 메트릭 콜백 구현."""
+
+    def on_limit_placed(self, symbol: str) -> None:
+        """Limit 배치 → counter 증가."""
+        smart_limit_placed_counter.labels(symbol=symbol).inc()
+
+    def on_limit_filled(self, symbol: str) -> None:
+        """Limit 체결 → counter 증가."""
+        smart_limit_filled_counter.labels(symbol=symbol).inc()
+
+    def on_limit_timeout(self, symbol: str) -> None:
+        """Limit 타임아웃 → counter 증가."""
+        smart_limit_timeout_counter.labels(symbol=symbol).inc()
+
+    def on_market_fallback(self, symbol: str) -> None:
+        """Market fallback → counter 증가."""
+        smart_market_fallback_counter.labels(symbol=symbol).inc()
+
+    def on_partial_fill_merged(self, symbol: str) -> None:
+        """Partial merge → counter 증가."""
+        smart_partial_fill_merged_counter.labels(symbol=symbol).inc()
+
+
+# ==========================================================================
 # Rejection reason 분류
 # ==========================================================================
 _REJECTION_REASON_MAP: dict[str, str] = {

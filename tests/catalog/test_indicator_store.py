@@ -125,7 +125,7 @@ class TestRealIndicatorCatalog:
             pytest.skip("catalogs/indicators.yaml not found")
         store = IndicatorCatalogStore(path=real_path)
         indicators = store.load_all()
-        assert len(indicators) == 54
+        assert len(indicators) == 72
 
     def test_all_categories_present(self) -> None:
         real_path = Path("catalogs/indicators.yaml")

@@ -109,6 +109,17 @@ class CostModel(BaseModel):
         """
         return self.taker_fee if self.use_taker else self.maker_fee
 
+    def effective_fee_for_order(self, *, is_limit: bool = False) -> float:
+        """주문 유형별 실효 수수료율.
+
+        Args:
+            is_limit: True → maker_fee, False → taker_fee
+
+        Returns:
+            적용될 수수료율
+        """
+        return self.maker_fee if is_limit else self.taker_fee
+
     @property
     def slip_rate(self) -> float:
         """슬리피지 + 시장충격 합산 (가격 악화용).

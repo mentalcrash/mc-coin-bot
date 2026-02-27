@@ -400,6 +400,74 @@ class TestEdgeCases:
         assert fills2[0].fill_timestamp == ts3
 
 
+class TestSmartExecution:
+    """BacktestExecutor smart_execution 모드 테스트."""
+
+    async def test_smart_execution_uses_maker_fee(self) -> None:
+        """smart_execution=True + 일반 주문: maker_fee 사용."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model, smart_execution=True)
+        executor.on_bar(_make_bar())
+
+        # 일반 주문 (price=None) → deferred
+        await executor.execute(_make_order(notional_usd=10000.0))
+        bar2 = _make_bar(open_price=50000.0)
+        executor.on_bar(bar2)
+        executor.fill_pending(bar2)
+
+        fills = executor.drain_fills()
+        assert len(fills) == 1
+        expected_fee = 10000.0 * cost_model.maker_fee  # maker fee
+        assert abs(fills[0].fee - expected_fee) < 0.01
+
+    async def test_smart_execution_sl_still_uses_taker_fee(self) -> None:
+        """smart_execution=True + SL(price 설정): taker_fee 유지."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model, smart_execution=True)
+        executor.on_bar(_make_bar())
+
+        fill = await executor.execute(_make_order(price=50000.0, notional_usd=10000.0))
+        assert fill is not None
+        expected_fee = 10000.0 * cost_model.effective_fee  # taker fee (default)
+        assert abs(fill.fee - expected_fee) < 0.01
+        # 슬리피지도 적용되어야 함
+        assert fill.fill_price > 50000.0  # BUY slippage
+
+    async def test_smart_execution_no_slippage_for_normal(self) -> None:
+        """smart_execution=True + 일반 주문: 슬리피지 0."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model, smart_execution=True)
+        executor.on_bar(_make_bar())
+
+        await executor.execute(_make_order(side="BUY", notional_usd=10000.0))
+        bar2 = _make_bar(open_price=50000.0)
+        executor.on_bar(bar2)
+        executor.fill_pending(bar2)
+
+        fills = executor.drain_fills()
+        assert len(fills) == 1
+        # smart_execution: 슬리피지 0 → 가격 그대로
+        assert fills[0].fill_price == 50000.0
+
+    async def test_non_smart_unchanged(self) -> None:
+        """smart_execution=False: 기존 동작 완전 보존."""
+        cost_model = CostModel.binance_futures()
+        executor = BacktestExecutor(cost_model=cost_model, smart_execution=False)
+        executor.on_bar(_make_bar())
+
+        await executor.execute(_make_order(notional_usd=10000.0))
+        bar2 = _make_bar(open_price=50000.0)
+        executor.on_bar(bar2)
+        executor.fill_pending(bar2)
+
+        fills = executor.drain_fills()
+        assert len(fills) == 1
+        expected_fee = 10000.0 * cost_model.effective_fee  # taker fee (default)
+        assert abs(fills[0].fee - expected_fee) < 0.01
+        # 슬리피지 적용됨
+        assert fills[0].fill_price > 50000.0
+
+
 class TestLiveExecutorSafetyChecks:
     """LiveExecutor: assert→if/raise 변환 검증."""
 

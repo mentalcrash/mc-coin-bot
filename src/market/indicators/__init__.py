@@ -151,6 +151,7 @@ __all__ = [
     "price_acceleration",
     "puell_multiple",
     "realized_volatility",
+    "risk_appetite_index",
     "roc",
     "rolling_kurtosis",
     "rolling_return",

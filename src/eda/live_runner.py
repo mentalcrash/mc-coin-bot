@@ -34,6 +34,7 @@ from src.eda.live_data_feed import LiveDataFeed
 from src.eda.oms import OMS
 from src.eda.portfolio_manager import EDAPortfolioManager
 from src.eda.risk_manager import EDARiskManager
+from src.eda.smart_executor import SmartExecutor
 from src.eda.strategy_engine import StrategyEngine
 from src.logging.tracing import setup_tracing, shutdown_tracing
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -175,7 +176,10 @@ class LiveRunner:
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
-        executor = BacktestExecutor(cost_model=config.cost_model)
+        executor = BacktestExecutor(
+            cost_model=config.cost_model,
+            smart_execution=config.smart_execution.enabled,
+        )
         runner = cls(
             strategy=strategy,
             feed=feed,
@@ -265,7 +269,14 @@ class LiveRunner:
             futures_client: Futures client (주문 실행용)
         """
         feed = LiveDataFeed(symbols, target_timeframe, client)
-        executor = LiveExecutor(futures_client)
+        live_executor = LiveExecutor(futures_client)
+        executor: LiveExecutor | SmartExecutor = live_executor
+        if config.smart_execution.enabled:
+            executor = SmartExecutor(
+                inner=live_executor,
+                config=config.smart_execution,
+                futures_client=futures_client,
+            )
         runner = cls(
             strategy=strategy,
             feed=feed,
@@ -338,7 +349,10 @@ class LiveRunner:
             client,
             target_timeframes=all_tfs if multi_tf else None,
         )
-        executor = BacktestExecutor(cost_model=pm_config.cost_model)
+        executor = BacktestExecutor(
+            cost_model=pm_config.cost_model,
+            smart_execution=pm_config.smart_execution.enabled,
+        )
 
         # Dummy strategy (LiveRunner 생성자 필수)
         dummy_strategy = TSMOMStrategy.from_params()
@@ -434,7 +448,14 @@ class LiveRunner:
             client,
             target_timeframes=all_tfs if multi_tf else None,
         )
-        executor = LiveExecutor(futures_client, hedge_mode=is_hedge)
+        live_executor = LiveExecutor(futures_client, hedge_mode=is_hedge)
+        executor: LiveExecutor | SmartExecutor = live_executor
+        if pm_config.smart_execution.enabled:
+            executor = SmartExecutor(
+                inner=live_executor,
+                config=pm_config.smart_execution,
+                futures_client=futures_client,
+            )
 
         # Dummy strategy
         dummy_strategy = TSMOMStrategy.from_params()
@@ -1256,7 +1277,7 @@ class LiveRunner:
                 bt_executor.on_bar(event)
 
             bus.subscribe(EventType.BAR, executor_bar_handler)
-        elif isinstance(self._executor, LiveExecutor):
+        elif isinstance(self._executor, (SmartExecutor, LiveExecutor)):
             self._executor.set_pm(pm)
 
     async def _register_and_warmup(
@@ -1653,6 +1674,11 @@ class LiveRunner:
             except Exception:
                 logger.warning("Pre-flight: Failed to check open orders for {}", symbol)
 
+        # 4. SmartExecutor: stale limit order cleanup
+        if isinstance(self._executor, SmartExecutor):
+            await self._executor.cleanup_stale_orders(self._symbols)
+            logger.info("Pre-flight: stale limit orders cleaned up")
+
         logger.info("Pre-flight checks PASSED — using exchange balance ${:.2f}", total_balance)
         return total_balance
 
@@ -1750,7 +1776,15 @@ class LiveRunner:
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
 
-        if isinstance(self._executor, LiveExecutor):
+        if isinstance(self._executor, SmartExecutor):
+            from src.monitoring.metrics import (
+                PrometheusLiveExecutorMetrics,
+                PrometheusSmartExecutorMetrics,
+            )
+
+            self._executor.inner.set_metrics(PrometheusLiveExecutorMetrics())
+            self._executor.set_smart_metrics(PrometheusSmartExecutorMetrics())
+        elif isinstance(self._executor, LiveExecutor):
             from src.monitoring.metrics import PrometheusLiveExecutorMetrics
 
             self._executor.set_metrics(PrometheusLiveExecutorMetrics())

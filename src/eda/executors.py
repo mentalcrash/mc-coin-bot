@@ -49,8 +49,9 @@ class BacktestExecutor:
         cost_model: 거래 비용 모델
     """
 
-    def __init__(self, cost_model: CostModel) -> None:
+    def __init__(self, cost_model: CostModel, *, smart_execution: bool = False) -> None:
         self._cost_model = cost_model
+        self._smart_execution = smart_execution
         # 심볼별 마지막 bar 가격/타임스탬프
         self._last_open: dict[str, float] = {}
         self._last_close: dict[str, float] = {}
@@ -136,8 +137,12 @@ class BacktestExecutor:
         if not math.isfinite(notional) or notional <= 0:
             return None
 
+        # smart_execution 모드: 일반 주문(price=None)은 maker fee + 슬리피지 0
+        # SL/TS(price!=None)는 긴급 = taker fee + 슬리피지 그대로
+        is_smart_normal = self._smart_execution and order.price is None
+
         # 슬리피지를 가격에 적용 (VBT parity: price deterioration)
-        slip = self._cost_model.slip_rate
+        slip = 0.0 if is_smart_normal else self._cost_model.slip_rate
         if order.side == "BUY":
             adjusted_price = fill_price * (1.0 + slip)
         else:
@@ -146,7 +151,12 @@ class BacktestExecutor:
         # SL/TS exit (order.price 설정): 수량은 원래 가격 기준 (전량 청산 보장)
         # 일반 entry/rebalance: 수량은 슬리피지 반영 가격 기준
         fill_qty = notional / fill_price if order.price is not None else notional / adjusted_price
-        fee = notional * self._cost_model.effective_fee
+        fee_rate = (
+            self._cost_model.effective_fee_for_order(is_limit=True)
+            if is_smart_normal
+            else self._cost_model.effective_fee
+        )
+        fee = notional * fee_rate
 
         return FillEvent(
             client_order_id=order.client_order_id,

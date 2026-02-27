@@ -253,7 +253,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "SOL/USDT",
                 "sharpe_ratio": 2.0,
-                "cagr": 0.5,
+                "cagr": 50.0,
                 "max_drawdown": 20.0,
                 "total_trades": 100,
                 "total_return": 200.0,
@@ -295,7 +295,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 0.8,
-                "cagr": 0.20,
+                "cagr": 20.0,
                 "max_drawdown": 30.0,
                 "total_trades": 50,
                 "total_return": 80.0,
@@ -332,7 +332,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "ETH/USDT",
                 "sharpe_ratio": 1.2,
-                "cagr": 0.12,
+                "cagr": 12.0,
                 "max_drawdown": 25.0,
                 "total_trades": 60,
                 "total_return": 48.0,
@@ -369,7 +369,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 0.5,
-                "cagr": 0.08,
+                "cagr": 8.0,
                 "max_drawdown": 30.0,
                 "total_trades": 50,
                 "total_return": 30.0,
@@ -406,7 +406,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "SOL/USDT",
                 "sharpe_ratio": 1.5,
-                "cagr": 0.25,
+                "cagr": 25.0,  # 25%
                 "max_drawdown": 55.0,
                 "total_trades": 80,
                 "total_return": 100.0,
@@ -442,7 +442,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 0.8,
-                "cagr": 0.12,
+                "cagr": 12.0,  # 12% — Path A need >15%, Path B need Sharpe >1.0
                 "max_drawdown": 30.0,
                 "total_trades": 50,
                 "total_return": 48.0,
@@ -480,7 +480,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 0.5,
-                "cagr": 0.05,
+                "cagr": 5.0,
                 "max_drawdown": 50.0,
                 "total_trades": 20,
                 "total_return": 10.0,
@@ -520,7 +520,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 1.0,
-                "cagr": 0.3,
+                "cagr": 30.0,
                 "max_drawdown": 25.0,
                 "total_trades": 60,
                 "total_return": 100.0,
@@ -532,7 +532,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "ETH/USDT",
                 "sharpe_ratio": 2.0,
-                "cagr": 0.5,
+                "cagr": 50.0,
                 "max_drawdown": 20.0,
                 "total_trades": 80,
                 "total_return": 200.0,
@@ -544,7 +544,7 @@ class TestUpdateYamlP4:
             {
                 "symbol": "SOL/USDT",
                 "sharpe_ratio": 1.5,
-                "cagr": 0.4,
+                "cagr": 40.0,
                 "max_drawdown": 30.0,
                 "total_trades": 70,
                 "total_return": 150.0,
@@ -886,7 +886,7 @@ class TestP4Triage:
             {
                 "symbol": "BTC/USDT",
                 "sharpe_ratio": 0.55,
-                "cagr": 0.08,
+                "cagr": 8.0,
                 "max_drawdown": 30.0,
                 "total_trades": 25,
                 "total_return": 30.0,

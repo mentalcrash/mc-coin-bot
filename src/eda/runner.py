@@ -76,7 +76,10 @@ class EDARunner:
 
         # feed/executor 생성
         self._feed: DataFeedPort = HistoricalDataFeed(data, target_timeframe=target_timeframe)
-        self._executor: ExecutorPort = BacktestExecutor(cost_model=config.cost_model)
+        self._executor: ExecutorPort = BacktestExecutor(
+            cost_model=config.cost_model,
+            smart_execution=config.smart_execution.enabled,
+        )
 
         # Components (run() 시 초기화)
         self._bus: EventBus | None = None
@@ -136,7 +139,10 @@ class EDARunner:
         return cls._from_adapters(
             strategy=strategy,
             feed=HistoricalDataFeed(data, target_timeframe=target_timeframe),
-            executor=BacktestExecutor(cost_model=config.cost_model),
+            executor=BacktestExecutor(
+                cost_model=config.cost_model,
+                smart_execution=config.smart_execution.enabled,
+            ),
             target_timeframe=target_timeframe,
             config=config,
             initial_capital=initial_capital,
