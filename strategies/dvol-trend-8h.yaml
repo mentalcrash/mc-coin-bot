@@ -1,0 +1,28 @@
+version: 2
+meta:
+  name: dvol-trend-8h
+  display_name: DVOL Regime Trend
+  category: Options-Filtered Trend
+  timeframe: 8H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-27'
+  retired_at: null
+  economic_rationale: 'Deribit DVOL percentile로 position sizing 동적 조절 + 8H multi-scale
+    DC. VRP 실패(교훈#80: GLOBAL적용)를 BTC/ETH 전용으로 해결.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 22
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점

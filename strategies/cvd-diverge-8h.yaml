@@ -1,0 +1,28 @@
+version: 2
+meta:
+  name: cvd-diverge-8h
+  display_name: CVD Divergence Trend
+  category: Microstructure
+  timeframe: 8H
+  short_mode: FULL
+  status: CANDIDATE
+  created_at: '2026-02-27'
+  retired_at: null
+  economic_rationale: Coinalyze 실제 CVD(aggressor side) 데이터로 가격-주문흐름 divergence 탐지.
+    BVC 근사(교훈#15 실패)와 달리 실제 order flow. BTC/ETH 전용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 22
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점

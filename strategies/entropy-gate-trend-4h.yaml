@@ -1,0 +1,28 @@
+version: 2
+meta:
+  name: entropy-gate-trend-4h
+  display_name: Entropy-Gated Trend
+  category: Information-Theoretic Trend
+  timeframe: 4H
+  short_mode: HEDGE_ONLY
+  status: CANDIDATE
+  created_at: '2026-02-27'
+  retired_at: null
+  economic_rationale: Sample Entropy로 시장 예측가능성 측정. 저엔트로피(추세)구간에서만 multi-scale DC 활성화,
+    고엔트로피(랜덤)구간 자동 flat. 거래빈도 50%+ 감소로 4H 비용벽 돌파.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 20
+      max_score: 30
+asset_performance: []
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 20/30점 (>=18 PASS)
