@@ -5,9 +5,9 @@ meta:
   category: Multi-Source Trend
   timeframe: 4H
   short_mode: FULL
-  status: CANDIDATE
+  status: RETIRED
   created_at: '2026-02-27'
-  retired_at: null
+  retired_at: '2026-02-27'
   economic_rationale: Macro(DXY/VIX/M2) z-score 합성으로 방향 결정, 4H multi-scale DC 돌파로
     진입. Macro gate가 거래빈도를 25-40/년으로 억제하여 4H 비용벽 돌파. 12H 채널과 낮은 상관(0.1-0.3) 기대.
   rationale_references: []
@@ -20,9 +20,23 @@ phases:
     details:
       score: 25
       max_score: 30
-asset_performance: []
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details: {}
+asset_performance:
+- symbol: BNB
+  sharpe: 0.75
+  cagr: 5.48
+  mdd: 0.0
+  trades: 0
 decisions:
 - date: '2026-02-27'
   phase: P1
   verdict: PASS
   rationale: 25/30점
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: Sharpe 0.75 best(BNB), CAGR 5.48%, 4H cost barrier + macro gate alpha
+    부족

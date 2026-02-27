@@ -1,0 +1,14 @@
+id: 87
+title: 4H TF 사망 재확인 — macro/entropy gate도 alpha 부족
+body: macro gate(DXY/VIX/M2)와 entropy gate(PermEn)로 4H 거래 빈도를 25-40회/년으로 줄여도 alpha
+  부족. macro-patience-4h best Sharpe 0.75(BNB), entropy-gate-trend-4h는 4/5 에셋 trades=0.
+  4H TF는 cost barrier 외에 signal quality 자체가 부족. 42개 4H + 7개 1H 총 49개 시도 → 0 ACTIVE
+  확정.
+category: data-resolution
+tags: []
+strategies:
+- macro-patience-4h
+- entropy-gate-trend-4h
+timeframes:
+- 4H
+added_at: '2026-02-27'

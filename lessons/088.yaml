@@ -1,0 +1,13 @@
+id: 88
+title: 대안데이터 graceful degradation ≠ alpha
+body: CVD/DVOL 없이 degraded 모드(pure EMA/Donchian)로는 alpha 불충분. cvd-diverge-8h MDD 52.54%,
+  dvol-trend-8h CAGR 8.75%. graceful degradation은 안정성이지 alpha가 아님. 유료 데이터(Coinalyze
+  CVD, Deribit DVOL) 확보 전까지 이 전략들은 검증 불가.
+category: strategy-design
+tags: []
+strategies:
+- cvd-diverge-8h
+- dvol-trend-8h
+timeframes:
+- 8H
+added_at: '2026-02-27'

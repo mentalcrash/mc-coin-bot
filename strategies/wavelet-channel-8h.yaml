@@ -20,9 +20,17 @@ phases:
     details:
       score: 23
       max_score: 30
+  P4:
+    status: PASS
+    date: '2026-02-27'
+    details: {}
 asset_performance: []
 decisions:
 - date: '2026-02-27'
   phase: P1
   verdict: PASS
   rationale: 23/30점
+- date: '2026-02-27'
+  phase: P4
+  verdict: PASS
+  rationale: 'Wavelet-denoised 8H tri-channel: 8H TF에서 유일하게 Sharpe > 1.0 달성'

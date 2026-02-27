@@ -5,9 +5,9 @@ meta:
   category: Options-Filtered Trend
   timeframe: 8H
   short_mode: HEDGE_ONLY
-  status: CANDIDATE
+  status: RETIRED
   created_at: '2026-02-27'
-  retired_at: null
+  retired_at: '2026-02-27'
   economic_rationale: 'Deribit DVOL percentile로 position sizing 동적 조절 + 8H multi-scale
     DC. VRP 실패(교훈#80: GLOBAL적용)를 BTC/ETH 전용으로 해결.'
   rationale_references: []
@@ -20,9 +20,22 @@ phases:
     details:
       score: 22
       max_score: 30
-asset_performance: []
+  P4:
+    status: FAIL
+    date: '2026-02-27'
+    details: {}
+asset_performance:
+- symbol: ETH
+  sharpe: 0.79
+  cagr: 8.75
+  mdd: 0.0
+  trades: 0
 decisions:
 - date: '2026-02-27'
   phase: P1
   verdict: PASS
   rationale: 22/30점
+- date: '2026-02-27'
+  phase: P4
+  verdict: FAIL
+  rationale: Sharpe 0.79 best(ETH), CAGR 8.75%, DVOL 데이터 없이 degraded pure Donchian
