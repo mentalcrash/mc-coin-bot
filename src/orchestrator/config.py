@@ -630,6 +630,84 @@ class OrchestratorConfig(BaseModel):
         description="Market Surveillance 설정 (None=비활성)",
     )
 
+    # Volatility Targeting Overlay
+    vol_target_enabled: bool = Field(
+        default=False,
+        description="Volatility targeting overlay 활성화",
+    )
+    vol_target_annual: float = Field(
+        default=0.15,
+        gt=0.0,
+        le=1.0,
+        description="목표 연간 변동성 (예: 0.15 = 15%)",
+    )
+    vol_target_lookback: int = Field(
+        default=60,
+        ge=5,
+        description="실현 변동성 계산 lookback (일)",
+    )
+    vol_target_floor: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+        description="최소 투자 비율 (vol scalar 하한)",
+    )
+    vol_target_cap: float = Field(
+        default=1.5,
+        ge=1.0,
+        le=5.0,
+        description="최대 투자 비율 (vol scalar 상한)",
+    )
+
+    # Regime-Adaptive Cash Buffer
+    cash_buffer_enabled: bool = Field(
+        default=False,
+        description="ADX 기반 regime cash buffer 활성화",
+    )
+    cash_buffer_adx_period: int = Field(
+        default=14,
+        ge=5,
+        le=50,
+        description="ADX 계산 기간",
+    )
+    cash_buffer_trend_threshold: float = Field(
+        default=25.0,
+        ge=0.0,
+        le=100.0,
+        description="ADX ≥ 이 값이면 풀 투자 (cash buffer = 0)",
+    )
+    cash_buffer_range_threshold: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=100.0,
+        description="ADX ≤ 이 값이면 최대 현금 보유",
+    )
+    cash_buffer_max: float = Field(
+        default=0.40,
+        ge=0.0,
+        le=0.90,
+        description="최대 현금 비중 (최소 10% 투자 보장)",
+    )
+
+    @model_validator(mode="after")
+    def validate_cash_buffer_thresholds(self) -> Self:
+        """Cash buffer ADX threshold 일관성 검증.
+
+        Raises:
+            ValueError: range_threshold >= trend_threshold
+        """
+        if (
+            self.cash_buffer_enabled
+            and self.cash_buffer_range_threshold >= self.cash_buffer_trend_threshold
+        ):
+            msg = (
+                f"cash_buffer_range_threshold ({self.cash_buffer_range_threshold}) "
+                f"must be less than cash_buffer_trend_threshold "
+                f"({self.cash_buffer_trend_threshold})"
+            )
+            raise ValueError(msg)
+        return self
+
     @model_validator(mode="after")
     def validate_pods(self) -> Self:
         """Pod 설정 일관성 검증.

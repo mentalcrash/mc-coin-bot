@@ -2,6 +2,7 @@
 
 Commands:
     - backtest: Orchestrator 멀티전략 백테스트 실행
+    - compare-allocations: 4가지 배분 방법 비교 백테스트
     - paper: Paper 모드 실시간 실행
     - live: Live 모드 실주문 실행
 
@@ -366,6 +367,76 @@ def backtest(
 
     if report:
         _generate_orchestrated_report(result, run_cfg, loaded_symbols, target_tf)
+
+
+@app.command()
+def compare_allocations(
+    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
+    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
+) -> None:
+    """Compare 4 allocation methods (EW, InvVol, RiskParity, AdaptiveKelly).
+
+    동일 데이터로 4가지 배분 방법을 비교 백테스트하여
+    최적 방법을 선택할 수 있습니다.
+    """
+    from src.orchestrator.allocation_comparator import compare_allocations as run_comparison
+
+    setup_logger(console_level="DEBUG" if verbose else "WARNING")
+
+    run_cfg = load_orchestrator_config(config_path)
+    orch_config = run_cfg.orchestrator
+    settings = get_settings()
+
+    tf = run_cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
+    all_symbols = orch_config.all_symbols
+
+    start_dt = datetime.strptime(run_cfg.backtest.start, "%Y-%m-%d").replace(tzinfo=UTC)
+    end_dt = datetime.strptime(run_cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
+
+    service = MarketDataService(settings)
+    data, loaded_symbols = _load_orchestrator_data(service, all_symbols, start_dt, end_dt)
+
+    console.print(
+        f"[bold cyan]Comparing 4 allocation methods: {len(loaded_symbols)} symbols, 1m → {target_tf}[/bold cyan]"
+    )
+
+    results = run_comparison(
+        orch_config=orch_config,
+        data=data,
+        target_tf=target_tf,
+        initial_capital=run_cfg.backtest.capital,
+    )
+
+    # Rich Table 출력
+    table = Table(title="Allocation Method Comparison")
+    table.add_column("Method", style="cyan")
+    table.add_column("Sharpe", justify="right")
+    table.add_column("MDD", style="red", justify="right")
+    table.add_column("CAGR", style="green", justify="right")
+    table.add_column("Calmar", justify="right")
+    table.add_column("Total Return", style="green", justify="right")
+
+    best_sharpe = results[0].sharpe if results else 0.0
+
+    for r in results:
+        style = "bold" if r.sharpe == best_sharpe else ""
+        table.add_row(
+            r.method,
+            f"{r.sharpe:.4f}",
+            f"{r.mdd:.2f}%",
+            f"{r.cagr:.2f}%",
+            f"{r.calmar:.4f}",
+            f"{r.total_return:.2f}%",
+            style=style,
+        )
+
+    console.print(table)
+
+    if results:
+        console.print(
+            f"\n[bold green]Best: {results[0].method} (Sharpe {results[0].sharpe:.4f})[/bold green]"
+        )
 
 
 @app.command()

@@ -55,9 +55,23 @@ orchestrator:
   netting_mode: hedge                   # Pod별 독립 포지션 (넷팅 없음)
 
   # ── Allocation ──────────────────────────────────────────────
-  allocation_method: inverse_volatility  # 변동성 역수 가중 → 리스크 균등화
+  allocation_method: risk_parity         # Spinu(2013) 리스크 기여도 균등 배분
   kelly_fraction: 0.25
   kelly_confidence_ramp: 180
+
+  # ── Volatility Targeting Overlay ──────────────────────────
+  vol_target_enabled: true
+  vol_target_annual: 0.15                # 15% 연간 목표 변동성
+  vol_target_lookback: 60                # 60일 lookback
+  vol_target_floor: 0.10                 # 최소 10% 투자
+  vol_target_cap: 1.5                    # 최대 150% 투자
+
+  # ── Regime Cash Buffer ────────────────────────────────────
+  cash_buffer_enabled: true
+  cash_buffer_adx_period: 14
+  cash_buffer_trend_threshold: 25.0      # ADX ≥ 25 → 풀 투자
+  cash_buffer_range_threshold: 20.0      # ADX ≤ 20 → 최대 현금
+  cash_buffer_max: 0.40                  # 최대 40% 현금
 
   # ── Rebalance ───────────────────────────────────────────────
   rebalance_trigger: hybrid

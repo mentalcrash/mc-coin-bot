@@ -136,6 +136,10 @@ class StrategyOrchestrator:
         # Asset close price history for correlation (Pod < 3 보완)
         self._close_price_history: dict[str, list[float]] = {}
 
+        # High/Low price history for ADX regime filter
+        self._high_price_history: dict[str, list[float]] = {}
+        self._low_price_history: dict[str, list[float]] = {}
+
         # History 추적
         self._allocation_history: list[dict[str, object]] = []
         self._lifecycle_events: list[dict[str, object]] = []
@@ -161,8 +165,10 @@ class StrategyOrchestrator:
 
     # ── Event Handlers ───────────────────────────────────────────
 
-    def _update_close_price_tracking(self, symbol: str, close: float, bar_date: date) -> None:
-        """Day boundary 감지 + close price 저장 + correlation history 관리."""
+    def _update_price_tracking(
+        self, symbol: str, high: float, low: float, close: float, bar_date: date
+    ) -> None:
+        """Day boundary 감지 + OHLC price 저장 + correlation/regime history 관리."""
         if self._last_day_date is not None and bar_date != self._last_day_date:
             self._pending_day_change = True
             self._day_end_close_prices = dict(self._last_close_prices)
@@ -170,12 +176,28 @@ class StrategyOrchestrator:
 
         self._last_close_prices[symbol] = close
 
+        lookback = self._config.correlation_lookback
+
+        # Close history
         if symbol not in self._close_price_history:
             self._close_price_history[symbol] = []
         self._close_price_history[symbol].append(close)
-        lookback = self._config.correlation_lookback
         if len(self._close_price_history[symbol]) > lookback:
             self._close_price_history[symbol] = self._close_price_history[symbol][-lookback:]
+
+        # High history (regime filter용)
+        if symbol not in self._high_price_history:
+            self._high_price_history[symbol] = []
+        self._high_price_history[symbol].append(high)
+        if len(self._high_price_history[symbol]) > lookback:
+            self._high_price_history[symbol] = self._high_price_history[symbol][-lookback:]
+
+        # Low history (regime filter용)
+        if symbol not in self._low_price_history:
+            self._low_price_history[symbol] = []
+        self._low_price_history[symbol].append(low)
+        if len(self._low_price_history[symbol]) > lookback:
+            self._low_price_history[symbol] = self._low_price_history[symbol][-lookback:]
 
     async def _on_bar(self, event: AnyEvent) -> None:
         """BarEvent 핸들러: Pod 라우팅 → 시그널 수집 → 넷팅."""
@@ -188,8 +210,8 @@ class StrategyOrchestrator:
 
         symbol = bar.symbol
 
-        # Day boundary detection + close price 추적
-        self._update_close_price_tracking(symbol, bar.close, bar.bar_timestamp.date())
+        # Day boundary detection + OHLC price 추적
+        self._update_price_tracking(symbol, bar.high, bar.low, bar.close, bar.bar_timestamp.date())
 
         # 1. 새 bar_timestamp → 이전 배치 flush
         if self._pending_bar_ts is not None and bar.bar_timestamp != self._pending_bar_ts:
@@ -548,6 +570,9 @@ class StrategyOrchestrator:
         # Apply turnover constraints (clamp per-pod and total delta)
         new_weights = self._apply_turnover_constraints(new_weights)
 
+        # Portfolio overlays (vol targeting + cash buffer)
+        new_weights = self._apply_portfolio_overlays(new_weights, pod_returns_data)
+
         # Turnover filter: skip if total turnover is below threshold
         total_turnover = sum(
             abs(new_weights.get(pod.pod_id, 0.0) - pod.capital_fraction)
@@ -601,6 +626,49 @@ class StrategyOrchestrator:
         # Risk 한도 검사 + history 기록
         net_weights = self._compute_current_net_weights()
         self._check_risk_limits(pod_returns, net_weights=net_weights)
+
+    def _apply_portfolio_overlays(
+        self,
+        weights: dict[str, float],
+        pod_returns_data: dict[str, list[float]],
+    ) -> dict[str, float]:
+        """Volatility targeting + Regime cash buffer overlay 적용."""
+        if self._config.vol_target_enabled:
+            from src.orchestrator.vol_targeting import apply_vol_targeting
+
+            weights, vol_scalar = apply_vol_targeting(
+                weights=weights,
+                pod_returns=pod_returns_data,
+                target_vol=self._config.vol_target_annual,
+                lookback=self._config.vol_target_lookback,
+                floor=self._config.vol_target_floor,
+                cap=self._config.vol_target_cap,
+            )
+            logger.debug("Vol targeting: scalar={:.3f}", vol_scalar)
+
+        if self._config.cash_buffer_enabled:
+            from src.orchestrator.regime_filter import (
+                apply_cash_buffer,
+                compute_regime_cash_buffer,
+            )
+
+            cash_buffer, avg_adx = compute_regime_cash_buffer(
+                price_histories=self._close_price_history,
+                high_histories=self._high_price_history,
+                low_histories=self._low_price_history,
+                adx_period=self._config.cash_buffer_adx_period,
+                trend_threshold=self._config.cash_buffer_trend_threshold,
+                range_threshold=self._config.cash_buffer_range_threshold,
+                max_cash_buffer=self._config.cash_buffer_max,
+            )
+            weights = apply_cash_buffer(weights, cash_buffer)
+            logger.debug(
+                "Cash buffer: avg_adx={:.1f}, buffer={:.2%}",
+                avg_adx,
+                cash_buffer,
+            )
+
+        return weights
 
     def _apply_turnover_constraints(self, new_weights: dict[str, float]) -> dict[str, float]:
         """Pod별/전체 턴오버를 제약합니다.
