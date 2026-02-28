@@ -467,3 +467,70 @@ groups:
         annotations:
           summary: "Surveillance universe has fewer than 5 assets ({{ $value | printf \"%.0f\" }})"
           description: "Market surveillance universe is critically small. Check volume filters and market conditions."
+
+      # ================================================================
+      # 42-47. Unified Data Feed Alerts
+      # ================================================================
+
+      # 42. 통합 데이터 피드 실패율 50% 초과 — 24시간 기준, 1시간 유지
+      - alert: DataFeedFetchHighFailureRate
+        expr: >-
+          rate(mcbot_datafeed_fetch_total{status="failure"}[24h])
+          / rate(mcbot_datafeed_fetch_total[24h]) > 0.5
+          and rate(mcbot_datafeed_fetch_total[24h]) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data feed {{ $labels.feed }}/{{ $labels.source }} failure rate > 50%"
+          description: "Feed {{ $labels.feed }} source {{ $labels.source }} failure rate exceeds 50% over the last 24 hours."
+
+      # 43. 데이터 피드 48시간 이상 미갱신
+      - alert: DataFeedStale
+        expr: time() - mcbot_datafeed_last_success_timestamp > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data feed {{ $labels.feed }}/{{ $labels.source }} stale (> 48h)"
+          description: "Feed {{ $labels.feed }} source {{ $labels.source }} has not been updated for over 48 hours."
+
+      # 44. 데이터 피드 캐시 0개 — 30분 유지
+      - alert: DataFeedCacheEmpty
+        expr: mcbot_datafeed_cache_size == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data feed cache empty for {{ $labels.feed }}/{{ $labels.symbol }}"
+          description: "Feed {{ $labels.feed }} cache has 0 columns for {{ $labels.symbol }} for over 30 minutes."
+
+      # 45. 데이터 피드 fetch P95 지연시간 60초 초과
+      - alert: DataFeedFetchSlow
+        expr: histogram_quantile(0.95, rate(mcbot_datafeed_fetch_latency_seconds_bucket[1h])) > 60
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Data feed {{ $labels.feed }}/{{ $labels.source }} slow (P95: {{ $value | printf \"%.1f\" }}s)"
+          description: "Feed {{ $labels.feed }} source {{ $labels.source }} P95 latency exceeds 60 seconds."
+
+      # 46. Derivatives 피드 4시간 미갱신
+      - alert: DerivativesFeedStale
+        expr: time() - mcbot_datafeed_last_success_timestamp{feed="derivatives"} > 14400
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Derivatives feed stale for {{ $labels.source }} (> 4h)"
+          description: "Derivatives data source {{ $labels.source }} has not been updated for over 4 hours."
+
+      # 47. Options 피드 2시간 미갱신
+      - alert: OptionsFeedStale
+        expr: time() - mcbot_datafeed_last_success_timestamp{feed="options"} > 7200
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Options feed stale for {{ $labels.source }} (> 2h)"
+          description: "Options data source {{ $labels.source }} has not been updated for over 2 hours."

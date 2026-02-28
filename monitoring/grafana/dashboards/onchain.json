@@ -9,8 +9,19 @@
     "list": [
       {
         "current": { "text": "All", "value": "$__all" },
-        "definition": "label_values(mcbot_onchain_fetch_total, source)",
-        "query": "label_values(mcbot_onchain_fetch_total, source)",
+        "definition": "label_values(mcbot_datafeed_fetch_total, feed)",
+        "query": "label_values(mcbot_datafeed_fetch_total, feed)",
+        "name": "feed",
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "datasource": { "type": "prometheus", "uid": "prometheus" }
+      },
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "definition": "label_values(mcbot_datafeed_fetch_total{feed=~\"$feed\"}, source)",
+        "query": "label_values(mcbot_datafeed_fetch_total{feed=~\"$feed\"}, source)",
         "name": "source",
         "type": "query",
         "refresh": 2,
@@ -22,35 +33,99 @@
   },
   "panels": [
     {
-      "title": "Row 1: Fetch Health",
+      "title": "Row 0: Overview",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "collapsed": false
     },
     {
-      "title": "Fetch Rate",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "title": "Active Feeds",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
       "targets": [
-        { "expr": "rate(mcbot_onchain_fetch_total{source=~\"$source\"}[1h])", "legendFormat": "{{source}} ({{status}})", "refId": "A" }
+        { "expr": "count(count by (feed) (mcbot_datafeed_fetch_total))", "legendFormat": "", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "green", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Total Fetch Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
+      "targets": [
+        { "expr": "sum(rate(mcbot_datafeed_fetch_total[1h]))", "legendFormat": "", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Failure Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(mcbot_datafeed_fetch_total{status=\"failure\"}[1h])) / sum(rate(mcbot_datafeed_fetch_total[1h]))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.2 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Row 1: Fetch Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "title": "Fetch Rate by Feed",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "rate(mcbot_datafeed_fetch_total{feed=~\"$feed\", source=~\"$source\"}[1h])", "legendFormat": "{{feed}}/{{source}} ({{status}})", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
     },
     {
       "title": "Fetch Latency P95",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
       "targets": [
-        { "expr": "histogram_quantile(0.95, rate(mcbot_onchain_fetch_latency_seconds_bucket{source=~\"$source\"}[1h]))", "legendFormat": "P95 {{source}}", "refId": "A" }
+        { "expr": "histogram_quantile(0.95, rate(mcbot_datafeed_fetch_latency_seconds_bucket{feed=~\"$feed\", source=~\"$source\"}[1h]))", "legendFormat": "P95 {{feed}}/{{source}}", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
     },
     {
       "title": "Rows per Source",
       "type": "bargauge",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
       "targets": [
-        { "expr": "mcbot_onchain_fetch_rows{source=~\"$source\"}", "legendFormat": "{{source}} / {{name}}", "refId": "A" }
+        { "expr": "mcbot_datafeed_fetch_rows{feed=~\"$feed\", source=~\"$source\"}", "legendFormat": "{{feed}}/{{source}}/{{name}}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -67,17 +142,17 @@
       "options": { "orientation": "horizontal", "displayMode": "gradient" }
     },
     {
-      "title": "Row 2: Cache",
+      "title": "Row 2: Data Freshness",
       "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "collapsed": false
     },
     {
       "title": "Last Success Age",
       "type": "stat",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
       "targets": [
-        { "expr": "time() - mcbot_onchain_last_success_timestamp{source=~\"$source\"}", "legendFormat": "{{source}}", "refId": "A" }
+        { "expr": "time() - mcbot_datafeed_last_success_timestamp{feed=~\"$feed\", source=~\"$source\"}", "legendFormat": "{{feed}}/{{source}}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -95,18 +170,25 @@
       }
     },
     {
-      "title": "Cache Size per Symbol",
+      "title": "Row 3: Cache",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "title": "Cache Size per Feed x Symbol",
       "type": "bargauge",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "targets": [
-        { "expr": "mcbot_onchain_cache_size", "legendFormat": "{{symbol}}", "refId": "A" }
+        { "expr": "mcbot_datafeed_cache_size{feed=~\"$feed\"}", "legendFormat": "{{feed}} / {{symbol}}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
+              { "color": "red", "value": null },
+              { "color": "blue", "value": 1 },
               { "color": "green", "value": 5 }
             ]
           }
@@ -118,19 +200,66 @@
     {
       "title": "Cache Refresh Rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "targets": [
-        { "expr": "rate(mcbot_onchain_cache_refresh_total[1h])", "legendFormat": "{{status}}", "refId": "A" }
+        { "expr": "rate(mcbot_datafeed_cache_refresh_total{feed=~\"$feed\"}[1h])", "legendFormat": "{{feed}} ({{status}})", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Row 4: On-chain Detail (Legacy)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "collapsed": true,
+      "panels": [
+        {
+          "title": "On-chain Fetch Rate (Legacy)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
+          "targets": [
+            { "expr": "rate(mcbot_onchain_fetch_total[1h])", "legendFormat": "{{source}} ({{status}})", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+        },
+        {
+          "title": "On-chain Cache Size (Legacy)",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
+          "targets": [
+            { "expr": "mcbot_onchain_cache_size", "legendFormat": "{{symbol}}", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "blue", "value": null },
+                  { "color": "green", "value": 5 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "orientation": "horizontal", "displayMode": "gradient" }
+        },
+        {
+          "title": "On-chain Cache Refresh (Legacy)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
+          "targets": [
+            { "expr": "rate(mcbot_onchain_cache_refresh_total[1h])", "legendFormat": "{{status}}", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
-  "tags": ["trading", "mc-coin-bot", "onchain"],
+  "tags": ["trading", "mc-coin-bot", "data-feeds"],
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "utc",
-  "title": "MC Coin Bot — On-chain Data",
-  "uid": "mc-onchain",
-  "version": 1
+  "title": "MC Coin Bot — Data Feeds",
+  "uid": "mc-datafeeds",
+  "version": 2
 }

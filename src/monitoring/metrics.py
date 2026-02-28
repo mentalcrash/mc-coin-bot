@@ -224,6 +224,41 @@ surveillance_assets_dropped = Counter(
 )
 
 # ==========================================================================
+# Layer 11: Unified Data Feeds
+# ==========================================================================
+datafeed_fetch_total = Counter(
+    "mcbot_datafeed_fetch_total",
+    "Data feed fetch attempts",
+    ["feed", "source", "status"],  # feed: onchain|derivatives|macro|options|deriv_ext
+)
+datafeed_fetch_latency_histogram = Histogram(
+    "mcbot_datafeed_fetch_latency_seconds",
+    "Fetch latency",
+    ["feed", "source"],
+    buckets=(0.5, 1, 2.5, 5, 10, 30, 60, 120),
+)
+datafeed_fetch_rows_gauge = Gauge(
+    "mcbot_datafeed_fetch_rows",
+    "Rows from last fetch",
+    ["feed", "source", "name"],
+)
+datafeed_last_success_gauge = Gauge(
+    "mcbot_datafeed_last_success_timestamp",
+    "Last success Unix ts",
+    ["feed", "source"],
+)
+datafeed_cache_size_gauge = Gauge(
+    "mcbot_datafeed_cache_size",
+    "Cached columns per feed+symbol",
+    ["feed", "symbol"],
+)
+datafeed_cache_refresh_total = Counter(
+    "mcbot_datafeed_cache_refresh_total",
+    "Cache refresh count",
+    ["feed", "status"],
+)
+
+# ==========================================================================
 # Meta
 # ==========================================================================
 bot_info = Info("mcbot", "Bot metadata")

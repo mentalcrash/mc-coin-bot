@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
+
+from src.eda._feed_metrics import (
+    inc_feed_cache_refresh,
+    record_feed_fetch,
+    update_feed_cache_metrics,
+)
 
 if TYPE_CHECKING:
     from src.data.macro.client import AsyncCoinGeckoClient, AsyncMacroClient
@@ -201,6 +208,17 @@ class LiveMacroFeed:
         """최신 캐시된 GLOBAL 값 반환."""
         return self._cache if self._cache else None
 
+    def get_health_status(self) -> dict[str, int]:
+        """Heartbeat용 macro 캐시 상태."""
+        return {
+            "symbols_cached": 1 if self._cache else 0,
+            "total_columns": len(self._cache),
+        }
+
+    def update_cache_metrics(self) -> None:
+        """Prometheus gauge에 캐시 크기 갱신."""
+        update_feed_cache_metrics("macro", self._cache)
+
     def _load_cache(self) -> None:
         """Silver 데이터에서 최신 행을 캐시에 로드."""
         from src.data.macro.storage import MacroSilverProcessor
@@ -253,18 +271,24 @@ class LiveMacroFeed:
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         start = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+        any_success = False
 
         for name, cache_key in _FRED_CACHE_KEYS.items():
+            t0 = time.monotonic()
             try:
                 df = await self._fetcher.fetch_fred_series(name, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch("macro", "fred", name, time.monotonic() - t0, status, len(df))
                 if not df.empty:
-                    # FRED "." → None은 fetch_fred_series에서 처리됨
                     last = df.iloc[-1]
                     if last["value"] is not None:
                         self._cache[cache_key] = float(last["value"])
+                        any_success = True
             except Exception as e:
+                record_feed_fetch("macro", "fred", name, time.monotonic() - t0, "failure", 0)
                 logger.warning("FRED {} polling error: {}", name, e)
 
+        inc_feed_cache_refresh("macro", "success" if any_success else "failure")
         logger.debug("LiveMacroFeed FRED poll done")
 
     async def _poll_yfinance(self) -> None:
@@ -288,15 +312,22 @@ class LiveMacroFeed:
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         start = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+        any_success = False
 
         for name, cache_key in _YF_CACHE_KEYS.items():
+            t0 = time.monotonic()
             try:
                 df = await self._fetcher.fetch_yfinance_ticker(name, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch("macro", "yfinance", name, time.monotonic() - t0, status, len(df))
                 if not df.empty:
                     self._cache[cache_key] = float(df.iloc[-1]["close"])
+                    any_success = True
             except Exception as e:
+                record_feed_fetch("macro", "yfinance", name, time.monotonic() - t0, "failure", 0)
                 logger.warning("yfinance {} polling error: {}", name, e)
 
+        inc_feed_cache_refresh("macro", "success" if any_success else "failure")
         logger.debug("LiveMacroFeed yfinance poll done")
 
     async def _poll_coingecko(self) -> None:
@@ -316,24 +347,44 @@ class LiveMacroFeed:
     async def _fetch_coingecko(self) -> None:
         """CoinGecko 단일 사이클."""
         assert self._fetcher is not None
+        any_success = False
 
         # Global metrics
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_coingecko_global()
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "macro", "coingecko", "global_metrics", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 self._cache["macro_btc_dom"] = float(last["btc_dominance"])
                 self._cache["macro_total_mcap"] = float(last["total_market_cap_usd"])
+                any_success = True
         except Exception as e:
+            record_feed_fetch(
+                "macro", "coingecko", "global_metrics", time.monotonic() - t0, "failure", 0
+            )
             logger.warning("CoinGecko global polling error: {}", e)
 
         # DeFi metrics
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_coingecko_defi()
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "macro", "coingecko", "defi_global", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 self._cache["macro_defi_dom"] = float(last["defi_dominance"])
+                any_success = True
         except Exception as e:
+            record_feed_fetch(
+                "macro", "coingecko", "defi_global", time.monotonic() - t0, "failure", 0
+            )
             logger.warning("CoinGecko defi polling error: {}", e)
 
+        inc_feed_cache_refresh("macro", "success" if any_success else "failure")
         logger.debug("LiveMacroFeed CoinGecko poll done")

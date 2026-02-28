@@ -13,10 +13,17 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
+
+from src.eda._feed_metrics import (
+    inc_feed_cache_refresh,
+    record_feed_fetch,
+    update_feed_cache_metrics,
+)
 
 if TYPE_CHECKING:
     from src.exchange.binance_futures_client import BinanceFuturesClient
@@ -126,21 +133,53 @@ class LiveDerivativesFeed:
         """최신 캐시된 값 반환."""
         return self._cache.get(symbol)
 
+    def get_health_status(self) -> dict[str, int]:
+        """Heartbeat용 derivatives 캐시 상태."""
+        return {
+            "symbols_cached": len(self._cache),
+            "total_columns": sum(len(c) for c in self._cache.values()),
+        }
+
+    def update_cache_metrics(self) -> None:
+        """Prometheus gauge에 캐시 크기 갱신."""
+        update_feed_cache_metrics("derivatives", self._cache)
+
     # === Internal polling ===
 
     async def _poll_funding_rates(self) -> None:
         """Funding Rate polling (8h 주기)."""
         while not self._shutdown.is_set():
+            any_success = False
             for symbol in self._symbols:
+                t0 = time.monotonic()
                 try:
                     raw = await self._client.fetch_funding_rate_history(symbol, limit=1)
+                    status = "success" if raw else "empty"
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "funding_rate",
+                        time.monotonic() - t0,
+                        status,
+                        len(raw) if raw else 0,
+                    )
                     if raw:
                         item = raw[-1]
                         cache = self._cache.setdefault(symbol, {})
                         cache["funding_rate"] = float(item.get("fundingRate", 0))
                         cache["mark_price"] = float(item.get("markPrice", item.get("price", 0)))
+                        any_success = True
                 except Exception as e:
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "funding_rate",
+                        time.monotonic() - t0,
+                        "failure",
+                        0,
+                    )
                     logger.warning("FR polling error for {}: {}", symbol, e)
+            inc_feed_cache_refresh("derivatives", "success" if any_success else "failure")
             try:
                 await asyncio.wait_for(
                     self._shutdown.wait(),
@@ -153,18 +192,39 @@ class LiveDerivativesFeed:
     async def _poll_open_interest(self) -> None:
         """Open Interest polling (1h 주기)."""
         while not self._shutdown.is_set():
+            any_success = False
             for symbol in self._symbols:
+                t0 = time.monotonic()
                 try:
                     raw = await self._client.fetch_open_interest_history(
                         symbol, period="1h", limit=1
+                    )
+                    status = "success" if raw else "empty"
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "open_interest",
+                        time.monotonic() - t0,
+                        status,
+                        len(raw) if raw else 0,
                     )
                     if raw:
                         item = raw[-1]
                         cache = self._cache.setdefault(symbol, {})
                         cache["open_interest"] = float(item.get("sumOpenInterest", 0))
                         cache["oi_value"] = float(item.get("sumOpenInterestValue", 0))
+                        any_success = True
                 except Exception as e:
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "open_interest",
+                        time.monotonic() - t0,
+                        "failure",
+                        0,
+                    )
                     logger.warning("OI polling error for {}: {}", symbol, e)
+            inc_feed_cache_refresh("derivatives", "success" if any_success else "failure")
             try:
                 await asyncio.wait_for(
                     self._shutdown.wait(),
@@ -177,7 +237,9 @@ class LiveDerivativesFeed:
     async def _poll_ratios(self) -> None:
         """LS Ratio + Taker Ratio polling (1h 주기)."""
         while not self._shutdown.is_set():
+            any_success = False
             for symbol in self._symbols:
+                t0 = time.monotonic()
                 try:
                     # LS Ratio
                     ls_raw = await self._client.fetch_long_short_ratio(symbol, period="1h", limit=1)
@@ -220,8 +282,27 @@ class LiveDerivativesFeed:
                         cache["top_pos_ls_ratio"] = float(item.get("longShortRatio", 0))
                         cache["top_pos_long_pct"] = float(item.get("longAccount", 0))
                         cache["top_pos_short_pct"] = float(item.get("shortAccount", 0))
+
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "ratios",
+                        time.monotonic() - t0,
+                        "success",
+                        1,
+                    )
+                    any_success = True
                 except Exception as e:
+                    record_feed_fetch(
+                        "derivatives",
+                        "binance_futures",
+                        "ratios",
+                        time.monotonic() - t0,
+                        "failure",
+                        0,
+                    )
                     logger.warning("Ratio polling error for {}: {}", symbol, e)
+            inc_feed_cache_refresh("derivatives", "success" if any_success else "failure")
             try:
                 await asyncio.wait_for(
                     self._shutdown.wait(),

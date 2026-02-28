@@ -12,10 +12,17 @@ Rules Applied:
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
+
+from src.eda._feed_metrics import (
+    inc_feed_cache_refresh,
+    record_feed_fetch,
+    update_feed_cache_metrics,
+)
 
 if TYPE_CHECKING:
     from src.data.options.client import AsyncOptionsClient
@@ -147,6 +154,17 @@ class LiveOptionsFeed:
         """최신 캐시된 GLOBAL 값 반환."""
         return self._cache if self._cache else None
 
+    def get_health_status(self) -> dict[str, int]:
+        """Heartbeat용 options 캐시 상태."""
+        return {
+            "symbols_cached": 1 if self._cache else 0,
+            "total_columns": len(self._cache),
+        }
+
+    def update_cache_metrics(self) -> None:
+        """Prometheus gauge에 캐시 크기 갱신."""
+        update_feed_cache_metrics("options", self._cache)
+
     def _load_cache(self) -> None:
         """Silver 데이터에서 최신 행을 캐시에 로드."""
         from src.data.options.storage import OptionsSilverProcessor
@@ -198,31 +216,54 @@ class LiveOptionsFeed:
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         start = (datetime.now(UTC) - timedelta(days=3)).strftime("%Y-%m-%d")
+        any_success = False
 
         # BTC DVOL
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_dvol("BTC", start=start, end=today)
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "options", "deribit", "btc_dvol", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 self._cache["opt_btc_dvol"] = float(df.iloc[-1]["close"])
+                any_success = True
         except Exception as e:
+            record_feed_fetch("options", "deribit", "btc_dvol", time.monotonic() - t0, "failure", 0)
             logger.warning("Options DVOL BTC polling error: {}", e)
 
         # ETH DVOL
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_dvol("ETH", start=start, end=today)
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "options", "deribit", "eth_dvol", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 self._cache["opt_eth_dvol"] = float(df.iloc[-1]["close"])
+                any_success = True
         except Exception as e:
+            record_feed_fetch("options", "deribit", "eth_dvol", time.monotonic() - t0, "failure", 0)
             logger.warning("Options DVOL ETH polling error: {}", e)
 
         # PC Ratio
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_pc_ratio("BTC")
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "options", "deribit", "pc_ratio", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 self._cache["opt_btc_pc_ratio"] = float(df.iloc[-1]["pc_ratio"])
+                any_success = True
         except Exception as e:
+            record_feed_fetch("options", "deribit", "pc_ratio", time.monotonic() - t0, "failure", 0)
             logger.warning("Options PC Ratio polling error: {}", e)
 
+        inc_feed_cache_refresh("options", "success" if any_success else "failure")
         logger.debug("LiveOptionsFeed DVOL/PCR poll done")
 
     async def _poll_vol_term(self) -> None:
@@ -242,25 +283,43 @@ class LiveOptionsFeed:
     async def _fetch_vol_term(self) -> None:
         """Hist Vol + Term Structure 단일 사이클."""
         assert self._fetcher is not None
+        any_success = False
 
         # Historical Volatility
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_hist_vol("BTC")
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "options", "deribit", "hist_vol", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 if "vol_30d" in last.index:
                     self._cache["opt_btc_rv30d"] = float(last["vol_30d"])
+                    any_success = True
         except Exception as e:
+            record_feed_fetch("options", "deribit", "hist_vol", time.monotonic() - t0, "failure", 0)
             logger.warning("Options Hist Vol polling error: {}", e)
 
         # Term Structure
+        t0 = time.monotonic()
         try:
             df = await self._fetcher.fetch_term_structure("BTC")
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "options", "deribit", "term_structure", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 last = df.iloc[-1]
                 if "slope" in last.index:
                     self._cache["opt_btc_term_slope"] = float(last["slope"])
+                    any_success = True
         except Exception as e:
+            record_feed_fetch(
+                "options", "deribit", "term_structure", time.monotonic() - t0, "failure", 0
+            )
             logger.warning("Options Term Structure polling error: {}", e)
 
+        inc_feed_cache_refresh("options", "success" if any_success else "failure")
         logger.debug("LiveOptionsFeed Vol/Term poll done")

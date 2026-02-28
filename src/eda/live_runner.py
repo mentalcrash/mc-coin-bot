@@ -663,6 +663,10 @@ class LiveRunner:
                         getattr(self, "_orchestrator_metrics", None),
                         ws_detail_callback=getattr(self, "_ws_detail_callback", None),
                         onchain_feed=self._onchain_feed,
+                        derivatives_feed=getattr(self, "_derivatives_feed", None),
+                        macro_feed=getattr(self, "_macro_feed", None),
+                        options_feed=getattr(self, "_options_feed", None),
+                        deriv_ext_feed=getattr(self, "_deriv_ext_feed", None),
                     )
                 )
 
@@ -1815,9 +1819,13 @@ class LiveRunner:
         orchestrator_metrics: OrchestratorMetrics | None = None,
         ws_detail_callback: Any = None,
         onchain_feed: Any = None,
+        derivatives_feed: Any = None,
+        macro_feed: Any = None,
+        options_feed: Any = None,
+        deriv_ext_feed: Any = None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator + onchain 메트릭 갱신."""
+        """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator + feeds 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
@@ -1829,8 +1837,10 @@ class LiveRunner:
                 orchestrator_metrics.update()
             if ws_detail_callback is not None:
                 ws_detail_callback.update_message_ages()
-            if onchain_feed is not None:
-                onchain_feed.update_cache_metrics()
+            # 전 피드 cache 메트릭 갱신
+            for feed in (onchain_feed, derivatives_feed, macro_feed, options_feed, deriv_ext_feed):
+                if feed is not None:
+                    feed.update_cache_metrics()
             # Execution health check — fill rate gauge + alert
             from src.monitoring.metrics import execution_fill_rate_gauge
 

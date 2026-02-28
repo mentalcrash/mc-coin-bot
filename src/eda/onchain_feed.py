@@ -76,6 +76,10 @@ def _inc_cache_refresh(status: str) -> None:
         onchain_cache_refresh_total.labels(status=status).inc()
     except ImportError:
         pass
+    # 통합 메트릭 dual-emit
+    from src.eda._feed_metrics import inc_feed_cache_refresh
+
+    inc_feed_cache_refresh("onchain", status)
 
 
 def _record_fetch(source: str, name: str, elapsed: float, status: str, row_count: int) -> None:
@@ -95,6 +99,10 @@ def _record_fetch(source: str, name: str, elapsed: float, status: str, row_count
             onchain_last_success_gauge.labels(source=source).set(time.time())
     except ImportError:
         pass
+    # 통합 메트릭 dual-emit
+    from src.eda._feed_metrics import record_feed_fetch
+
+    record_feed_fetch("onchain", source, name, elapsed, status, row_count)
 
 
 class LiveOnchainFeed:
@@ -252,6 +260,10 @@ class LiveOnchainFeed:
                 onchain_cache_size_gauge.labels(symbol=symbol).set(len(cache))
         except ImportError:
             pass
+        # 통합 메트릭 dual-emit
+        from src.eda._feed_metrics import update_feed_cache_metrics
+
+        update_feed_cache_metrics("onchain", self._cache)
 
     async def _send_alert(self, message: str) -> None:
         """Notification queue에 on-chain 알림 전송."""

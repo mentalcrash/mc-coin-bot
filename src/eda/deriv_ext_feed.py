@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
+
+from src.eda._feed_metrics import (
+    inc_feed_cache_refresh,
+    record_feed_fetch,
+    update_feed_cache_metrics,
+)
 
 if TYPE_CHECKING:
     from src.data.deriv_ext.client import AsyncCoinalyzeClient, AsyncHyperliquidClient
@@ -180,6 +187,17 @@ class LiveDerivExtFeed:
         """최신 캐시된 값 반환."""
         return self._cache.get(symbol)
 
+    def get_health_status(self) -> dict[str, int]:
+        """Heartbeat용 deriv_ext 캐시 상태."""
+        return {
+            "symbols_cached": len(self._cache),
+            "total_columns": sum(len(c) for c in self._cache.values()),
+        }
+
+    def update_cache_metrics(self) -> None:
+        """Prometheus gauge에 캐시 크기 갱신."""
+        update_feed_cache_metrics("deriv_ext", self._cache)
+
     def _load_cache(self) -> None:
         """Silver 데이터에서 최신 행을 캐시에 로드."""
         from src.data.deriv_ext.service import ASSET_PRECOMPUTE_DEFS
@@ -252,6 +270,7 @@ class LiveDerivExtFeed:
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         start = (datetime.now(UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
+        any_success = False
 
         for asset in ("BTC", "ETH"):
             sym = self._symbol_for_asset(asset)
@@ -260,39 +279,76 @@ class LiveDerivExtFeed:
             cache = self._cache.setdefault(sym, {})
 
             # Agg OI
+            t0 = time.monotonic()
             try:
                 df = await self._ca_fetcher.fetch_agg_oi(asset, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "agg_oi", time.monotonic() - t0, status, len(df)
+                )
                 if not df.empty:
                     cache["dext_agg_oi_close"] = float(df.iloc[-1]["close"])
+                    any_success = True
             except Exception as e:
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "agg_oi", time.monotonic() - t0, "failure", 0
+                )
                 logger.warning("Coinalyze agg_oi {} error: {}", asset, e)
 
             # Agg Funding
+            t0 = time.monotonic()
             try:
                 df = await self._ca_fetcher.fetch_agg_funding(asset, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "agg_funding", time.monotonic() - t0, status, len(df)
+                )
                 if not df.empty:
                     cache["dext_agg_funding_close"] = float(df.iloc[-1]["close"])
+                    any_success = True
             except Exception as e:
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "agg_funding", time.monotonic() - t0, "failure", 0
+                )
                 logger.warning("Coinalyze agg_funding {} error: {}", asset, e)
 
             # Liquidations
+            t0 = time.monotonic()
             try:
                 df = await self._ca_fetcher.fetch_liquidations(asset, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "liquidations", time.monotonic() - t0, status, len(df)
+                )
                 if not df.empty:
                     last = df.iloc[-1]
                     cache["dext_liq_long_vol"] = float(last["long_volume"])
                     cache["dext_liq_short_vol"] = float(last["short_volume"])
+                    any_success = True
             except Exception as e:
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "liquidations", time.monotonic() - t0, "failure", 0
+                )
                 logger.warning("Coinalyze liquidations {} error: {}", asset, e)
 
             # CVD
+            t0 = time.monotonic()
             try:
                 df = await self._ca_fetcher.fetch_cvd(asset, start=start, end=today)
+                status = "success" if not df.empty else "empty"
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "cvd", time.monotonic() - t0, status, len(df)
+                )
                 if not df.empty:
                     cache["dext_cvd_buy_vol"] = float(df.iloc[-1]["buy_volume"])
+                    any_success = True
             except Exception as e:
+                record_feed_fetch(
+                    "deriv_ext", "coinalyze", "cvd", time.monotonic() - t0, "failure", 0
+                )
                 logger.warning("Coinalyze cvd {} error: {}", asset, e)
 
+        inc_feed_cache_refresh("deriv_ext", "success" if any_success else "failure")
         logger.debug("LiveDerivExtFeed Coinalyze poll done")
 
     async def _poll_hyperliquid(self) -> None:
@@ -314,8 +370,13 @@ class LiveDerivExtFeed:
         assert self._hl_fetcher is not None
 
         # Asset Contexts
+        t0 = time.monotonic()
         try:
             df = await self._hl_fetcher.fetch_asset_contexts()
+            status = "success" if not df.empty else "empty"
+            record_feed_fetch(
+                "deriv_ext", "hyperliquid", "asset_contexts", time.monotonic() - t0, status, len(df)
+            )
             if not df.empty:
                 for _, row in df.iterrows():
                     coin = str(row["coin"])
@@ -325,7 +386,12 @@ class LiveDerivExtFeed:
                     cache = self._cache.setdefault(sym, {})
                     cache["dext_hl_oi"] = float(row["open_interest"])
                     cache["dext_hl_funding"] = float(row["funding"])
+            inc_feed_cache_refresh("deriv_ext", "success" if not df.empty else "failure")
         except Exception as e:
+            record_feed_fetch(
+                "deriv_ext", "hyperliquid", "asset_contexts", time.monotonic() - t0, "failure", 0
+            )
+            inc_feed_cache_refresh("deriv_ext", "failure")
             logger.warning("Hyperliquid asset_contexts polling error: {}", e)
 
         logger.debug("LiveDerivExtFeed Hyperliquid poll done")
