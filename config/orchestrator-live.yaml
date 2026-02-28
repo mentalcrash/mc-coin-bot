@@ -22,6 +22,11 @@
 #     - AVAX, LINK 신규 에셋으로 cross-sectional ranking 다양성 확보
 #     - IntraPodAllocator DUAL_MOMENTUM: 절대 게이트 + 상대 ranking
 #
+#   v5.1 변경 (2026-02-28):
+#     - exposure_floor 0.0→0.15: 하락장 완전 비활성 방지 (INCUBATION 졸업 관측용)
+#     - max_single_pod_risk_pct 0.50→0.40: 4-Pod 균형 제약
+#     - RM hedge mode composite key 버그 수정 (risk_manager.py)
+#
 #   백테스트 결과 (2024-2025, 2년):
 #     Portfolio: Sharpe 1.10, CAGR 19.0%, MDD 16.34%
 #     pod-anchor-mom: +74.2%, Sharpe 1.41
@@ -84,7 +89,7 @@ orchestrator:
   max_gross_leverage: 2.0
   max_portfolio_drawdown: 0.20
   max_portfolio_volatility: 0.25
-  max_single_pod_risk_pct: 0.50        # 3-Pod → 각 50% 상한
+  max_single_pod_risk_pct: 0.40        # 4-Pod → 각 40% 상한
   daily_loss_limit: 0.03
   cost_bps: 4.0                          # Taker: 0.04%
   maker_fee_bps: 2.0                     # Maker: 0.02% (Binance VIP0)
@@ -300,11 +305,11 @@ orchestrator:
       rebalance_threshold: 0.10
       asset_allocation:
         method: dual_momentum
-        rebalance_bars: 1                # 매 bar 리밸런싱
+        rebalance_bars: 14               # 주 1회 리밸런싱 (14 bars × 12H = 7일)
         mom_lookback: 42                 # 전략 lookback과 동기화
         top_pct: 0.50                    # 상위 50% (4심볼 중 2개)
         abs_mom_threshold: 0.0           # median < 0 → 현금 대피
-        exposure_floor: 0.0              # 전체 음수 시 exposure=0
+        exposure_floor: 0.15             # 전체 음수 시에도 15% 최소 노출 (졸업용 관측 거래 보장)
         vol_lookback: 60
         min_weight: 0.0                  # bottom 심볼 weight=0 허용
         max_weight: 1.0                  # top 심볼 weight=0.5 (EW)
