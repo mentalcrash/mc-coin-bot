@@ -91,12 +91,12 @@ class NotificationEngine:
         await self._queue.enqueue(item)
 
     async def _on_balance_update(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent -> TRADE_LOG 채널 (throttled)."""
+        """BalanceUpdateEvent -> ALERTS 채널 (throttled)."""
         assert isinstance(event, BalanceUpdateEvent)
         embed = format_balance_embed(event)
         item = NotificationItem(
             severity=Severity.INFO,
-            channel=ChannelRoute.TRADE_LOG,
+            channel=ChannelRoute.ALERTS,
             embed=embed,
             spam_key="balance_update",
         )

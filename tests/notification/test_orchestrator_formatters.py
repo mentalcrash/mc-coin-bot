@@ -8,7 +8,6 @@ from src.notification.orchestrator_formatters import (
     _COLOR_RED,
     _COLOR_YELLOW,
     format_capital_rebalance_embed,
-    format_daily_orchestrator_report_embed,
     format_lifecycle_transition_embed,
     format_portfolio_risk_alert_embed,
 )
@@ -136,50 +135,99 @@ class TestPortfolioRiskAlertEmbed:
         assert len(embed["timestamp"]) > 0
 
 
-class TestDailyOrchestratorReportEmbed:
-    def test_daily_orchestrator_report_embed_table(self) -> None:
-        """일일 리포트 embed 구조 검증."""
-        summaries = [
-            {"pod_id": "pod-a", "state": "production", "capital_fraction": 0.6, "live_days": 30},
-            {"pod_id": "pod-b", "state": "incubation", "capital_fraction": 0.4, "live_days": 5},
-        ]
-        embed = format_daily_orchestrator_report_embed(
-            pod_summaries=summaries,
+class TestUnifiedDailyReportEmbed:
+    """format_unified_daily_report_embed() 포매터 테스트."""
+
+    def test_unified_with_orchestrator_data(self) -> None:
+        """Orchestrator 데이터 포함 시 Pod Summary + 메트릭 필드."""
+        from unittest.mock import MagicMock
+
+        from src.notification.formatters import format_unified_daily_report_embed
+
+        metrics = MagicMock()
+        metrics.sharpe_ratio = 1.5
+        metrics.max_drawdown = 5.0
+
+        embed = format_unified_daily_report_embed(
+            metrics=metrics,
+            open_positions=2,
             total_equity=100000.0,
+            trades_today=[],
+            pod_summaries=[
+                {
+                    "pod_id": "pod-a",
+                    "state": "production",
+                    "capital_fraction": 0.6,
+                    "live_days": 30,
+                },
+            ],
             effective_n=1.8,
             avg_correlation=0.35,
             portfolio_dd=0.03,
             gross_leverage=1.2,
         )
         assert embed["color"] == _COLOR_GREEN  # dd < 5%
-        assert "pod-a" in embed["description"]
-        assert "pod-b" in embed["description"]
         field_names = [f["name"] for f in embed["fields"]]
-        assert "Total Equity" in field_names
+        assert "Pod Summary" in field_names
         assert "Effective N" in field_names
         assert "Avg Correlation" in field_names
+        assert "pod-a" in str(embed)
+
+    def test_unified_without_orchestrator_data(self) -> None:
+        """Orchestrator 데이터 없으면 Pod Summary 없음."""
+        from unittest.mock import MagicMock
+
+        from src.notification.formatters import format_unified_daily_report_embed
+
+        metrics = MagicMock()
+        metrics.sharpe_ratio = 1.5
+        metrics.max_drawdown = 5.0
+
+        embed = format_unified_daily_report_embed(
+            metrics=metrics,
+            open_positions=2,
+            total_equity=100000.0,
+            trades_today=[],
+        )
+        assert embed["color"] == 0x3498DB  # BLUE (no orchestrator)
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Pod Summary" not in field_names
+
+    def test_high_drawdown_red_color(self) -> None:
+        """DD > 10% + orchestrator → RED."""
+        from unittest.mock import MagicMock
+
+        from src.notification.formatters import format_unified_daily_report_embed
+
+        metrics = MagicMock()
+        metrics.sharpe_ratio = 0.5
+        metrics.max_drawdown = 15.0
+
+        embed = format_unified_daily_report_embed(
+            metrics=metrics,
+            open_positions=0,
+            total_equity=80000.0,
+            trades_today=[],
+            pod_summaries=[],
+            portfolio_dd=0.12,
+        )
+        assert embed["color"] == _COLOR_RED
 
     def test_has_timestamp(self) -> None:
-        """timestamp가 비어있지 않은 ISO 문자열."""
-        embed = format_daily_orchestrator_report_embed(
-            pod_summaries=[],
+        """timestamp 존재."""
+        from unittest.mock import MagicMock
+
+        from src.notification.formatters import format_unified_daily_report_embed
+
+        metrics = MagicMock()
+        metrics.sharpe_ratio = 1.0
+        metrics.max_drawdown = 3.0
+
+        embed = format_unified_daily_report_embed(
+            metrics=metrics,
+            open_positions=0,
             total_equity=100000.0,
-            effective_n=1.0,
-            avg_correlation=0.0,
-            portfolio_dd=0.01,
-            gross_leverage=1.0,
+            trades_today=[],
         )
         assert "timestamp" in embed
         assert len(embed["timestamp"]) > 0
-
-    def test_high_drawdown_red_color(self) -> None:
-        """DD > 10%이면 RED."""
-        embed = format_daily_orchestrator_report_embed(
-            pod_summaries=[],
-            total_equity=80000.0,
-            effective_n=0.0,
-            avg_correlation=0.0,
-            portfolio_dd=0.12,
-            gross_leverage=1.0,
-        )
-        assert embed["color"] == _COLOR_RED

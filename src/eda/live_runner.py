@@ -999,6 +999,7 @@ class LiveRunner:
             chart_gen=chart_gen,
             pm=pm,
             health_collector=health_collector,
+            orchestrator=self._orchestrator,
         )
         await report_scheduler.start()
 
@@ -1011,7 +1012,7 @@ class LiveRunner:
             from src.notification.orchestrator_engine import OrchestratorNotificationEngine
 
             orch_notification = OrchestratorNotificationEngine(
-                notification_queue, self._orchestrator, pm=pm
+                notification_queue, self._orchestrator
             )
             self._orchestrator.set_notification_engine(orch_notification)
             await orch_notification.start()

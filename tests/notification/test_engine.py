@@ -149,7 +149,7 @@ class TestNotificationEngine:
 
         item = mock_queue.enqueue.call_args[0][0]
         assert item.spam_key == "balance_update"
-        assert item.channel == ChannelRoute.TRADE_LOG
+        assert item.channel == ChannelRoute.ALERTS
 
         await bus.stop()
         await bus_task
