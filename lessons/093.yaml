@@ -1,0 +1,15 @@
+id: 93
+title: Macro Context Graceful Degradation P7 사례 — 대안데이터 부재 시 EMA-only Sharpe 0.03
+body: 'macro-context-trend-12h P7 검증: macro_vix/hy_spread 부재 → graceful degradation(중립
+  1.0) → 순수 EMA cross만으로 VBT 1년 Sharpe 0.03, Return -3.08%. P4A 6년 0.72는 장기 bull 편향.
+  수익률 편차 34.4%(절대 1.06%p) → 분모 효과. 교훈 #88 P7 레벨 재확인.'
+category: strategy-design
+tags:
+- EDA
+- P7
+- macro
+strategies:
+- macro-context-trend-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

@@ -148,6 +148,23 @@ class StrategyEngine:
         # 3.5~3.8 Enrichment (regime, derivatives, features, on-chain)
         df = self._apply_enrichments(df, symbol)
 
+        # 3.9 필수 enrichment 검증 (라이브 무결성)
+        enrichment_issue = self._check_live_enrichments(df, symbol)
+        if enrichment_issue is not None:
+            logger.error(
+                "Live enrichment validation failed for {}: {}",
+                symbol,
+                enrichment_issue,
+            )
+            alert = RiskAlertEvent(
+                alert_level="CRITICAL",
+                message=f"Required enrichment data missing for {symbol}: {enrichment_issue}",
+                correlation_id=bar.correlation_id,
+                source="StrategyEngine",
+            )
+            await bus.publish(alert)
+            return
+
         try:
             _, signals = self._strategy.run(df)
         except (ValueError, TypeError) as exc:
@@ -253,6 +270,39 @@ class StrategyEngine:
         if self._deriv_ext_provider is not None:
             df = self._enrich_with_deriv_ext(df, symbol)
         return df
+
+    def _check_live_enrichments(self, df: pd.DataFrame, symbol: str) -> str | None:
+        """라이브 모드에서 필수 enrichment 검증.
+
+        최신 bar(마지막 행)에 대해 required_enrichments 컬럼의
+        존재 여부와 NaN 여부를 검사한다.
+
+        Args:
+            df: enrichment이 적용된 DataFrame
+            symbol: 거래 심볼
+
+        Returns:
+            에러 메시지 (문제 있을 때) 또는 None (정상)
+        """
+        required = self._strategy.required_enrichments
+        if not required:
+            return None
+
+        # 컬럼 존재 확인
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            return f"missing columns: {missing}"
+
+        # 최신 bar NaN 확인
+        if df.empty:
+            return None
+
+        latest = df.iloc[-1]
+        nan_cols = [c for c in required if pd.isna(latest[c])]
+        if nan_cols:
+            return f"NaN in latest bar: {nan_cols}"
+
+        return None
 
     def _enrich_with_regime(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         """RegimeService로 DataFrame에 regime 컬럼을 추가.

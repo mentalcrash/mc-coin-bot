@@ -117,6 +117,10 @@ class IngestionSettings(BaseSettings):
         default=Path("data/silver/deriv_ext"),
         description="Extended Derivatives Silver 데이터 저장 경로",
     )
+    trade_flow_silver_dir: Path = Field(
+        default=Path("data/silver/trade_flow"),
+        description="Trade Flow Silver 데이터 저장 경로",
+    )
     coinalyze_api_key: SecretStr = Field(
         default=SecretStr(""),
         description="Coinalyze API Key (Extended Derivatives)",
@@ -194,6 +198,7 @@ class IngestionSettings(BaseSettings):
         "options_silver_dir",
         "deriv_ext_bronze_dir",
         "deriv_ext_silver_dir",
+        "trade_flow_silver_dir",
         mode="before",
     )
     @classmethod
@@ -393,6 +398,18 @@ class IngestionSettings(BaseSettings):
         """
         return self.deriv_ext_silver_dir / source / f"{name}.parquet"
 
+    def get_trade_flow_silver_path(self, symbol: str, year: int) -> Path:
+        """Trade Flow Silver Parquet 파일 경로 생성.
+
+        Bronze 생략 — raw aggTrades는 인메모리 처리 후 Silver 12H 집계만 저장.
+
+        Example:
+            >>> settings.get_trade_flow_silver_path("BTC/USDT", 2025)
+            PosixPath('data/silver/trade_flow/BTC_USDT/2025.parquet')
+        """
+        safe_symbol = symbol.replace("/", "_")
+        return self.trade_flow_silver_dir / safe_symbol / f"{year}.parquet"
+
     def ensure_directories(self) -> None:
         """필요한 디렉토리들을 생성.
 
@@ -410,6 +427,7 @@ class IngestionSettings(BaseSettings):
         self.options_silver_dir.mkdir(parents=True, exist_ok=True)
         self.deriv_ext_bronze_dir.mkdir(parents=True, exist_ok=True)
         self.deriv_ext_silver_dir.mkdir(parents=True, exist_ok=True)
+        self.trade_flow_silver_dir.mkdir(parents=True, exist_ok=True)
 
     def has_api_credentials(self) -> bool:
         """API 자격 증명이 설정되어 있는지 확인.

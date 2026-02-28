@@ -1,0 +1,98 @@
+version: 2
+meta:
+  name: participation-mom-12h
+  display_name: Participation Momentum
+  category: Trade Flow Momentum
+  timeframe: 12H
+  short_mode: '2'
+  status: RETIRED
+  created_at: '2026-02-28'
+  retired_at: '2026-02-28'
+  economic_rationale: 거래 참여도(trades/hr) Z-score가 높을 때 모멘텀 지속. IC=0.042, 4/5 에셋 PASS,
+    IR=0.38. aggTrades 기반 정보 비대칭 + 군집행동 비효율 활용.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      score: 26
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      tests: 56.0
+      registry: participation-mom-12h
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-02-28'
+    details:
+      sharpe: 0.59
+      cagr: 14.85
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 0.59
+  cagr: 14.85
+  mdd: 30.6
+  trades: 469
+  profit_factor: 1.17
+- symbol: BTC/USDT
+  sharpe: -0.9
+  cagr: -18.08
+  mdd: 59.08
+  trades: 444
+  profit_factor: 0.77
+- symbol: ETH/USDT
+  sharpe: -0.68
+  cagr: -15.61
+  mdd: 63.4
+  trades: 474
+  profit_factor: 0.82
+- symbol: BNB/USDT
+  sharpe: -0.39
+  cagr: -12.56
+  mdd: 51.04
+  trades: 410
+  profit_factor: 0.88
+- symbol: SOL/USDT
+  sharpe: -0.98
+  cagr: -24.45
+  mdd: 70.09
+  trades: 457
+  profit_factor: 0.73
+decisions:
+- date: '2026-02-28'
+  phase: P1
+  verdict: PASS
+  rationale: 26/30점
+- date: '2026-02-28'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 participation-mom-12h. Ruff/Pyright 0 error.
+- date: '2026-02-28'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 2건 (W3 Regime Concentration, W5 Correlation)
+- date: '2026-02-28'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 4/5 에셋 Sharpe 음수(구조적 실패). Best DOGE Sharpe 0.59 PASS 미달. SOL
+    MDD 70%, ETH MDD 63%'

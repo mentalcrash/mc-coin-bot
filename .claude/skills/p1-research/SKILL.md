@@ -59,6 +59,10 @@ allowed-tools:
      macro_t10yie, macro_hy_spread, macro_fed_assets, macro_initial_claims,
      macro_effr, macro_wti, macro_btcf_close, macro_ibit_close, macro_eem_close 등
    — Sentiment: Fear & Greed Index (oc_fear_greed, 2018~)
+   — Trade Flow: TradeFlowService (Binance aggTrades → 12H bar features, tflow_* auto-enrich)
+   — 주요 tflow_* 컬럼: tflow_cvd (순매수압력 [-1,1]), tflow_buy_ratio (매수비율 [0,1]),
+     tflow_intensity (거래강도 trades/hr), tflow_large_ratio (대형거래비중 [0,1]),
+     tflow_vpin (정보비대칭 확률 [0,1]). 학술적 근거: VPIN BTC jump 예측, EFMA 2025
 
 1. **거래 비용의 극사실적 모델링 (Realistic Cost Modeling)**:
    백테스트에서 연 50% 수익이 나와도 실제 거래 비용, 슬리피지,
@@ -258,8 +262,8 @@ uv run mcbot pipeline p1-briefing --tf {TF}
 
   [3] 데이터 소스 차별화 (Data Source Edge)      : _/5
       1=외부API필수(미구축), 2=OHLCV-only(고갈 영역),
-      3=OHLCV+파생계산, 4=Derivatives/Macro(Silver 구축완료),
-      5=On-chain/Sentiment 포함(edge 감쇠 느림, 47개 유휴)
+      3=OHLCV+파생계산, 4=Derivatives/Macro/TradeFlow(Silver 구축완료),
+      5=On-chain/Sentiment/TradeFlow+VPIN 포함(edge 감쇠 느림)
 
   [4] 구현 복잡도 (Implementation Complexity)  : _/5
       1=인프라변경필요, 3=중간, 5=직관적
@@ -405,13 +409,15 @@ uv run mcbot catalog indicator-show {id}                   # 상세: alpha poten
 11. 예상 Sharpe 범위          12. 활성 전략 상관 예측: 낮음/중간/높음 (`pipeline list --status ACTIVE`)
 13. 비용 추정: 연간 거래비용 / 예상 총수익 비율 (< 30% 필수)
 14. 레짐 활용: 없음/패턴A/B/C (활용 시 컬럼+파라미터 명시)
-15. 데이터 요구사항: OHLCV only / Derivatives / On-chain / Sentiment
+15. 데이터 요구사항: OHLCV only / Derivatives / On-chain / Sentiment / Trade Flow
     (On-chain 주요 컬럼: oc_mvrv, oc_flow_in_ex_usd, oc_flow_out_ex_usd,
      oc_stablecoin_total_usd, oc_tvl_usd, oc_dex_volume_usd, oc_fees_usd,
      oc_fear_greed, oc_adractcnt, oc_txcnt, oc_mktcap_usd)
     (Macro 주요 컬럼: macro_dxy, macro_vix, macro_gs10, macro_m2,
      macro_t10yie, macro_hy_spread, macro_fed_assets, macro_initial_claims,
      macro_effr, macro_wti, macro_btcf_close, macro_ibit_close, macro_eem_close)
+    (Trade Flow 주요 컬럼: tflow_cvd, tflow_buy_ratio, tflow_intensity,
+     tflow_large_ratio, tflow_vpin — Binance aggTrades 12H 집계)
     (전체 목록: catalogs/datasets.yaml)
     (Multi-source 전략 시 SubSignalSpec 목록 기재:
      - column, transform, window, weight, invert)

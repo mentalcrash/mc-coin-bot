@@ -79,6 +79,22 @@ class BaseStrategy(ABC):
         ...
 
     @property
+    def required_enrichments(self) -> list[str]:
+        """전략에 필수적인 enrichment 컬럼 목록.
+
+        이 컬럼들이 백테스트/라이브 데이터에 존재하지 않거나
+        NaN 비율이 높으면(>20%) 에러를 발생시킨다.
+        graceful degradation 대상이 아닌 **필수** 데이터.
+
+        서브클래스에서 오버라이드하여 필수 enrichment를 선언한다.
+        예: ["tflow_cvd", "tflow_vpin"] — trade flow 데이터가 없으면 무효 백테스트.
+
+        Returns:
+            필수 enrichment 컬럼 이름 리스트 (기본: 빈 리스트)
+        """
+        return []
+
+    @property
     def config(self) -> BaseModel | None:
         """전략 설정 (Pydantic 모델).
 

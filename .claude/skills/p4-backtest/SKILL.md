@@ -67,6 +67,30 @@ ls data/silver/BTC_USDT_1D.parquet data/silver/ETH_USDT_1D.parquet \
    data/silver/ADA_USDT_1D.parquet data/silver/AVAX_USDT_1D.parquet
 ```
 
+### 0-3b. Enrichment 데이터 가용성 확인 (required_enrichments 사용 전략)
+
+전략이 `required_enrichments`를 선언하면 해당 데이터가 **반드시** 존재해야 한다.
+BacktestEngine이 NaN > 20% 시 자동으로 ValueError를 발생시킨다.
+
+```bash
+# tflow_* 컬럼 필요 시 → Trade Flow Silver 확인
+uv run mcbot ingest trade-flow info
+
+# 데이터 미존재 시 수집 실행
+uv run mcbot ingest trade-flow pipeline BTC/USDT ETH/USDT SOL/USDT DOGE/USDT BNB/USDT \
+  -y 2020 -y 2021 -y 2022 -y 2023 -y 2024 -y 2025
+
+# oc_* 컬럼 필요 시
+uv run mcbot ingest onchain run-all
+
+# macro_* 컬럼 필요 시
+uv run mcbot ingest macro run-all
+```
+
+**백테스트 시작일 조정**: Trade Flow 데이터는 2020년부터 가용.
+`required_enrichments`에 `tflow_*`가 포함된 전략은 `--start 2020-01-01` 이후로 설정.
+데이터 미수집 연도가 있으면 NaN 비율 초과로 백테스트가 자동 중단된다.
+
 ### 0-4. --from 복원 (해당 시)
 
 `--from p4b` 지정 시 YAML에서 이전 Phase 결과 복원:

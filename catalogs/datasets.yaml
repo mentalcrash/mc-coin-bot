@@ -73,6 +73,14 @@ sources:
     lag_days: 0
     rate_limit_per_min: 10
 
+  - id: binance_vision
+    name: Binance Data Vision (Historical Archives)
+    api_url: https://data.binance.vision
+    date_column: transact_time
+    lag_days: 60
+    rate_limit_per_min: 100
+    notes: "월별/일별 ZIP 아카이브. 월별은 2-3개월 lag, 일별은 1-2일 lag."
+
   - id: deribit
     name: Deribit (Crypto Options Exchange)
     api_url: https://www.deribit.com/api/v2/public/
@@ -1535,3 +1543,45 @@ datasets:
     strategy_hints:
       - "거래소 간 predicted funding 괴리 → funding arbitrage 기회"
       - "전 거래소 funding 일제 양수 → 과매수 경고"
+
+  # ─── Trade Flow (aggTrades) ─────────────────────────────────────────
+  - id: trade_flow
+    name: Trade Flow (aggTrades 12H Features)
+    data_type: trade_flow
+    source_id: binance_vision
+    batch_group: trade_flow
+    description: >
+      Binance Futures aggTrades에서 12H bar-level trade flow 피처를 계산.
+      Bronze 생략 (raw aggTrades TB 단위 → 인메모리 처리 → Silver 12H 집계만 저장).
+      is_buyer_maker=False → taker buy, True → taker sell.
+      학술적 근거: EFMA 2025 Sharpe 3.19, VPIN BTC jump 예측.
+    resolution: 12h
+    available_since: "2020-01-01"
+    storage_path: "data/silver/trade_flow/{SYMBOL_SAFE}/{YEAR}.parquet"
+    columns:
+      - tflow_cvd
+      - tflow_buy_ratio
+      - tflow_intensity
+      - tflow_large_ratio
+      - tflow_abs_order_imbalance
+      - tflow_vpin
+    fetch_key: trade_flow
+    strategy_hints:
+      - "tflow_cvd > 0 지속 → 매수 공격 우위, 추세 지속 시그널"
+      - "tflow_vpin 급등 → 정보 비대칭 확대, 변동성 예측"
+      - "tflow_large_ratio 급등 → 대형 트레이더 활동, whale signal"
+      - "tflow_buy_ratio + price divergence → contrarian signal"
+      - "tflow_intensity 급감 → 유동성 위축, 방향 전환 주의"
+    enrichment:
+      scope: per_symbol
+      columns:
+        - tflow_cvd
+        - tflow_buy_ratio
+        - tflow_intensity
+        - tflow_large_ratio
+        - tflow_abs_order_imbalance
+        - tflow_vpin
+    notes: >
+      데이터 소스: data.binance.vision (무료). 월별+일별 아카이브.
+      CLI: uv run mcbot ingest trade-flow pipeline BTC/USDT -y 2024.
+      Auto-enrichment: MarketDataService._maybe_enrich_trade_flow() (graceful degradation)

@@ -1,0 +1,21 @@
+id: 96
+title: Trade Flow (aggTrades) 독립 alpha 부재 확정 — IC 0.04 cross-asset 비일관성
+body: 'tflow_intensity Z-score(56bar) IC=0.042(5에셋 평균), 4/5 PASS이나 백테스트에서 DOGE만 Sharpe
+  0.59, BTC/ETH/SOL/BNB 전부 음수. 원인: (1) intensity 의미가 에셋마다 상이 — DOGE=리테일 군집행동(momentum
+  지속), BTC/ETH=기관 양방향 격변(방향성 없음). (2) IC의 linear rank correlation이 전략의 nonlinear threshold+EMA
+  변환에서 신호 손실. (3) 파생 피처(Z-score/pct_rank) 중 최강 IC=0.042도 전략 수준에서는 불충분. tflow_cvd/buy_ratio/large_ratio/vpin도
+  raw IC < 0.03. 결론: aggTrades 12H 집계 피처는 독립 전략 alpha 원천으로 부적합. 리스크 관리 보조(sizing/stop
+  조정)로만 활용 가치 있음.'
+category: strategy-design
+tags:
+- trade_flow
+- tflow
+- aggTrades
+- intensity
+- alpha-absent
+- 12H
+strategies:
+- participation-mom-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

@@ -1,0 +1,118 @@
+version: 2
+meta:
+  name: trend-factor-12h
+  display_name: Trend Factor Multi-Horizon
+  category: Multi-Horizon Momentum
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-02-28'
+  retired_at: '2026-02-28'
+  economic_rationale: 'JFQA 2024 Trend Factor: 5-horizon(5/10/20/40/80) risk-adjusted
+    return summation. ret_h/vol_h additive ensemble = multi-scale momentum consensus.
+    #078(t-stat)과 달리 horizon 균등 가중 + 직접 합산. OHLCV-only.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      score: 20
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      tests: 61.0
+      registry: trend-factor-12h
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-02-28'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: FAIL
+    date: '2026-02-28'
+    details:
+      sharpe: 0.68
+      cagr: 17.55
+asset_performance:
+- symbol: DOGE/USDT
+  sharpe: 0.68
+  cagr: 17.55
+  mdd: 27.61
+  trades: 599
+  profit_factor: 1.38
+- symbol: AVAX/USDT
+  sharpe: 0.66
+  cagr: 16.29
+  mdd: 32.17
+  trades: 529
+  profit_factor: 1.29
+- symbol: SOL/USDT
+  sharpe: 0.61
+  cagr: 14.33
+  mdd: 30.13
+  trades: 519
+  profit_factor: 1.28
+- symbol: ADA/USDT
+  sharpe: 0.51
+  cagr: 11.49
+  mdd: 43.23
+  trades: 592
+  profit_factor: 1.21
+- symbol: ETH/USDT
+  sharpe: 0.47
+  cagr: 9.64
+  mdd: 32.83
+  trades: 681
+  profit_factor: 1.25
+- symbol: BNB/USDT
+  sharpe: 0.12
+  cagr: -0.65
+  mdd: 42.49
+  trades: 764
+  profit_factor: 1.07
+- symbol: LINK/USDT
+  sharpe: 0.0
+  cagr: -3.51
+  mdd: 42.74
+  trades: 586
+  profit_factor: 0.99
+- symbol: BTC/USDT
+  sharpe: -0.1
+  cagr: -6.34
+  mdd: 41.53
+  trades: 719
+  profit_factor: 0.98
+decisions:
+- date: '2026-02-28'
+  phase: P1
+  verdict: PASS
+  rationale: 20/30점. JFQA 2024 학술 검증.
+- date: '2026-02-28'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 trend-factor-12h. Ruff/Pyright 0 error.
+- date: '2026-02-28'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건. shift(1) 전수검증 통과, 벡터화 완전, ShortMode 3-way
+    분기 정상.
+- date: '2026-02-28'
+  phase: P4
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.68 < 0.7 (Path A). 8에셋 PASS 0건. 연 130-191회 고빈도로 비용
+    소모, 5-horizon 균등합산 noise 축적

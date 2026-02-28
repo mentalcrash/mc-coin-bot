@@ -1,0 +1,18 @@
+id: 94
+title: Trend Factor 5-horizon 합산 = noise 축적, 앙상블 투표 대비 열위
+body: JFQA 2024 Trend Factor(ret_h/vol_h 5-horizon 합산)가 12H 크립토에서 Best Sharpe 0.68
+  (DOGE) 그침. 동일 multi-scale 접근인 Donch-Multi(Sharpe 1.61), Tri-Channel(Sharpe 2.17)은
+  스케일별 binary 돌파→투표(majority) 방식. 합산은 각 horizon의 noise가 누적되어 signal SNR 저하. 크립토에서
+  multi-horizon momentum 활용 시 합산(additive)보다 투표(voting/ensemble) 방식이 우월.
+category: strategy-design
+tags:
+- trend-factor
+- multi-horizon
+- noise-accumulation
+- ensemble-voting
+- 12H
+strategies:
+- trend-factor-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

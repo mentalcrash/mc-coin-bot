@@ -154,7 +154,7 @@ class OrchestratorMetrics:
             pod_equity_gauge.labels(pod_id=pid).set(pod_equity_usd)
             pod_allocation_gauge.labels(pod_id=pid).set(pod.capital_fraction)
             pod_sharpe_gauge.labels(pod_id=pid).set(pod.performance.sharpe_ratio)
-            pod_drawdown_gauge.labels(pod_id=pid).set(pod.performance.current_drawdown)
+            pod_drawdown_gauge.labels(pod_id=pid).set(pod.performance.current_drawdown * 100)
             pod_rolling_sharpe_30d_gauge.labels(pod_id=pid).set(pod.rolling_sharpe)
             pod_rolling_drawdown_30d_gauge.labels(pod_id=pid).set(pod.rolling_drawdown)
             pod_lifecycle_gauge.labels(pod_id=pid).set(

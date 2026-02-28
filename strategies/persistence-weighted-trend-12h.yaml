@@ -1,0 +1,102 @@
+version: 2
+meta:
+  name: persistence-weighted-trend-12h
+  display_name: PersistenceWeightedTrend
+  category: 추세 품질
+  timeframe: 12H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-28'
+  economic_rationale: ER×FD×TrendStrength 복합 추세 품질 점수로 모멘텀 가중. 지속성 높은 추세만 진입
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 21
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-28'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-28'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-28'
+    details:
+      sharpe: 0.41
+      cagr: 7.5
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.41
+  cagr: -1.5
+  mdd: 7.5
+  trades: 22
+  profit_factor: 0.48
+- symbol: ETH/USDT
+  sharpe: -0.69
+  cagr: -2.5
+  mdd: 10.9
+  trades: 12
+  profit_factor: 0.02
+- symbol: BNB/USDT
+  sharpe: -0.28
+  cagr: -1.1
+  mdd: 7.1
+  trades: 12
+  profit_factor: 0.62
+- symbol: SOL/USDT
+  sharpe: 0.41
+  cagr: 7.5
+  mdd: 36.6
+  trades: 3
+  profit_factor: 99.0
+- symbol: DOGE/USDT
+  sharpe: 0.29
+  cagr: 1.9
+  mdd: 11.0
+  trades: 5
+  profit_factor: 3.52
+- symbol: LINK/USDT
+  sharpe: -0.2
+  cagr: -0.9
+  mdd: 7.3
+  trades: 5
+  profit_factor: 3.8
+- symbol: ADA/USDT
+  sharpe: -0.14
+  cagr: -1.5
+  mdd: 14.9
+  trades: 10
+  profit_factor: 0.01
+- symbol: AVAX/USDT
+  sharpe: 0.21
+  cagr: 1.0
+  mdd: 10.5
+  trades: 5
+  profit_factor: 6.59
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 21/30점
+- date: '2026-02-28'
+  phase: P2
+  verdict: PASS
+  rationale: 구현 완료 (config/preprocessor/signal/strategy)
+- date: '2026-02-28'
+  phase: P3
+  verdict: PASS
+  rationale: ruff+pyright 0 errors
+- date: '2026-02-28'
+  phase: P4
+  verdict: FAIL
+  rationale: 극저빈도 시그널 (Best SOL 3 trades/4y). ER x FD x TrendStrength 복합 필터 과도 엄격.
+    통계적 무의미

@@ -1,0 +1,19 @@
+id: 95
+title: 'Trade Flow intensity Z-score + EMA 모멘텀 AND 결합: 4/5 에셋 Sharpe 음수 — aggTrades
+  참여도의 에셋 간 비일관성'
+body: 'participation-mom-12h 전략은 tflow_intensity(거래 참여도) Z-score ≥ 0.5 AND EMA 모멘텀
+  방향 일치를 진입 조건으로 사용. P4A 결과 DOGE만 Sharpe 0.59(양수), BTC/ETH/BNB/SOL 전부 Sharpe 음수(-0.39~-0.98).
+  aggTrades 기반 참여도 급증이 DOGE처럼 retail 주도 밈코인에서는 군집행동 신호로 유효하나, BTC/ETH 같은 기관 참여 자산에서는
+  참여도 급증이 정보 비대칭이 아닌 양방향 격렬한 거래를 의미. 교훈 #88(대안데이터 ≠ alpha)과 #9(Z-score 한계)의 구체적 사례.'
+category: strategy-design
+tags:
+- trade-flow
+- intensity
+- z-score
+- asset-inconsistency
+- 12H
+strategies:
+- participation-mom-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

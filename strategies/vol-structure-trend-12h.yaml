@@ -1,0 +1,102 @@
+version: 2
+meta:
+  name: vol-structure-trend-12h
+  display_name: VolStructureTrend
+  category: 변동성 구조
+  timeframe: 12H
+  short_mode: HEDGE_ONLY
+  status: RETIRED
+  created_at: '2026-02-27'
+  retired_at: '2026-02-28'
+  economic_rationale: 3종 변동성 추정기(GK/PK/YZ) 합의 기반 추세 감지. 변동성 측정 직교성으로 노이즈 필터링
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-02-27'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-02-28'
+    details: {}
+  P3:
+    status: PASS
+    date: '2026-02-28'
+    details: {}
+  P4:
+    status: FAIL
+    date: '2026-02-28'
+    details:
+      sharpe: 0.62
+      cagr: 12.2
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 0.0
+  cagr: -1.6
+  mdd: 24.2
+  trades: 427
+  profit_factor: 1.03
+- symbol: ETH/USDT
+  sharpe: 0.12
+  cagr: 0.5
+  mdd: 27.1
+  trades: 388
+  profit_factor: 1.07
+- symbol: BNB/USDT
+  sharpe: -0.53
+  cagr: -11.8
+  mdd: 48.4
+  trades: 409
+  profit_factor: 0.78
+- symbol: SOL/USDT
+  sharpe: 0.0
+  cagr: -1.6
+  mdd: 32.1
+  trades: 335
+  profit_factor: 1.0
+- symbol: DOGE/USDT
+  sharpe: 0.62
+  cagr: 12.2
+  mdd: 23.3
+  trades: 340
+  profit_factor: 1.38
+- symbol: LINK/USDT
+  sharpe: -0.38
+  cagr: -8.0
+  mdd: 34.2
+  trades: 389
+  profit_factor: 0.85
+- symbol: ADA/USDT
+  sharpe: 0.03
+  cagr: -1.3
+  mdd: 29.4
+  trades: 343
+  profit_factor: 1.01
+- symbol: AVAX/USDT
+  sharpe: 0.35
+  cagr: 5.0
+  mdd: 28.4
+  trades: 326
+  profit_factor: 1.16
+decisions:
+- date: '2026-02-27'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-02-28'
+  phase: P2
+  verdict: PASS
+  rationale: 구현 완료 (config/preprocessor/signal/strategy)
+- date: '2026-02-28'
+  phase: P3
+  verdict: PASS
+  rationale: ruff+pyright 0 errors
+- date: '2026-02-28'
+  phase: P4
+  verdict: FAIL
+  rationale: Best DOGE Sharpe 0.62 CAGR 12.2% Path A/B 미달. 3/8 에셋 음수 Sharpe, 과다 거래
+    340+, GK/PK/YZ 합의 alpha 부재

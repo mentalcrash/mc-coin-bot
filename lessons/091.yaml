@@ -1,0 +1,16 @@
+id: 91
+title: 'GK/PK/YZ 3종 vol 합의 12H에서도 alpha 부재 — #60 TF 확장'
+body: 1D에서 GK/PK/YZ 미시구조 시그널 소실 확인(#60)후 12H에서 재시도. 3-scale 앙상블(14/30/60)로 파라미터 로버스트니스
+  확보했으나 Best DOGE Sharpe 0.62(Path A/B 미달). 3/8 에셋 음수 Sharpe. 변동성 확대=추세라는 가정이 크립토에서
+  약함 — 급등 후 횡보/급락도 고변동성. vol structure alpha 검색공간 고갈.
+category: strategy-design
+tags:
+- volatility
+- GK-PK-YZ
+- vol-structure
+- 12H
+strategies:
+- vol-structure-trend-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

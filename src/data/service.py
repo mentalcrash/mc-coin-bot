@@ -172,6 +172,7 @@ class MarketDataService:
         resampled = self._maybe_enrich_macro(resampled, request)
         resampled = self._maybe_enrich_options(resampled, request)
         resampled = self._maybe_enrich_deriv_ext(resampled, request)
+        resampled = self._maybe_enrich_trade_flow(resampled, request)
 
         # 5.6. Enrichment NaN 비율 검사
         self._check_enrichment_nan_ratios(
@@ -382,6 +383,38 @@ class MarketDataService:
             )
             return result
 
+    def _maybe_enrich_trade_flow(
+        self,
+        df: pd.DataFrame,
+        request: MarketDataRequest,
+    ) -> pd.DataFrame:
+        """Trade flow enrichment (always-on, graceful degradation).
+
+        TradeFlowService.precompute()를 사용하여 tflow_* 컬럼 주입.
+        PER-SYMBOL scope.
+        """
+        try:
+            from src.data.trade_flow.service import TradeFlowService
+
+            tflow_service = TradeFlowService(settings=self.settings)
+            enriched = tflow_service.precompute(ohlcv_index=df.index, symbol=request.symbol)
+        except Exception:
+            logger.debug("Trade flow data not available — skipping enrichment")
+            return df
+        else:
+            if enriched.columns.empty:
+                logger.debug("No trade flow data available — skipping enrichment")
+                return df
+            overlap = set(enriched.columns) & set(df.columns)
+            if overlap:
+                enriched = enriched.drop(columns=list(overlap))
+            if enriched.columns.empty:
+                return df
+            result = df.join(enriched, how="left")
+            tflow_cols = [c for c in enriched.columns if c.startswith("tflow_")]
+            logger.debug(f"Trade flow enrichment applied: {len(tflow_cols)} columns")
+            return result
+
     def _check_enrichment_nan_ratios(
         self,
         df: pd.DataFrame,
@@ -396,7 +429,15 @@ class MarketDataService:
             df: enrichment이 적용된 DataFrame
             ohlcv_cols: OHLCV 기본 컬럼 (검사 제외)
         """
-        enrichment_prefixes = ("oc_", "macro_", "opt_", "dext_", "funding_rate", "open_interest")
+        enrichment_prefixes = (
+            "oc_",
+            "macro_",
+            "opt_",
+            "dext_",
+            "tflow_",
+            "funding_rate",
+            "open_interest",
+        )
         enriched_cols = [
             c
             for c in df.columns

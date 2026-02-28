@@ -1,0 +1,17 @@
+id: 92
+title: ER x FD x TrendStrength 곱셈 복합 필터 = 극저빈도 함정 (#44+#61 결합)
+body: 'Efficiency Ratio x (2-Fractal Dimension) x ADX TrendStrength 3중 곱셈 필터: 각 필터
+  통과 확률 50%라면 합산 12.5%. 12H 4년간 Best SOL 3 trades, 전 에셋 3~22 trades로 통계적 무의미. #44(FSM
+  극저빈도) + #61(ER/FD 단독 alpha 부족) 패턴 재확인. 복합 곱셈 필터 설계 시 연간 최소 거래 수 사전 검증 필수.'
+category: strategy-design
+tags:
+- persistence
+- fractal
+- efficiency-ratio
+- low-frequency
+- multiplication-filter
+strategies:
+- persistence-weighted-trend-12h
+timeframes:
+- 12H
+added_at: '2026-02-28'

@@ -39,6 +39,7 @@ from src.cli.ingest_derivatives import app as derivatives_app
 from src.cli.ingest_macro import app as macro_app
 from src.cli.ingest_onchain import app as onchain_app
 from src.cli.ingest_options import app as options_app
+from src.cli.ingest_trade_flow import app as trade_flow_app
 from src.config.settings import get_settings
 from src.core.logger import setup_logger
 from src.data.bronze import BronzeStorage
@@ -62,6 +63,7 @@ app.add_typer(onchain_app, name="onchain")
 app.add_typer(macro_app, name="macro")
 app.add_typer(options_app, name="options")
 app.add_typer(deriv_ext_app, name="deriv-ext")
+app.add_typer(trade_flow_app, name="trade-flow")
 
 
 def _display_settings() -> None:

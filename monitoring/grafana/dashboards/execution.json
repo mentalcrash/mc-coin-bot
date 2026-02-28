@@ -181,6 +181,75 @@
         },
         "overrides": []
       }
+    },
+    {
+      "title": "Row 4: SmartExecutor & Signed Slippage",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "collapsed": false
+    },
+    {
+      "title": "Smart: Limit Orders",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "targets": [
+        { "expr": "rate(mcbot_smart_limit_placed_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "Placed {{symbol}}", "refId": "A" },
+        { "expr": "rate(mcbot_smart_limit_filled_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "Filled {{symbol}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Smart: Timeouts & Fallbacks",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "targets": [
+        { "expr": "rate(mcbot_smart_limit_timeout_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "Timeout {{symbol}}", "refId": "A" },
+        { "expr": "rate(mcbot_smart_market_fallback_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "Fallback {{symbol}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Smart: Partial Fill Merges",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "targets": [
+        { "expr": "rate(mcbot_smart_partial_fill_merged_total{symbol=~\"$symbol\"}[5m])", "legendFormat": "Merged {{symbol}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "title": "Signed Slippage (P50 / P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 40 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mcbot_slippage_signed_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P50 {{symbol}} {{side}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mcbot_slippage_signed_bps_bucket{symbol=~\"$symbol\"}[5m]))", "legendFormat": "P95 {{symbol}} {{side}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "title": "Smart Limit Fill Ratio",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
+      "targets": [
+        { "expr": "sum(rate(mcbot_smart_limit_filled_total[1h])) / sum(rate(mcbot_smart_limit_placed_total[1h]))", "legendFormat": "Fill Ratio", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "green", "value": 0.7 }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,
@@ -190,5 +259,5 @@
   "timezone": "utc",
   "title": "MC Coin Bot — Execution",
   "uid": "mc-execution",
-  "version": 1
+  "version": 2
 }

@@ -277,7 +277,7 @@
       "type": "state-timeline",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 35 },
       "targets": [
-        { "expr": "mcbot_exchange_ws_connected{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A", "instant": false, "range": true, "format": "time_series" }
+        { "expr": "mcbot_exchange_ws_connected{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -329,7 +329,7 @@
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 44 },
       "targets": [
-        { "expr": "mcbot_trading_mode", "legendFormat": "{{mcbot_trading_mode}}", "refId": "A" }
+        { "expr": "mcbot_trading_mode == 1", "legendFormat": "{{mcbot_trading_mode}}", "refId": "A" }
       ]
     },
     {

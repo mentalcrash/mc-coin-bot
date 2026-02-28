@@ -151,8 +151,19 @@ On-chain, Macro, Options 데이터 활용 시: [references/onchain-implementatio
 | On-chain BTC/ETH | 1D | BTC/ETH만 | `merge_asof` + pub lag T+1 |
 | Derivatives | 5m→1h | 전체 | `merge_asof` |
 | Macro | 1D | 글로벌 | `merge_asof` + pub lag T+1~14 |
+| Trade Flow | 12H | 심볼별 | `merge_asof` (tflow_* auto-enrich) |
 
-**Graceful Degradation 필수**: `oc_*` 컬럼 부재 시 NaN → 중립(0) 처리. `required_columns`에 포함하지 않음.
+**Enrichment 데이터 정책**:
+
+- **Optional (graceful degradation)**: `oc_*`/`macro_*`/`tflow_*` 컬럼 부재 시 NaN → 중립(0) 처리. `required_columns`에 포함하지 않음.
+- **Required (`required_enrichments`)**: 전략의 핵심 alpha가 특정 enrichment에 의존하면 `required_enrichments` 프로퍼티에 선언. BacktestEngine이 NaN > 20% 시 자동 에러. 라이브에서도 StrategyEngine이 최신 bar NaN 검증.
+
+```python
+# 예: trade flow 데이터가 핵심인 전략
+@property
+def required_enrichments(self) -> list[str]:
+    return ["tflow_cvd", "tflow_vpin"]
+```
 
 ---
 

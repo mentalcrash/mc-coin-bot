@@ -229,7 +229,7 @@ surveillance_assets_dropped = Counter(
 datafeed_fetch_total = Counter(
     "mcbot_datafeed_fetch_total",
     "Data feed fetch attempts",
-    ["feed", "source", "status"],  # feed: onchain|derivatives|macro|options|deriv_ext
+    ["feed", "source", "status"],  # feed: onchain|derivatives|macro|options|deriv_ext|trade_flow
 )
 datafeed_fetch_latency_histogram = Histogram(
     "mcbot_datafeed_fetch_latency_seconds",
