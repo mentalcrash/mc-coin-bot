@@ -1022,10 +1022,11 @@ class StrategyPod:
         if self._asset_allocator is None:
             return strength * selector_mult / n
 
-        # (3) With allocator → allocator weights (sum~=1.0, no *N)
+        # (3) With allocator → allocator weights + exposure
         weights = self._asset_allocator.weights
         asset_w = weights.get(symbol, 1.0 / n)
-        return strength * asset_w * selector_mult
+        exposure = self._asset_allocator.exposure
+        return strength * asset_w * selector_mult * exposure
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지."""

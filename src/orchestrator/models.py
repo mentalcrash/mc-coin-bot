@@ -72,12 +72,14 @@ class AssetAllocationMethod(StrEnum):
         INVERSE_VOLATILITY: 변동성 역비례 배분
         RISK_PARITY: 리스크 기여도 균등 배분
         SIGNAL_WEIGHTED: 신호 강도에 비례 배분
+        DUAL_MOMENTUM: 절대+상대 모멘텀 기반 배분
     """
 
     EQUAL_WEIGHT = "equal_weight"
     INVERSE_VOLATILITY = "inverse_volatility"
     RISK_PARITY = "risk_parity"
     SIGNAL_WEIGHTED = "signal_weighted"
+    DUAL_MOMENTUM = "dual_momentum"
 
 
 class RebalanceTrigger(StrEnum):

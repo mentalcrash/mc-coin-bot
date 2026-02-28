@@ -1,0 +1,31 @@
+version: 2
+meta:
+  name: dual-mom
+  display_name: Dual-Mom
+  category: Cross-Sectional Momentum (Absolute + Relative)
+  timeframe: 12H
+  short_mode: DISABLED
+  status: CANDIDATE
+  created_at: '2026-02-28'
+  retired_at: null
+  economic_rationale: >-
+    절대 모멘텀 게이트(폭락 시 현금 대피) + 상대 모멘텀 배분(승자 overweight).
+    IntraPodAllocator DUAL_MOMENTUM으로 cross-sectional ranking 수행.
+  rationale_references:
+  - 'Antonacci (2014), Dual Momentum Investing'
+  - 'Moskowitz, Ooi, Pedersen (2012), Time-Series Momentum'
+  rationale_category: null
+parameters:
+  lookback: 42
+  vol_window: 30
+  vol_target: 0.35
+  min_volatility: 0.05
+  annualization_factor: 730.0
+  use_log_returns: true
+  short_mode: DISABLED
+phases:
+  P1:
+    status: PENDING
+    date: null
+    details: {}
+decisions: []

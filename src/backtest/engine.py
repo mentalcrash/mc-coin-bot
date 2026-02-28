@@ -517,6 +517,80 @@ class BacktestEngine:
         >>> print(result.metrics.sharpe_ratio)
     """
 
+    @staticmethod
+    def _validate_required_enrichments(
+        strategy: BaseStrategy,
+        data: MarketDataSet,
+        *,
+        max_nan_ratio: float = 0.2,
+    ) -> None:
+        """전략의 필수 enrichment 컬럼 커버리지 검증.
+
+        required_enrichments에 선언된 컬럼이 데이터에 없거나
+        NaN 비율이 max_nan_ratio를 초과하면 에러를 발생시킨다.
+
+        Args:
+            strategy: 백테스트 대상 전략
+            data: 마켓 데이터셋
+            max_nan_ratio: 허용 최대 NaN 비율 (기본 0.2 = 20%)
+
+        Raises:
+            ValueError: 필수 enrichment 누락 또는 커버리지 부족
+        """
+        required = strategy.required_enrichments
+        if not required:
+            return
+
+        df = data.ohlcv
+        missing_cols = [c for c in required if c not in df.columns]
+        if missing_cols:
+            prefix_hints = {
+                "tflow_": "uv run mcbot ingest trade-flow pipeline {sym} -y {year}",
+                "oc_": "uv run mcbot ingest onchain run-all",
+                "macro_": "uv run mcbot ingest macro run-all",
+                "dext_": "uv run mcbot ingest deriv-ext run-all",
+                "opt_": "uv run mcbot ingest options run-all",
+            }
+            remediation_cmds: list[str] = []
+            for col in missing_cols:
+                for prefix, cmd in prefix_hints.items():
+                    if col.startswith(prefix):
+                        hint = cmd.format(sym=data.symbol, year="YYYY")
+                        if hint not in remediation_cmds:
+                            remediation_cmds.append(hint)
+                        break
+
+            remedy_text = ""
+            if remediation_cmds:
+                remedy_text = "\nRemediation:\n  " + "\n  ".join(remediation_cmds)
+
+            msg = (
+                f"Strategy '{strategy.name}' requires enrichment columns {missing_cols} "
+                f"but they are missing from the data. "
+                f"Backtest results would be invalid without this data.{remedy_text}"
+            )
+            raise ValueError(msg)
+
+        # NaN 비율 검사
+        n_rows = len(df)
+        if n_rows == 0:
+            return
+
+        high_nan_cols: list[tuple[str, float]] = []
+        for col in required:
+            nan_ratio = float(df[col].isna().sum()) / n_rows
+            if nan_ratio > max_nan_ratio:
+                high_nan_cols.append((col, nan_ratio))
+
+        if high_nan_cols:
+            details = ", ".join(f"{c}={r:.0%}" for c, r in high_nan_cols)
+            msg = (
+                f"Strategy '{strategy.name}' required enrichment columns have "
+                f"excessive NaN (>{max_nan_ratio:.0%}): {details}. "
+                f"Collect more data or adjust backtest date range to overlap with available data."
+            )
+            raise ValueError(msg)
+
     def _execute(self, request: BacktestRequest) -> tuple[BacktestResult, Any]:
         """Core backtest logic.
 
@@ -547,6 +621,9 @@ class BacktestEngine:
             n=data.periods,
             name=strategy.name,
         )
+
+        # 필수 enrichment 커버리지 검증
+        self._validate_required_enrichments(strategy, data)
 
         # 전략 실행 (전처리 + 시그널 생성)
         processed_df, signals = strategy.run(data.ohlcv)
@@ -1055,10 +1132,11 @@ class BacktestEngine:
                     }
                 allocator.on_bar(returns=returns_history, strengths=strength_val)
 
-            # 현재 weight 기록
+            # 현재 weight 기록 (exposure 반영)
             current_weights = allocator.weights
+            exposure = allocator.exposure
             for s in symbols:
-                weight_arrays[s].append(current_weights.get(s, 1.0 / n_symbols))
+                weight_arrays[s].append(current_weights.get(s, 1.0 / n_symbols) * exposure)
 
         return {s: pd.Series(weight_arrays[s], index=close_df.index) for s in symbols}
 
@@ -1148,7 +1226,7 @@ class BacktestEngine:
             target_weights_dict[symbol] = scaled
         return target_weights_dict
 
-    def _execute_multi(
+    def _execute_multi(  # noqa: PLR0912 — multi-asset orchestration requires branching
         self,
         request: MultiAssetBacktestRequest,
     ) -> tuple[MultiAssetBacktestResult, Any]:
@@ -1180,6 +1258,18 @@ class BacktestEngine:
         logger.info(
             f"Multi-asset backtest | {len(symbols)} symbols | strategy={request.strategy.name}"
         )
+
+        # 0.5. 필수 enrichment 커버리지 검증 (심볼별)
+        if request.strategy.required_enrichments:
+            for symbol in symbols:
+                per_symbol_data = MarketDataSet(
+                    symbol=symbol,
+                    timeframe=request.data.timeframe,
+                    start=request.data.start,
+                    end=request.data.end,
+                    ohlcv=request.data.ohlcv[symbol],
+                )
+                self._validate_required_enrichments(request.strategy, per_symbol_data)
 
         # 1. 심볼별 전략 실행 (독립적)
         processed_dict: dict[str, pd.DataFrame] = {}

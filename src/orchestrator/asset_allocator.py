@@ -81,6 +81,10 @@ class AssetAllocationConfig(BaseModel):
         rebalance_bars: 비중 재계산 주기 (bars)
         min_weight: 에셋당 최소 비중
         max_weight: 에셋당 최대 비중
+        mom_lookback: Dual Momentum lookback (bars)
+        top_pct: Dual Momentum long 할 상위 비율
+        abs_mom_threshold: 절대 모멘텀 게이트 임계값
+        exposure_floor: 최소 exposure (현금 대피 시 하한)
     """
 
     model_config = ConfigDict(frozen=True)
@@ -110,6 +114,29 @@ class AssetAllocationConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="에셋당 최대 비중",
+    )
+
+    # Dual Momentum 전용 필드 (다른 method에서는 무시됨)
+    mom_lookback: int = Field(
+        default=42,
+        ge=5,
+        description="Momentum 계산 lookback (bars)",
+    )
+    top_pct: float = Field(
+        default=0.50,
+        gt=0.0,
+        le=1.0,
+        description="Long 할 상위 비율",
+    )
+    abs_mom_threshold: float = Field(
+        default=0.0,
+        description="절대 모멘텀 게이트 임계값",
+    )
+    exposure_floor: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="최소 exposure (현금 대피 시 하한)",
     )
 
     @model_validator(mode="after")
@@ -144,11 +171,17 @@ class IntraPodAllocator:
         n = len(symbols)
         self._weights: dict[str, float] = dict.fromkeys(symbols, 1.0 / n)
         self._bar_count: int = 0
+        self._exposure: float = 1.0
 
     @property
     def weights(self) -> dict[str, float]:
         """현재 에셋 비중."""
         return dict(self._weights)
+
+    @property
+    def exposure(self) -> float:
+        """현재 전체 exposure (0.0~1.0). 기존 method는 항상 1.0."""
+        return self._exposure
 
     @property
     def bar_count(self) -> int:
@@ -177,6 +210,11 @@ class IntraPodAllocator:
             return dict(self._weights)
 
         method = self._config.method
+
+        if method == AssetAllocationMethod.DUAL_MOMENTUM:
+            self._weights, self._exposure = self._dual_momentum(returns)
+            return dict(self._weights)
+
         if method == AssetAllocationMethod.EQUAL_WEIGHT:
             raw = self._equal_weight()
         elif method == AssetAllocationMethod.INVERSE_VOLATILITY:
@@ -319,6 +357,65 @@ class IntraPodAllocator:
 
         return {s: v / total for s, v in abs_strengths.items()}
 
+    def _dual_momentum(
+        self,
+        returns: dict[str, list[float]],
+    ) -> tuple[dict[str, float], float]:
+        """Dual Momentum 배분: 절대 게이트 + 상대 ranking.
+
+        1. 심볼별 cumulative return 계산 (mom_lookback)
+        2. 데이터 부족 → (EW, 1.0) fallback
+        3. Absolute Gate: median(mom) < threshold → exposure 축소
+        4. Cross-sectional Ranking: top_pct 선택 → EW 배분
+
+        Returns:
+            (weights, exposure) 튜플
+        """
+        lookback = self._config.mom_lookback
+        n = len(self._symbols)
+        ew_weights = dict.fromkeys(self._symbols, 1.0 / n)
+
+        # 1. 심볼별 momentum 계산
+        momentums: dict[str, float] = {}
+        for s in self._symbols:
+            r = returns.get(s, [])
+            if len(r) < lookback:
+                logger.debug("DualMom: insufficient data for {}, fallback to EW", s)
+                return ew_weights, 1.0
+            tail = r[-lookback:]
+            # Cumulative return: product of (1+r) - 1
+            cum_ret = float(np.prod(np.array(tail) + 1.0)) - 1.0
+            momentums[s] = cum_ret
+
+        # 2. Absolute Gate: median momentum
+        mom_values = list(momentums.values())
+        median_mom = float(np.median(mom_values))
+
+        threshold = self._config.abs_mom_threshold
+        floor = self._config.exposure_floor
+
+        if median_mom < threshold:
+            # Exposure 축소: 음수일수록 더 많이 축소
+            scale = max(abs(median_mom), _MIN_VOL)
+            exposure = max(floor, 1.0 - abs(median_mom) / scale)
+            # median == 0 → scale == _MIN_VOL → exposure ≈ 0 → floor
+            # 실질적으로 median < 0 → exposure = floor
+            if median_mom < 0:
+                exposure = floor
+        else:
+            exposure = 1.0
+
+        # 3. Cross-sectional Ranking
+        sorted_symbols = sorted(momentums, key=lambda s: momentums[s], reverse=True)
+        n_long = max(1, round(n * self._config.top_pct))
+
+        selected = set(sorted_symbols[:n_long])
+        weights: dict[str, float] = {}
+        for s in self._symbols:
+            weights[s] = (1.0 / n_long) if s in selected else 0.0
+
+        return weights, exposure
+
     # ── Serialization ─────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
@@ -326,6 +423,7 @@ class IntraPodAllocator:
         return {
             "weights": dict(self._weights),
             "bar_count": self._bar_count,
+            "exposure": self._exposure,
         }
 
     def restore_from_dict(self, data: dict[str, Any]) -> None:
@@ -336,6 +434,9 @@ class IntraPodAllocator:
         bar_count_val = data.get("bar_count")
         if isinstance(bar_count_val, int | float):
             self._bar_count = int(bar_count_val)
+        exposure_val = data.get("exposure")
+        if isinstance(exposure_val, int | float):
+            self._exposure = float(exposure_val)
 
 
 # ── Module-level utility ──────────────────────────────────────────

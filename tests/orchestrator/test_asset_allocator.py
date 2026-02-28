@@ -589,6 +589,15 @@ _ALL_METHODS = [
     AssetAllocationMethod.INVERSE_VOLATILITY,
     AssetAllocationMethod.RISK_PARITY,
     AssetAllocationMethod.SIGNAL_WEIGHTED,
+    AssetAllocationMethod.DUAL_MOMENTUM,
+]
+
+# DUAL_MOMENTUM은 bottom 심볼에 weight=0 → min/max clamp 비적용
+_CLAMP_METHODS = [
+    AssetAllocationMethod.EQUAL_WEIGHT,
+    AssetAllocationMethod.INVERSE_VOLATILITY,
+    AssetAllocationMethod.RISK_PARITY,
+    AssetAllocationMethod.SIGNAL_WEIGHTED,
 ]
 
 _SYMBOLS_4 = ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT")
@@ -613,7 +622,7 @@ class TestInvariants:
         weights = alloc.on_bar(returns, strengths=strengths)
         assert all(w >= 0 for w in weights.values())
 
-    @pytest.mark.parametrize("method", _ALL_METHODS)
+    @pytest.mark.parametrize("method", _CLAMP_METHODS)
     def test_weights_above_min(self, method: AssetAllocationMethod) -> None:
         alloc = _make_allocator(
             method=method,
@@ -628,7 +637,7 @@ class TestInvariants:
         for w in weights.values():
             assert w >= 0.10 - 1e-4
 
-    @pytest.mark.parametrize("method", _ALL_METHODS)
+    @pytest.mark.parametrize("method", _CLAMP_METHODS)
     def test_weights_below_max(self, method: AssetAllocationMethod) -> None:
         alloc = _make_allocator(
             method=method,
