@@ -145,6 +145,10 @@ class EDAPortfolioManager:
             return f"{pod_id}|{symbol}"
         return symbol
 
+    def position_key(self, symbol: str, pod_id: str | None = None) -> str:
+        """Public composite position key (RM 등 외부 접근용)."""
+        return self._pos_key(symbol, pod_id)
+
     @staticmethod
     def _symbol_from_key(key: str) -> str:
         """Extract symbol from position key."""

@@ -430,3 +430,93 @@ class TestPeakEquityTracking:
         rm = EDARiskManager(config=config, portfolio_manager=pm)
         # Peak = 10000, current equity = 10000 → drawdown = 0%
         assert rm.current_drawdown == 0.0
+
+
+class TestHedgeModeCompositeKey:
+    """Hedge mode에서 composite key (pod_id|symbol) 기반 검증."""
+
+    def _make_hedge_order(
+        self,
+        symbol: str = "BTC/USDT",
+        side: str = "SELL",
+        pod_id: str = "pod-donch-multi",
+        notional_usd: float = 5000.0,
+    ) -> OrderRequestEvent:
+        return OrderRequestEvent(
+            client_order_id=f"test-{uuid4().hex[:8]}",
+            symbol=symbol,
+            side=side,  # type: ignore[arg-type]
+            target_weight=0.0,
+            notional_usd=notional_usd,
+            validated=False,
+            correlation_id=uuid4(),
+            source="test",
+            pod_id=pod_id,
+        )
+
+    def test_is_reducing_position_hedge_mode(self) -> None:
+        """Hedge mode: pod_id|symbol composite key로 포지션 축소 판정."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, hedge_mode=True)
+        rm = EDARiskManager(config=config, portfolio_manager=pm)
+
+        # pod-donch-multi|BTC/USDT LONG 포지션 수동 생성
+        from src.eda.portfolio_manager import Position
+        from src.models.types import Direction
+
+        pos_key = pm.position_key("BTC/USDT", "pod-donch-multi")
+        pm._positions[pos_key] = Position(
+            symbol="BTC/USDT", direction=Direction.LONG, size=0.1, avg_entry_price=50000.0
+        )
+
+        # SELL 주문 (축소) → True
+        order = self._make_hedge_order(side="SELL", pod_id="pod-donch-multi")
+        assert rm._is_reducing_position(order) is True
+
+        # BUY 주문 (확대) → False
+        order_buy = self._make_hedge_order(side="BUY", pod_id="pod-donch-multi")
+        assert rm._is_reducing_position(order_buy) is False
+
+    def test_is_reducing_wrong_pod_returns_false(self) -> None:
+        """다른 Pod의 포지션은 축소로 인식하지 않음."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, hedge_mode=True)
+        rm = EDARiskManager(config=config, portfolio_manager=pm)
+
+        from src.eda.portfolio_manager import Position
+        from src.models.types import Direction
+
+        pos_key = pm.position_key("BTC/USDT", "pod-donch-multi")
+        pm._positions[pos_key] = Position(
+            symbol="BTC/USDT", direction=Direction.LONG, size=0.1, avg_entry_price=50000.0
+        )
+
+        # pod-dual-mom으로 SELL → 해당 Pod에 포지션 없으므로 False
+        order = self._make_hedge_order(side="SELL", pod_id="pod-dual-mom")
+        assert rm._is_reducing_position(order) is False
+
+    def test_is_new_position_hedge_mode(self) -> None:
+        """Hedge mode: composite key 기반 신규 포지션 판정."""
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        pm = EDAPortfolioManager(config=config, initial_capital=10000.0, hedge_mode=True)
+
+        from src.eda.portfolio_manager import Position
+        from src.models.types import Direction
+
+        # pod-donch-multi|BTC/USDT 포지션 존재
+        pos_key = pm.position_key("BTC/USDT", "pod-donch-multi")
+        pm._positions[pos_key] = Position(
+            symbol="BTC/USDT", direction=Direction.LONG, size=0.1, avg_entry_price=50000.0
+        )
+
+        # _validate_order 내부: 동일 pod+symbol → 기존 포지션
+        order_same = self._make_hedge_order(side="BUY", pod_id="pod-donch-multi")
+        pos_key_check = pm.position_key(order_same.symbol, order_same.pod_id)
+        is_new = pos_key_check not in pm.positions or not pm.positions[pos_key_check].is_open
+        assert is_new is False
+
+        # 다른 pod → 신규 포지션
+        order_diff = self._make_hedge_order(side="BUY", pod_id="pod-dual-mom")
+        pos_key_check2 = pm.position_key(order_diff.symbol, order_diff.pod_id)
+        is_new2 = pos_key_check2 not in pm.positions or not pm.positions[pos_key_check2].is_open
+        assert is_new2 is True

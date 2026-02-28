@@ -260,9 +260,8 @@ class EDARiskManager:
 
         # 2. Max open positions check
         open_count = self._pm.open_position_count
-        is_new_position = (
-            order.symbol not in self._pm.positions or not self._pm.positions[order.symbol].is_open
-        )
+        pos_key = self._pm.position_key(order.symbol, order.pod_id)
+        is_new_position = pos_key not in self._pm.positions or not self._pm.positions[pos_key].is_open
         if is_new_position and open_count >= self._max_open_positions:
             return f"Max open positions reached ({open_count}/{self._max_open_positions})"
 
@@ -274,8 +273,12 @@ class EDARiskManager:
         return None
 
     def _is_reducing_position(self, order: OrderRequestEvent) -> bool:
-        """포지션을 축소하는 주문인지 확인."""
-        pos = self._pm.positions.get(order.symbol)
+        """포지션을 축소하는 주문인지 확인.
+
+        Hedge mode에서는 composite key (pod_id|symbol)로 조회합니다.
+        """
+        pos_key = self._pm.position_key(order.symbol, order.pod_id)
+        pos = self._pm.positions.get(pos_key)
         if pos is None or not pos.is_open:
             return False
         # LONG 포지션의 SELL, SHORT 포지션의 BUY → 축소
