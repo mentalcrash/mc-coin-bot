@@ -1,12 +1,13 @@
 # ==============================================================================
-# Orchestrator Live Config — 3 Pods (Anchor-Mom / Donch-Multi / Tri-Channel)
+# Orchestrator Live Config — 4 Pods (Anchor-Mom / Donch-Multi / Tri-Channel / Dual-Mom)
 # ==============================================================================
 #
-# 2026-02-26 v4: Hedge Mode — Pod별 독립 포지션
-#   ACTIVE 전략 3개 — 원래 설계 ShortMode + 에셋 분산:
+# 2026-02-28 v5: Dual-Mom Pod 추가 (Incubation)
+#   ACTIVE 전략 3개 + Incubation 1개:
 #     - Pod 1: Anchor-Mom (12H, HEDGE_ONLY) — DOGE
 #     - Pod 2: Donch-Multi (12H, FULL) — BTC
 #     - Pod 3: Tri-Channel (12H, HEDGE_ONLY) — ETH, SOL
+#     - Pod 4: Dual-Mom (12H, DISABLED) — BTC, ETH, AVAX, LINK [INCUBATION]
 #
 #   핵심 원칙:
 #     - Hedge Mode: Pod별 독립 포지션 (positionSide LONG/SHORT 동시 보유)
@@ -15,10 +16,11 @@
 #     - Virtual Order Book: signal 시점 가상 포지션 (fill 미귀속)
 #     - use_intrabar_trailing_stop: false (orchestrated_runner.py, EDA Parity B2)
 #
-#   v3→v4 변경:
-#     - Hedge Mode 적용 (netting_mode: hedge)
-#     - ETH 중복 백테스트 결과 Sharpe 0.68 → BTC 분산 유지 (Sharpe 1.10)
-#     - 심볼 중복은 기술적으로 가능하나, 분산 효과 측면에서 비중복 유지
+#   v4→v5 변경:
+#     - Pod 4 Dual-Mom 추가 (INCUBATION, 10% 자본)
+#     - Hedge Mode에서 심볼 중복 허용 (BTC, ETH 공유)
+#     - AVAX, LINK 신규 에셋으로 cross-sectional ranking 다양성 확보
+#     - IntraPodAllocator DUAL_MOMENTUM: 절대 게이트 + 상대 ranking
 #
 #   백테스트 결과 (2024-2025, 2년):
 #     Portfolio: Sharpe 1.10, CAGR 19.0%, MDD 16.34%
@@ -130,8 +132,9 @@ orchestrator:
 
   # ── Pods ────────────────────────────────────────────────────
   #
-  # 에셋 분산: 심볼 중복은 가능하나, 분산 효과를 위해 비중복 유지
+  # 에셋 분산: Pod 1-3 비중복, Pod 4(Incubation)은 Hedge Mode 중복 허용
   #   anchor-mom: DOGE  |  donch-multi: BTC  |  tri-channel: ETH, SOL
+  #   dual-mom: BTC, ETH, AVAX, LINK (cross-sectional ranking용)
   #
   pods:
     # ────────────────────────────────────────────────────────
@@ -159,7 +162,7 @@ orchestrator:
       symbols:
         - DOGE/USDT
       timeframe: "12H"
-      initial_fraction: 0.333
+      initial_fraction: 0.25
       max_fraction: 0.50
       min_fraction: 0.15
       max_drawdown: 0.20
@@ -201,7 +204,7 @@ orchestrator:
       symbols:
         - BTC/USDT
       timeframe: "12H"
-      initial_fraction: 0.333
+      initial_fraction: 0.25
       max_fraction: 0.50
       min_fraction: 0.15
       max_drawdown: 0.20
@@ -244,7 +247,7 @@ orchestrator:
         - ETH/USDT
         - SOL/USDT
       timeframe: "12H"
-      initial_fraction: 0.334
+      initial_fraction: 0.25
       max_fraction: 0.50
       min_fraction: 0.15
       max_drawdown: 0.20
@@ -261,3 +264,54 @@ orchestrator:
         hard_exclude_drawdown: 0.25
         min_exclusion_bars: 30
         min_active_assets: 0
+
+    # ────────────────────────────────────────────────────────
+    # Pod 4: Dual-Mom — Dual Momentum XSMOM (12H, DISABLED)
+    # INCUBATION | Pipeline 미검증 (P1 PENDING)
+    # 절대 게이트(폭락 시 현금 대피) + 상대 ranking(승자 overweight)
+    # Cross-sectional: 4심볼 중 top 50%(2개) EW 배분
+    # Hedge Mode: BTC/ETH 중복 허용 (Pod별 독립 포지션)
+    # ────────────────────────────────────────────────────────
+    - pod_id: pod-dual-mom
+      strategy_name: dual-mom
+      strategy_params:
+        lookback: 42
+        vol_window: 30
+        vol_target: 0.35
+        min_volatility: 0.05
+        annualization_factor: 730.0
+        short_mode: 0                    # DISABLED (Long-Only)
+      symbols:
+        - BTC/USDT
+        - ETH/USDT
+        - AVAX/USDT
+        - LINK/USDT
+      timeframe: "12H"
+      initial_fraction: 0.25
+      max_fraction: 0.25
+      min_fraction: 0.05
+      max_drawdown: 0.20
+      drawdown_warning: 0.15
+      max_leverage: 1.0                  # Long-Only → 레버리지 1x
+      max_assets: 8
+      system_stop_loss: 0.10
+      use_trailing_stop: true
+      trailing_stop_atr_multiplier: 3.0
+      rebalance_threshold: 0.10
+      asset_allocation:
+        method: dual_momentum
+        rebalance_bars: 1                # 매 bar 리밸런싱
+        mom_lookback: 42                 # 전략 lookback과 동기화
+        top_pct: 0.50                    # 상위 50% (4심볼 중 2개)
+        abs_mom_threshold: 0.0           # median < 0 → 현금 대피
+        exposure_floor: 0.0              # 전체 음수 시 exposure=0
+        vol_lookback: 60
+        min_weight: 0.0                  # bottom 심볼 weight=0 허용
+        max_weight: 1.0                  # top 심볼 weight=0.5 (EW)
+      asset_selector:
+        enabled: true
+        hard_exclude_sharpe: -1.0
+        hard_exclude_drawdown: 0.25
+        min_exclusion_bars: 30
+        min_active_assets: 0
+      pinned_symbols: false              # surveillance 동적 심볼 추가 허용 (max 8)
