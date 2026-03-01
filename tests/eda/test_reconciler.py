@@ -286,6 +286,47 @@ class TestHedgeMode:
         drifts = await reconciler.initial_check(pm, client, ["BTC/USDT"])
         assert drifts == []
 
+    @pytest.mark.asyncio
+    async def test_composite_key_no_false_orphan(self) -> None:
+        """Hedge mode composite key (pod_id|symbol) → ORPHAN 오탐 방지."""
+        positions = {
+            "pod-anchor-mom|DOGE/USDT": FakePosition(
+                symbol="DOGE/USDT", direction=Direction.LONG, size=328.0, last_price=0.1
+            )
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [
+                {"symbol": "DOGE/USDT:USDT", "contracts": 328.0, "side": "long"},
+            ]
+        )
+
+        reconciler = PositionReconciler()
+        drifts = await reconciler.initial_check(pm, client, ["DOGE/USDT"])
+        assert drifts == []
+
+    @pytest.mark.asyncio
+    async def test_composite_key_multi_pod_aggregate(self) -> None:
+        """여러 Pod의 동일 심볼 포지션 합산 후 비교."""
+        positions = {
+            "pod-a|BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.3, last_price=50000.0
+            ),
+            "pod-b|BTC/USDT": FakePosition(
+                symbol="BTC/USDT", direction=Direction.LONG, size=0.2, last_price=50000.0
+            ),
+        }
+        pm = _make_pm(positions)
+        client = _make_futures_client(
+            [
+                {"symbol": "BTC/USDT:USDT", "contracts": 0.5, "side": "long"},
+            ]
+        )
+
+        reconciler = PositionReconciler()
+        drifts = await reconciler.initial_check(pm, client, ["BTC/USDT"])
+        assert drifts == []
+
 
 class TestPeriodicCheck:
     """periodic_check() 테스트."""

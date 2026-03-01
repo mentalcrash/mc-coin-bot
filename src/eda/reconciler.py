@@ -429,12 +429,15 @@ class PositionReconciler:
         drifts: list[str] = []
         self._last_drift_details = []
 
+        # PM 포지션 집계: composite key (pod_id|symbol) → raw symbol 기준 합산
+        pm_aggregate = self._aggregate_pm_positions(pm, symbols)
+
         for symbol in symbols:
-            pm_pos = pm.positions.get(symbol)
+            pm_info = pm_aggregate.get(symbol, {"long_size": 0.0, "short_size": 0.0})
             ex_info = exchange_map.get(symbol, {"long_size": 0.0, "short_size": 0.0})
 
-            pm_size = pm_pos.size if pm_pos and pm_pos.is_open else 0.0
-            pm_dir = pm_pos.direction if pm_pos and pm_pos.is_open else Direction.NEUTRAL
+            # PM aggregate → _check_symbol_drift 호환 형식으로 변환
+            pm_size, pm_dir = self._pm_aggregate_to_size_dir(pm_info)
 
             drift_reasons = self._check_symbol_drift(symbol, pm_size, pm_dir, ex_info)
             if drift_reasons:
@@ -448,12 +451,14 @@ class PositionReconciler:
                 drift_pct = (abs(pm_size - ex_size) / max_size * 100) if max_size > 0 else 0.0
                 is_orphan = (pm_size > 0) != (ex_size > 0)
 
+                # Auto-correction은 composite key 환경에서 단일 Position에만 적용 가능
                 corrected = False
-                # Auto-correction: PM size를 거래소 기준으로 보정
-                if self._auto_correct and pm_pos is not None:
-                    old_size = pm_pos.size
-                    self._apply_correction(pm_pos, ex_size, pm_dir, ex_info)
-                    corrected = pm_pos.size != old_size
+                if self._auto_correct:
+                    pm_pos = pm.positions.get(symbol)
+                    if pm_pos is not None:
+                        old_size = pm_pos.size
+                        self._apply_correction(pm_pos, ex_size, pm_dir, ex_info)
+                        corrected = pm_pos.size != old_size
 
                 self._last_drift_details.append(
                     DriftDetail(
@@ -474,6 +479,56 @@ class PositionReconciler:
             logger.warning("PositionReconciler: {} drift(s) — {}", len(drifts), " | ".join(parts))
 
         return drifts
+
+    @staticmethod
+    def _aggregate_pm_positions(
+        pm: EDAPortfolioManager,
+        symbols: list[str],
+    ) -> dict[str, dict[str, float]]:
+        """PM 포지션을 raw symbol 기준으로 집계 (composite key 지원).
+
+        Hedge mode에서 composite key (pod_id|symbol)로 저장된 포지션을
+        raw symbol 기준 long_size/short_size로 합산합니다.
+
+        Returns:
+            {symbol: {"long_size": float, "short_size": float}}
+        """
+        result: dict[str, dict[str, float]] = {}
+        symbol_set = set(symbols)
+
+        for key, pos in pm.positions.items():
+            if not pos.is_open:
+                continue
+            raw = key.split("|", 1)[1] if "|" in key else key
+            if raw not in symbol_set:
+                continue
+            if raw not in result:
+                result[raw] = {"long_size": 0.0, "short_size": 0.0}
+            if pos.direction == Direction.LONG:
+                result[raw]["long_size"] += pos.size
+            elif pos.direction == Direction.SHORT:
+                result[raw]["short_size"] += pos.size
+
+        return result
+
+    @staticmethod
+    def _pm_aggregate_to_size_dir(
+        pm_info: dict[str, float],
+    ) -> tuple[float, Direction]:
+        """PM aggregate → (size, direction) 변환.
+
+        _check_symbol_drift() 호환 형식으로 변환합니다.
+        LONG과 SHORT 모두 있으면 LONG 우선 (거래소 비교 시 방향별 매칭).
+        """
+        long_size = pm_info["long_size"]
+        short_size = pm_info["short_size"]
+        if long_size > 0 and short_size <= 0:
+            return long_size, Direction.LONG
+        if short_size > 0 and long_size <= 0:
+            return short_size, Direction.SHORT
+        if long_size > 0 and short_size > 0:
+            return long_size, Direction.LONG
+        return 0.0, Direction.NEUTRAL
 
     @staticmethod
     def _detect_exchange_side(ex_info: dict[str, float]) -> str:
