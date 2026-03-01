@@ -632,7 +632,25 @@ class StrategyOrchestrator:
         weights: dict[str, float],
         pod_returns_data: dict[str, list[float]],
     ) -> dict[str, float]:
-        """Volatility targeting + Regime cash buffer overlay 적용."""
+        """DD de-risking + Volatility targeting + Regime cash buffer overlay 적용."""
+        if self._config.dd_derisk_enabled:
+            from src.orchestrator.dd_derisk import apply_dd_derisk
+
+            pod_drawdowns = {
+                pod.pod_id: pod.performance.current_drawdown
+                for pod in self._pods
+                if pod.is_active
+            }
+            weights, actions = apply_dd_derisk(
+                weights,
+                pod_drawdowns,
+                self._config.dd_derisk_half_threshold,
+                self._config.dd_derisk_zero_threshold,
+            )
+            affected = {k: v for k, v in actions.items() if v != "normal"}
+            if affected:
+                logger.warning("DD de-risk: {}", affected)
+
         if self._config.vol_target_enabled:
             from src.orchestrator.vol_targeting import apply_vol_targeting
 

@@ -1,6 +1,6 @@
 """Allocation Comparator — 배분 방법 비교 엔진.
 
-동일 데이터로 4가지 배분 방법(EW, InvVol, Risk Parity, Adaptive Kelly)을
+동일 데이터로 모든 배분 방법(EW, InvVol, Risk Parity, Adaptive Kelly, Rolling Sharpe)을
 비교 백테스트하여 최적 방법을 선택할 수 있는 도구입니다.
 
 Rules Applied:
@@ -56,7 +56,7 @@ def compare_allocations(
     target_tf: str,
     initial_capital: float = 10_000.0,
 ) -> list[AllocationComparisonResult]:
-    """4가지 배분 방법으로 백테스트하여 결과를 비교합니다.
+    """모든 배분 방법으로 백테스트하여 결과를 비교합니다.
 
     Args:
         orch_config: OrchestratorConfig (base config)
@@ -65,7 +65,7 @@ def compare_allocations(
         initial_capital: 초기 자본
 
     Returns:
-        AllocationComparisonResult 리스트 (4개, Sharpe 내림차순 정렬)
+        AllocationComparisonResult 리스트 (Sharpe 내림차순 정렬)
     """
     from src.eda.orchestrated_runner import OrchestratedRunner
 

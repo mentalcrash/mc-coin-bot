@@ -56,12 +56,14 @@ class AllocationMethod(StrEnum):
         RISK_PARITY: 리스크 기여도 균등 배분
         ADAPTIVE_KELLY: 적응적 Kelly 비율
         INVERSE_VOLATILITY: 변동성 역비례 배분
+        ROLLING_SHARPE: 롤링 Sharpe 비례 배분
     """
 
     EQUAL_WEIGHT = "equal_weight"
     RISK_PARITY = "risk_parity"
     ADAPTIVE_KELLY = "adaptive_kelly"
     INVERSE_VOLATILITY = "inverse_volatility"
+    ROLLING_SHARPE = "rolling_sharpe"
 
 
 class AssetAllocationMethod(StrEnum):

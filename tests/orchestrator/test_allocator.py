@@ -371,6 +371,100 @@ class TestAdaptiveKelly:
         assert sum(w.values()) <= 1.0 + 1e-6
 
 
+# ── TestRollingSharpe ────────────────────────────────────────────
+
+
+class TestRollingSharpe:
+    def test_high_sharpe_gets_more(self) -> None:
+        """높은 Sharpe pod → 높은 비중."""
+        cfg = _make_config(2, AllocationMethod.ROLLING_SHARPE)
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        # 큰 signal-to-noise 차이로 확실한 구분
+        returns = pd.DataFrame(
+            {
+                "pod-0": rng.normal(0.01, 0.005, 200),  # 높은 Sharpe
+                "pod-1": rng.normal(0.001, 0.03, 200),  # 낮은 Sharpe
+            },
+            index=pd.date_range("2025-01-01", periods=200, freq="D"),
+        )
+        states = _all_production(2)
+        w = alloc.compute_weights(returns, states)
+        assert w["pod-0"] > w["pod-1"]
+
+    def test_equal_sharpe_equal_weight(self) -> None:
+        """동일 수익률 분포 → 대략 균등 (lifecycle clamp 허용)."""
+        cfg = _make_config(2, AllocationMethod.ROLLING_SHARPE)
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        # 동일 분포로 양쪽 모두 생성
+        base = rng.normal(0.005, 0.02, 200)
+        returns = pd.DataFrame(
+            {"pod-0": base.copy(), "pod-1": base.copy()},
+            index=pd.date_range("2025-01-01", periods=200, freq="D"),
+        )
+        states = _all_production(2)
+        w = alloc.compute_weights(returns, states)
+        assert w["pod-0"] == pytest.approx(w["pod-1"], abs=0.01)
+
+    def test_insufficient_data_fallback_ew(self) -> None:
+        """데이터 < 5일 → EW fallback."""
+        cfg = _make_config(2, AllocationMethod.ROLLING_SHARPE)
+        alloc = CapitalAllocator(cfg)
+        returns = _make_returns(2, n_days=3)
+        states = _all_production(2)
+        w = alloc.compute_weights(returns, states)
+        # EW fallback → 대략 균등 (lifecycle clamp 적용됨)
+        assert w["pod-0"] == pytest.approx(w["pod-1"], abs=0.05)
+
+    def test_all_negative_sharpe_fallback_ew(self) -> None:
+        """전부 음수 Sharpe → EW fallback."""
+        cfg = _make_config(2, AllocationMethod.ROLLING_SHARPE)
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        # 큰 음수 mean으로 확실한 음수 Sharpe
+        returns = pd.DataFrame(
+            {
+                "pod-0": rng.normal(-0.02, 0.01, 200),
+                "pod-1": rng.normal(-0.02, 0.01, 200),
+            },
+            index=pd.date_range("2025-01-01", periods=200, freq="D"),
+        )
+        states = _all_production(2)
+        w = alloc.compute_weights(returns, states)
+        # EW fallback → 대략 균등
+        assert w["pod-0"] == pytest.approx(w["pod-1"], abs=0.05)
+
+    def test_negative_sharpe_gets_min_weight(self) -> None:
+        """음수 Sharpe pod → min_weight 할당."""
+        cfg = _make_config(2, AllocationMethod.ROLLING_SHARPE, rolling_sharpe_min_weight=0.05)
+        alloc = CapitalAllocator(cfg)
+        rng = np.random.default_rng(42)
+        # pod-0: 확실히 양수 Sharpe, pod-1: 확실히 음수 Sharpe
+        returns = pd.DataFrame(
+            {
+                "pod-0": rng.normal(0.01, 0.005, 200),
+                "pod-1": rng.normal(-0.01, 0.005, 200),
+            },
+            index=pd.date_range("2025-01-01", periods=200, freq="D"),
+        )
+        states = _all_production(2)
+        w = alloc.compute_weights(returns, states)
+        # pod-1 음수 Sharpe → min_weight에 가까운 작은 비중
+        assert w["pod-1"] < w["pod-0"]
+        assert w["pod-1"] <= 0.10
+
+    def test_sum_le_one(self) -> None:
+        """가중치 합 불변식."""
+        cfg = _make_config(3, AllocationMethod.ROLLING_SHARPE)
+        alloc = CapitalAllocator(cfg)
+        returns = _make_returns(3, n_days=100)
+        states = _all_production(3)
+        w = alloc.compute_weights(returns, states)
+        assert sum(w.values()) <= 1.0 + 1e-6
+        assert all(v >= -1e-8 for v in w.values())
+
+
 # ── TestLifecycleClamps ───────────────────────────────────────────
 
 
@@ -483,6 +577,7 @@ class TestInvariants:
             AllocationMethod.INVERSE_VOLATILITY,
             AllocationMethod.RISK_PARITY,
             AllocationMethod.ADAPTIVE_KELLY,
+            AllocationMethod.ROLLING_SHARPE,
         ],
     )
     def test_sum_le_one_all_nonneg(self, method: AllocationMethod) -> None:

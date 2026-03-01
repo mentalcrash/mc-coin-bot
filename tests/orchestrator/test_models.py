@@ -33,13 +33,14 @@ class TestLifecycleState:
 
 class TestAllocationMethod:
     def test_all_methods_defined(self) -> None:
-        assert len(AllocationMethod) == 4
+        assert len(AllocationMethod) == 5
 
     def test_method_values(self) -> None:
         assert AllocationMethod.EQUAL_WEIGHT == "equal_weight"
         assert AllocationMethod.RISK_PARITY == "risk_parity"
         assert AllocationMethod.ADAPTIVE_KELLY == "adaptive_kelly"
         assert AllocationMethod.INVERSE_VOLATILITY == "inverse_volatility"
+        assert AllocationMethod.ROLLING_SHARPE == "rolling_sharpe"
 
 
 # ── RebalanceTrigger ────────────────────────────────────────────

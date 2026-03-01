@@ -659,6 +659,37 @@ class OrchestratorConfig(BaseModel):
         description="최대 투자 비율 (vol scalar 상한)",
     )
 
+    # Rolling Sharpe Weighting
+    rolling_sharpe_lookback: int = Field(
+        default=30,
+        ge=5,
+        description="Rolling Sharpe 계산 lookback (일)",
+    )
+    rolling_sharpe_min_weight: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.5,
+        description="음수 Sharpe pod의 최소 비중 (완전 배제 방지)",
+    )
+
+    # Drawdown-Based De-Risking
+    dd_derisk_enabled: bool = Field(
+        default=False,
+        description="Pod-level drawdown de-risking overlay 활성화",
+    )
+    dd_derisk_half_threshold: float = Field(
+        default=0.10,
+        gt=0.0,
+        le=1.0,
+        description="Pod DD > 이 값 → weight * 0.5",
+    )
+    dd_derisk_zero_threshold: float = Field(
+        default=0.20,
+        gt=0.0,
+        le=1.0,
+        description="Pod DD > 이 값 → weight = 0.0",
+    )
+
     # Regime-Adaptive Cash Buffer
     cash_buffer_enabled: bool = Field(
         default=False,
@@ -688,6 +719,25 @@ class OrchestratorConfig(BaseModel):
         le=0.90,
         description="최대 현금 비중 (최소 10% 투자 보장)",
     )
+
+    @model_validator(mode="after")
+    def validate_dd_derisk_thresholds(self) -> Self:
+        """DD de-risking threshold 일관성 검증.
+
+        Raises:
+            ValueError: half_threshold >= zero_threshold
+        """
+        if (
+            self.dd_derisk_enabled
+            and self.dd_derisk_half_threshold >= self.dd_derisk_zero_threshold
+        ):
+            msg = (
+                f"dd_derisk_half_threshold ({self.dd_derisk_half_threshold}) "
+                f"must be less than dd_derisk_zero_threshold "
+                f"({self.dd_derisk_zero_threshold})"
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_cash_buffer_thresholds(self) -> Self:

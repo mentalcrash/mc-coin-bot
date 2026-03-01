@@ -66,20 +66,18 @@ class TestCompareAllocations:
         return result
 
     @patch("src.eda.orchestrated_runner.OrchestratedRunner")
-    def test_runs_four_backtests(
+    def test_runs_all_method_backtests(
         self,
         mock_runner_cls: MagicMock,
     ) -> None:
-        """4가지 method로 백테스트 실행."""
+        """모든 AllocationMethod로 백테스트 실행."""
         config = self._make_mock_config()
         data = MagicMock()
+        n_methods = len(AllocationMethod)
 
         # 각 method별 다른 결과
         results = [
-            self._make_mock_result(0.8, -10, 8),
-            self._make_mock_result(1.2, -12, 12),
-            self._make_mock_result(1.5, -8, 15),
-            self._make_mock_result(1.0, -15, 10),
+            self._make_mock_result(0.8 + i * 0.2, -10 - i, 8 + i * 2) for i in range(n_methods)
         ]
         mock_runner = MagicMock()
         mock_runner.run = MagicMock(side_effect=results)
@@ -89,7 +87,7 @@ class TestCompareAllocations:
         with patch("src.orchestrator.allocation_comparator.asyncio.run", side_effect=results):
             comparison = compare_allocations(config, data, "12H", 10000.0)
 
-        assert len(comparison) == 4
+        assert len(comparison) == n_methods
         # Sharpe 내림차순 정렬 확인
         assert comparison[0].sharpe >= comparison[1].sharpe
         assert comparison[1].sharpe >= comparison[2].sharpe
@@ -112,10 +110,11 @@ class TestCompareAllocations:
             assert r.calmar == 0.0
 
     def test_config_variant_created(self) -> None:
-        """model_copy로 config variant가 4번 생성됨."""
+        """model_copy로 config variant가 AllocationMethod 수만큼 생성됨."""
         config = self._make_mock_config()
         data = MagicMock()
         result = self._make_mock_result(1.0, -10, 10)
+        n_methods = len(AllocationMethod)
 
         with (
             patch("src.eda.orchestrated_runner.OrchestratedRunner") as mock_cls,
@@ -124,7 +123,7 @@ class TestCompareAllocations:
             mock_cls.backtest.return_value = MagicMock()
             compare_allocations(config, data, "12H")
 
-        assert config.model_copy.call_count == 4
+        assert config.model_copy.call_count == n_methods
         # 각 method로 호출 확인
         called_methods = {
             call.kwargs["update"]["allocation_method"]

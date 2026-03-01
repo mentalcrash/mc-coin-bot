@@ -1,6 +1,6 @@
 """Capital Allocator — 멀티 전략 자본 배분 엔진.
 
-4가지 배분 알고리즘(EW, InvVol, Risk Parity, Adaptive Kelly)과
+5가지 배분 알고리즘(EW, InvVol, Risk Parity, Adaptive Kelly, Rolling Sharpe)과
 Lifecycle 상태별 가중치 제한(clamp)을 제공합니다.
 
 Rules Applied:
@@ -38,6 +38,7 @@ _ANNUALIZATION_FACTOR = 365.0
 _NAN_MAJORITY_THRESHOLD = 0.5
 _CONDITION_NUMBER_THRESHOLD = 1e10
 _MIN_COV_ROWS = 3  # cov() 계산에 필요한 최소 행 수 (ddof=1이므로 최소 2, 안전 마진 3)
+_MIN_SHARPE_LOOKBACK = 5  # Rolling Sharpe 계산 최소 데이터 수
 
 
 # ── Spinu Objective (Module-level pure functions) ─────────────────
@@ -133,6 +134,7 @@ class CapitalAllocator:
             AllocationMethod.INVERSE_VOLATILITY: self._inverse_volatility,
             AllocationMethod.RISK_PARITY: self._risk_parity,
             AllocationMethod.ADAPTIVE_KELLY: self._adaptive_kelly,
+            AllocationMethod.ROLLING_SHARPE: self._rolling_sharpe,
         }
 
     # ── Public API ────────────────────────────────────────────────
@@ -345,6 +347,60 @@ class CapitalAllocator:
         blended = blended / total
 
         return {str(col_names[i]): float(blended[i]) for i in range(n)}
+
+    def _rolling_sharpe(
+        self,
+        returns: pd.DataFrame,
+        pod_states: dict[str, LifecycleState],
+        pod_live_days: dict[str, int] | None = None,
+    ) -> dict[str, float]:
+        """Rolling Sharpe 비례 배분.
+
+        최근 lookback 기간의 Sharpe가 높은 Pod에 더 많은 자본을 배분합니다.
+        데이터 부족 또는 모든 Sharpe <= 0이면 EW fallback.
+        """
+        lookback = self._config.rolling_sharpe_lookback
+        min_weight = self._config.rolling_sharpe_min_weight
+        col_names = list(returns.columns)
+
+        tail = returns.tail(lookback)
+        if len(tail) < _MIN_SHARPE_LOOKBACK:
+            return self._equal_weight(returns, pod_states)
+
+        # 각 Pod의 annualized Sharpe 계산
+        sharpes: dict[str, float] = {}
+        for col in col_names:
+            series = tail[col]
+            mean_ret = float(series.mean())
+            std_ret = float(series.std(ddof=1))
+            if std_ret < _MIN_WEIGHT:
+                sharpes[str(col)] = 0.0
+            else:
+                sharpes[str(col)] = (mean_ret / std_ret) * np.sqrt(_ANNUALIZATION_FACTOR)
+
+        # 모든 Sharpe <= 0 → EW fallback
+        if all(s <= 0 for s in sharpes.values()):
+            return self._equal_weight(returns, pod_states)
+
+        # Positive Sharpe pod: 비례 배분, Negative/zero → min_weight
+        positive_pods = {pid: s for pid, s in sharpes.items() if s > 0}
+        negative_pods = {pid: s for pid, s in sharpes.items() if s <= 0}
+
+        # 음수 pod에 min_weight 할당, 남은 예산으로 양수 pod 비례 배분
+        reserved = min_weight * len(negative_pods)
+        remaining = 1.0 - reserved
+
+        if remaining <= 0 or not positive_pods:
+            return self._equal_weight(returns, pod_states)
+
+        total_positive_sharpe = sum(positive_pods.values())
+        weights: dict[str, float] = {}
+        for pid in negative_pods:
+            weights[pid] = min_weight
+        for pid, s in positive_pods.items():
+            weights[pid] = (s / total_positive_sharpe) * remaining
+
+        return weights
 
     def _kelly_optimal(
         self,
