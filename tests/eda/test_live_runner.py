@@ -939,8 +939,9 @@ class TestStartupReconciliation:
             client=client,
         )
         pm = MagicMock()
-        result = await runner._reconcile_positions(pm)
-        assert result == []
+        removed, synced = await runner._reconcile_positions(pm)
+        assert removed == []
+        assert synced == []
 
     @pytest.mark.asyncio
     async def test_live_mode_removes_phantom(self) -> None:
@@ -973,10 +974,11 @@ class TestStartupReconciliation:
             last_price=50000.0,
         )
 
-        result = await runner._reconcile_positions(pm)
+        removed, synced = await runner._reconcile_positions(pm)
 
-        assert result == ["BTC/USDT"]
+        assert removed == ["BTC/USDT"]
         assert pm.positions["BTC/USDT"].size == 0.0
+        assert synced == []
 
     @pytest.mark.asyncio
     async def test_api_failure_returns_empty(self) -> None:
@@ -997,6 +999,93 @@ class TestStartupReconciliation:
         )
 
         pm = MagicMock()
-        result = await runner._reconcile_positions(pm)
+        removed, synced = await runner._reconcile_positions(pm)
 
-        assert result == []
+        assert removed == []
+        assert synced == []
+
+    @pytest.mark.asyncio
+    async def test_phase2_syncs_exchange_only_position(self) -> None:
+        """Phase 2: 거래소에만 있는 포지션을 PM에 추가."""
+        strategy = AlwaysLongStrategy.from_params()
+        client = _make_mock_client()
+        futures_client = MagicMock()
+        # Phase 1용 (phantom 제거) + Phase 2용 (full) 모두 동일 응답
+        futures_client.fetch_positions = AsyncMock(
+            return_value=[
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 50000.0,
+                }
+            ]
+        )
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=strategy,
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+
+        from src.eda.portfolio_manager import EDAPortfolioManager
+
+        pm = EDAPortfolioManager(config=_make_config(), initial_capital=10000.0)
+        # PM은 FLAT 상태 (DB 복구 실패 시뮬레이션)
+
+        removed, synced = await runner._reconcile_positions(pm)
+
+        assert removed == []
+        assert synced == ["BTC/USDT"]
+        pos = pm.positions["BTC/USDT"]
+        assert pos.size == 0.01
+        assert pos.direction.name == "LONG"
+        assert pos.avg_entry_price == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_phase2_noop_when_db_ok(self) -> None:
+        """DB 정상 복구 + 거래소 일치 → sync 대상 없음."""
+        strategy = AlwaysLongStrategy.from_params()
+        client = _make_mock_client()
+        futures_client = MagicMock()
+        futures_client.fetch_positions = AsyncMock(
+            return_value=[
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 50000.0,
+                }
+            ]
+        )
+        futures_client.to_futures_symbol = MagicMock(side_effect=lambda s: f"{s}:USDT")
+
+        runner = LiveRunner.live(
+            strategy=strategy,
+            symbols=["BTC/USDT"],
+            target_timeframe="1D",
+            config=_make_config(),
+            client=client,
+            futures_client=futures_client,
+        )
+
+        from src.eda.portfolio_manager import EDAPortfolioManager, Position
+        from src.models.types import Direction
+
+        pm = EDAPortfolioManager(config=_make_config(), initial_capital=10000.0)
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.01,
+            avg_entry_price=50000.0,
+            last_price=50000.0,
+        )
+
+        removed, synced = await runner._reconcile_positions(pm)
+
+        assert removed == []
+        assert synced == []  # 이미 PM에 있으므로 sync 불필요

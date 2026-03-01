@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 # Discord Embed 색상 코드 (decimal)
+_COLOR_GREEN = 0x57F287
 _COLOR_ORANGE = 0xE67E22
 _COLOR_RED = 0xED4245
 _COLOR_YELLOW = 0xFFFF00
@@ -112,6 +113,32 @@ def format_balance_drift_embed(
             {"name": "Exchange Equity", "value": f"${exchange_equity:,.0f}", "inline": True},
             {"name": "Drift", "value": f"{drift_pct:.1f}%", "inline": True},
         ],
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_position_sync_embed(
+    synced: list[tuple[str, float, str, float]],
+) -> dict[str, Any]:
+    """Exchange→PM 포지션 동기화 결과 → Discord embed dict.
+
+    Args:
+        synced: [(symbol_or_key, size, direction_name, entry_price), ...]
+
+    Returns:
+        Discord Embed dict (GREEN color)
+    """
+    fields: list[dict[str, Any]] = []
+    for sym_key, size, direction, entry_price in synced:
+        value = f"Size: {size:.6f} | Dir: {direction} | Entry: ${entry_price:,.2f}"
+        fields.append({"name": sym_key, "value": value, "inline": False})
+
+    return {
+        "title": f"Position Sync ({len(synced)} symbol{'s' if len(synced) != 1 else ''})",
+        "description": "Exchange-only positions added to PM at startup",
+        "color": _COLOR_GREEN,
+        "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

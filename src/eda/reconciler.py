@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -25,6 +26,16 @@ from src.notification.reconciler_formatters import DriftDetail
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager, Position
     from src.exchange.binance_futures_client import BinanceFuturesClient
+
+
+@dataclass(frozen=True)
+class ExchangePositionInfo:
+    """거래소 포지션 상세 정보 (size + direction + entry_price)."""
+
+    size: float
+    direction: Direction
+    entry_price: float
+
 
 # Position drift 임계값 (2%): 이 이상 차이나면 CRITICAL
 _DRIFT_THRESHOLD = 0.02
@@ -220,6 +231,65 @@ class PositionReconciler:
         return result
 
     @staticmethod
+    async def parse_exchange_positions_full(
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+    ) -> dict[str, ExchangePositionInfo]:
+        """거래소 포지션을 entry_price 포함하여 파싱 (One-way Mode).
+
+        parse_exchange_positions()와 동일 로직 + entryPrice 추출.
+        LONG과 SHORT 모두 있으면 LONG 우선.
+
+        Args:
+            futures_client: BinanceFuturesClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            {symbol: ExchangePositionInfo}
+        """
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
+
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
+        exchange_positions = await futures_client.fetch_positions(futures_symbols)
+
+        result: dict[str, ExchangePositionInfo] = {}
+        for pos in exchange_positions:
+            sym = str(pos.get("symbol", ""))
+            spot_sym = sym.split(":")[0] if ":" in sym else sym
+            contracts = abs(float(pos.get("contracts", 0)))
+            side = str(pos.get("side", "")).lower()
+
+            if contracts <= 0:
+                continue
+
+            entry_price = float(pos.get("entryPrice", 0) or 0)
+            if entry_price <= 0:
+                entry_price = float(pos.get("markPrice", 0) or 0)
+            if entry_price <= 0:
+                logger.warning(
+                    "parse_full: skipping {} — no entryPrice/markPrice",
+                    spot_sym,
+                )
+                continue
+
+            if side == "long":
+                result[spot_sym] = ExchangePositionInfo(
+                    size=contracts,
+                    direction=Direction.LONG,
+                    entry_price=entry_price,
+                )
+            elif side == "short" and spot_sym not in result:
+                result[spot_sym] = ExchangePositionInfo(
+                    size=contracts,
+                    direction=Direction.SHORT,
+                    entry_price=entry_price,
+                )
+
+        return result
+
+    @staticmethod
     async def parse_exchange_positions_hedge(
         futures_client: BinanceFuturesClient,
         symbols: list[str],
@@ -259,6 +329,63 @@ class PositionReconciler:
                 result[spot_sym]["long_size"] = contracts
             elif side == "short":
                 result[spot_sym]["short_size"] = contracts
+
+        return result
+
+    @staticmethod
+    async def parse_exchange_positions_hedge_full(
+        futures_client: BinanceFuturesClient,
+        symbols: list[str],
+    ) -> dict[str, dict[str, ExchangePositionInfo | None]]:
+        """거래소 포지션을 Hedge mode + entry_price 포함하여 파싱.
+
+        Args:
+            futures_client: BinanceFuturesClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            {symbol: {"long": ExchangePositionInfo | None, "short": ExchangePositionInfo | None}}
+        """
+        from src.exchange.binance_futures_client import (
+            BinanceFuturesClient as BinanceFuturesClient_,
+        )
+
+        futures_symbols = [BinanceFuturesClient_.to_futures_symbol(s) for s in symbols]
+        exchange_positions = await futures_client.fetch_positions(futures_symbols)
+
+        result: dict[str, dict[str, ExchangePositionInfo | None]] = {}
+        for pos in exchange_positions:
+            sym = str(pos.get("symbol", ""))
+            spot_sym = sym.split(":")[0] if ":" in sym else sym
+            contracts = abs(float(pos.get("contracts", 0)))
+            side = str(pos.get("side", "")).lower()
+
+            if contracts <= 0:
+                continue
+
+            entry_price = float(pos.get("entryPrice", 0) or 0)
+            if entry_price <= 0:
+                entry_price = float(pos.get("markPrice", 0) or 0)
+            if entry_price <= 0:
+                logger.warning(
+                    "parse_hedge_full: skipping {} {} — no entryPrice/markPrice",
+                    spot_sym,
+                    side,
+                )
+                continue
+
+            if spot_sym not in result:
+                result[spot_sym] = {"long": None, "short": None}
+
+            direction = Direction.LONG if side == "long" else Direction.SHORT
+            info = ExchangePositionInfo(
+                size=contracts, direction=direction, entry_price=entry_price
+            )
+
+            if side == "long":
+                result[spot_sym]["long"] = info
+            elif side == "short":
+                result[spot_sym]["short"] = info
 
         return result
 

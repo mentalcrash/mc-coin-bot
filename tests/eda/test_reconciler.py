@@ -567,3 +567,195 @@ class TestParseExchangePositions:
         client = _make_futures_client([{"symbol": "BTC/USDT:USDT", "contracts": 0, "side": "long"}])
         result = await PositionReconciler.parse_exchange_positions(client, ["BTC/USDT"])
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# parse_exchange_positions_full() Tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseExchangePositionsFull:
+    """parse_exchange_positions_full() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_long_with_entry_price(self) -> None:
+        """LONG 포지션 + entryPrice 파싱."""
+        from src.eda.reconciler import ExchangePositionInfo
+
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 50000.0,
+                }
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["BTC/USDT"])
+        assert "BTC/USDT" in result
+        info = result["BTC/USDT"]
+        assert isinstance(info, ExchangePositionInfo)
+        assert info.size == pytest.approx(0.01)
+        assert info.direction == Direction.LONG
+        assert info.entry_price == pytest.approx(50000.0)
+
+    @pytest.mark.asyncio
+    async def test_short_with_entry_price(self) -> None:
+        """SHORT 포지션 + entryPrice 파싱."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "ETH/USDT:USDT",
+                    "contracts": 1.0,
+                    "side": "short",
+                    "entryPrice": 3000.0,
+                }
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["ETH/USDT"])
+        assert "ETH/USDT" in result
+        assert result["ETH/USDT"].direction == Direction.SHORT
+        assert result["ETH/USDT"].entry_price == pytest.approx(3000.0)
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_mark_price(self) -> None:
+        """entryPrice 없으면 markPrice fallback."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 0,
+                    "markPrice": 48000.0,
+                }
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["BTC/USDT"])
+        assert result["BTC/USDT"].entry_price == pytest.approx(48000.0)
+
+    @pytest.mark.asyncio
+    async def test_skip_no_price(self) -> None:
+        """entryPrice=0 + markPrice=0 → 스킵."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 0,
+                    "markPrice": 0,
+                }
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["BTC/USDT"])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_long_priority_over_short(self) -> None:
+        """동일 심볼 LONG+SHORT → LONG 우선."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 50000.0,
+                },
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.005,
+                    "side": "short",
+                    "entryPrice": 52000.0,
+                },
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["BTC/USDT"])
+        assert result["BTC/USDT"].direction == Direction.LONG
+
+    @pytest.mark.asyncio
+    async def test_empty_positions(self) -> None:
+        """포지션 없으면 빈 dict."""
+        client = _make_futures_client([])
+        result = await PositionReconciler.parse_exchange_positions_full(client, ["BTC/USDT"])
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# parse_exchange_positions_hedge_full() Tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseExchangePositionsHedgeFull:
+    """parse_exchange_positions_hedge_full() 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_long_and_short_separate(self) -> None:
+        """Hedge mode: LONG/SHORT 별도 매핑."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 50000.0,
+                },
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.005,
+                    "side": "short",
+                    "entryPrice": 52000.0,
+                },
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(
+            client, ["BTC/USDT"]
+        )
+        assert "BTC/USDT" in result
+        long_info = result["BTC/USDT"]["long"]
+        short_info = result["BTC/USDT"]["short"]
+        assert long_info is not None
+        assert long_info.size == pytest.approx(0.01)
+        assert long_info.direction == Direction.LONG
+        assert long_info.entry_price == pytest.approx(50000.0)
+        assert short_info is not None
+        assert short_info.size == pytest.approx(0.005)
+        assert short_info.direction == Direction.SHORT
+
+    @pytest.mark.asyncio
+    async def test_only_long(self) -> None:
+        """Hedge mode: LONG만 있을 때."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "ETH/USDT:USDT",
+                    "contracts": 1.0,
+                    "side": "long",
+                    "entryPrice": 3000.0,
+                },
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(
+            client, ["ETH/USDT"]
+        )
+        assert result["ETH/USDT"]["long"] is not None
+        assert result["ETH/USDT"]["short"] is None
+
+    @pytest.mark.asyncio
+    async def test_skip_no_entry_price(self) -> None:
+        """entryPrice/markPrice 모두 0 → 스킵."""
+        client = _make_futures_client(
+            [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "contracts": 0.01,
+                    "side": "long",
+                    "entryPrice": 0,
+                },
+            ]
+        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(
+            client, ["BTC/USDT"]
+        )
+        assert result == {}

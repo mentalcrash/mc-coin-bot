@@ -1929,6 +1929,130 @@ class TestReconcileWithExchange:
 
 
 # =========================================================================
+# H-2. sync_exchange_positions 테스트
+# =========================================================================
+
+
+class TestSyncExchangePositions:
+    """sync_exchange_positions() / sync_exchange_positions_hedge() 테스트."""
+
+    def _make_empty_pm(self, *, hedge_mode: bool = False) -> EDAPortfolioManager:
+        config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
+        return EDAPortfolioManager(
+            config=config, initial_capital=10000.0, hedge_mode=hedge_mode
+        )
+
+    def test_sync_adds_exchange_only_position(self) -> None:
+        """거래소에만 있는 포지션 → PM에 추가."""
+        from src.eda.reconciler import ExchangePositionInfo
+
+        pm = self._make_empty_pm()
+        exchange = {
+            "BTC/USDT": ExchangePositionInfo(
+                size=0.01, direction=Direction.LONG, entry_price=50000.0
+            ),
+        }
+        synced = pm.sync_exchange_positions(exchange)
+
+        assert synced == ["BTC/USDT"]
+        pos = pm.positions["BTC/USDT"]
+        assert pos.size == 0.01
+        assert pos.direction == Direction.LONG
+        assert pos.avg_entry_price == 50000.0
+        assert pos.peak_price_since_entry == 50000.0
+        assert pos.trough_price_since_entry == 50000.0
+        assert pos.atr_values == []
+
+    def test_sync_skips_existing_open_position(self) -> None:
+        """PM에 이미 열린 포지션 → 스킵."""
+        from src.eda.portfolio_manager import Position
+        from src.eda.reconciler import ExchangePositionInfo
+
+        pm = self._make_empty_pm()
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.02,
+            avg_entry_price=48000.0,
+            last_price=48000.0,
+        )
+
+        exchange = {
+            "BTC/USDT": ExchangePositionInfo(
+                size=0.01, direction=Direction.LONG, entry_price=50000.0
+            ),
+        }
+        synced = pm.sync_exchange_positions(exchange)
+
+        assert synced == []
+        assert pm.positions["BTC/USDT"].size == 0.02  # 변경 없음
+
+    def test_sync_noop_when_empty(self) -> None:
+        """거래소에도 포지션 없으면 no-op."""
+        pm = self._make_empty_pm()
+        synced = pm.sync_exchange_positions({})
+        assert synced == []
+
+    def test_sync_multiple_symbols(self) -> None:
+        """여러 심볼 동기화."""
+        from src.eda.reconciler import ExchangePositionInfo
+
+        pm = self._make_empty_pm()
+        exchange = {
+            "BTC/USDT": ExchangePositionInfo(
+                size=0.01, direction=Direction.LONG, entry_price=50000.0
+            ),
+            "ETH/USDT": ExchangePositionInfo(
+                size=1.0, direction=Direction.SHORT, entry_price=3000.0
+            ),
+        }
+        synced = pm.sync_exchange_positions(exchange)
+
+        assert set(synced) == {"BTC/USDT", "ETH/USDT"}
+        assert pm.positions["ETH/USDT"].direction == Direction.SHORT
+
+    def test_sync_hedge_adds_position(self) -> None:
+        """Hedge mode: exchange-only 포지션 → composite key로 추가."""
+        from src.eda.reconciler import ExchangePositionInfo
+
+        pm = self._make_empty_pm(hedge_mode=True)
+        exchange: dict[str, dict[str, object]] = {
+            "ETH/USDT": {
+                "long": ExchangePositionInfo(
+                    size=1.0, direction=Direction.LONG, entry_price=3000.0
+                ),
+                "short": None,
+            },
+        }
+        pod_map = {"tri-channel": ["ETH/USDT", "SOL/USDT"]}
+        synced = pm.sync_exchange_positions_hedge(exchange, pod_map)
+
+        assert len(synced) == 1
+        assert synced[0] == "tri-channel|ETH/USDT"
+        pos = pm.positions["tri-channel|ETH/USDT"]
+        assert pos.size == 1.0
+        assert pos.direction == Direction.LONG
+
+    def test_sync_hedge_skips_no_pod(self) -> None:
+        """Hedge mode: 활성 Pod 없는 심볼 → 스킵."""
+        from src.eda.reconciler import ExchangePositionInfo
+
+        pm = self._make_empty_pm(hedge_mode=True)
+        exchange: dict[str, dict[str, object]] = {
+            "DOGE/USDT": {
+                "long": ExchangePositionInfo(
+                    size=100.0, direction=Direction.LONG, entry_price=0.1
+                ),
+                "short": None,
+            },
+        }
+        pod_map = {"tri-channel": ["ETH/USDT"]}  # DOGE 없음
+        synced = pm.sync_exchange_positions_hedge(exchange, pod_map)
+
+        assert synced == []
+
+
+# =========================================================================
 # I. ATR TF 전용 계산 검증
 # =========================================================================
 class TestATRTFOnly:

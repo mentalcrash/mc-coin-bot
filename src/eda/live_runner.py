@@ -576,7 +576,7 @@ class LiveRunner:
             orch_persistence = await self._restore_orchestrator_state(state_mgr, capital)
 
             # 3.6. 거래소 기준 PM reconciliation (sync_capital 전에 실행!)
-            await self._reconcile_positions(pm)
+            _removed, _synced = await self._reconcile_positions(pm)
 
             # 3.6.5. Orchestrator Pod 제거 후 orphaned position 정리
             await self._cleanup_orphaned_positions(pm)
@@ -681,7 +681,9 @@ class LiveRunner:
 
             # Live 모드: PositionReconciler 초기 + 주기적 검증
             notification_queue = discord_tasks.notification_queue if discord_tasks else None
-            reconciler_task = await self._setup_reconciler(pm, rm, notification_queue)
+            reconciler_task = await self._setup_reconciler(
+                pm, rm, notification_queue, synced_symbols=_synced
+            )
 
             # 구조화된 startup summary
             self._log_startup_summary(capital)
@@ -1332,42 +1334,84 @@ class LiveRunner:
                 strategy_engine, regime_service=regime_service, feature_store=feature_store
             )
 
-    async def _reconcile_positions(self, pm: EDAPortfolioManager) -> list[str]:
-        """거래소 포지션 기준으로 PM phantom position 제거.
+    async def _reconcile_positions(self, pm: EDAPortfolioManager) -> tuple[list[str], list[str]]:
+        """거래소 포지션 기준으로 PM phantom 제거 + exchange-only 포지션 추가.
+
+        Phase 1: phantom 제거 (기존)
+        Phase 2: exchange-only → PM 추가 (NEW)
 
         LIVE 모드 + futures_client 존재 시에만 동작합니다.
         API 실패 시 빈 리스트 반환 (safety-first, 기존 동작 유지).
 
         Returns:
-            제거된 심볼/키 리스트
+            (제거된 심볼/키 리스트, 동기화된 심볼/키 리스트) 튜플
         """
         if self._mode != LiveMode.LIVE or self._futures_client is None:
-            return []
+            return [], []
 
         from src.eda.reconciler import PositionReconciler
 
+        removed: list[str] = []
+        synced: list[str] = []
+
         try:
             if self._hedge_mode:
+                # Phase 1: phantom 제거
                 hedge_positions = await PositionReconciler.parse_exchange_positions_hedge(
                     self._futures_client, self._symbols
                 )
                 removed = pm.reconcile_with_exchange_hedge(hedge_positions)
+
+                # Phase 2: exchange-only → PM 추가
+                hedge_full = await PositionReconciler.parse_exchange_positions_hedge_full(
+                    self._futures_client, self._symbols
+                )
+                pod_symbol_map = self._build_pod_symbol_map()
+                synced = pm.sync_exchange_positions_hedge(hedge_full, pod_symbol_map)
             else:
+                # Phase 1: phantom 제거
                 exchange_positions = await PositionReconciler.parse_exchange_positions(
                     self._futures_client, self._symbols
                 )
                 removed = pm.reconcile_with_exchange(exchange_positions)
+
+                # Phase 2: exchange-only → PM 추가
+                exchange_full = await PositionReconciler.parse_exchange_positions_full(
+                    self._futures_client, self._symbols
+                )
+                synced = pm.sync_exchange_positions(exchange_full)
         except Exception:
             logger.exception("Startup reconciliation failed — continuing with existing state")
-            return []
-        else:
-            if removed:
-                logger.warning(
-                    "Startup reconciliation: removed {} phantom positions: {}",
-                    len(removed),
-                    removed,
-                )
-            return removed
+            return [], []
+
+        if removed:
+            logger.warning(
+                "Startup reconciliation: removed {} phantom positions: {}",
+                len(removed),
+                removed,
+            )
+        if synced:
+            logger.warning(
+                "Startup reconciliation: synced {} exchange-only positions: {}",
+                len(synced),
+                synced,
+            )
+
+        return removed, synced
+
+    def _build_pod_symbol_map(self) -> dict[str, list[str]]:
+        """Orchestrator pods → {pod_id: [symbols]} 매핑 생성.
+
+        Orchestrator 비활성 시 빈 dict 반환.
+        """
+        if self._orchestrator is None:
+            return {}
+
+        result: dict[str, list[str]] = {}
+        for pod in self._orchestrator.pods:
+            if pod.is_active:
+                result[pod.pod_id] = list(pod.symbols)
+        return result
 
     async def _cleanup_orphaned_positions(self, pm: EDAPortfolioManager) -> list[str]:
         """Pod 제거(RETIRED) 후 orphaned position을 PM에서 정리합니다.
@@ -1452,6 +1496,7 @@ class LiveRunner:
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         notification_queue: NotificationQueue | None = None,
+        synced_symbols: list[str] | None = None,
     ) -> asyncio.Task[None] | None:
         """Live 모드: PositionReconciler 초기 + 주기적 검증 task 생성."""
         if self._mode != LiveMode.LIVE or self._futures_client is None:
@@ -1475,6 +1520,28 @@ class LiveRunner:
                         channel=ChannelRoute.ALERTS,
                         embed=embed,
                         spam_key="startup_drift",
+                    )
+                )
+
+        # Startup sync → Discord 알림
+        if synced_symbols and notification_queue is not None:
+            from src.notification.reconciler_formatters import format_position_sync_embed
+
+            sync_details: list[tuple[str, float, str, float]] = []
+            for sym_key in synced_symbols:
+                pos = pm.positions.get(sym_key)
+                if pos is not None and pos.is_open:
+                    sync_details.append(
+                        (sym_key, pos.size, pos.direction.name, pos.avg_entry_price)
+                    )
+            if sync_details:
+                embed = format_position_sync_embed(sync_details)
+                await notification_queue.enqueue(
+                    NotificationItem(
+                        severity=Severity.INFO,
+                        channel=ChannelRoute.ALERTS,
+                        embed=embed,
+                        spam_key="startup_sync",
                     )
                 )
 

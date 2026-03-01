@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from src.orchestrator.allocation_comparator import (
     AllocationComparisonResult,
     compare_allocations,
 )
 from src.orchestrator.models import AllocationMethod
-
 
 # ── AllocationComparisonResult ────────────────────────────────────
 

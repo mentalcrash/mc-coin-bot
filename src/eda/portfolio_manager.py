@@ -29,6 +29,7 @@ from src.logging.tracing import component_span_with_context
 from src.models.types import Direction
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
     from uuid import UUID
 
@@ -426,6 +427,151 @@ class EDAPortfolioManager:
             logger.info("Reconcile[hedge]: removed {} phantom positions: {}", len(removed), removed)
 
         return removed
+
+    def sync_exchange_positions(
+        self,
+        exchange_positions: Mapping[str, object],
+    ) -> list[str]:
+        """거래소에만 있는 포지션을 PM에 추가 (One-way Mode).
+
+        재시작 시 DB 복구 실패 → PM FLAT인데 거래소에 포지션이 있는 경우
+        PM에 Position을 생성하여 orphan drift 무한 반복을 방지합니다.
+
+        Args:
+            exchange_positions: {symbol: ExchangePositionInfo}
+                ExchangePositionInfo는 size, direction, entry_price 속성을 가진 객체.
+
+        Returns:
+            동기화된 심볼 리스트
+        """
+        from src.eda.reconciler import ExchangePositionInfo
+
+        synced: list[str] = []
+        pm_open_symbols = {s for s, p in self._positions.items() if p.is_open}
+
+        for symbol, info in exchange_positions.items():
+            if not isinstance(info, ExchangePositionInfo):
+                continue
+            if symbol in pm_open_symbols:
+                continue
+            if info.size <= 0:
+                continue
+
+            pos = self._positions.get(symbol)
+            if pos is None:
+                pos = Position(symbol=symbol)
+                self._positions[symbol] = pos
+
+            pos.direction = info.direction
+            pos.size = info.size
+            pos.avg_entry_price = info.entry_price
+            pos.last_price = info.entry_price
+            pos.peak_price_since_entry = info.entry_price
+            pos.trough_price_since_entry = info.entry_price
+            pos.atr_values = []
+
+            synced.append(symbol)
+            logger.warning(
+                "Sync: added exchange-only position {} (size={:.6f}, dir={}, entry={:.2f})",
+                symbol,
+                info.size,
+                info.direction.name,
+                info.entry_price,
+            )
+
+        return synced
+
+    def sync_exchange_positions_hedge(
+        self,
+        exchange_positions: Mapping[str, Mapping[str, object]],
+        pod_symbol_map: dict[str, list[str]],
+    ) -> list[str]:
+        """거래소에만 있는 포지션을 PM에 추가 (Hedge Mode).
+
+        Orchestrator pod_symbol_map으로 pod_id를 역매핑하여
+        composite key (pod_id|symbol)로 Position을 생성합니다.
+
+        Args:
+            exchange_positions: {symbol: {"long": ExchangePositionInfo|None, "short": ...}}
+            pod_symbol_map: {pod_id: [symbol, ...]} — 활성 Pod → 심볼 매핑
+
+        Returns:
+            동기화된 composite key 리스트
+        """
+        from src.eda.reconciler import ExchangePositionInfo
+
+        synced: list[str] = []
+
+        # 역매핑: symbol → [pod_id, ...]
+        symbol_to_pods: dict[str, list[str]] = {}
+        for pod_id, symbols in pod_symbol_map.items():
+            for sym in symbols:
+                symbol_to_pods.setdefault(sym, []).append(pod_id)
+
+        # PM에 이미 열린 composite key 집합
+        pm_open_keys = {k for k, p in self._positions.items() if p.is_open}
+
+        for symbol, sides in exchange_positions.items():
+            for side_key in ("long", "short"):
+                info = sides.get(side_key)
+                if not isinstance(info, ExchangePositionInfo):
+                    continue
+                if info.size <= 0:
+                    continue
+
+                # pod_id 결정
+                candidate_pods = symbol_to_pods.get(symbol, [])
+                if not candidate_pods:
+                    logger.warning(
+                        "Sync[hedge]: no active pod for {} {} — skipping",
+                        symbol,
+                        side_key,
+                    )
+                    continue
+
+                assigned_pod: str | None = None
+                for pod_id in candidate_pods:
+                    comp_key = self._pos_key(symbol, pod_id)
+                    if comp_key not in pm_open_keys:
+                        assigned_pod = pod_id
+                        break
+
+                if assigned_pod is None:
+                    # 모든 Pod에 이미 열린 포지션 → 첫 번째에 귀속 + WARNING
+                    assigned_pod = candidate_pods[0]
+                    comp_key = self._pos_key(symbol, assigned_pod)
+                    if comp_key in pm_open_keys:
+                        logger.warning(
+                            "Sync[hedge]: {} already open in pod {} — skipping duplicate",
+                            symbol,
+                            assigned_pod,
+                        )
+                        continue
+
+                comp_key = self._pos_key(symbol, assigned_pod)
+                pos = self._positions.get(comp_key)
+                if pos is None:
+                    pos = Position(symbol=symbol)
+                    self._positions[comp_key] = pos
+
+                pos.direction = info.direction
+                pos.size = info.size
+                pos.avg_entry_price = info.entry_price
+                pos.last_price = info.entry_price
+                pos.peak_price_since_entry = info.entry_price
+                pos.trough_price_since_entry = info.entry_price
+                pos.atr_values = []
+
+                synced.append(comp_key)
+                logger.warning(
+                    "Sync[hedge]: added exchange-only position {} (size={:.6f}, dir={}, entry={:.2f})",
+                    comp_key,
+                    info.size,
+                    info.direction.name,
+                    info.entry_price,
+                )
+
+        return synced
 
     def sync_capital(self, exchange_equity: float) -> None:
         """LIVE 모드: 거래소 잔고 기준으로 capital 동기화.
