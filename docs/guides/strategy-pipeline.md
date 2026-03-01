@@ -1,7 +1,7 @@
 # Strategy Pipeline
 
 전략 아이디어부터 실전 배포까지 **7단계 Phase**를 순차 통과하는 검증 파이프라인.
-각 Phase에서 FAIL 시 즉시 RETIRED. 103개 전략 중 **2개 ACTIVE** (CTREND, Anchor-Mom).
+각 Phase에서 FAIL 시 즉시 RETIRED. 185개 전략 중 **4개 ACTIVE** (Anchor-Mom, Donch-Multi, Tri-Channel, Dual-Mom).
 
 ---
 
@@ -68,7 +68,7 @@ CANDIDATE ──[P2 완료]──→ IMPLEMENTED ──[P4 첫 PASS]──→ TE
 
 Phase 1 설계를 4-file 구조로 구현.
 
-**스킬**: `/p2-implement`
+**스킬**: `/p2p3-build`
 
 ### 4-File 구조
 
@@ -97,7 +97,7 @@ src/strategy/{name}/
 
 구현된 코드의 정합성 검증. 백테스트 전 필수.
 
-**스킬**: `/p3-audit`
+**스킬**: `/p2p3-build` (P2와 통합)
 
 ### Critical Checks (C1~C7, 전부 PASS 필수)
 
@@ -156,7 +156,7 @@ src/strategy/{name}/
 
 파라미터 최적화 + 안정성 검증.
 
-**스킬**: `/p5-robustness`
+**스킬**: `/p5p6-validate`
 
 ### 검증 항목
 
@@ -178,7 +178,7 @@ src/strategy/{name}/
 
 과적합 여부를 통계적으로 검증.
 
-**스킬**: `/p6-validation`
+**스킬**: `/p5p6-validate` (P5와 통합)
 
 ### 검증 방법론
 
@@ -234,18 +234,18 @@ VBT vs EDA 정합성 + 라이브 인프라 검증.
 ```yaml
 version: 2                              # 스키마 버전
 meta:
-  name: "ctrend"                        # kebab-case registry key
-  display_name: "CTREND"
-  category: "ML 앙상블"                  # 전략 유형
-  timeframe: "1D"
+  name: "donch-multi"                   # kebab-case registry key
+  display_name: "Donch-Multi"
+  category: "Multi-Scale Donchian"      # 전략 유형
+  timeframe: "12H"
   short_mode: "FULL"                    # DISABLED | HEDGE_ONLY | FULL
   status: "ACTIVE"                      # CANDIDATE | IMPLEMENTED | TESTING | ACTIVE | RETIRED
-  created_at: "2026-02-10"
+  created_at: "2026-02-15"
   economic_rationale: "..."
 
 parameters:                             # 최종 파라미터 (P5 최적화 후 갱신)
-  training_window: 68
-  prediction_horizon: 12
+  lookbacks: [20, 60, 150]
+  vol_target: 0.35
 
 phases:                                 # Phase 1~7 검증 결과
   P1: { status: PASS, date: "...", details: { score: 22, max_score: 30 } }
@@ -254,7 +254,7 @@ phases:                                 # Phase 1~7 검증 결과
   # ...
 
 asset_performance:                      # P4 완료 후 에셋별 성과
-  - { symbol: SOL/USDT, sharpe: 2.05, cagr: 97.8, mdd: 27.7, trades: 288 }
+  - { symbol: ETH/USDT, sharpe: 1.61, cagr: 58.3, mdd: 28.4, trades: 312 }
 
 decisions:                              # 의사결정 이력
   - { date: "...", phase: P1, verdict: PASS, rationale: "22/30점" }
@@ -268,7 +268,7 @@ decisions:                              # 의사결정 이력
 uv run mcbot pipeline status            # 현황 요약
 uv run mcbot pipeline table             # 전체 Phase 진행도
 uv run mcbot pipeline report            # 상세 대시보드
-uv run mcbot pipeline show ctrend       # 전략 상세
+uv run mcbot pipeline show donch-multi   # 전략 상세
 uv run mcbot pipeline list              # 전략 목록 (필터 지원)
 
 uv run mcbot pipeline create            # 신규 전략 YAML 생성
@@ -280,14 +280,14 @@ uv run mcbot pipeline update-status     # 상태 변경
 
 ## Criteria File
 
-Phase별 상세 평가 기준은 [`gates/phase-criteria.yaml`](../gates/phase-criteria.yaml)에서 관리됩니다.
+Phase별 상세 평가 기준은 [`gates/phase-criteria.yaml`](../../gates/phase-criteria.yaml)에서 관리됩니다.
 코드 모델은 `src/pipeline/models.py`의 `PhaseId`, `PhaseResult`, `StrategyRecord`를 참조.
 
 ---
 
-## 핵심 교훈 (87개 전략 검증에서 도출)
+## 핵심 교훈 (185개 전략 검증에서 도출)
 
-103개 전략 평가 과정에서 축적된 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
+185개 전략 평가 과정에서 축적된 교훈을 `lessons/*.yaml`로 구조화 관리합니다.
 
 ```bash
 uv run mcbot pipeline lessons-list                      # 전체 교훈 목록
@@ -297,7 +297,9 @@ uv run mcbot pipeline lessons-show 1                    # 교훈 상세
 
 ### 구조적 발견
 
-- **4H 단일지표 = 전량 RETIRED**: 거래비용이 edge를 잠식, OOS 붕괴 빈번
-- **1D 앙상블만 G5 도달**: CTREND Sharpe 2.05, 8-asset EW Sharpe 1.57
+- **4H/8H 전멸**: 50개+ 4H/8H 전략 전량 RETIRED — 거래비용이 edge 잠식, CPCV 로버스트니스 미달
+- **1D 고갈**: 92개 1D OHLCV 전략 시도 → 0 ACTIVE. 검색공간 소진
+- **12H 확정**: Anchor-Mom, Donch-Multi, Tri-Channel, Dual-Mom 4개 ACTIVE — 크립토 trend TF 최적
 - **SL/TS가 핵심**: Trailing Stop 3.0x ATR이 MDD 방어의 핵심 요소
 - **비용 민감도**: break-even fee > 8bps 미달 시 실전 운용 불가
+- **대안데이터 한계**: On-chain/Deriv/Macro/TradeFlow 단독 alpha 0건

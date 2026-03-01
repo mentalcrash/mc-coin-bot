@@ -277,7 +277,7 @@ Level 1: Pod 간 배분 (Capital Allocator)
   └─ equal_weight, inverse_volatility, risk_parity, adaptive_kelly
 
 Level 2: Pod 내 에셋 배분 (IntraPodAllocator)
-  └─ equal_weight, inverse_volatility, risk_parity, signal_weighted
+  └─ equal_weight, inverse_volatility, risk_parity, signal_weighted, dual_momentum
 ```
 
 | Method | Formula | Description |
@@ -286,6 +286,7 @@ Level 2: Pod 내 에셋 배분 (IntraPodAllocator)
 | `inverse_volatility` | `w_i = (1/sigma_i) / Sum(1/sigma_j)` | 저변동 에셋 우대 |
 | `risk_parity` | `w_i * sigma_i = w_j * sigma_j` | 리스크 기여 균등화 |
 | `signal_weighted` | `w_i = abs(s_i) / Sum(abs(s_j))` | 시그널 강도 비례 |
+| `dual_momentum` | 절대 모멘텀 게이트 + 상대 모멘텀 랭킹 | 승자 overweight, 폭락 시 현금 대피 |
 
 설계 주의: 변동성 계산에 `shift(1)` 적용 (look-ahead bias 방지),
 PM의 `asset_weights`는 1.0 고정 (중복 적용 방지),
@@ -684,7 +685,7 @@ backtest:
   capital: 100000
 ```
 
-> 전체 필드 레퍼런스: [`config/orchestrator-example.yaml`](../config/orchestrator-example.yaml)
+> 전체 필드 레퍼런스: [`config/orchestrator-example.yaml`](../../config/orchestrator-example.yaml)
 
 ---
 
@@ -711,6 +712,7 @@ src/eda/
 ├── orchestrated_runner.py    # Orchestrator + EDA 통합 runner
 ├── live_runner.py            # Live/Shadow/Paper runner
 ├── reconciler.py             # 거래소 포지션 교차 검증
+├── exchange_stop_manager.py  # 거래소 STOP_MARKET 안전망 관리
 └── persistence/              # SQLite 상태 저장/복원
 
 src/orchestrator/
@@ -729,5 +731,8 @@ src/orchestrator/
 ├── surveillance.py        # MarketSurveillanceService
 ├── dashboard.py           # AllocationDashboard
 ├── metrics.py             # Prometheus gauges
+├── regime_filter.py       # Pod별 레짐 필터링
+├── vol_targeting.py       # 변동성 타겟팅
+├── allocation_comparator.py  # 배분 비교 분석
 └── result.py              # OrchestratedResult
 ```

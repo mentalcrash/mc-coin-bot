@@ -360,7 +360,7 @@ TF 적합: 1D
 ## 6.5. On-chain & Sentiment (✅ 인프라 구축 완료)
 
 22개 데이터셋 + 12개 CoinMetrics 메트릭 활용 가능. 전략 0개 사용 중 — **완전 미탐색 영역**.
-데이터 상세: [docs/data-collection.md](../../../../docs/data-collection.md)
+데이터 상세: [docs/guides/data-collection.md](../../../../docs/guides/data-collection.md)
 
 ### 6.5-A. Stablecoin Flow Signal — ✅ 사용 가능
 

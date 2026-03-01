@@ -811,5 +811,5 @@ DISCORD_DAILY_REPORT_CHANNEL_ID=  # 일일 리포트 채널
 
 | 문서 | 설명 |
 |------|------|
-| [`catalogs/datasets.yaml`](../catalogs/datasets.yaml) | 데이터 카탈로그 SSOT (14 sources, 75 datasets) |
-| [`.claude/rules/data.md`](../.claude/rules/data.md) | 데이터 레이어 코딩 규칙 (Medallion, Pandas) |
+| [`catalogs/datasets.yaml`](../../catalogs/datasets.yaml) | 데이터 카탈로그 SSOT (14 sources, 75 datasets) |
+| [`.claude/rules/data.md`](../../.claude/rules/data.md) | 데이터 레이어 코딩 규칙 (Medallion, Pandas) |
