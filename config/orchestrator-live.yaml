@@ -168,7 +168,7 @@ orchestrator:
         - DOGE/USDT
       timeframe: "12H"
       initial_fraction: 0.25
-      max_fraction: 0.50
+      max_fraction: 0.375                   # v5.1: 4-Pod 균등 (1.5/4)
       min_fraction: 0.15
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -210,7 +210,7 @@ orchestrator:
         - BTC/USDT
       timeframe: "12H"
       initial_fraction: 0.25
-      max_fraction: 0.50
+      max_fraction: 0.375                   # v5.1: 4-Pod 균등 (1.5/4)
       min_fraction: 0.15
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -253,7 +253,7 @@ orchestrator:
         - SOL/USDT
       timeframe: "12H"
       initial_fraction: 0.25
-      max_fraction: 0.50
+      max_fraction: 0.375                   # v5.1: 4-Pod 균등 (1.5/4)
       min_fraction: 0.15
       max_drawdown: 0.20
       drawdown_warning: 0.15
@@ -293,8 +293,8 @@ orchestrator:
         - LINK/USDT
       timeframe: "12H"
       initial_fraction: 0.25
-      max_fraction: 0.25
-      min_fraction: 0.05
+      max_fraction: 0.375                   # v5.1: 4-Pod 균등 (1.5/4)
+      min_fraction: 0.15
       max_drawdown: 0.20
       drawdown_warning: 0.15
       max_leverage: 1.0                  # Long-Only → 레버리지 1x
