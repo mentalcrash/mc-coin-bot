@@ -224,9 +224,20 @@ class HistoricalDataFeed:
         symbols = self._data.symbols
         ohlcv_dict = self._data.ohlcv
 
-        common_index = ohlcv_dict[symbols[0]].index
+        # Union index: 상장 시점이 다른 에셋 지원
+        all_indices = [df.index for df in ohlcv_dict.values()]
+        common_index = all_indices[0]
+        for idx in all_indices[1:]:
+            common_index = common_index.union(idx)
+        common_index = common_index.sort_values()
 
-        for ts in common_index:
+        # Periodic flush interval: 큐 오버플로우 방지 (심볼 수 기반)
+        # BAR는 DROPPABLE이므로 큐 풀 시 드롭됨 → 주기적 flush 필수
+        _default_queue_capacity = 10_000
+        n_symbols = max(1, len(symbols))
+        flush_every = max(1, _default_queue_capacity // (n_symbols * 2))
+
+        for tick_idx, ts in enumerate(common_index):
             cid = uuid4()
             any_completed = False
 
@@ -278,4 +289,7 @@ class HistoricalDataFeed:
 
             # TF candle이 완성된 경우에만 flush
             if any_completed:
+                await bus.flush()
+            elif (tick_idx + 1) % flush_every == 0:
+                # 주기적 flush: 다수 심볼 시 큐 오버플로우 방지
                 await bus.flush()

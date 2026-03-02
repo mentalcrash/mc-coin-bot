@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from src.models.backtest import PerformanceMetrics
+    from src.orchestrator.surveillance import ScanResult
 
 
 @dataclass
@@ -40,3 +41,4 @@ class OrchestratedResult:
     allocation_history: pd.DataFrame | None = None
     lifecycle_events: list[dict[str, object]] = field(default_factory=list)
     risk_contributions: pd.DataFrame | None = None
+    universe_history: list[ScanResult] = field(default_factory=list)

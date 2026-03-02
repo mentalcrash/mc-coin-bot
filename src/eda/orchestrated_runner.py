@@ -36,8 +36,12 @@ from src.portfolio.config import PortfolioManagerConfig
 from src.portfolio.cost_model import CostModel
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from src.data.market_data import MultiSymbolData
+    from src.orchestrator.backtest_surveillance import BacktestSurveillanceSimulator
     from src.orchestrator.config import OrchestratorConfig
+    from src.orchestrator.surveillance import ScanResult
 
 # ── Constants ─────────────────────────────────────────────────────
 _MIN_STD_THRESHOLD = 1e-12
@@ -150,6 +154,7 @@ class OrchestratedRunner:
         initial_capital: float = 100_000.0,
         queue_size: int = 10000,
         pods: list[StrategyPod] | None = None,
+        surveillance_simulator: BacktestSurveillanceSimulator | None = None,
     ) -> None:
         self._orch_config = orchestrator_config
         self._data = data
@@ -158,6 +163,8 @@ class OrchestratedRunner:
         self._initial_capital = initial_capital
         self._queue_size = queue_size
         self._pods = pods
+        self._surveillance = surveillance_simulator
+        self._current_replay_ts: pd.Timestamp | None = None
 
         # Multi-TF: Pod configs에서 필요 TF 자동 수집
         self._all_timeframes: set[str] = set(orchestrator_config.all_timeframes)
@@ -172,6 +179,7 @@ class OrchestratedRunner:
         initial_capital: float = 100_000.0,
         queue_size: int = 10000,
         pods: list[StrategyPod] | None = None,
+        surveillance_simulator: BacktestSurveillanceSimulator | None = None,
     ) -> OrchestratedRunner:
         """백테스트용 OrchestratedRunner 생성.
 
@@ -183,6 +191,7 @@ class OrchestratedRunner:
             initial_capital: 초기 자본
             queue_size: EventBus 큐 크기
             pods: 외부 주입 Pod 리스트
+            surveillance_simulator: 백테스트용 동적 유니버스 시뮬레이터
 
         Returns:
             OrchestratedRunner 인스턴스
@@ -195,6 +204,7 @@ class OrchestratedRunner:
             initial_capital=initial_capital,
             queue_size=queue_size,
             pods=pods,
+            surveillance_simulator=surveillance_simulator,
         )
 
     async def run(self) -> OrchestratedResult:
@@ -234,7 +244,16 @@ class OrchestratedRunner:
         orchestrator.set_initial_capital(self._initial_capital)
 
         # 3. EDA 컴포넌트 생성
-        bus = EventBus(queue_size=self._queue_size)
+        # Queue size: TF당 1m bars * 심볼 수 * 1.5 마진 (큐 오버플로우 방지)
+        from src.eda.candle_aggregator import timeframe_to_seconds
+
+        longest_tf_sec = max(timeframe_to_seconds(tf) for tf in self._all_timeframes)
+        n_data_symbols = len(self._data.symbols)
+        effective_queue = max(
+            self._queue_size,
+            int(longest_tf_sec // 60 * n_data_symbols * 1.5),
+        )
+        bus = EventBus(queue_size=effective_queue)
         feed = HistoricalDataFeed(
             self._data,
             target_timeframe=self._target_timeframe,
@@ -289,6 +308,28 @@ class OrchestratedRunner:
 
         # 4b. Orchestrator (BAR[TF only] → pod routing → SIGNAL)
         await orchestrator.register(bus)
+
+        # 4b-2. Surveillance handler (BAR[TF] → scan → on_universe_update)
+        universe_events: list[ScanResult] = []
+
+        if self._surveillance is not None:
+
+            async def surveillance_handler(event: AnyEvent) -> None:
+                assert isinstance(event, BarEvent)
+                if event.timeframe not in all_timeframes:
+                    return
+                self._current_replay_ts = pd.Timestamp(event.bar_timestamp)  # type: ignore[assignment]
+                if not self._surveillance.should_scan(event.bar_timestamp):  # type: ignore[union-attr]
+                    return
+                scan_result = self._surveillance.scan_at(event.bar_timestamp)  # type: ignore[union-attr]
+                if scan_result.added or scan_result.dropped:
+                    await orchestrator.on_universe_update(scan_result, self._backtest_warmup_fn)
+                    # PM asset_weights 갱신: 라우팅된 심볼 uniform 1.0
+                    updated_symbols = orchestrator.routed_symbols
+                    pm.update_asset_weights(dict.fromkeys(updated_symbols, 1.0))
+                    universe_events.append(scan_result)
+
+            bus.subscribe(EventType.BAR, surveillance_handler)
 
         # 4c. PM → RM → OMS → Analytics
         await pm.register(bus)
@@ -366,6 +407,7 @@ class OrchestratedRunner:
             allocation_history=allocation_df,
             lifecycle_events=orchestrator.lifecycle_events,
             risk_contributions=risk_df,
+            universe_history=universe_events,
         )
 
     @staticmethod
@@ -389,6 +431,53 @@ class OrchestratedRunner:
             cumulative = np.cumprod(1 + np.array(returns))
             result[pod.pod_id] = pd.Series(cumulative, dtype=float)
         return result
+
+    async def _backtest_warmup_fn(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int,
+    ) -> tuple[list[dict[str, float]], list[datetime]]:
+        """메모리 내 1m OHLCV에서 warmup bar 추출.
+
+        Args:
+            symbol: 심볼
+            timeframe: TF ("12h", "1D" 등)
+            limit: 필요 bar 수
+
+        Returns:
+            (bars, timestamps) 튜플
+        """
+        from src.eda.data_feed import resample_1m_to_tf
+
+        df_1m = self._data.ohlcv.get(symbol)
+        if df_1m is None or self._current_replay_ts is None:
+            return [], []
+
+        # 현재 replay 시점 이전만
+        df_filtered = df_1m.loc[df_1m.index <= self._current_replay_ts]
+        if df_filtered.empty:
+            return [], []
+
+        # TF 리샘플링 + 마지막 limit개
+        from src.eda.analytics import tf_to_pandas_freq
+
+        freq = tf_to_pandas_freq(timeframe)
+        df_tf = resample_1m_to_tf(df_filtered, freq)
+        df_warmup = df_tf.tail(limit)
+
+        bars: list[dict[str, float]] = [
+            {
+                "open": float(r["open"]),
+                "high": float(r["high"]),
+                "low": float(r["low"]),
+                "close": float(r["close"]),
+                "volume": float(r["volume"]),
+            }
+            for _, r in df_warmup.iterrows()
+        ]
+        timestamps: list[datetime] = [ts.to_pydatetime() for ts in df_warmup.index]
+        return bars, timestamps
 
     @staticmethod
     def derive_pm_config(orch_config: OrchestratorConfig) -> PortfolioManagerConfig:

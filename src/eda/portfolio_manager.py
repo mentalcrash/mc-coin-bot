@@ -166,6 +166,15 @@ class EDAPortfolioManager:
             return [symbol] if symbol in self._positions else []
         return [k for k in self._positions if k == symbol or k.endswith(f"|{symbol}")]
 
+    def update_asset_weights(self, new_weights: dict[str, float]) -> None:
+        """동적 에셋 변경 후 asset_weights 갱신.
+
+        Args:
+            new_weights: {symbol: weight} 새 에셋 가중치
+        """
+        self._asset_weights = new_weights
+        self._batch_mode = len(self._asset_weights) > 1
+
     async def register(self, bus: EventBus) -> None:
         """EventBus에 핸들러 등록."""
         self._bus = bus

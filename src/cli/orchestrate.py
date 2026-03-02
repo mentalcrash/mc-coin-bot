@@ -335,7 +335,31 @@ def backtest(
     end_dt = datetime.strptime(run_cfg.backtest.end, "%Y-%m-%d").replace(tzinfo=UTC)
 
     service = MarketDataService(settings)
-    data, loaded_symbols = _load_orchestrator_data(service, all_symbols, start_dt, end_dt)
+
+    # Wide universe 데이터 로딩 (동적 유니버스 활성 시)
+    surveillance_sim = None
+    wide_symbols = orch_config.wide_universe_symbols
+    if wide_symbols and orch_config.surveillance and orch_config.surveillance.enabled:
+        # Pod 심볼 + wide universe 심볼 합집합 로드
+        all_load_symbols = tuple(dict.fromkeys([*all_symbols, *wide_symbols]))
+        data, loaded_symbols = _load_orchestrator_data(service, all_load_symbols, start_dt, end_dt)
+
+        from src.orchestrator.backtest_surveillance import BacktestSurveillanceSimulator
+        from src.orchestrator.volume_matrix import compute_volume_matrix
+
+        volume_matrix = compute_volume_matrix(data.ohlcv)
+        surveillance_sim = BacktestSurveillanceSimulator(
+            config=orch_config.surveillance,
+            volume_matrix=volume_matrix,
+            seed_symbols=set(all_symbols),
+            available_symbols=set(loaded_symbols),
+        )
+        logger.info(
+            "Dynamic surveillance enabled: {} wide symbols loaded",
+            len(loaded_symbols),
+        )
+    else:
+        data, loaded_symbols = _load_orchestrator_data(service, all_symbols, start_dt, end_dt)
 
     title = (
         f"Orchestrator Backtest: {orch_config.n_pods} pods / "
@@ -359,6 +383,7 @@ def backtest(
         data=data,
         target_timeframe=target_tf,
         initial_capital=run_cfg.backtest.capital,
+        surveillance_simulator=surveillance_sim,
     )
     result = asyncio.run(runner.run())
 
