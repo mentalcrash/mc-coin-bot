@@ -80,6 +80,33 @@ Phase 3 (5일): A3 HRP + B2 HMM Regime (실험적)
 
 ---
 
+## Tier 1.5: Dynamic Asset Surveillance Backtest (높은 우선순위)
+
+> 라이브 Surveillance(동적 에셋 교체)를 백테스트에서 재현.
+> 고정 심볼 백테스트의 survivorship bias 제거 + 라이브-백테스트 parity 확보.
+> 상세: [`dynamic-asset-surveillance-backtest.md`](dynamic-asset-surveillance-backtest.md)
+
+| Phase | 항목 | 핵심 효과 | 난이도 | 상태 |
+|-------|------|----------|--------|------|
+| 1 | Wide Universe 데이터 수집 (~40 에셋 1m) | 후보군 풀 확보 | 중 (API 시간) | 미착수 |
+| 2 | BacktestSurveillanceSimulator 구현 | 7일 rolling volume 기반 동적 교체 시뮬레이션 | 중 | 미착수 |
+| 3 | 검증 (Parity + Survivorship Bias 정량화) | 고정 vs 동적 비교, 멀티에셋 범용성 | 중 | 미착수 |
+| 4 | 라이브 Surveillance 활성화 | pinned_symbols: false 전환 | 낮 | 미착수 |
+
+**설계 포인트:**
+
+- `BacktestSurveillanceSimulator`: 1D quote_volume summary → 7D rolling → `ScanResult` 생성
+- `OrchestratedRunner`: 기존 `on_universe_update()` 경로 재사용 (라이브와 동일 코드)
+- 메모리 최적화: 운용 에셋만 1m 상주, 후보군은 volume matrix만 (~1MB)
+- 전략 범용성 검증: 3 전략 × 40 에셋 매트릭스에서 평균 Sharpe > 0.5 확인 필수
+
+**전제 조건:**
+
+- Wide Universe 1m 데이터 수집 완료 (에셋당 2~4GB, 총 ~150GB)
+- 멀티에셋 범용 P4 통과 (특정 에셋 의존 → 범용 검증)
+
+---
+
 ## Tier 2: 미탐색 알파 소스 (중간 우선순위)
 
 ### C. 6H Timeframe 탐색
@@ -227,12 +254,14 @@ equity VRP 전략 그대로 적용 불가. `vrp_regime_trend`, `vol_structure_tr
 ## 전체 실행 로드맵
 
 ```text
-Sprint 1 (1주):  A1 Rolling Sharpe Weight + A4 DD De-Risking + F2 Alpha Decay
-Sprint 2 (1주):  B1 Signal Voting + B3 Performance Rotation + E1 FR Scale
-Sprint 3 (1주):  C1-C3 6H TF 탐색 (1회 VBT sweep → go/no-go)
-Sprint 4 (1주):  A3 HRP + B2 HMM Regime (실험적)
-Sprint 5 (1주):  D1-D3 Cross-Asset Rotation (Dual-Mom P1 결과 기반)
-Sprint 6 (1주):  F1 동적 슬리피지 + F3 Execution Stagger
+Sprint 1 (1주):  A1 Rolling Sharpe Weight + A4 DD De-Risking + F2 Alpha Decay  ← ✅ 완료
+Sprint 2 (2~3일): Wide Universe 데이터 수집 (~40 에셋 1m Parquet)
+Sprint 3 (1주):  BacktestSurveillanceSimulator 구현 + 검증
+Sprint 4 (1주):  B1 Signal Voting + B3 Performance Rotation + E1 FR Scale
+Sprint 5 (1주):  C1-C3 6H TF 탐색 (1회 VBT sweep → go/no-go)
+Sprint 6 (1주):  A3 HRP + B2 HMM Regime (실험적)
+Sprint 7 (1주):  D1-D3 Cross-Asset Rotation (Dual-Mom P1 결과 기반)
+Sprint 8 (1주):  F1 동적 슬리피지 + F3 Execution Stagger
 ```
 
 ### 기대 효과

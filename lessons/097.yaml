@@ -1,0 +1,18 @@
+id: 97
+title: 주말/캘린더 anomaly momentum은 IS에서만 유효 — OOS Decay 130%+
+body: Weekend-weighted momentum (주말 return 가중치 2x)이 P4A에서 DOGE Sharpe 0.86, AVAX 0.80으로
+  PASS했으나, P4B IS/OOS에서 DOGE Decay 130%, AVAX 136%로 완전 붕괴. 캘린더 기반 anomaly는 시간에 따라
+  비정상(non-stationary)이며 IS 기간의 특정 주말 이벤트에 과적합됨. ACR 2025 논문의 주말 momentum 효과는 평균적으로
+  존재하나 알파 생성에는 불충분.
+category: strategy-design
+tags:
+- weekend
+- calendar-anomaly
+- temporal
+- overfitting
+- decay
+strategies:
+- weekend-mom-12h
+timeframes:
+- 12H
+added_at: '2026-03-01'

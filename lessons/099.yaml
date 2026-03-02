@@ -1,0 +1,21 @@
+id: 99
+title: R2 multi-scale consensus도 12H에서 alpha 부재 — 확인형 지표의 구조적 후행 한계
+body: 'r2-consensus-12h: R2(결정계수) 3-scale(20/50/120) 이진 투표 consensus. 교훈 #29 이진 결정
+  권장을 따랐으나, 6/8 에셋 Sharpe 음수 (Best AVAX 0.43). R2가 높아지려면 추세가 이미 확립되어야 하므로 진입 시점이 구조적으로
+  후행. Multi-scale consensus가 noise rejection을 강화하지만 동시에 진입을 더 늦춤. R2는 trend quality
+  FILTER로는 유효하나 독립 signal/alpha source 불가. trend-quality-mom(4H single-scale Sharpe
+  0.84)보다 오히려 악화 — multi-scale이 항상 개선을 보장하지 않음. 12H OHLCV-only 검색공간 소진 추가 확인.'
+category: strategy-design
+tags:
+- r2
+- linear-regression
+- trend-quality
+- consensus
+- lagging
+- 12H
+strategies:
+- r2-consensus-12h
+- trend-quality-mom
+timeframes:
+- 12H
+added_at: '2026-03-01'

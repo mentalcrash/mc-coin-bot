@@ -1,0 +1,17 @@
+id: 102
+title: 'LR Channel: P5A 91% improvement + OOS 1.21이 WFA Fold 0/1 음수로 붕괴 — expanding
+  window에서 시간 의존성 노출'
+body: 'lr-channel-trend: P5A IS 0.77→1.47 (+91.9%), OOS 1.21로 양호해 보였으나 WFA 3-fold에서
+  Fold 0(-0.23), Fold 1(-0.13)이 음수. Fold 2(1.44)만 양수로 2024-2025 불장 의존. P5A의 단일 분할
+  OOS는 최근 기간이 OOS에 포함되면 시간 의존성을 가릴 수 있다. IS Improvement > 90%는 P5A 단계에서 과적합 경고 신호.'
+category: pipeline-process
+tags:
+- wfa
+- lr-channel
+- is-oos
+- time-dependency
+strategies:
+- lr-channel-trend
+timeframes:
+- 12H
+added_at: '2026-03-02'

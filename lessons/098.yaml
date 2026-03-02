@@ -1,0 +1,20 @@
+id: 98
+title: VWAP channel은 DOGE 전용 — volume-price correlation이 meme coin에서만 유효
+body: 'vwap-channel-12h: VWAP 기반 3-scale channel breakout consensus. DC/KC/BB와 직교하는
+  4번째 측정 축(거래량)으로 설계. P4B 결과: DOGE IS 1.00→OOS 1.02 (Decay -2%, PASS)이나 SOL IS 0.81→OOS
+  -0.55 (Decay 168%), BTC IS 0.78→OOS -0.01 (Decay 101%). VWAP channel은 거래량-가격 상관이
+  강한 meme coin(DOGE)에서만 유효하고, 기관 주도 에셋(BTC/ETH)은 거래량 정보가 분산되어 VWAP 중심선 의미 약화. 범용 4번째
+  채널 축으로 부적합.'
+category: strategy-design
+tags:
+- vwap
+- volume
+- channel
+- doge
+- single-asset
+- generalization
+strategies:
+- vwap-channel-12h
+timeframes:
+- 12H
+added_at: '2026-03-01'

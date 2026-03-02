@@ -1,0 +1,17 @@
+id: 100
+title: FR 변화율(가속도)도 크립토에서 alpha 부재 — level과 acceleration 모두 실패
+body: 'basis-momentum: FR change rate z-score. Chi(2023 JFQA) 학술 근거에도 불구하고 6/8 에셋
+  Sharpe 음수, Best DOGE 0.48. FR level 전략 19개+ 전멸에 이어 FR acceleration도 실패. 크립토 FR은
+  funding interval(8H) 간격으로 이산적이라 미분 정보가 연속적 basis와 다르게 작동. 전통금융의 basis-momentum factor가
+  크립토에서 유효하지 않음 재확인.'
+category: strategy-design
+tags:
+- funding-rate
+- derivatives
+- acceleration
+- basis-momentum
+strategies:
+- basis-momentum
+timeframes:
+- 12H
+added_at: '2026-03-01'

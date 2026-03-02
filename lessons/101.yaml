@@ -1,0 +1,16 @@
+id: 101
+title: CCI lower 비대칭 임계값 — 안정성 미달 + OOS 과적합
+body: 'cci-consensus: CCI 3-scale consensus. P4 AVAX Sharpe 1.06 PASS했으나 P5 Optuna
+  OOS=-0.13 과적합. cci_lower=-251(극단적 비대칭)이 ±20% 섭동 전 구간 동일 Sharpe→사실상 미사용 파라미터. 대칭
+  CCI 임계값(±100)에서는 경쟁력 부족. CCI 자체는 MAD 기반 정규화로 참신하나 단독 alpha 불충분.'
+category: strategy-design
+tags:
+- cci
+- consensus
+- overfitting
+- asymmetric-threshold
+strategies:
+- cci-consensus
+timeframes:
+- 12H
+added_at: '2026-03-01'
