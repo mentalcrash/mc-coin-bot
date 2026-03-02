@@ -1,0 +1,39 @@
+# Carry-Regime Trend — P7 EDA Parity 검증 (1년)
+# ADA/USDT 12H, 2025-01-01 ~ 2026-01-01
+
+backtest:
+  symbols:
+    - ADA/USDT
+  timeframe: "12H"
+  start: "2025-01-01"
+  end: "2026-01-01"
+  capital: 100000.0
+
+strategy:
+  name: carry-regime-12h
+  params:
+    ema_fast: 22
+    ema_mid: 54
+    ema_slow: 107
+    fr_percentile_window: 110
+    carry_sensitivity: 0.09595065366723192
+    exit_base_threshold: 0.9153480013276385
+    vol_window: 161
+    atr_period: 47
+    short_mode: 2            # ShortMode.FULL
+    hedge_threshold: -0.07
+    hedge_strength_ratio: 0.8
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10
+  system_stop_loss: 0.10
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  use_intrabar_trailing_stop: false
+  cost_model:
+    maker_fee: 0.0002
+    taker_fee: 0.0004
+    slippage: 0.0005
+    funding_rate_8h: 0.0001
+    market_impact: 0.0002

@@ -1,0 +1,164 @@
+version: 2
+meta:
+  name: basis-momentum
+  display_name: Basis-Momentum
+  category: Derivatives (Funding Rate Momentum)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-01'
+  economic_rationale: 펀딩레이트 변화율(1차 도함수) 기반 모멘텀. 19개+ FR level 전략 전멸했으나 FR acceleration은
+    다른 정보. Chi(2023 JFQA) basis-momentum factor 학술 검증.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 54.0
+      registry: basis-momentum
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 1.0
+  P4:
+    status: FAIL
+    date: '2026-03-01'
+    details:
+      best_asset: DOGE/USDT
+      sharpe: 0.48
+      cagr: 9.3
+      mdd: 45.2
+      trades: 307
+      median_sharpe: -0.31
+      pass_path: —
+      verdict_reason: Sharpe 0.48, CAGR +9.3% — 개선 여지 부족
+      triage: terminal
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: -0.41
+  cagr: -10.0
+  mdd: 39.2
+  trades: 341
+  profit_factor: 0.83
+  win_rate: 40.8
+  sortino: -0.3
+  calmar: 0.26
+  alpha: -4.8
+  beta: 0.08
+- symbol: ETH/USDT
+  sharpe: -0.74
+  cagr: -13.2
+  mdd: 50.3
+  trades: 327
+  profit_factor: 0.71
+  win_rate: 47.1
+  sortino: -0.49
+  calmar: 0.26
+  alpha: -20.9
+  beta: 0.08
+- symbol: BNB/USDT
+  sharpe: -0.27
+  cagr: -5.8
+  mdd: 45.6
+  trades: 296
+  profit_factor: 0.88
+  win_rate: 49.7
+  sortino: -0.16
+  calmar: 0.13
+  alpha: -85.0
+  beta: 0.11
+- symbol: BTC/USDT
+  sharpe: 0.19
+  cagr: 1.8
+  mdd: 20.8
+  trades: 299
+  profit_factor: 1.07
+  win_rate: 47.2
+  sortino: 0.14
+  calmar: 0.09
+  alpha: -76.1
+  beta: 0.14
+- symbol: LINK/USDT
+  sharpe: -0.34
+  cagr: -9.2
+  mdd: 40.9
+  trades: 308
+  profit_factor: 0.83
+  win_rate: 46.8
+  sortino: -0.2
+  calmar: 0.23
+  alpha: 7.1
+  beta: 0.08
+- symbol: AVAX/USDT
+  sharpe: -0.09
+  cagr: -4.5
+  mdd: 42.3
+  trades: 340
+  profit_factor: 0.93
+  win_rate: 45.0
+  sortino: -0.07
+  calmar: 0.11
+  alpha: 74.8
+  beta: 0.08
+- symbol: DOGE/USDT
+  sharpe: 0.48
+  cagr: 9.3
+  mdd: 45.2
+  trades: 307
+  profit_factor: 1.24
+  win_rate: 51.5
+  sortino: 0.34
+  calmar: 0.21
+  alpha: 75.6
+  beta: 0.1
+- symbol: ADA/USDT
+  sharpe: -0.72
+  cagr: -15.6
+  mdd: 54.6
+  trades: 304
+  profit_factor: 0.74
+  win_rate: 43.1
+  sortino: -0.45
+  calmar: 0.29
+  alpha: 26.2
+  beta: 0.07
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 5-file 구조 구현 완료. Registry 등록 basis-momentum. 54 tests PASS. Ruff/Pyright
+    0 error. Graceful degradation 확인.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: 'C1-C7 전항목 PASS. Warning 1건 (W: basis_momentum/signal.py hysteresis loop).'
+- date: '2026-03-01'
+  phase: P4
+  verdict: FAIL
+  rationale: DOGE/USDT Sharpe 0.48, CAGR +9.3%, MDD -45.2% [Path —] — Sharpe 0.48,
+    CAGR +9.3% — 개선 여지 부족

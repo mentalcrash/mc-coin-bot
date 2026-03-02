@@ -1,0 +1,144 @@
+version: 2
+meta:
+  name: carry-regime-12h
+  display_name: Carry-Regime Trend
+  category: Trend (FR-Adaptive Exit)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-01'
+  economic_rationale: '12H multi-scale EMA trend (entry) + FR 90-day percentile로 exit
+    speed만 적응 조절. BIS WP 1087: extreme carry = crash risk. Entry 수정 없이 #85 함정 회피.
+    carry_sensitivity=0이면 pure trend baseline.'
+  rationale_references: []
+  rationale_category: null
+parameters:
+  ema_fast: 22
+  ema_mid: 54
+  ema_slow: 107
+  fr_percentile_window: 110
+  carry_sensitivity: 0.09595065366723192
+  exit_base_threshold: 0.9153480013276385
+  vol_window: 161
+  atr_period: 47
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 62.0
+      registry: carry-regime-12h
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      sub_phase: P4B
+      oos_sharpe: 1.091
+      is_sharpe: 0.555
+      decay: -96.4%
+  P5:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      param_verdicts:
+        ema_fast: PASS
+        ema_mid: PASS
+        ema_slow: PASS
+        fr_percentile_window: PASS
+        carry_sensitivity: PASS
+        exit_base_threshold: PASS
+        vol_window: PASS
+        atr_period: PASS
+  P6:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      sub_phase: P6B
+      cpcv_oos_sharpe: 0.35
+      wfa_oos_sharpe: 0.92
+      pbo: 37.0
+      dsr: 0.0
+      mc_pvalue: 0.045
+  P7:
+    status: FAIL
+    date: '2026-03-01'
+    details:
+      eda_sharpe: 0.55
+      vbt_sharpe: -0.21
+      eda_return: +9.51%
+      vbt_return: -5.34%
+      trades_ratio: 0.67x
+asset_performance:
+- symbol: ADA/USDT
+  sharpe: 1.091
+  cagr: 18.68
+  mdd: 21.37
+  trades: 292
+  profit_factor: 1.339
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 carry-regime-12h. Ruff/Pyright 0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS: ADA/USDT Sharpe 0.74, CAGR +18.7%, MDD 21.4%. Mid-cap altcoin
+    edge, Beta~0 BTC-independent alpha'
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A+P4B PASS: Best Asset ADA/USDT Sharpe 0.74, CAGR 18.7%. IS/OOS PASS:
+    OOS Sharpe 1.09 > IS 0.56 (역전). Consistency 100%, Overfit 0%'
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.55→0.98 (+77.4%), OOS=-0.89
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-03-01'
+  phase: P6
+  verdict: PASS
+  rationale: WFA OOS Sharpe 0.92, Decay -50%(역전), Consistency 100%. 전 fold OOS 양수
+- date: '2026-03-01'
+  phase: P6
+  verdict: PASS
+  rationale: P5+P6 전 단계 PASS — WFA OOS 0.92, CPCV OOS 0.35, PBO 37%(경로A), MC p=0.045.
+    DSR 0.00 FAIL이나 보충 3/4 충족
+- date: '2026-03-01'
+  phase: P7
+  verdict: FAIL
+  rationale: 'P7 FAIL. 수익 부호 불일치: VBT -5.34% vs EDA +9.51%. 체결가격(close vs open) 및
+    TS 발동 시점 차이로 marginal 전략 부호 전환'

@@ -1,0 +1,192 @@
+version: 2
+meta:
+  name: cci-consensus
+  display_name: CCI Consensus Trend
+  category: Trend (CCI Multi-Scale Consensus)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-01'
+  economic_rationale: CCI(Commodity Channel Index) 3스케일(20/60/150) consensus voting.
+    CCI는 MAD 기반 정규화로 BB의 std와 수학적으로 직교. 186개 전략 중 0회 사용된 완전 미탐색 지표.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  scale_short: 47
+  scale_mid: 118
+  scale_long: 122
+  cci_upper: 74.4674878432416
+  cci_lower: -251.44290391366061
+  entry_threshold: 0.87727515528388
+  vol_window: 131
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 55.0
+      registry: cci-consensus
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      best_asset: AVAX/USDT
+      sharpe: 1.06
+      cagr: 17.9
+      mdd: 14.6
+      trades: 88
+      median_sharpe: 0.8
+      pass_path: A
+      verdict_reason: Path A 충족
+      triage: passed
+  P5:
+    status: FAIL
+    date: '2026-03-01'
+    details:
+      param_verdicts:
+        scale_short: PASS
+        scale_mid: PASS
+        scale_long: PASS
+        cci_upper: PASS
+        cci_lower: FAIL
+        entry_threshold: PASS
+        vol_window: PASS
+      fail_params:
+      - cci_lower
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.86
+  cagr: 12.9
+  mdd: 22.6
+  trades: 104
+  profit_factor: 1.96
+  win_rate: 57.7
+  sortino: 0.63
+  calmar: 0.57
+  alpha: 95.2
+  beta: 0.07
+- symbol: BNB/USDT
+  sharpe: 0.24
+  cagr: 2.8
+  mdd: 28.3
+  trades: 138
+  profit_factor: 1.18
+  win_rate: 48.6
+  sortino: 0.17
+  calmar: 0.1
+  alpha: -49.6
+  beta: 0.14
+- symbol: BTC/USDT
+  sharpe: 0.74
+  cagr: 10.7
+  mdd: 15.8
+  trades: 135
+  profit_factor: 1.55
+  win_rate: 51.1
+  sortino: 0.59
+  calmar: 0.68
+  alpha: -29.1
+  beta: 0.12
+- symbol: ETH/USDT
+  sharpe: 0.67
+  cagr: 8.8
+  mdd: 19.0
+  trades: 111
+  profit_factor: 1.61
+  win_rate: 52.3
+  sortino: 0.51
+  calmar: 0.46
+  alpha: 65.8
+  beta: 0.07
+- symbol: LINK/USDT
+  sharpe: 0.25
+  cagr: 2.7
+  mdd: 21.2
+  trades: 102
+  profit_factor: 1.23
+  win_rate: 51.0
+  sortino: 0.19
+  calmar: 0.13
+  alpha: 50.9
+  beta: 0.07
+- symbol: ADA/USDT
+  sharpe: 0.96
+  cagr: 14.3
+  mdd: 14.7
+  trades: 84
+  profit_factor: 2.1
+  win_rate: 44.0
+  sortino: 0.71
+  calmar: 0.97
+  alpha: 148.0
+  beta: 0.06
+- symbol: AVAX/USDT
+  sharpe: 1.06
+  cagr: 17.9
+  mdd: 14.6
+  trades: 88
+  profit_factor: 2.41
+  win_rate: 53.4
+  sortino: 0.91
+  calmar: 1.22
+  alpha: 186.4
+  beta: 0.08
+- symbol: DOGE/USDT
+  sharpe: 0.98
+  cagr: 19.3
+  mdd: 12.1
+  trades: 96
+  profit_factor: 2.14
+  win_rate: 49.0
+  sortino: 0.83
+  calmar: 1.6
+  alpha: 135.4
+  beta: 0.11
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 5-file 구조 구현 완료. Registry 등록 cci-consensus. 55 tests PASS. Ruff/Pyright
+    0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건.
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: AVAX/USDT Sharpe 1.06, CAGR +17.9%, MDD -14.6% [Path A] — Path A 충족
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 1.30→1.38 (+6.4%), OOS=-0.13
+- date: '2026-03-01'
+  phase: P5
+  verdict: FAIL
+  rationale: 'FAIL: cci_lower'

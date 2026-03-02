@@ -1,0 +1,138 @@
+version: 2
+meta:
+  name: vwap-channel-12h
+  display_name: VWAP-Channel Multi-Scale
+  category: Trend (Volume-Weighted Channel)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-01'
+  economic_rationale: VWAP 기반 3-scale channel breakout consensus. Volume-weighted
+    중심선+밴드로 DC/KC/BB와 직교하는 4번째 측정 축. 거래량이 동의한 breakout만 포착. Multi-scale(20/60/150)
+    consensus voting으로 noise rejection.
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 23
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 57.0
+      registry: vwap-channel-12h
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-03-01'
+    details:
+      sub_phase: P4B
+      doge_is_sharpe: 1.0
+      doge_oos_sharpe: 1.02
+      doge_decay: -2.0
+      sol_is_sharpe: 0.81
+      sol_oos_sharpe: -0.55
+      sol_decay: 168.0
+      btc_is_sharpe: 0.78
+      btc_oos_sharpe: -0.01
+      btc_decay: 101.0
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: 0.48
+  cagr: 9.0
+  mdd: 30.3
+  trades: 367
+  profit_factor: 1.27
+- symbol: ETH/USDT
+  sharpe: 0.41
+  cagr: 7.3
+  mdd: 27.8
+  trades: 390
+  profit_factor: 1.27
+- symbol: BNB/USDT
+  sharpe: 0.31
+  cagr: 4.7
+  mdd: 39.9
+  trades: 395
+  profit_factor: 1.21
+- symbol: SOL/USDT
+  sharpe: 0.3
+  cagr: 4.5
+  mdd: 37.4
+  trades: 366
+  profit_factor: 1.15
+- symbol: DOGE/USDT
+  sharpe: 0.7
+  cagr: 16.1
+  mdd: 37.0
+  trades: 362
+  profit_factor: 1.49
+- symbol: LINK/USDT
+  sharpe: -0.34
+  cagr: -9.3
+  mdd: 43.6
+  trades: 365
+  profit_factor: 0.81
+- symbol: ADA/USDT
+  sharpe: 0.35
+  cagr: 5.9
+  mdd: 32.8
+  trades: 348
+  profit_factor: 1.16
+- symbol: AVAX/USDT
+  sharpe: 0.27
+  cagr: 3.6
+  mdd: 31.1
+  trades: 364
+  profit_factor: 1.15
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 23/30점
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 vwap-channel-12h. Ruff/Pyright 0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 2건 (W3 regime concentration, W5 correlation with
+    tri-channel-trend)
+- date: '2026-03-01'
+  phase: P4
+  verdict: WATCH
+  rationale: 'P4A WATCH: Best DOGE Sharpe 0.6958 < 0.7 threshold (Path A borderline).
+    CAGR +16.1% > 15%. 에셋 분산 부족 (2nd best BTC 0.48). 파라미터 최적화 또는 P4B 진행 여부 검토 필요.'
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: 'P4A PASS (재실행): 파라미터 최적화(band_mult=2.5, entry_thresh=0.5) 후 DOGE
+    Sharpe 1.00, SOL 0.81, BTC 0.78. 8에셋 중 6에셋 양수 Sharpe.'
+- date: '2026-03-01'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4B FAIL: DOGE IS 1.00→OOS 1.02 (Decay -2%, PASS). SOL IS 0.81→OOS
+    -0.55 (Decay 168%, FAIL). BTC IS 0.78→OOS -0.01 (Decay 101%, FAIL). VWAP channel
+    DOGE 전용 — volume-price correlation이 meme coin에서만 유효. Anchor-Mom(1.36)
+    대비 열위 + DOGE 심볼 충돌. 범용화 실패로 RETIRED.'

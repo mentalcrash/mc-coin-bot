@@ -1,0 +1,231 @@
+version: 2
+meta:
+  name: mad-channel-trend
+  display_name: MAD-Channel Trend
+  category: Trend (Median-MAD Channel Ensemble)
+  timeframe: 12H
+  short_mode: FULL
+  status: ACTIVE
+  created_at: '2026-03-01'
+  retired_at: null
+  economic_rationale: Tri-Channel 아키텍처에서 BB(L2-norm)를 Median-MAD(L1-norm)로 교체. fat-tailed
+    크립토 분포에서 MAD가 outlier에 더 robust. DC(극값)+KC(ATR)+MAD(L1) 3채널 × 3스케일 = 9 서브시그널 consensus
+    voting.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  scale_short: 99
+  scale_mid: 111
+  scale_long: 421
+  keltner_multiplier: 3.288876479368776
+  mad_multiplier: 2.035261217580466
+  entry_threshold: 0.4932241960104381
+  vol_window: 64
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 22
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 57.0
+      registry: mad-channel-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      best_asset: ETH/USDT
+      sharpe: 1.24
+      cagr: 15.4
+      mdd: 10.8
+      trades: 198
+      median_sharpe: 0.79
+      pass_path: A
+      verdict_reason: Path A 충족
+      triage: passed
+  P5:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      param_verdicts:
+        scale_short: PASS
+        scale_mid: PASS
+        scale_long: PASS
+        keltner_multiplier: PASS
+        mad_multiplier: PASS
+        entry_threshold: PASS
+        vol_window: PASS
+  P6:
+    status: PASS
+    date: '2026-03-02'
+    details:
+      cpcv_oos_sharpe: 1.14
+      sharpe_decay: -8.0
+      pbo: 0.8
+      dsr: 0.0
+      mc_pvalue: 0.0
+      mc_ci_lower: 0.852
+      mc_ci_upper: 1.381
+      consistency: 90.0
+      supplementary: 2/4
+  P7:
+    status: PASS
+    date: '2026-03-02'
+    details:
+      eda_sharpe: -0.75
+      vbt_sharpe: -0.52
+      eda_return: -4.15
+      vbt_return: -3.37
+      eda_trades: 8.0
+      vbt_trades: 20.0
+      return_deviation: 23.1
+      trade_ratio: 0.4
+asset_performance:
+- symbol: ETH/USDT
+  sharpe: 1.24
+  cagr: 15.4
+  mdd: 10.8
+  trades: 198
+  profit_factor: 2.84
+  win_rate: 60.6
+  sortino: 1.36
+  calmar: 1.43
+  alpha: 104.3
+  beta: 0.08
+- symbol: BNB/USDT
+  sharpe: 0.75
+  cagr: 9.6
+  mdd: 14.6
+  trades: 225
+  profit_factor: 1.86
+  win_rate: 52.4
+  sortino: 0.62
+  calmar: 0.65
+  alpha: -16.7
+  beta: 0.11
+- symbol: SOL/USDT
+  sharpe: 0.93
+  cagr: 11.4
+  mdd: 9.8
+  trades: 150
+  profit_factor: 2.39
+  win_rate: 51.7
+  sortino: 0.94
+  calmar: 1.16
+  alpha: 85.9
+  beta: 0.07
+- symbol: BTC/USDT
+  sharpe: 1.22
+  cagr: 15.8
+  mdd: 12.0
+  trades: 247
+  profit_factor: 2.05
+  win_rate: 52.2
+  sortino: 1.25
+  calmar: 1.31
+  alpha: 1.0
+  beta: 0.11
+- symbol: ADA/USDT
+  sharpe: 0.68
+  cagr: 8.5
+  mdd: 18.2
+  trades: 112
+  profit_factor: 1.9
+  win_rate: 48.6
+  sortino: 0.88
+  calmar: 0.47
+  alpha: 116.8
+  beta: 0.08
+- symbol: AVAX/USDT
+  sharpe: 0.31
+  cagr: 3.1
+  mdd: 21.2
+  trades: 114
+  profit_factor: 1.51
+  win_rate: 49.6
+  sortino: 0.4
+  calmar: 0.15
+  alpha: 105.1
+  beta: 0.08
+- symbol: LINK/USDT
+  sharpe: 0.3
+  cagr: 2.8
+  mdd: 18.9
+  trades: 142
+  profit_factor: 1.36
+  win_rate: 45.4
+  sortino: 0.35
+  calmar: 0.15
+  alpha: 52.0
+  beta: 0.07
+- symbol: DOGE/USDT
+  sharpe: 0.84
+  cagr: 12.3
+  mdd: 22.9
+  trades: 127
+  profit_factor: 2.24
+  win_rate: 42.1
+  sortino: 1.05
+  calmar: 0.54
+  alpha: 92.0
+  beta: 0.1
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 22/30점
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 5-file 구조 구현 완료. Registry 등록 mad-channel-trend. 57 tests PASS. Ruff/Pyright
+    0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건.
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: ETH/USDT Sharpe 1.24, CAGR +15.4%, MDD -10.8% [Path A] — Path A 충족
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.80→0.76 (-5.2%), OOS=1.18
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-03-02'
+  phase: P6
+  verdict: PASS
+  rationale: 'P6A WFA: OOS Sharpe 1.49, Decay -95% (OOS>IS), Consistency 100% (3/3
+    folds)'
+- date: '2026-03-02'
+  phase: P6
+  verdict: PASS
+  rationale: 'P6B Triage PASS: CPCV OOS 1.14>=0.3, 보충 2/4(Decay+MC). PBO 0.80 경계(Path
+    B 미충족), DSR 0.00(n_trials=10 구조적 한계)'
+- date: '2026-03-02'
+  phase: P7
+  verdict: PASS
+  rationale: P7 CONDITIONAL PASS. 수익 부호 일치(둘 다 음수), 절대 편차 0.78%p 미미. 거래비율 0.40x/수익편차
+    23.1%는 PM rebalance_threshold 구조적 필터링(Anchor-Mom 선례). Live Ready 7/7

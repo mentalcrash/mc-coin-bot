@@ -1,0 +1,41 @@
+# MAD-Channel Multi-Scale Trend — P7 EDA Parity 검증 (1년)
+# ETH/USDT 12H, 2025-01-01 ~ 2026-01-01
+
+backtest:
+  symbols:
+    - ETH/USDT
+  timeframe: "12H"
+  start: "2025-01-01"
+  end: "2026-01-01"
+  capital: 100000.0
+
+strategy:
+  name: mad-channel-trend
+  params:
+    scale_short: 99
+    scale_mid: 111
+    scale_long: 421
+    keltner_multiplier: 3.288876479368776
+    mad_multiplier: 2.035261217580466
+    entry_threshold: 0.4932241960104381
+    vol_window: 64
+    vol_target: 0.35
+    min_volatility: 0.05
+    annualization_factor: 730.0
+    short_mode: 2            # ShortMode.FULL
+    hedge_threshold: -0.07
+    hedge_strength_ratio: 0.8
+
+portfolio:
+  max_leverage_cap: 2.0
+  rebalance_threshold: 0.10
+  system_stop_loss: 0.10
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  use_intrabar_trailing_stop: false
+  cost_model:
+    maker_fee: 0.0002
+    taker_fee: 0.0004
+    slippage: 0.0005
+    funding_rate_8h: 0.0001
+    market_impact: 0.0002

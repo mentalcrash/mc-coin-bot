@@ -1,0 +1,121 @@
+version: 2
+meta:
+  name: r2-consensus-12h
+  display_name: R2 Consensus Trend
+  category: Statistical Trend Quality (R2 Consensus)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-01'
+  economic_rationale: '선형회귀 R2(추세 일관성)를 3개 스케일(20/50/120)에서 이진 투표 consensus. R2 >
+    threshold AND slope 방향 합의 시에만 진입. 교훈 #29 이진 결정 권장 준수. trend-quality-mom(4H, single-scale
+    R2 x slope, Sharpe 0.84) 대비 12H TF 상향 + multi-scale consensus로 noise rejection
+    강화.'
+  rationale_references: []
+  rationale_category: null
+parameters: {}
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 20
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 60.0
+      registry: r2-consensus
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 2.0
+  P4:
+    status: FAIL
+    date: '2026-03-01'
+    details:
+      sharpe: 0.43
+      cagr: 7.2
+      best_asset: AVAX/USDT
+      sub_phase: P4A
+asset_performance:
+- symbol: BTC/USDT
+  sharpe: -0.49
+  cagr: -10.9
+  mdd: 43.7
+  trades: 167
+  profit_factor: 0.77
+- symbol: ETH/USDT
+  sharpe: -0.2
+  cagr: -6.0
+  mdd: 39.6
+  trades: 156
+  profit_factor: 0.9
+- symbol: BNB/USDT
+  sharpe: -0.36
+  cagr: -9.2
+  mdd: 52.7
+  trades: 177
+  profit_factor: 0.82
+- symbol: SOL/USDT
+  sharpe: 0.21
+  cagr: 2.2
+  mdd: 42.4
+  trades: 144
+  profit_factor: 1.11
+- symbol: DOGE/USDT
+  sharpe: -0.3
+  cagr: -7.7
+  mdd: 44.0
+  trades: 165
+  profit_factor: 0.79
+- symbol: LINK/USDT
+  sharpe: -0.06
+  cagr: -3.5
+  mdd: 38.8
+  trades: 138
+  profit_factor: 0.94
+- symbol: ADA/USDT
+  sharpe: -0.09
+  cagr: -4.4
+  mdd: 43.8
+  trades: 154
+  profit_factor: 0.92
+- symbol: AVAX/USDT
+  sharpe: 0.43
+  cagr: 7.2
+  mdd: 33.4
+  trades: 155
+  profit_factor: 1.24
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 20/30점. R2 3-scale 투표 consensus at 12H. 교훈
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 4-file 구조 구현 완료. Registry 등록 r2-consensus. Ruff/Pyright 0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 2건 (W3 regime concentration, W4 turnover — P4/P5
+    확인)
+- date: '2026-03-01'
+  phase: P4
+  verdict: FAIL
+  rationale: 'P4A FAIL: 6/8 에셋 Sharpe 음수. Best(AVAX) Sharpe 0.43 < 0.5 WATCH 미달. R2
+    consensus alpha 부재'

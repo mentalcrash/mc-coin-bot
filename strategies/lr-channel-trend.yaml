@@ -1,0 +1,198 @@
+version: 2
+meta:
+  name: lr-channel-trend
+  display_name: LR-Channel Trend
+  category: Trend (Linear Regression Channel)
+  timeframe: 12H
+  short_mode: FULL
+  status: RETIRED
+  created_at: '2026-03-01'
+  retired_at: '2026-03-02'
+  economic_rationale: Rolling OLS 선형회귀 잔차 채널 3스케일 consensus. 가격을 추세(slope)와 노이즈(residual)로
+    명시적 분리. 채널 = regression_line ± k × residual_std. detrended residual 기반으로 기존 채널과
+    직교.
+  rationale_references: []
+  rationale_category: null
+parameters:
+  scale_short: 45
+  scale_mid: 161
+  scale_long: 301
+  channel_multiplier: 1.067785776846899
+  entry_threshold: 0.5885583208364027
+  vol_window: 18
+phases:
+  P1:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      score: 20
+      max_score: 30
+  P2:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      tests: 55.0
+      registry: lr-channel-trend
+      files: 5.0
+      lookahead_tests: PASS
+      prescan_critical: 0.0
+  P3:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      C1: PASS
+      C2: PASS
+      C3: PASS
+      C4: PASS
+      C5: PASS
+      C6: PASS
+      C7: PASS
+      warnings: 0.0
+  P4:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      best_asset: ETH/USDT
+      sharpe: 1.05
+      cagr: 11.8
+      mdd: 9.9
+      trades: 237
+      median_sharpe: 0.8
+      pass_path: B
+      verdict_reason: Path B 충족
+      triage: passed
+  P5:
+    status: PASS
+    date: '2026-03-01'
+    details:
+      param_verdicts:
+        scale_short: PASS
+        scale_mid: PASS
+        scale_long: PASS
+        channel_multiplier: PASS
+        entry_threshold: PASS
+        vol_window: PASS
+  P6:
+    status: FAIL
+    date: '2026-03-02'
+    details: {}
+asset_performance:
+- symbol: SOL/USDT
+  sharpe: 0.75
+  cagr: 8.8
+  mdd: 13.0
+  trades: 198
+  profit_factor: 1.69
+  win_rate: 51.0
+  sortino: 0.71
+  calmar: 0.67
+  alpha: 71.1
+  beta: 0.06
+- symbol: BNB/USDT
+  sharpe: 0.25
+  cagr: 2.3
+  mdd: 14.1
+  trades: 230
+  profit_factor: 1.18
+  win_rate: 46.5
+  sortino: 0.19
+  calmar: 0.16
+  alpha: -54.8
+  beta: 0.08
+- symbol: BTC/USDT
+  sharpe: 0.97
+  cagr: 9.8
+  mdd: 12.1
+  trades: 235
+  profit_factor: 1.68
+  win_rate: 43.8
+  sortino: 0.91
+  calmar: 0.81
+  alpha: -38.6
+  beta: 0.07
+- symbol: ETH/USDT
+  sharpe: 1.05
+  cagr: 11.8
+  mdd: 9.9
+  trades: 237
+  profit_factor: 2.06
+  win_rate: 47.3
+  sortino: 1.09
+  calmar: 1.19
+  alpha: 80.6
+  beta: 0.06
+- symbol: DOGE/USDT
+  sharpe: 1.01
+  cagr: 18.1
+  mdd: 25.6
+  trades: 210
+  profit_factor: 2.07
+  win_rate: 38.6
+  sortino: 1.16
+  calmar: 0.71
+  alpha: 127.6
+  beta: 0.09
+- symbol: LINK/USDT
+  sharpe: 0.11
+  cagr: 0.6
+  mdd: 17.8
+  trades: 214
+  profit_factor: 1.08
+  win_rate: 45.8
+  sortino: 0.11
+  calmar: 0.03
+  alpha: 41.8
+  beta: 0.05
+- symbol: AVAX/USDT
+  sharpe: 0.12
+  cagr: 0.7
+  mdd: 22.0
+  trades: 181
+  profit_factor: 1.1
+  win_rate: 47.0
+  sortino: 0.12
+  calmar: 0.03
+  alpha: 94.3
+  beta: 0.06
+- symbol: ADA/USDT
+  sharpe: 0.85
+  cagr: 11.8
+  mdd: 16.1
+  trades: 205
+  profit_factor: 1.79
+  win_rate: 44.9
+  sortino: 0.95
+  calmar: 0.74
+  alpha: 134.1
+  beta: 0.07
+decisions:
+- date: '2026-03-01'
+  phase: P1
+  verdict: PASS
+  rationale: 20/30점. Rolling OLS detrended residual channel 3-scale consensus.
+- date: '2026-03-01'
+  phase: P2
+  verdict: PASS
+  rationale: 5-file 구조 구현 완료. Registry 등록 lr-channel-trend. 55 tests PASS. Ruff/Pyright
+    0 error.
+- date: '2026-03-01'
+  phase: P3
+  verdict: PASS
+  rationale: C1-C7 전항목 PASS. Warning 0건.
+- date: '2026-03-01'
+  phase: P4
+  verdict: PASS
+  rationale: ETH/USDT Sharpe 1.05, CAGR +11.8%, MDD -9.9% [Path B] — Path B 충족
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: IS Sharpe 0.77→1.47 (+91.9%), OOS=1.21
+- date: '2026-03-01'
+  phase: P5
+  verdict: PASS
+  rationale: 'PASS: all stable'
+- date: '2026-03-02'
+  phase: P6
+  verdict: FAIL
+  rationale: WFA OOS Sharpe 0.36 (>=0.3 PASS), Decay 52% (>50% FAIL), Consistency
+    33% (<50% FAIL). Fold 0/1 OOS 음수 — 2022-2023에서 alpha 부재, 2024-2025 최근장에만 의존
