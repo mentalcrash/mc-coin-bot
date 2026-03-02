@@ -125,6 +125,7 @@ class StrategyOrchestrator:
         # Risk defense
         self._risk_breached: bool = False
         self._risk_recovery_step: int = 0  # 0=정상, 1~N=복원 중
+        self._risk_defense_cooldown_remaining: int = 0
 
         # Daily return MTM 추적
         self._initial_capital: float = 0.0
@@ -637,9 +638,7 @@ class StrategyOrchestrator:
             from src.orchestrator.dd_derisk import apply_dd_derisk
 
             pod_drawdowns = {
-                pod.pod_id: pod.performance.current_drawdown
-                for pod in self._pods
-                if pod.is_active
+                pod.pod_id: pod.performance.current_drawdown for pod in self._pods if pod.is_active
             }
             weights, actions = apply_dd_derisk(
                 weights,
@@ -878,10 +877,21 @@ class StrategyOrchestrator:
         risk_record.update(pod_weights_map)
         self._risk_contributions_history.append(risk_record)
 
+        # Cooldown 감소 (매 리밸런스마다)
+        if self._risk_defense_cooldown_remaining > 0:
+            self._risk_defense_cooldown_remaining -= 1
+
         # Risk defense: critical alert → capital 축소
         critical_alerts = [a for a in alerts if a.severity == "critical"]
         if critical_alerts and not self._risk_breached:
-            self._apply_risk_defense(critical_alerts)
+            if self._risk_defense_cooldown_remaining > 0:
+                logger.info(
+                    "Risk defense cooldown: {} bars remaining, skipping",
+                    self._risk_defense_cooldown_remaining,
+                )
+            else:
+                self._apply_risk_defense(critical_alerts)
+                self._risk_defense_cooldown_remaining = self._config.risk_defense_cooldown_bars
         elif self._risk_breached:
             # 위기 해제 → 점진 복원 시작
             self._risk_breached = False
@@ -1024,6 +1034,11 @@ class StrategyOrchestrator:
         """마지막 리밸런스에서 할당된 가중치 (읽기 전용)."""
         return dict(self._last_allocated_weights)
 
+    @property
+    def routed_symbols(self) -> list[str]:
+        """현재 라우팅 테이블에 등록된 심볼 목록."""
+        return list(self._symbol_pod_map.keys())
+
     # ── Serialization ──────────────────────────────────────────────
 
     def restore_histories(
@@ -1056,6 +1071,7 @@ class StrategyOrchestrator:
             "last_close_prices": dict(self._last_close_prices),
             "risk_breached": self._risk_breached,
             "risk_recovery_step": self._risk_recovery_step,
+            "risk_defense_cooldown_remaining": self._risk_defense_cooldown_remaining,
             "close_price_history": {
                 sym: list(prices) for sym, prices in self._close_price_history.items()
             },
@@ -1099,6 +1115,10 @@ class StrategyOrchestrator:
         recovery_val = data.get("risk_recovery_step")
         if isinstance(recovery_val, int | float):
             self._risk_recovery_step = int(recovery_val)
+
+        cooldown_val = data.get("risk_defense_cooldown_remaining")
+        if isinstance(cooldown_val, int | float):
+            self._risk_defense_cooldown_remaining = int(cooldown_val)
 
         price_hist_val = data.get("close_price_history")
         if isinstance(price_hist_val, dict):

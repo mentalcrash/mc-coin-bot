@@ -1362,3 +1362,118 @@ class TestPinnedSymbolsUniverse:
         # pinned Pod의 BTC/USDT는 여전히 존재
         assert pinned_pod.accepts_symbol("BTC/USDT") is True
         assert "BTC/USDT" in pinned_pod.symbols
+
+
+# ── TestRiskDefenseCooldown ─────────────────────────────────
+
+
+class TestRiskDefenseCooldown:
+    """Risk defense cooldown 테스트."""
+
+    def _make_orch_with_cooldown(
+        self,
+        cooldown_bars: int = 3,
+        recovery_steps: int = 3,
+    ) -> StrategyOrchestrator:
+        """Cooldown 설정된 orchestrator."""
+        pod_a = _make_pod("pod-a", ("BTC/USDT",), capital_fraction=0.5, warmup=3)
+        pod_b = _make_pod("pod-b", ("ETH/USDT",), capital_fraction=0.5, warmup=3)
+        config = _make_orchestrator_config(
+            (pod_a.config, pod_b.config),
+            rebalance_calendar_days=1,
+            risk_recovery_steps=recovery_steps,
+            risk_defense_cooldown_bars=cooldown_bars,
+            max_gross_leverage=20.0,
+            max_single_pod_risk_pct=0.99,
+            max_portfolio_drawdown=0.99,
+            daily_loss_limit=0.99,
+        )
+        allocator = CapitalAllocator(config)
+        ra = RiskAggregator(config)
+        return StrategyOrchestrator(config, [pod_a, pod_b], allocator, risk_aggregator=ra)
+
+    def test_cooldown_prevents_repeat(self) -> None:
+        """발동 후 cooldown 내 재발동 차단."""
+        from src.orchestrator.models import RiskAlert
+
+        orch = self._make_orch_with_cooldown(cooldown_bars=20, recovery_steps=1)
+
+        # 위기 강제 발동
+        alerts = [
+            RiskAlert(
+                alert_type="gross_leverage",
+                severity="critical",
+                message="test",
+                current_value=10.0,
+                threshold=3.0,
+            )
+        ]
+        orch._apply_risk_defense(alerts)
+        orch._risk_defense_cooldown_remaining = orch._config.risk_defense_cooldown_bars
+        assert orch._risk_breached is True
+        assert orch._risk_defense_cooldown_remaining == 20
+
+        # 위기 해제 + recovery (recovery_steps=1이므로 빠르게 완료)
+        safe_returns = pd.DataFrame(
+            {"pod-a": [0.001] * 60, "pod-b": [0.001] * 60},
+        )
+        orch._check_risk_limits(safe_returns)  # cooldown 20→19, risk_breached→False
+        assert not orch._risk_breached
+        orch._check_risk_limits(safe_returns)  # cooldown 19→18, recovery step→complete
+
+        # Cooldown 아직 남아있음
+        assert orch._risk_defense_cooldown_remaining > 0
+
+        # Cooldown 중에는 capital_fraction 변경 없음
+        original_fractions = [p.capital_fraction for p in orch._pods]
+        orch._check_risk_limits(safe_returns)
+        current_fractions = [p.capital_fraction for p in orch._pods]
+        assert current_fractions == original_fractions
+
+    def test_cooldown_zero_no_effect(self) -> None:
+        """cooldown=0 → 기존 동작 (매번 발동 가능)."""
+        from src.orchestrator.models import RiskAlert
+
+        orch = self._make_orch_with_cooldown(cooldown_bars=0)
+
+        # 위기 발동
+        alerts = [
+            RiskAlert(
+                alert_type="gross_leverage",
+                severity="critical",
+                message="test",
+                current_value=10.0,
+                threshold=3.0,
+            )
+        ]
+        orch._apply_risk_defense(alerts)
+        assert orch._risk_breached is True
+        assert orch._risk_defense_cooldown_remaining == 0  # cooldown=0이므로
+
+    def test_cooldown_expires(self) -> None:
+        """Cooldown 만료 후 재발동 가능."""
+        orch = self._make_orch_with_cooldown(cooldown_bars=2)
+
+        # Cooldown 설정
+        orch._risk_defense_cooldown_remaining = 2
+
+        safe_returns = pd.DataFrame(
+            {"pod-a": [0.001] * 60, "pod-b": [0.001] * 60},
+        )
+
+        # 2번 호출 → cooldown 감소
+        orch._check_risk_limits(safe_returns)  # 2→1
+        assert orch._risk_defense_cooldown_remaining == 1
+        orch._check_risk_limits(safe_returns)  # 1→0
+        assert orch._risk_defense_cooldown_remaining == 0
+
+    def test_cooldown_persisted(self) -> None:
+        """to_dict/restore_from_dict 왕복 보존."""
+        orch = self._make_orch_with_cooldown(cooldown_bars=10)
+        orch._risk_defense_cooldown_remaining = 7
+
+        data = orch.to_dict()
+        orch2 = self._make_orch_with_cooldown(cooldown_bars=10)
+        orch2.restore_from_dict(data)
+
+        assert orch2._risk_defense_cooldown_remaining == 7

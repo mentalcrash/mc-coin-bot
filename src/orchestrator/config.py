@@ -582,6 +582,20 @@ class OrchestratorConfig(BaseModel):
         description="Risk defense 해제 후 자본 복원 단계 수",
     )
 
+    # PRC breach severity control
+    prc_breach_severity: str = Field(
+        default="critical",
+        pattern="^(critical|warning)$",
+        description=("PRC threshold 위반 시 severity. critical=risk defense 발동, warning=로깅만"),
+    )
+
+    # Risk defense cooldown
+    risk_defense_cooldown_bars: int = Field(
+        default=0,
+        ge=0,
+        description="Risk defense 발동 후 재발동 대기 bar 수 (0=cooldown 없음, 기존 동작)",
+    )
+
     # Netting
     netting_mode: Literal["signal", "hedge"] = Field(
         default="signal",
@@ -628,6 +642,10 @@ class OrchestratorConfig(BaseModel):
     surveillance: SurveillanceConfig | None = Field(
         default=None,
         description="Market Surveillance 설정 (None=비활성)",
+    )
+    wide_universe_symbols: tuple[str, ...] = Field(
+        default=(),
+        description="백테스트 동적 유니버스용 wide 심볼 목록 (빈 값이면 비활성)",
     )
 
     # Volatility Targeting Overlay

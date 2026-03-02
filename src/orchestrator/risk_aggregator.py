@@ -355,13 +355,15 @@ class RiskAggregator:
         prc = compute_risk_contributions(pod_returns, pod_weights)
         threshold = self._config.max_single_pod_risk_pct
 
+        breach_severity = self._config.prc_breach_severity
+
         for pod_id, contribution in prc.items():
             abs_contrib = abs(contribution)
             if abs_contrib >= threshold:
                 alerts.append(
                     RiskAlert(
                         alert_type="single_pod_risk",
-                        severity="critical",
+                        severity=breach_severity,
                         message=f"Pod {pod_id} PRC {abs_contrib:.2%} vs limit {threshold:.1%}",
                         current_value=abs_contrib,
                         threshold=threshold,

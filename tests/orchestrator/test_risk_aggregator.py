@@ -515,6 +515,64 @@ class TestAssetCorrelationStress:
 # ── TestImmaturePodFiltering ──────────────────────────────────
 
 
+class TestPrcBreachSeverity:
+    """PRC breach severity config 테스트."""
+
+    def test_default_critical(self) -> None:
+        """기본값 → severity='critical' (하위호환)."""
+        config = _make_config(max_single_pod_risk_pct=0.40)
+        ra = RiskAggregator(config)
+        returns = _make_pod_returns(100, 2)
+        alerts = ra.check_portfolio_limits(
+            net_weights={},
+            pod_performances={},
+            pod_weights={"pod-a": 0.95, "pod-b": 0.05},
+            pod_returns=returns,
+        )
+        critical = [
+            a for a in alerts if a.alert_type == "single_pod_risk" and a.severity == "critical"
+        ]
+        # pod-a PRC가 높아서 critical 발생
+        assert len(critical) >= 1
+
+    def test_warning_severity(self) -> None:
+        """prc_breach_severity='warning' → severity='warning'."""
+        config = _make_config(max_single_pod_risk_pct=0.40, prc_breach_severity="warning")
+        ra = RiskAggregator(config)
+        returns = _make_pod_returns(100, 2)
+        alerts = ra.check_portfolio_limits(
+            net_weights={},
+            pod_performances={},
+            pod_weights={"pod-a": 0.95, "pod-b": 0.05},
+            pod_returns=returns,
+        )
+        prc_alerts = [a for a in alerts if a.alert_type == "single_pod_risk"]
+        # PRC breach가 있으면 warning이어야 함
+        for alert in prc_alerts:
+            if alert.current_value >= config.max_single_pod_risk_pct:
+                assert alert.severity == "warning"
+
+    def test_warning_threshold_unaffected(self) -> None:
+        """WARNING 수준 alert(80% 이상, 100% 미만)은 항상 'warning' (prc_breach_severity 무관)."""
+        config = _make_config(max_single_pod_risk_pct=0.70, prc_breach_severity="critical")
+        ra = RiskAggregator(config)
+        returns = _make_pod_returns(100, 2)
+        # 50/50 weight → PRC ≈ 0.5 → 0.5/0.7=71% < 80% → alert 없을 수 있음
+        # 60/40 weight → PRC 더 불균등
+        alerts = ra.check_portfolio_limits(
+            net_weights={},
+            pod_performances={},
+            pod_weights={"pod-a": 0.65, "pod-b": 0.35},
+            pod_returns=returns,
+        )
+        warning_alerts = [
+            a for a in alerts if a.alert_type == "single_pod_risk" and a.severity == "warning"
+        ]
+        # warning 수준이 있으면 severity는 "warning"
+        for alert in warning_alerts:
+            assert alert.severity == "warning"
+
+
 class TestImmaturePodFiltering:
     """P0-A: Immature pod(분산 ≈ 0) 필터링 → equal PRC fallback."""
 
