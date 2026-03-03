@@ -32,7 +32,7 @@ from src.eda.analytics import AnalyticsEngine
 from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
 from src.eda.oms import OMS
-from src.eda.portfolio_manager import EDAPortfolioManager
+from src.eda.portfolio_manager import EDAPortfolioManager, Position
 from src.eda.risk_manager import EDARiskManager
 from src.eda.smart_executor import SmartExecutor
 from src.eda.strategy_engine import StrategyEngine
@@ -1414,82 +1414,184 @@ class LiveRunner:
         return result
 
     async def _cleanup_orphaned_positions(self, pm: EDAPortfolioManager) -> list[str]:
-        """Pod 제거(RETIRED) 후 orphaned position을 PM에서 정리합니다.
+        """Config 제거 또는 RETIRED Pod의 orphaned position을 정리합니다.
 
-        Orchestrator 활성 시:
-        - RETIRED 상태 Pod의 심볼 중 활성 Pod에서 관리되지 않는 심볼을 수집
-        - 해당 심볼의 PM 포지션을 0으로 리셋
-        - LIVE 모드에서는 실제 거래소 청산은 PM → SignalEvent → OMS 경유
+        Phase 1 (hedge mode composite key 스캔):
+        - PM ``_positions`` key에서 pod_id 추출
+        - pod_id가 orchestrator에 없거나 RETIRED → orphan
+        - LIVE 모드: 거래소 시장가 청산 후 PM 리셋
+        - Paper 모드: PM 리셋만
+
+        Phase 2 (non-hedge symbol fallback):
+        - RETIRED Pod 심볼 중 활성 Pod 미관리 심볼 → PM 리셋
 
         Non-orchestrator 모드: 즉시 반환.
 
         Returns:
-            정리된 심볼 리스트
+            정리된 position key 리스트
         """
         if self._orchestrator is None:
             return []
 
-        from src.models.types import Direction
-        from src.orchestrator.models import LifecycleState
-
-        retired_pods = [p for p in self._orchestrator.pods if p.state == LifecycleState.RETIRED]
-        if not retired_pods:
-            return []
-
-        # 활성 Pod가 관리하는 심볼 집합
-        active_symbols: set[str] = set()
-        for pod in self._orchestrator.pods:
-            if pod.is_active:
-                active_symbols.update(pod.symbols)
-
-        # 고아 심볼 = RETIRED Pod 전용 (활성 Pod에 없는) 심볼
-        orphan_symbols: set[str] = set()
-        for pod in retired_pods:
-            orphan_symbols.update(set(pod.symbols) - active_symbols)
-
-        if not orphan_symbols:
-            return []
+        all_pod_ids = {pod.pod_id for pod in self._orchestrator.pods}
+        active_pod_ids = {pod.pod_id for pod in self._orchestrator.pods if pod.is_active}
 
         cleaned: list[str] = []
-        for symbol in orphan_symbols:
-            pos = pm._positions.get(symbol)
-            if pos is None or not pos.is_open:
+
+        # ── Phase 1: PM composite key 스캔 (config 제거 + RETIRED pod) ──
+        for pos_key in list(pm._positions.keys()):
+            pod_id = pm._pod_id_from_key(pos_key)
+            if pod_id is None or pod_id in active_pod_ids:
                 continue
 
+            pos = pm._positions[pos_key]
+            if not pos.is_open:
+                continue
+
+            reason = "config-removed" if pod_id not in all_pod_ids else "retired"
+            symbol = pm._symbol_from_key(pos_key)
+
             logger.info(
-                "Cleanup orphaned position: {} (size={:.6f}) from retired pod(s)",
-                symbol,
+                "Orphan position cleanup: {} (pod={}, reason={}, dir={}, size={:.6f})",
+                pos_key,
+                pod_id,
+                reason,
+                pos.direction.name,
                 pos.size,
             )
 
-            # PM 포지션 리셋 (reconcile_with_exchange 패턴과 동일)
-            pos.size = 0.0
-            pos.direction = Direction.NEUTRAL
-            pos.avg_entry_price = 0.0
-            pos.unrealized_pnl = 0.0
-            pos.current_weight = 0.0
-            pos.last_price = 0.0
-            pos.peak_price_since_entry = 0.0
-            pos.trough_price_since_entry = 0.0
-            pos.atr_values = []
+            # LIVE: 거래소 시장가 청산
+            if self._mode == LiveMode.LIVE and self._futures_client is not None:
+                try:
+                    await self._close_orphan_on_exchange(symbol, pos)
+                except Exception:
+                    logger.exception(
+                        "Failed to close orphan on exchange: {} — skipping PM reset",
+                        pos_key,
+                    )
+                    continue  # 거래소 실패 → PM 리셋 건너뜀 (재시작 시 재시도)
 
-            # 부가 상태 정리
-            pm._last_target_weights.pop(symbol, None)
-            pm._last_executed_targets.pop(symbol, None)
-            pm._pending_signals.pop(symbol, None)
-            pm._pending_close.discard(symbol)
-            pm._deferred_close_targets.pop(symbol, None)
+            self._reset_orphan_position(pm, pos_key, pos)
+            cleaned.append(pos_key)
 
-            cleaned.append(symbol)
+        # ── Phase 2: Non-hedge RETIRED symbol 기반 정리 ──
+        self._cleanup_retired_symbol_positions(pm, cleaned)
 
         if cleaned:
             logger.warning(
-                "Cleaned {} orphaned positions from retired pods: {}",
+                "Cleaned {} orphaned positions: {}",
                 len(cleaned),
                 cleaned,
             )
 
         return cleaned
+
+    def _cleanup_retired_symbol_positions(
+        self,
+        pm: EDAPortfolioManager,
+        cleaned: list[str],
+    ) -> None:
+        """RETIRED Pod의 심볼 기반 orphan 정리 (non-hedge fallback).
+
+        활성 Pod가 관리하지 않는 RETIRED Pod 심볼의 PM 포지션을 리셋합니다.
+        """
+        assert self._orchestrator is not None  # caller guarantees
+
+        from src.orchestrator.models import LifecycleState
+
+        retired_pods = [p for p in self._orchestrator.pods if p.state == LifecycleState.RETIRED]
+        if not retired_pods:
+            return
+
+        active_symbols: set[str] = set()
+        for pod in self._orchestrator.pods:
+            if pod.is_active:
+                active_symbols.update(pod.symbols)
+
+        orphan_symbols: set[str] = set()
+        for pod in retired_pods:
+            orphan_symbols.update(set(pod.symbols) - active_symbols)
+
+        for symbol in orphan_symbols:
+            if symbol in cleaned:
+                continue
+            pos = pm._positions.get(symbol)
+            if pos is None or not pos.is_open:
+                continue
+
+            logger.info(
+                "Orphan position cleanup: {} (reason=retired-symbol, size={:.6f})",
+                symbol,
+                pos.size,
+            )
+
+            self._reset_orphan_position(pm, symbol, pos)
+            cleaned.append(symbol)
+
+    async def _close_orphan_on_exchange(
+        self,
+        symbol: str,
+        pos: Position,
+    ) -> None:
+        """거래소에서 orphan 포지션 시장가 청산."""
+        assert self._futures_client is not None
+
+        from src.models.types import Direction
+
+        futures_symbol = self._futures_client.to_futures_symbol(symbol)
+
+        if pos.direction == Direction.LONG:
+            side = "sell"
+            position_side = "LONG" if self._hedge_mode else None
+        elif pos.direction == Direction.SHORT:
+            side = "buy"
+            position_side = "SHORT" if self._hedge_mode else None
+        else:
+            return  # NEUTRAL → nothing to close
+
+        ts = int(time.time() * 1000)
+        client_order_id = f"orphan-close-{symbol.replace('/', '')}-{ts}"
+
+        await self._futures_client.create_order(
+            symbol=futures_symbol,
+            side=side,
+            amount=pos.size,
+            position_side=position_side,
+            client_order_id=client_order_id,
+        )
+        logger.info(
+            "Exchange orphan close sent: {} side={} amount={:.6f} position_side={}",
+            futures_symbol,
+            side,
+            pos.size,
+            position_side,
+        )
+
+    @staticmethod
+    def _reset_orphan_position(
+        pm: EDAPortfolioManager,
+        pos_key: str,
+        pos: Position,
+    ) -> None:
+        """Orphan position의 PM 상태를 NEUTRAL로 리셋."""
+        from src.models.types import Direction
+
+        pos.size = 0.0
+        pos.direction = Direction.NEUTRAL
+        pos.avg_entry_price = 0.0
+        pos.unrealized_pnl = 0.0
+        pos.current_weight = 0.0
+        pos.last_price = 0.0
+        pos.peak_price_since_entry = 0.0
+        pos.trough_price_since_entry = 0.0
+        pos.atr_values = []
+
+        pm._last_target_weights.pop(pos_key, None)
+        pm._last_executed_targets.pop(pos_key, None)
+        pm._pending_signals.pop(pos_key, None)
+        pm._pending_close.discard(pos_key)
+        pm._deferred_close_targets.pop(pos_key, None)
+        pm._last_tf_atr.pop(pos_key, None)
 
     async def _setup_reconciler(
         self,

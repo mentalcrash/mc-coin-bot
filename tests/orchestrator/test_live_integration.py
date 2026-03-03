@@ -424,3 +424,185 @@ class TestCleanupOrphanedPositions:
         # BTC는 pod-a가 활성이므로 정리 안 됨
         assert len(cleaned) == 0
         assert pm._positions["BTC/USDT"].size == 0.5
+
+    async def test_config_removed_pod_cleaned_hedge_mode(self) -> None:
+        """Config에서 완전 제거된 Pod의 hedge mode 포지션이 정리됨."""
+        # pod-a만 존재 (pod-gbtrend는 config에서 완전 제거된 상태)
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=1.0)
+
+        orch_config = _make_orch_config((pod_a_cfg,))
+        runner = self._make_runner_with_orchestrator([pod_a], orch_config)
+        runner._hedge_mode = True
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+            hedge_mode=True,
+        )
+        # Config에서 제거된 pod-gbtrend의 잔류 포지션
+        pos_key = "pod-gbtrend|DOGE/USDT"
+        pm._positions[pos_key] = Position(
+            symbol="DOGE/USDT",
+            size=1000.0,
+            direction=Direction.LONG,
+            avg_entry_price=0.15,
+            last_price=0.16,
+        )
+        pm._last_target_weights[pos_key] = 0.2
+        assert pm._positions[pos_key].is_open
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        assert pos_key in cleaned
+        assert pm._positions[pos_key].size == 0.0
+        assert pm._positions[pos_key].direction == Direction.NEUTRAL
+        assert pos_key not in pm._last_target_weights
+
+    async def test_config_removed_pod_exchange_close_live(self) -> None:
+        """LIVE 모드에서 config 제거 Pod 포지션이 거래소에서도 청산됨."""
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=1.0)
+
+        orch_config = _make_orch_config((pod_a_cfg,))
+        runner = self._make_runner_with_orchestrator([pod_a], orch_config)
+        runner._mode = LiveMode.LIVE
+        runner._hedge_mode = True
+
+        futures_client = _mock_futures_client()
+        futures_client.create_order = AsyncMock(return_value={"orderId": 123})
+        runner._futures_client = futures_client
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+            hedge_mode=True,
+        )
+        pos_key = "pod-removed|ETH/USDT"
+        pm._positions[pos_key] = Position(
+            symbol="ETH/USDT",
+            size=2.0,
+            direction=Direction.LONG,
+            avg_entry_price=3000.0,
+            last_price=3100.0,
+        )
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        assert pos_key in cleaned
+        assert pm._positions[pos_key].size == 0.0
+
+        # 거래소 청산 주문 검증
+        futures_client.create_order.assert_called_once()
+        call_kwargs = futures_client.create_order.call_args
+        assert call_kwargs.kwargs["side"] == "sell"
+        assert call_kwargs.kwargs["amount"] == 2.0
+        assert call_kwargs.kwargs["position_side"] == "LONG"
+
+    async def test_exchange_close_failure_skips_pm_reset(self) -> None:
+        """거래소 청산 실패 시 PM 리셋을 건너뛰고 재시작 시 재시도 가능."""
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=1.0)
+
+        orch_config = _make_orch_config((pod_a_cfg,))
+        runner = self._make_runner_with_orchestrator([pod_a], orch_config)
+        runner._mode = LiveMode.LIVE
+        runner._hedge_mode = True
+
+        futures_client = _mock_futures_client()
+        futures_client.create_order = AsyncMock(side_effect=RuntimeError("API error"))
+        runner._futures_client = futures_client
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+            hedge_mode=True,
+        )
+        pos_key = "pod-failed|SOL/USDT"
+        pm._positions[pos_key] = Position(
+            symbol="SOL/USDT",
+            size=10.0,
+            direction=Direction.LONG,
+            avg_entry_price=150.0,
+            last_price=155.0,
+        )
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        # 거래소 실패 → PM 리셋 안 됨 → cleaned에 포함 안 됨
+        assert pos_key not in cleaned
+        assert pm._positions[pos_key].size == 10.0  # 포지션 유지
+        assert pm._positions[pos_key].direction == Direction.LONG
+
+    async def test_active_pod_position_not_cleaned(self) -> None:
+        """활성 Pod의 hedge mode 포지션은 정리하지 않음."""
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=1.0)
+
+        orch_config = _make_orch_config((pod_a_cfg,))
+        runner = self._make_runner_with_orchestrator([pod_a], orch_config)
+        runner._hedge_mode = True
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+            hedge_mode=True,
+        )
+        pos_key = "pod-a|BTC/USDT"
+        pm._positions[pos_key] = Position(
+            symbol="BTC/USDT",
+            size=0.5,
+            direction=Direction.LONG,
+            avg_entry_price=50000.0,
+            last_price=51000.0,
+        )
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        assert len(cleaned) == 0
+        assert pm._positions[pos_key].size == 0.5
+
+    async def test_short_position_close_direction(self) -> None:
+        """SHORT orphan 포지션은 buy로 청산됨."""
+        pod_a_cfg = _make_pod_config("pod-a", ("BTC/USDT",), 1.0)
+        pod_a = StrategyPod(config=pod_a_cfg, strategy=SimpleTestStrategy(), capital_fraction=1.0)
+
+        orch_config = _make_orch_config((pod_a_cfg,))
+        runner = self._make_runner_with_orchestrator([pod_a], orch_config)
+        runner._mode = LiveMode.LIVE
+        runner._hedge_mode = True
+
+        futures_client = _mock_futures_client()
+        futures_client.create_order = AsyncMock(return_value={"orderId": 456})
+        runner._futures_client = futures_client
+
+        from src.eda.portfolio_manager import Position
+
+        pm = EDAPortfolioManager(
+            config=PortfolioManagerConfig(),
+            initial_capital=100_000.0,
+            hedge_mode=True,
+        )
+        pos_key = "pod-short|BTC/USDT"
+        pm._positions[pos_key] = Position(
+            symbol="BTC/USDT",
+            size=0.1,
+            direction=Direction.SHORT,
+            avg_entry_price=60000.0,
+            last_price=58000.0,
+        )
+
+        cleaned = await runner._cleanup_orphaned_positions(pm)
+
+        assert pos_key in cleaned
+        call_kwargs = futures_client.create_order.call_args
+        assert call_kwargs.kwargs["side"] == "buy"
+        assert call_kwargs.kwargs["position_side"] == "SHORT"
