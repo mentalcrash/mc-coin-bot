@@ -500,10 +500,10 @@ class TestStopGraceful:
     """stop() 호출 시 정상 종료."""
 
     @pytest.mark.asyncio
-    async def test_stop_flushes_partial_candles(self) -> None:
-        """stop() 호출 시 미완성 TF 캔들이 flush되는지 확인.
+    async def test_stop_discards_partial_candles(self) -> None:
+        """stop() 호출 시 미완성 TF 캔들이 폐기됨 (publish 안 됨).
 
-        2개 1m 캔들: ts1 완성 (aggregator에 입력) → ts2 미완성 (flush_all로 발행).
+        불완전 데이터 기반 signal 생성 → 의도치 않은 거래 방지.
         """
         ts1 = _TS_BASE
         ts2 = _TS_BASE + _ONE_MIN_MS
@@ -511,7 +511,7 @@ class TestStopGraceful:
         exchange = MockExchange(
             [
                 [_candle(ts1, 100, 105, 95, 102, 1000)],
-                [_candle(ts2, 103, 106, 101, 104, 800)],  # ts1 완성 → aggregator에 입력
+                [_candle(ts2, 103, 106, 101, 104, 800)],
             ]
         )
         client = _make_mock_client(exchange)
@@ -538,10 +538,9 @@ class TestStopGraceful:
         await bus_task
         await stop_task
 
-        # ts1 완성 → 1m BarEvent + aggregator에 입력
-        # stop() 시 flush_all()로 미완성 1h BarEvent 발행
+        # 미완성 1h 캔들은 폐기됨 → TF bar 0개
         tf_bars = [b for b in all_bars if b.timeframe == "1h"]
-        assert len(tf_bars) >= 1
+        assert len(tf_bars) == 0
 
 
 class TestStalenessDetection:

@@ -130,15 +130,14 @@ class LiveDataFeed:
         finally:
             shutdown_task.cancel()
             staleness_task.cancel()
-            # 미완성 캔들 flush
+            # 미완성 캔들은 폐기 (불완전 데이터로 signal 생성 → 의도치 않은 거래 방지)
+            n_discarded = 0
             if self._multi_aggregator is not None:
-                for completed in self._multi_aggregator.flush_all():
-                    await bus.publish(completed)
-                    self._bars_emitted += 1
+                n_discarded = len(self._multi_aggregator.flush_all())
             elif self._aggregator is not None:
-                for completed in self._aggregator.flush_all():
-                    await bus.publish(completed)
-                    self._bars_emitted += 1
+                n_discarded = len(self._aggregator.flush_all())
+            if n_discarded:
+                logger.info("Discarded {} partial candles on shutdown", n_discarded)
 
     async def stop(self) -> None:
         """데이터 피드 중지."""
