@@ -19,6 +19,7 @@ from loguru import logger
 
 from src.notification.health_models import (
     AssetDashboardItem,
+    AssetWeeklyPerformance,
     BarCloseReportData,
     DailyReportData,
     PositionStatus,
@@ -27,6 +28,7 @@ from src.notification.health_models import (
     StrategyIndicatorItem,
     StrategyPerformanceSnapshot,
     SystemHealthSnapshot,
+    WeeklyReportData,
 )
 
 if TYPE_CHECKING:
@@ -370,6 +372,170 @@ class HealthDataCollector:
         if is_long:
             return "강한 상승추세" if adx > HealthDataCollector._OUTLOOK_ADX_STRONG else "상승추세"
         return "하락 전환 대기"
+
+    # ─── Weekly Report Data Collection ──────────────────────────
+
+    async def collect_weekly_report_data(self) -> WeeklyReportData:
+        """Spot Weekly Report용 전체 데이터 수집 (6 sections)."""
+        now = datetime.now(UTC)
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+
+        # Section 1: Strategy Info (Daily와 동일)
+        strategy = self._strategy_engine.strategy if self._strategy_engine else None
+        strategy_name = strategy.name if strategy else "unknown"
+        strategy_params: dict[str, str] = {}
+        if strategy is not None and hasattr(strategy, "get_startup_info"):
+            strategy_params = strategy.get_startup_info()
+
+        ts_config = ""
+        pm_cfg = self._pm.pm_config
+        if pm_cfg.use_trailing_stop:
+            ts_config = f"{pm_cfg.trailing_stop_atr_multiplier}x ATR"
+
+        timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
+
+        # Section 2: Portfolio Summary
+        equity = self._pm.total_equity
+        cash = self._pm.available_cash
+        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
+        initial = self._pm.initial_capital
+        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
+        mdd = self._rm.current_drawdown * 100
+
+        trades = self._analytics.closed_trades
+        trades_week = [t for t in trades if t.exit_time and t.exit_time >= week_start]
+        week_pnl = sum(float(t.pnl) for t in trades_week if t.pnl is not None)
+
+        # Section 3: Asset Weekly Performance
+        asset_perfs = await self._collect_asset_weekly_performance(trades_week)
+
+        # Section 4: Trade Summary
+        best_sym, best_pnl, worst_sym, worst_pnl = self._extract_best_worst(trades_week)
+        week_wr, week_pf = self.compute_trade_stats(trades_week)
+
+        # Section 5: Strategy Indicators
+        indicators = self._collect_strategy_indicators()
+
+        # Section 6: System Health
+        uptime = time.monotonic() - self._start_time
+        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
+        cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
+        recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
+        sharpe = self.compute_rolling_sharpe(recent_30d)
+        self._sharpe_history.append(sharpe)
+        if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
+            self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
+        alpha_decay = self.detect_alpha_decay()
+        all_trades = list(trades)
+        recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
+        win_rate, profit_factor = self.compute_trade_stats(recent_n)
+
+        return WeeklyReportData(
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
+            trailing_stop_config=ts_config,
+            timeframe=timeframe,
+            total_equity=equity,
+            available_cash=cash,
+            cash_pct=cash_pct,
+            week_pnl=week_pnl,
+            week_trades=len(trades_week),
+            invested_count=self._pm.open_position_count,
+            total_asset_count=len(self._symbols),
+            cumulative_return_pct=cum_return,
+            max_drawdown_pct=mdd,
+            assets=tuple(asset_perfs),
+            best_trade_symbol=best_sym,
+            best_trade_pnl=best_pnl,
+            worst_trade_symbol=worst_sym,
+            worst_trade_pnl=worst_pnl,
+            week_win_rate=week_wr,
+            week_profit_factor=week_pf,
+            indicators=tuple(indicators),
+            uptime_seconds=uptime,
+            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
+            ws_ok_count=ws_ok,
+            ws_total_count=len(self._symbols),
+            rolling_sharpe_30d=sharpe,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            alpha_decay_detected=alpha_decay,
+        )
+
+    async def _collect_asset_weekly_performance(
+        self,
+        trades_week: Sequence[object],
+    ) -> list[AssetWeeklyPerformance]:
+        """에셋별 주간 성과 수집."""
+        if self._spot_client is None:
+            return []
+
+        # 에셋별 주간 거래 집계
+        pnl_by_sym: dict[str, float] = {}
+        count_by_sym: dict[str, int] = {}
+        for t in trades_week:
+            sym = getattr(t, "symbol", None)
+            pnl = getattr(t, "pnl", None)
+            if sym and pnl is not None:
+                pnl_by_sym[sym] = pnl_by_sym.get(sym, 0.0) + float(pnl)
+                count_by_sym[sym] = count_by_sym.get(sym, 0) + 1
+
+        positions = self._pm.positions
+        items: list[AssetWeeklyPerformance] = []
+        for symbol in self._symbols:
+            try:
+                ticker = await self._spot_client.fetch_ticker(symbol)
+            except Exception:
+                logger.warning("fetch_ticker failed for {}, skipping", symbol)
+                continue
+
+            price = float(ticker.get("last", 0) or 0)
+            change_pct = float(ticker.get("percentage", 0) or 0)
+
+            pos = positions.get(symbol)
+            is_open = pos is not None and pos.is_open
+            signal = pos.direction.name if pos and is_open else "NEUTRAL"
+
+            items.append(
+                AssetWeeklyPerformance(
+                    symbol=symbol,
+                    signal=signal,
+                    current_price=price,
+                    week_change_pct=change_pct,
+                    week_pnl=pnl_by_sym.get(symbol, 0.0),
+                    week_trades=count_by_sym.get(symbol, 0),
+                )
+            )
+        return items
+
+    @staticmethod
+    def _extract_best_worst(
+        trades: Sequence[object],
+    ) -> tuple[str, float, str, float]:
+        """주간 거래에서 best/worst trade 추출.
+
+        Returns:
+            (best_symbol, best_pnl, worst_symbol, worst_pnl)
+        """
+        if not trades:
+            return "—", 0.0, "—", 0.0
+
+        best_t = max(
+            trades,
+            key=lambda t: float(getattr(t, "pnl", 0) or 0),
+        )
+        worst_t = min(
+            trades,
+            key=lambda t: float(getattr(t, "pnl", 0) or 0),
+        )
+        return (
+            getattr(best_t, "symbol", "?"),
+            float(getattr(best_t, "pnl", 0) or 0),
+            getattr(worst_t, "symbol", "?"),
+            float(getattr(worst_t, "pnl", 0) or 0),
+        )
 
     # ─── Bar Close Report ──────────────────────────────────────
 

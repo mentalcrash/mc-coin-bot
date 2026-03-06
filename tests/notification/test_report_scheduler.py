@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -367,4 +369,178 @@ class TestBarCloseReport:
         """health_collector 없으면 skip."""
         scheduler, queue = _make_scheduler()
         await scheduler._send_bar_close_report()
+        queue.enqueue.assert_not_called()
+
+
+# ─── Spot Weekly Report 테스트 ──────────────────────────
+
+
+def _make_scheduler_with_spot_weekly() -> tuple[ReportScheduler, AsyncMock, MagicMock]:
+    """spot_client 포함 ReportScheduler (Weekly Report 용)."""
+    from src.notification.health_models import (
+        AssetWeeklyPerformance,
+        StrategyIndicatorItem,
+        WeeklyReportData,
+    )
+
+    queue = AsyncMock()
+    queue.enqueue = AsyncMock()
+
+    analytics = MagicMock()
+    analytics.get_equity_series.return_value = pd.Series(
+        [10000.0, 10050.0, 10100.0],
+        index=pd.date_range("2025-01-01", periods=3, freq="D", tz=UTC),
+        dtype=float,
+    )
+    now = datetime.now(UTC)
+    analytics.closed_trades = [_make_trade(now - timedelta(hours=1))]
+    metrics_mock = MagicMock()
+    metrics_mock.sharpe_ratio = 1.5
+    metrics_mock.max_drawdown = 5.0
+    metrics_mock.total_return = 10.0
+    analytics.compute_metrics.return_value = metrics_mock
+
+    chart_gen = MagicMock()
+    chart_gen.generate_weekly_report.return_value = [
+        ("equity.png", b"\x89PNG"),
+        ("drawdown.png", b"\x89PNG2"),
+    ]
+
+    pm = MagicMock()
+    pm.open_position_count = 2
+    pm.total_equity = 10100.0
+
+    collector = MagicMock()
+    collector._spot_client = MagicMock()
+    collector.collect_weekly_report_data = AsyncMock(
+        return_value=WeeklyReportData(
+            strategy_name="SuperTrend",
+            strategy_params={"ATR": "7", "mult": "2.5"},
+            trailing_stop_config="3.0x ATR",
+            timeframe="12h",
+            total_equity=10100.0,
+            available_cash=5000.0,
+            cash_pct=49.5,
+            week_pnl=150.0,
+            week_trades=3,
+            invested_count=2,
+            total_asset_count=6,
+            cumulative_return_pct=1.0,
+            max_drawdown_pct=2.5,
+            assets=(
+                AssetWeeklyPerformance(
+                    symbol="BTC/USDT",
+                    signal="LONG",
+                    current_price=42000.0,
+                    week_change_pct=5.2,
+                    week_pnl=120.0,
+                    week_trades=2,
+                ),
+            ),
+            best_trade_symbol="BTC/USDT",
+            best_trade_pnl=80.0,
+            worst_trade_symbol="ETH/USDT",
+            worst_trade_pnl=-10.0,
+            week_win_rate=0.67,
+            week_profit_factor=8.0,
+            indicators=(
+                StrategyIndicatorItem(
+                    symbol="BTC/USDT",
+                    supertrend_line=40000.0,
+                    adx_value=30.0,
+                    outlook="상승추세",
+                ),
+            ),
+            uptime_seconds=604800.0,
+            is_circuit_breaker_active=False,
+            ws_ok_count=6,
+            ws_total_count=6,
+            rolling_sharpe_30d=1.2,
+            win_rate=0.6,
+            profit_factor=1.8,
+            alpha_decay_detected=False,
+        )
+    )
+
+    scheduler = ReportScheduler(
+        queue=queue,
+        analytics=analytics,
+        chart_gen=chart_gen,
+        pm=pm,
+        health_collector=collector,
+    )
+    return scheduler, queue, collector
+
+
+class TestSpotWeeklyReport:
+    async def test_enqueues_spot_weekly_report(self) -> None:
+        """Spot weekly report 정상 enqueue."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_weekly()
+        await scheduler._send_weekly_report()
+
+        queue.enqueue.assert_called_once()
+        item = queue.enqueue.call_args[0][0]
+        assert item.embed["title"] == "Spot Weekly Report"
+        assert len(item.files) == 2
+
+    async def test_weekly_has_asset_performance(self) -> None:
+        """에셋별 주간 성과 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_weekly()
+        await scheduler._send_weekly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert any("Asset Weekly" in n for n in field_names)
+
+    async def test_weekly_has_trade_summary(self) -> None:
+        """Best/Worst trade 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_weekly()
+        await scheduler._send_weekly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Best Trade" in field_names
+        assert "Worst Trade" in field_names
+
+    async def test_weekly_fallback_without_spot_client(self) -> None:
+        """spot_client 없으면 legacy weekly fallback."""
+        scheduler, queue, collector = _make_scheduler_with_spot_weekly()
+        collector._spot_client = None
+
+        await scheduler._send_weekly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        assert item.embed["title"] == "Weekly Report"
+
+
+class TestReportPriority:
+    async def test_daily_skipped_on_monday(self) -> None:
+        """월요일에는 daily loop가 skip."""
+        scheduler, queue = _make_scheduler()
+
+        monday = datetime(2026, 3, 9, 0, 0, 1, tzinfo=UTC)  # 월요일
+
+        call_count = 0
+
+        async def fake_sleep_until_next(**_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError
+
+        with (
+            patch(
+                "src.notification.report_scheduler._sleep_until_next",
+                side_effect=fake_sleep_until_next,
+            ),
+            patch(
+                "src.notification.report_scheduler.datetime",
+            ) as mock_dt,
+        ):
+            mock_dt.now.return_value = monday
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler._daily_loop()
+
         queue.enqueue.assert_not_called()

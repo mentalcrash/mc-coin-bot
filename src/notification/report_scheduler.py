@@ -22,6 +22,7 @@ from src.notification.formatters import (
     format_daily_report_embed,
     format_enhanced_daily_report_embed,
     format_spot_daily_report_embed,
+    format_spot_weekly_report_embed,
     format_weekly_report_embed,
 )
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -93,9 +94,14 @@ class ReportScheduler:
             logger.exception("Failed to trigger daily report")
 
     async def _daily_loop(self) -> None:
-        """매일 00:00 UTC 일일 리포트."""
+        """매일 00:00 UTC 일일 리포트 (상위 리포트 있는 날은 생략)."""
         while True:
             await _sleep_until_next(hour=0, minute=0)
+            # 우선순위: Monthly(미래) > Weekly > Daily
+            now = datetime.now(UTC)
+            if now.weekday() == _MONDAY:
+                logger.info("Daily report skipped (Weekly report day)")
+                continue
             try:
                 await self._send_daily_report()
             except Exception:
@@ -237,28 +243,41 @@ class ReportScheduler:
         trades = self._analytics.closed_trades
         metrics = self._analytics.compute_metrics()
 
-        # 이번 주 거래 필터
         now = datetime.now(UTC)
         week_start = (now - timedelta(days=now.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0
+            hour=0, minute=0, second=0, microsecond=0,
         )
         trades_week = [t for t in trades if t.exit_time and t.exit_time >= week_start]
 
-        # Embed
-        embed = format_weekly_report_embed(
-            metrics=metrics,
-            trades_week=trades_week,
+        # Spot Weekly Report (spot_client 있을 때)
+        embed: dict[str, object]
+        severity = Severity.INFO
+        _has_spot = (
+            self._health_collector is not None
+            and getattr(self._health_collector, "_spot_client", None) is not None
         )
+        if _has_spot:
+            assert self._health_collector is not None
+            try:
+                report_data = await self._health_collector.collect_weekly_report_data()
+                embed = format_spot_weekly_report_embed(report_data)
+                if report_data.alpha_decay_detected:
+                    severity = Severity.WARNING
+            except Exception:
+                logger.exception("Spot weekly report failed, falling back to legacy")
+                embed = format_weekly_report_embed(metrics=metrics, trades_week=trades_week)
+        else:
+            embed = format_weekly_report_embed(metrics=metrics, trades_week=trades_week)
 
         # 차트 생성
         loop = asyncio.get_running_loop()
         charts = await loop.run_in_executor(
-            None, self._chart_gen.generate_weekly_report, equity_series, trades_week, metrics
+            None, self._chart_gen.generate_weekly_report, equity_series, trades_week, metrics,
         )
 
         files = tuple(charts)
         item = NotificationItem(
-            severity=Severity.INFO,
+            severity=severity,
             channel=ChannelRoute.DAILY_REPORT,
             embed=embed,
             files=files,

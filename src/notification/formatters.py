@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         DailyReportData,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
+        WeeklyReportData,
     )
 
 # Discord Embed 색상 코드 (decimal)
@@ -696,6 +697,159 @@ def format_bar_close_report_embed(data: BarCloseReportData) -> dict[str, Any]:
 
     return {
         "title": f"12H Bar Close ({data.bar_time_utc} UTC)",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
+    """Spot Weekly Report -> 6-section Discord Embed.
+
+    Args:
+        data: WeeklyReportData (HealthDataCollector에서 수집)
+
+    Returns:
+        Discord Embed dict
+    """
+    from src.notification.health_formatters import format_uptime
+
+    color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Strategy Info
+    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
+    fields.append(
+        {
+            "name": f"Strategy: {data.strategy_name}",
+            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
+            "inline": False,
+        }
+    )
+
+    # Section 2: Weekly Portfolio Summary
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {
+                "name": "Cash",
+                "value": f"${data.available_cash:,.0f} ({data.cash_pct:.1f}%)",
+                "inline": True,
+            },
+            {"name": "Week PnL", "value": f"${data.week_pnl:+,.2f}", "inline": True},
+            {
+                "name": "Week Trades",
+                "value": str(data.week_trades),
+                "inline": True,
+            },
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count} assets",
+                "inline": True,
+            },
+            {
+                "name": "Cum. Return",
+                "value": f"{data.cumulative_return_pct:+.2f}%",
+                "inline": True,
+            },
+            {"name": "MDD", "value": f"{data.max_drawdown_pct:.1f}%", "inline": True},
+        ]
+    )
+
+    # Section 3: Asset Weekly Performance
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.week_trades > 0:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.week_change_pct:+.1f}%) | "
+                    f"PnL ${a.week_pnl:+,.2f} | {a.week_trades} trades"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.week_change_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Asset Weekly Performance ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 4: Weekly Trade Summary
+    pf_str = (
+        f"{data.week_profit_factor:.2f}"
+        if data.week_profit_factor != float("inf")
+        else "INF"
+    )
+    fields.extend(
+        [
+            {
+                "name": "Best Trade",
+                "value": f"{data.best_trade_symbol} ${data.best_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Worst Trade",
+                "value": f"{data.worst_trade_symbol} ${data.worst_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Week WR / PF",
+                "value": f"{data.week_win_rate:.0%} / {pf_str}",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 5: Strategy Indicators
+    if data.indicators:
+        ind_lines: list[str] = []
+        for i in data.indicators:
+            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
+            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
+            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
+        fields.append(
+            {
+                "name": "Strategy Indicators",
+                "value": "\n".join(ind_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 6: System Health
+    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
+    all_pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
+    fields.extend(
+        [
+            {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
+            {
+                "name": "CB / WS",
+                "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
+                "inline": True,
+            },
+            {
+                "name": "Sharpe (30d)",
+                "value": f"{data.rolling_sharpe_30d:.2f}",
+                "inline": True,
+            },
+            {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
+            {"name": "Profit Factor", "value": all_pf_str, "inline": True},
+            {
+                "name": "Alpha Decay",
+                "value": "DETECTED" if data.alpha_decay_detected else "OK",
+                "inline": True,
+            },
+        ]
+    )
+
+    return {
+        "title": "Spot Weekly Report",
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),

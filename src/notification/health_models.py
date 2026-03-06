@@ -204,6 +204,66 @@ class BarCloseReportData(BaseModel):
     ws_total_count: int
 
 
+class AssetWeeklyPerformance(BaseModel):
+    """에셋별 주간 성과 (Weekly Report Section 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    signal: str  # "LONG" / "NEUTRAL"
+    current_price: float
+    week_change_pct: float
+    week_pnl: float
+    week_trades: int
+
+
+class WeeklyReportData(BaseModel):
+    """Spot Weekly Report 전체 데이터 (6 sections)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Section 1: Strategy Info
+    strategy_name: str
+    strategy_params: dict[str, str]
+    trailing_stop_config: str
+    timeframe: str
+
+    # Section 2: Weekly Portfolio Summary
+    total_equity: float
+    available_cash: float
+    cash_pct: float
+    week_pnl: float
+    week_trades: int
+    invested_count: int
+    total_asset_count: int
+    cumulative_return_pct: float
+    max_drawdown_pct: float
+
+    # Section 3: Asset Weekly Performance
+    assets: tuple[AssetWeeklyPerformance, ...]
+
+    # Section 4: Weekly Trade Summary
+    best_trade_symbol: str
+    best_trade_pnl: float
+    worst_trade_symbol: str
+    worst_trade_pnl: float
+    week_win_rate: float
+    week_profit_factor: float
+
+    # Section 5: Strategy Indicators
+    indicators: tuple[StrategyIndicatorItem, ...]
+
+    # Section 6: System Health
+    uptime_seconds: float
+    is_circuit_breaker_active: bool
+    ws_ok_count: int
+    ws_total_count: int
+    rolling_sharpe_30d: float
+    win_rate: float
+    profit_factor: float
+    alpha_decay_detected: bool
+
+
 class StrategyHealthSnapshot(BaseModel):
     """Tier 3: Strategy Health 리포트.
 
