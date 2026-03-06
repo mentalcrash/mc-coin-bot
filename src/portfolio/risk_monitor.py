@@ -27,7 +27,6 @@ from src.core.events import (
     FillEvent,
     RiskAlertEvent,
 )
-from src.orchestrator.risk_aggregator import check_asset_correlation_stress
 from src.portfolio.risk_monitor_models import (
     PortfolioRiskConfig,
     PortfolioRiskSnapshot,
@@ -263,8 +262,9 @@ class PortfolioRiskMonitor:
         return max_notional / total_notional
 
     def _compute_avg_correlation(self) -> float:
-        """에셋 간 평균 상관계수 계산 (risk_aggregator 재사용)."""
-        # 최소 데이터 포인트 확보된 심볼만 사용
+        """에셋 간 평균 상관계수 계산."""
+        import numpy as np
+
         eligible = {
             s: prices
             for s, prices in self._price_history.items()
@@ -274,8 +274,22 @@ class PortfolioRiskMonitor:
         if len(eligible) < _min_assets_for_corr:
             return 0.0
 
-        _, avg_corr = check_asset_correlation_stress(eligible, threshold=2.0)
-        return avg_corr
+        # 간단한 pairwise 상관 계산
+        symbols = list(eligible.keys())
+        min_len = min(len(v) for v in eligible.values())
+        matrix = np.array([eligible[s][-min_len:] for s in symbols])
+        corr = np.corrcoef(matrix)
+        n = len(symbols)
+        if n < _min_assets_for_corr:
+            return 0.0
+        # 상삼각 평균
+        total = 0.0
+        count = 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                total += corr[i, j]
+                count += 1
+        return total / count if count > 0 else 0.0
 
     # ── Alert publishing ───────────────────────────────────────────
 

@@ -19,7 +19,6 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.eda.smart_executor_config import SmartExecutorConfig
 from src.portfolio.cost_model import CostModel
 
 # 검증 임계값 상수
@@ -179,14 +178,6 @@ class PortfolioManagerConfig(BaseModel):
     cost_model: CostModel = Field(
         default_factory=CostModel.binance_futures,
         description="거래 비용 모델 (수수료, 슬리피지 등)",
-    )
-
-    # ==========================================================================
-    # Smart Execution (Limit Order 우선 실행)
-    # ==========================================================================
-    smart_execution: SmartExecutorConfig = Field(
-        default_factory=SmartExecutorConfig,
-        description="Limit order 우선 실행 설정 (enabled=False 기본)",
     )
 
     @model_validator(mode="after")

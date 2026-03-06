@@ -261,7 +261,9 @@ class EDARiskManager:
         # 2. Max open positions check
         open_count = self._pm.open_position_count
         pos_key = self._pm.position_key(order.symbol, order.pod_id)
-        is_new_position = pos_key not in self._pm.positions or not self._pm.positions[pos_key].is_open
+        is_new_position = (
+            pos_key not in self._pm.positions or not self._pm.positions[pos_key].is_open
+        )
         if is_new_position and open_count >= self._max_open_positions:
             return f"Max open positions reached ({open_count}/{self._max_open_positions})"
 

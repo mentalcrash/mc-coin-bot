@@ -1,1 +1,0 @@
-"""TSMOM strategy tests."""

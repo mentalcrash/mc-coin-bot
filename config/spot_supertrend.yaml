@@ -1,0 +1,37 @@
+# SuperTrend + ADX | 6 Assets 12H | Spot Long-Only
+# EDA Backtest: 1m -> 12H 집계, Spot 수수료 모델
+
+backtest:
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - AVAX/USDT
+    - XRP/USDT
+    - FTM/USDT
+  timeframe: "12h"
+  start: "2020-01-01"
+  end: "2026-03-06"
+  capital: 100000.0
+
+strategy:
+  name: supertrend
+  params:
+    atr_period: 7
+    multiplier: 2.5
+    adx_period: 14
+    adx_threshold: 25
+    short_mode: 0  # DISABLED (Long-Only)
+
+portfolio:
+  max_leverage_cap: 1.0
+  rebalance_threshold: 0.05
+  use_trailing_stop: true
+  trailing_stop_atr_multiplier: 3.0
+  use_intrabar_trailing_stop: false  # 12H bar에서만 TS 체크 (Live Stop-Limit Ratchet parity)
+  cost_model:
+    maker_fee: 0.001    # Spot 0.1%
+    taker_fee: 0.001
+    slippage: 0.0005
+    funding_rate_8h: 0.0  # Spot: Funding Rate 없음
+    market_impact: 0.0

@@ -1,4 +1,4 @@
-"""LiveRunner — 실시간 EDA 오케스트레이터.
+"""LiveRunner — 실시간 EDA 러너.
 
 LiveDataFeed(WebSocket) + EDA 컴포넌트를 조립하여 24/7 실행합니다.
 Graceful shutdown (SIGTERM/SIGINT), signal handler, 무한 루프 지원.
@@ -32,9 +32,8 @@ from src.eda.analytics import AnalyticsEngine
 from src.eda.executors import BacktestExecutor, LiveExecutor, ShadowExecutor
 from src.eda.live_data_feed import LiveDataFeed
 from src.eda.oms import OMS
-from src.eda.portfolio_manager import EDAPortfolioManager, Position
+from src.eda.portfolio_manager import EDAPortfolioManager
 from src.eda.risk_manager import EDARiskManager
-from src.eda.smart_executor import SmartExecutor
 from src.eda.strategy_engine import StrategyEngine
 from src.logging.tracing import setup_tracing, shutdown_tracing
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -46,18 +45,13 @@ if TYPE_CHECKING:
     from src.eda.reconciler import PositionReconciler
     from src.exchange.binance_client import BinanceClient
     from src.exchange.binance_futures_client import BinanceFuturesClient
-    from src.market.feature_store import FeatureStore, FeatureStoreConfig
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
     from src.notification.health_collector import HealthDataCollector
     from src.notification.queue import NotificationQueue
     from src.notification.report_scheduler import ReportScheduler
-    from src.orchestrator.config import OrchestratorConfig
-    from src.orchestrator.metrics import OrchestratorMetrics
-    from src.orchestrator.orchestrator import StrategyOrchestrator
     from src.portfolio.config import PortfolioManagerConfig
-    from src.regime.service import RegimeService, RegimeServiceConfig
     from src.strategy.base import BaseStrategy
 
 from dataclasses import dataclass
@@ -94,7 +88,7 @@ _RECONCILER_INTERVAL = 60.0
 
 
 class LiveRunner:
-    """Live EDA 오케스트레이터 — 24/7 실행.
+    """Live EDA 러너 — 24/7 실행.
 
     EDARunner와 동일한 컴포넌트 조립 패턴을 사용하되,
     LiveDataFeed(WebSocket)로 실시간 데이터를 수신합니다.
@@ -126,8 +120,6 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
-        regime_config: RegimeServiceConfig | None = None,
-        feature_store_config: FeatureStoreConfig | None = None,
     ) -> None:
         self._strategy = strategy
         self._feed = feed
@@ -142,21 +134,10 @@ class LiveRunner:
         self._db_path = db_path
         self._discord_config = discord_config
         self._metrics_port = metrics_port
-        self._regime_config = regime_config
-        self._feature_store_config = feature_store_config
         self._client: BinanceClient | None = None
         self._futures_client: BinanceFuturesClient | None = None
         self._symbols: list[str] = []
-        self._derivatives_feed: Any = None  # LiveDerivativesFeed | None
-        self._onchain_feed: Any = None  # LiveOnchainFeed | None
-        self._macro_feed: Any = None  # LiveMacroFeed | None
-        self._options_feed: Any = None  # LiveOptionsFeed | None
-        self._deriv_ext_feed: Any = None  # LiveDerivExtFeed | None
-        self._orchestrator: StrategyOrchestrator | None = None
-        self._surveillance_config: Any = None  # SurveillanceConfig | None
-        self._surveillance_task: asyncio.Task[None] | None = None
         self._start_time = time.monotonic()
-        self._hedge_mode: bool = False
 
     @classmethod
     def paper(
@@ -171,14 +152,11 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
-        regime_config: RegimeServiceConfig | None = None,
-        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Paper 모드: LiveDataFeed + BacktestExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
         executor = BacktestExecutor(
             cost_model=config.cost_model,
-            smart_execution=config.smart_execution.enabled,
         )
         runner = cls(
             strategy=strategy,
@@ -192,15 +170,9 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
-            regime_config=regime_config,
-            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._symbols = symbols
-        runner._init_onchain_feed(symbols)
-        runner._init_macro_feed()
-        runner._init_options_feed()
-        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -216,8 +188,6 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
-        regime_config: RegimeServiceConfig | None = None,
-        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Shadow 모드: LiveDataFeed + ShadowExecutor."""
         feed = LiveDataFeed(symbols, target_timeframe, client)
@@ -234,15 +204,9 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
-            regime_config=regime_config,
-            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._symbols = symbols
-        runner._init_onchain_feed(symbols)
-        runner._init_macro_feed()
-        runner._init_options_feed()
-        runner._init_deriv_ext_feed(symbols)
         return runner
 
     @classmethod
@@ -259,8 +223,6 @@ class LiveRunner:
         db_path: str | None = None,
         discord_config: DiscordBotConfig | None = None,
         metrics_port: int = 0,
-        regime_config: RegimeServiceConfig | None = None,
-        feature_store_config: FeatureStoreConfig | None = None,
     ) -> LiveRunner:
         """Live 모드: LiveDataFeed(Spot) + LiveExecutor(Futures).
 
@@ -269,14 +231,7 @@ class LiveRunner:
             futures_client: Futures client (주문 실행용)
         """
         feed = LiveDataFeed(symbols, target_timeframe, client)
-        live_executor = LiveExecutor(futures_client)
-        executor: LiveExecutor | SmartExecutor = live_executor
-        if config.smart_execution.enabled:
-            executor = SmartExecutor(
-                inner=live_executor,
-                config=config.smart_execution,
-                futures_client=futures_client,
-            )
+        executor = LiveExecutor(futures_client)
         runner = cls(
             strategy=strategy,
             feed=feed,
@@ -289,222 +244,10 @@ class LiveRunner:
             db_path=db_path,
             discord_config=discord_config,
             metrics_port=metrics_port,
-            regime_config=regime_config,
-            feature_store_config=feature_store_config,
         )
         runner._client = client
         runner._futures_client = futures_client
         runner._symbols = symbols
-
-        # Live 모드에서 DerivativesFeed 자동 생성
-        from src.eda.derivatives_feed import LiveDerivativesFeed
-
-        runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
-        runner._init_onchain_feed(symbols)
-        runner._init_macro_feed()
-        runner._init_options_feed()
-        runner._init_deriv_ext_feed(symbols)
-        return runner
-
-    @classmethod
-    def orchestrated_paper(
-        cls,
-        orchestrator_config: OrchestratorConfig,
-        target_timeframe: str,
-        client: BinanceClient,
-        initial_capital: float = 100_000.0,
-        db_path: str | None = None,
-        discord_config: DiscordBotConfig | None = None,
-        metrics_port: int = 0,
-    ) -> LiveRunner:
-        """Orchestrated Paper 모드: LiveDataFeed + BacktestExecutor + Orchestrator.
-
-        Args:
-            orchestrator_config: OrchestratorConfig
-            target_timeframe: 집계 목표 TF
-            client: BinanceClient (데이터 스트리밍용)
-            initial_capital: 초기 자본
-            db_path: SQLite 경로
-            discord_config: Discord 설정
-            metrics_port: Prometheus 포트
-
-        Returns:
-            LiveRunner 인스턴스
-        """
-        from src.eda.orchestrated_runner import OrchestratedRunner
-        from src.orchestrator.allocator import CapitalAllocator
-        from src.orchestrator.lifecycle import LifecycleManager
-        from src.orchestrator.orchestrator import StrategyOrchestrator
-        from src.orchestrator.pod import build_pods
-        from src.orchestrator.risk_aggregator import RiskAggregator
-        from src.strategy.tsmom.strategy import TSMOMStrategy
-
-        symbols = list(orchestrator_config.all_symbols)
-        all_tfs = set(orchestrator_config.all_timeframes)
-        multi_tf = len(all_tfs) > 1
-        pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(
-            symbols,
-            target_timeframe,
-            client,
-            target_timeframes=all_tfs if multi_tf else None,
-        )
-        executor = BacktestExecutor(
-            cost_model=pm_config.cost_model,
-            smart_execution=pm_config.smart_execution.enabled,
-        )
-
-        # Dummy strategy (LiveRunner 생성자 필수)
-        dummy_strategy = TSMOMStrategy.from_params()
-
-        is_hedge = orchestrator_config.netting_mode == "hedge"
-
-        runner = cls(
-            strategy=dummy_strategy,
-            feed=feed,
-            executor=executor,
-            target_timeframe=target_timeframe,
-            config=pm_config,
-            mode=LiveMode.PAPER,
-            initial_capital=initial_capital,
-            asset_weights=dict.fromkeys(symbols, 1.0),
-            db_path=db_path,
-            discord_config=discord_config,
-            metrics_port=metrics_port,
-        )
-        runner._client = client
-        runner._symbols = symbols
-        runner._hedge_mode = is_hedge
-
-        # Orchestrator 생성
-        pods = build_pods(orchestrator_config)
-        allocator = CapitalAllocator(config=orchestrator_config)
-        lifecycle_mgr = LifecycleManager(
-            graduation=orchestrator_config.graduation,
-            retirement=orchestrator_config.retirement,
-        )
-        risk_aggregator = RiskAggregator(config=orchestrator_config)
-
-        runner._orchestrator = StrategyOrchestrator(
-            config=orchestrator_config,
-            pods=pods,
-            allocator=allocator,
-            lifecycle_manager=lifecycle_mgr,
-            risk_aggregator=risk_aggregator,
-            target_timeframe=None if multi_tf else target_timeframe,
-        )
-
-        runner._surveillance_config = orchestrator_config.surveillance
-        runner._init_onchain_feed(symbols)
-        runner._init_macro_feed()
-        runner._init_options_feed()
-        runner._init_deriv_ext_feed(symbols)
-
-        return runner
-
-    @classmethod
-    def orchestrated_live(
-        cls,
-        orchestrator_config: OrchestratorConfig,
-        target_timeframe: str,
-        client: BinanceClient,
-        futures_client: BinanceFuturesClient,
-        initial_capital: float = 100_000.0,
-        db_path: str | None = None,
-        discord_config: DiscordBotConfig | None = None,
-        metrics_port: int = 0,
-    ) -> LiveRunner:
-        """Orchestrated Live 모드: LiveDataFeed + LiveExecutor + Orchestrator.
-
-        Args:
-            orchestrator_config: OrchestratorConfig
-            target_timeframe: 집계 목표 TF
-            client: BinanceClient (데이터 스트리밍용)
-            futures_client: BinanceFuturesClient (주문 실행용)
-            initial_capital: 초기 자본
-            db_path: SQLite 경로
-            discord_config: Discord 설정
-            metrics_port: Prometheus 포트
-
-        Returns:
-            LiveRunner 인스턴스
-        """
-        from src.eda.orchestrated_runner import OrchestratedRunner
-        from src.orchestrator.allocator import CapitalAllocator
-        from src.orchestrator.lifecycle import LifecycleManager
-        from src.orchestrator.orchestrator import StrategyOrchestrator
-        from src.orchestrator.pod import build_pods
-        from src.orchestrator.risk_aggregator import RiskAggregator
-        from src.strategy.tsmom.strategy import TSMOMStrategy
-
-        symbols = list(orchestrator_config.all_symbols)
-        all_tfs = set(orchestrator_config.all_timeframes)
-        multi_tf = len(all_tfs) > 1
-        is_hedge = orchestrator_config.netting_mode == "hedge"
-        pm_config = OrchestratedRunner.derive_pm_config(orchestrator_config)
-        feed = LiveDataFeed(
-            symbols,
-            target_timeframe,
-            client,
-            target_timeframes=all_tfs if multi_tf else None,
-        )
-        live_executor = LiveExecutor(futures_client, hedge_mode=is_hedge)
-        executor: LiveExecutor | SmartExecutor = live_executor
-        if pm_config.smart_execution.enabled:
-            executor = SmartExecutor(
-                inner=live_executor,
-                config=pm_config.smart_execution,
-                futures_client=futures_client,
-            )
-
-        # Dummy strategy
-        dummy_strategy = TSMOMStrategy.from_params()
-
-        runner = cls(
-            strategy=dummy_strategy,
-            feed=feed,
-            executor=executor,
-            target_timeframe=target_timeframe,
-            config=pm_config,
-            mode=LiveMode.LIVE,
-            initial_capital=initial_capital,
-            asset_weights=dict.fromkeys(symbols, 1.0),
-            db_path=db_path,
-            discord_config=discord_config,
-            metrics_port=metrics_port,
-        )
-        runner._client = client
-        runner._futures_client = futures_client
-        runner._symbols = symbols
-        runner._hedge_mode = is_hedge
-
-        # Orchestrator 생성
-        pods = build_pods(orchestrator_config)
-        allocator = CapitalAllocator(config=orchestrator_config)
-        lifecycle_mgr = LifecycleManager(
-            graduation=orchestrator_config.graduation,
-            retirement=orchestrator_config.retirement,
-        )
-        risk_aggregator = RiskAggregator(config=orchestrator_config)
-
-        runner._orchestrator = StrategyOrchestrator(
-            config=orchestrator_config,
-            pods=pods,
-            allocator=allocator,
-            lifecycle_manager=lifecycle_mgr,
-            risk_aggregator=risk_aggregator,
-            target_timeframe=None if multi_tf else target_timeframe,
-        )
-
-        # Live 모드에서 DerivativesFeed 자동 생성
-        from src.eda.derivatives_feed import LiveDerivativesFeed
-
-        runner._derivatives_feed = LiveDerivativesFeed(symbols, futures_client)
-        runner._surveillance_config = orchestrator_config.surveillance
-        runner._init_onchain_feed(symbols)
-        runner._init_macro_feed()
-        runner._init_options_feed()
-        runner._init_deriv_ext_feed(symbols)
         return runner
 
     async def _init_capital_and_db(self) -> tuple[float, Any]:
@@ -541,18 +284,13 @@ class LiveRunner:
             # 2. 컴포넌트 생성
             bus = EventBus(queue_size=self._queue_size)
 
-            # 2a. 데이터 enrichment providers + StrategyEngine 생성
-            (
-                regime_service,
-                feature_store,
-                strategy_engine,
-            ) = await self._create_providers_and_engine()
+            # 2a. StrategyEngine 생성
+            strategy_engine = await self._create_providers_and_engine()
             pm = EDAPortfolioManager(
                 config=self._config,
                 initial_capital=capital,
                 asset_weights=self._asset_weights,
                 target_timeframe=self._target_timeframe,
-                hedge_mode=self._hedge_mode,
             )
             rm = EDARiskManager(
                 config=self._config,
@@ -572,14 +310,8 @@ class LiveRunner:
             # 3. 상태 복구 (DB 활성 시)
             state_mgr = await self._restore_state(db, pm, rm, oms)
 
-            # 3.5. Orchestrator 상태 복구 + daily return MTM 초기화
-            orch_persistence = await self._restore_orchestrator_state(state_mgr, capital)
-
             # 3.6. 거래소 기준 PM reconciliation (sync_capital 전에 실행!)
             _removed, _synced = await self._reconcile_positions(pm)
-
-            # 3.6.5. Orchestrator Pod 제거 후 orphaned position 정리
-            await self._cleanup_orphaned_positions(pm)
 
             # 3.7. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
             if self._mode == LiveMode.LIVE:
@@ -597,8 +329,6 @@ class LiveRunner:
             await self._register_and_warmup(
                 bus,
                 strategy_engine,
-                regime_service,
-                feature_store,
                 pm,
                 rm,
                 oms,
@@ -608,10 +338,7 @@ class LiveRunner:
 
             # 5. TradePersistence 등록 (analytics 이후)
             if db:
-                strategy_name = (
-                    "orchestrator" if self._orchestrator is not None else self._strategy.name
-                )
-                persistence = TradePersistence(db, strategy_name=strategy_name)
+                persistence = TradePersistence(db, strategy_name=self._strategy.name)
                 await persistence.register(bus)
 
             # 5.5. Prometheus MetricsExporter (선택적)
@@ -625,10 +352,6 @@ class LiveRunner:
             # 6.5. ExchangeStopManager에 notification_queue 사후 주입
             if exchange_stop_mgr is not None and discord_tasks is not None:
                 exchange_stop_mgr._notification_queue = discord_tasks.notification_queue
-
-            # 6.6. LiveOnchainFeed에 notification_queue 사후 주입
-            if self._onchain_feed is not None and discord_tasks is not None:
-                self._onchain_feed._notification_queue = discord_tasks.notification_queue
 
             # 7. Signal handler
             self._setup_signal_handlers()
@@ -646,8 +369,6 @@ class LiveRunner:
                         pm,
                         rm,
                         oms,
-                        orch_persistence=orch_persistence,
-                        orchestrator=self._orchestrator,
                         exchange_stop_mgr=exchange_stop_mgr,
                     )
                 )
@@ -660,13 +381,7 @@ class LiveRunner:
                         metrics_exporter,
                         bus,
                         self._futures_client,
-                        getattr(self, "_orchestrator_metrics", None),
                         ws_detail_callback=getattr(self, "_ws_detail_callback", None),
-                        onchain_feed=self._onchain_feed,
-                        derivatives_feed=getattr(self, "_derivatives_feed", None),
-                        macro_feed=getattr(self, "_macro_feed", None),
-                        options_feed=getattr(self, "_options_feed", None),
-                        deriv_ext_feed=getattr(self, "_deriv_ext_feed", None),
                     )
                 )
 
@@ -691,9 +406,6 @@ class LiveRunner:
             # Lifecycle: startup 알림 (Discord Bot ready 대기 포함)
             await self._send_lifecycle_startup(discord_tasks, capital)
 
-            # 8.5. Surveillance task (Orchestrator 모드 + surveillance 활성화)
-            self._start_surveillance_if_enabled(bus, orch_persistence, notification_queue)
-
             logger.info("LiveRunner started (mode={}, db={})", self._mode.value, self._db_path)
 
             # 8. Shutdown 대기
@@ -714,7 +426,6 @@ class LiveRunner:
                 analytics=analytics,
                 discord_tasks=discord_tasks,
                 state_mgr=state_mgr,
-                orch_persistence=orch_persistence,
                 exchange_stop_mgr=exchange_stop_mgr,
             )
         except Exception as exc:
@@ -747,19 +458,17 @@ class LiveRunner:
         analytics: AnalyticsEngine,
         discord_tasks: _DiscordTasks | None,
         state_mgr: Any,
-        orch_persistence: Any,
         exchange_stop_mgr: Any = None,
     ) -> None:
         """Graceful shutdown 시퀀스 — run()에서 분리."""
         logger.warning("Initiating graceful shutdown...")
 
-        # 주기적 task 취소 (surveillance 포함)
+        # 주기적 task 취소
         await self._cancel_periodic_tasks(
             save_task,
             uptime_task,
             process_monitor_task,
             reconciler_task,
-            self._surveillance_task,
         )
 
         await self._feed.stop()
@@ -767,16 +476,6 @@ class LiveRunner:
         with contextlib.suppress(asyncio.CancelledError):
             await feed_task
 
-        # DerivativesFeed / OnchainFeed / Macro / Options / DerivExt 종료
-        await self._stop_derivatives_feed()
-        await self._stop_onchain_feed()
-        await self._stop_macro_feed()
-        await self._stop_options_feed()
-        await self._stop_deriv_ext_feed()
-
-        if self._orchestrator is not None:
-            await self._orchestrator.flush_pending_signals()
-            self._orchestrator.flush_daily_returns()
         await pm.flush_pending_signals()
         await bus.flush()
         await bus.stop()
@@ -807,8 +506,6 @@ class LiveRunner:
                 exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
             )
             await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
-            if orch_persistence is not None and self._orchestrator is not None:
-                await orch_persistence.save(self._orchestrator)
             logger.info("Final state saved")
 
         # OTel tracing 종료
@@ -838,34 +535,6 @@ class LiveRunner:
         if otel_endpoint:
             setup_tracing(endpoint=otel_endpoint)
 
-    async def _restore_orchestrator_state(self, state_mgr: Any, capital: float = 0.0) -> Any:
-        """Orchestrator 상태를 복구하고 daily return MTM을 초기화합니다.
-
-        Args:
-            state_mgr: StateManager 또는 None
-            capital: 초기 자본 (daily return MTM 초기화용)
-
-        Returns:
-            OrchestratorStatePersistence 또는 None
-        """
-        if self._orchestrator is None:
-            return None
-
-        # Daily return MTM 초기화 (set_base_equity는 복원된 값을 보호)
-        if capital > 0:
-            self._orchestrator.set_initial_capital(capital)
-
-        if state_mgr is None:
-            return None
-
-        from src.orchestrator.state_persistence import OrchestratorStatePersistence
-
-        orch_persistence = OrchestratorStatePersistence(state_mgr)
-        restored = await orch_persistence.restore(self._orchestrator)
-        if restored:
-            logger.info("Orchestrator state restored")
-        return orch_persistence
-
     async def _create_exchange_stop_manager(
         self,
         pm: EDAPortfolioManager,
@@ -885,9 +554,7 @@ class LiveRunner:
 
         from src.eda.exchange_stop_manager import ExchangeStopManager
 
-        mgr = ExchangeStopManager(
-            self._config, self._futures_client, pm, hedge_mode=self._hedge_mode
-        )
+        mgr = ExchangeStopManager(self._config, self._futures_client, pm)
 
         # 상태 복구
         if state_mgr is not None:
@@ -968,9 +635,7 @@ class LiveRunner:
             rm=rm,
             analytics=analytics,
             runner_shutdown=self.request_shutdown,
-            orchestrator=self._orchestrator,
             exchange_stop_mgr=exchange_stop_mgr,
-            onchain_feed=self._onchain_feed,
         )
         bot_service.set_trading_context(trading_ctx)
 
@@ -990,7 +655,6 @@ class LiveRunner:
             futures_client=self._futures_client,
             symbols=self._symbols,
             exchange_stop_mgr=exchange_stop_mgr,
-            onchain_feed=self._onchain_feed,
         )
         await health_collector.start()
 
@@ -1005,23 +669,12 @@ class LiveRunner:
             chart_gen=chart_gen,
             pm=pm,
             health_collector=health_collector,
-            orchestrator=self._orchestrator,
         )
         await report_scheduler.start()
 
         # TradingContext에 trigger 콜백 + collector 설정
         trading_ctx.report_trigger = report_scheduler.trigger_daily_report
         trading_ctx.health_collector = health_collector
-
-        # OrchestratorNotificationEngine (Orchestrator 활성 시)
-        if self._orchestrator is not None:
-            from src.notification.orchestrator_engine import OrchestratorNotificationEngine
-
-            orch_notification = OrchestratorNotificationEngine(
-                notification_queue, self._orchestrator
-            )
-            self._orchestrator.set_notification_engine(orch_notification)
-            await orch_notification.start()
 
         logger.info(
             "Discord Bot + NotificationEngine + ReportScheduler + HealthDataCollector enabled"
@@ -1073,73 +726,25 @@ class LiveRunner:
             await tasks.bot_task
         logger.info("Discord Bot stopped")
 
-    async def _create_providers_and_engine(
-        self,
-    ) -> tuple[RegimeService | None, FeatureStore | None, StrategyEngine | None]:
-        """데이터 enrichment providers + StrategyEngine 생성.
+    async def _create_providers_and_engine(self) -> StrategyEngine:
+        """StrategyEngine 생성.
 
         Returns:
-            (regime_service, feature_store, strategy_engine) 튜플
+            StrategyEngine 인스턴스
         """
-        derivatives_provider = await self._start_derivatives_feed()
-        regime_service = self._create_regime_service(derivatives_provider)
-        onchain_provider = await self._start_onchain_feed()
-        feature_store = self._create_feature_store()
-        macro_provider = await self._start_macro_feed()
-        options_provider = await self._start_options_feed()
-        deriv_ext_provider = await self._start_deriv_ext_feed()
-
-        strategy_engine: StrategyEngine | None = None
-        if self._orchestrator is None:
-            strategy_engine = StrategyEngine(
-                self._strategy,
-                target_timeframe=self._target_timeframe,
-                regime_service=regime_service,
-                derivatives_provider=derivatives_provider,
-                feature_store=feature_store,
-                onchain_provider=onchain_provider,
-                macro_provider=macro_provider,
-                options_provider=options_provider,
-                deriv_ext_provider=deriv_ext_provider,
-            )
-        return regime_service, feature_store, strategy_engine
-
-    def _create_regime_service(
-        self,
-        derivatives_provider: object | None = None,
-    ) -> RegimeService | None:
-        """RegimeService 생성 (regime_config가 None이면 None).
-
-        Args:
-            derivatives_provider: 파생상품 데이터 프로바이더 (있으면 DerivativesDetector 활성화)
-        """
-        if self._regime_config is None:
-            return None
-
-        from src.regime.service import RegimeService
-
-        return RegimeService(self._regime_config, derivatives_provider=derivatives_provider)
-
-    def _create_feature_store(self) -> FeatureStore | None:
-        """FeatureStore 생성 (feature_store_config가 None이면 None)."""
-        if self._feature_store_config is None:
-            return None
-
-        from src.market.feature_store import FeatureStore
-
-        return FeatureStore(self._feature_store_config)
+        strategy_engine = StrategyEngine(
+            self._strategy,
+            target_timeframe=self._target_timeframe,
+        )
+        return strategy_engine
 
     async def _warmup_strategy(
         self,
         strategy_engine: StrategyEngine,
-        *,
-        regime_service: RegimeService | None = None,
-        feature_store: FeatureStore | None = None,
     ) -> None:
         """REST API로 과거 데이터를 가져와 StrategyEngine 버퍼에 주입.
 
         _client가 None이면 스킵. 심볼별 독립 실행으로 1개 실패해도 나머지 진행.
-        regime_service가 있으면 warmup bars로 regime detector도 초기화합니다.
         """
         if self._client is None:
             logger.warning("No client available, skipping REST API warmup")
@@ -1161,62 +766,10 @@ class LiveRunner:
                 )
                 if bars:
                     strategy_engine.inject_warmup(symbol, bars, timestamps)
-                    # RegimeService warmup
-                    if regime_service is not None:
-                        closes = [bar["close"] for bar in bars]
-                        regime_service.warmup(symbol, closes)
-                    # FeatureStore warmup
-                    if feature_store is not None:
-                        import pandas as pd
-
-                        warmup_df = pd.DataFrame(bars, index=pd.DatetimeIndex(timestamps))
-                        feature_store.warmup(symbol, warmup_df)
                 else:
                     logger.warning("No warmup data fetched for {}", symbol)
             except Exception:
                 logger.exception("Warmup failed for {}, continuing without warmup", symbol)
-
-    async def _warmup_orchestrator(self, orchestrator: StrategyOrchestrator) -> None:
-        """REST API로 과거 데이터를 가져와 Orchestrator의 각 Pod 버퍼에 주입.
-
-        _client가 None이면 스킵. Pod별·심볼별 독립 실행으로 1개 실패해도 나머지 진행.
-        """
-        if self._client is None:
-            logger.warning("No client available, skipping orchestrator warmup")
-            return
-
-        for pod in orchestrator.pods:
-            warmup_needed = pod.warmup_periods + 10  # 여유분
-            for symbol in pod.symbols:
-                try:
-                    bars, timestamps = await self._fetch_warmup_bars(
-                        symbol, pod.timeframe, warmup_needed
-                    )
-                    if bars:
-                        pod.inject_warmup(symbol, bars, timestamps)
-                        logger.debug(
-                            "Warmup injected: pod={}, symbol={}, {} bars",
-                            pod.pod_id,
-                            symbol,
-                            len(bars),
-                        )
-                    else:
-                        logger.warning(
-                            "No warmup data for pod={}, symbol={}",
-                            pod.pod_id,
-                            symbol,
-                        )
-                except Exception:
-                    logger.exception(
-                        "Warmup failed for pod={}, symbol={}, continuing",
-                        pod.pod_id,
-                        symbol,
-                    )
-
-        logger.info(
-            "Orchestrator warmup complete: {} pods",
-            len(orchestrator.pods),
-        )
 
     async def _fetch_warmup_bars(
         self,
@@ -1284,15 +837,13 @@ class LiveRunner:
                 bt_executor.on_bar(event)
 
             bus.subscribe(EventType.BAR, executor_bar_handler)
-        elif isinstance(self._executor, (SmartExecutor, LiveExecutor)):
+        elif isinstance(self._executor, LiveExecutor):
             self._executor.set_pm(pm)
 
     async def _register_and_warmup(
         self,
         bus: EventBus,
-        strategy_engine: StrategyEngine | None,
-        regime_service: RegimeService | None,
-        feature_store: FeatureStore | None,
+        strategy_engine: StrategyEngine,
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         oms: OMS,
@@ -1300,16 +851,7 @@ class LiveRunner:
         exchange_stop_mgr: Any = None,
     ) -> None:
         """모든 컴포넌트 등록 + REST API warmup."""
-        # RegimeService → FeatureStore → StrategyEngine/Orchestrator 순서
-        if regime_service is not None:
-            await regime_service.register(bus)
-        if feature_store is not None:
-            await feature_store.register(bus)
-
-        if self._orchestrator is not None:
-            await self._orchestrator.register(bus)
-        elif strategy_engine is not None:
-            await strategy_engine.register(bus)
+        await strategy_engine.register(bus)
 
         await pm.register(bus)
         await rm.register(bus)
@@ -1321,18 +863,7 @@ class LiveRunner:
             await exchange_stop_mgr.register(bus)
 
         # REST API warmup — WebSocket 시작 전 버퍼 사전 채움
-        if self._orchestrator is not None:
-            await self._warmup_orchestrator(self._orchestrator)
-            # 검출기 자동 초기화 (warmup 완료 후)
-            lifecycle = self._orchestrator.lifecycle
-            if lifecycle is not None:
-                for pod in self._orchestrator.pods:
-                    if pod.daily_returns:
-                        lifecycle.auto_init_detectors(pod.pod_id, list(pod.daily_returns))
-        elif strategy_engine is not None:
-            await self._warmup_strategy(
-                strategy_engine, regime_service=regime_service, feature_store=feature_store
-            )
+        await self._warmup_strategy(strategy_engine)
 
     async def _reconcile_positions(self, pm: EDAPortfolioManager) -> tuple[list[str], list[str]]:
         """거래소 포지션 기준으로 PM phantom 제거 + exchange-only 포지션 추가.
@@ -1355,31 +886,17 @@ class LiveRunner:
         synced: list[str] = []
 
         try:
-            if self._hedge_mode:
-                # Phase 1: phantom 제거
-                hedge_positions = await PositionReconciler.parse_exchange_positions_hedge(
-                    self._futures_client, self._symbols
-                )
-                removed = pm.reconcile_with_exchange_hedge(hedge_positions)
+            # Phase 1: phantom 제거
+            exchange_positions = await PositionReconciler.parse_exchange_positions(
+                self._futures_client, self._symbols
+            )
+            removed = pm.reconcile_with_exchange(exchange_positions)
 
-                # Phase 2: exchange-only → PM 추가
-                hedge_full = await PositionReconciler.parse_exchange_positions_hedge_full(
-                    self._futures_client, self._symbols
-                )
-                pod_symbol_map = self._build_pod_symbol_map()
-                synced = pm.sync_exchange_positions_hedge(hedge_full, pod_symbol_map)
-            else:
-                # Phase 1: phantom 제거
-                exchange_positions = await PositionReconciler.parse_exchange_positions(
-                    self._futures_client, self._symbols
-                )
-                removed = pm.reconcile_with_exchange(exchange_positions)
-
-                # Phase 2: exchange-only → PM 추가
-                exchange_full = await PositionReconciler.parse_exchange_positions_full(
-                    self._futures_client, self._symbols
-                )
-                synced = pm.sync_exchange_positions(exchange_full)
+            # Phase 2: exchange-only → PM 추가
+            exchange_full = await PositionReconciler.parse_exchange_positions_full(
+                self._futures_client, self._symbols
+            )
+            synced = pm.sync_exchange_positions(exchange_full)
         except Exception:
             logger.exception("Startup reconciliation failed — continuing with existing state")
             return [], []
@@ -1398,200 +915,6 @@ class LiveRunner:
             )
 
         return removed, synced
-
-    def _build_pod_symbol_map(self) -> dict[str, list[str]]:
-        """Orchestrator pods → {pod_id: [symbols]} 매핑 생성.
-
-        Orchestrator 비활성 시 빈 dict 반환.
-        """
-        if self._orchestrator is None:
-            return {}
-
-        result: dict[str, list[str]] = {}
-        for pod in self._orchestrator.pods:
-            if pod.is_active:
-                result[pod.pod_id] = list(pod.symbols)
-        return result
-
-    async def _cleanup_orphaned_positions(self, pm: EDAPortfolioManager) -> list[str]:
-        """Config 제거 또는 RETIRED Pod의 orphaned position을 정리합니다.
-
-        Phase 1 (hedge mode composite key 스캔):
-        - PM ``_positions`` key에서 pod_id 추출
-        - pod_id가 orchestrator에 없거나 RETIRED → orphan
-        - LIVE 모드: 거래소 시장가 청산 후 PM 리셋
-        - Paper 모드: PM 리셋만
-
-        Phase 2 (non-hedge symbol fallback):
-        - RETIRED Pod 심볼 중 활성 Pod 미관리 심볼 → PM 리셋
-
-        Non-orchestrator 모드: 즉시 반환.
-
-        Returns:
-            정리된 position key 리스트
-        """
-        if self._orchestrator is None:
-            return []
-
-        all_pod_ids = {pod.pod_id for pod in self._orchestrator.pods}
-        active_pod_ids = {pod.pod_id for pod in self._orchestrator.pods if pod.is_active}
-
-        cleaned: list[str] = []
-
-        # ── Phase 1: PM composite key 스캔 (config 제거 + RETIRED pod) ──
-        for pos_key in list(pm._positions.keys()):
-            pod_id = pm._pod_id_from_key(pos_key)
-            if pod_id is None or pod_id in active_pod_ids:
-                continue
-
-            pos = pm._positions[pos_key]
-            if not pos.is_open:
-                continue
-
-            reason = "config-removed" if pod_id not in all_pod_ids else "retired"
-            symbol = pm._symbol_from_key(pos_key)
-
-            logger.info(
-                "Orphan position cleanup: {} (pod={}, reason={}, dir={}, size={:.6f})",
-                pos_key,
-                pod_id,
-                reason,
-                pos.direction.name,
-                pos.size,
-            )
-
-            # LIVE: 거래소 시장가 청산
-            if self._mode == LiveMode.LIVE and self._futures_client is not None:
-                try:
-                    await self._close_orphan_on_exchange(symbol, pos)
-                except Exception:
-                    logger.exception(
-                        "Failed to close orphan on exchange: {} — skipping PM reset",
-                        pos_key,
-                    )
-                    continue  # 거래소 실패 → PM 리셋 건너뜀 (재시작 시 재시도)
-
-            self._reset_orphan_position(pm, pos_key, pos)
-            cleaned.append(pos_key)
-
-        # ── Phase 2: Non-hedge RETIRED symbol 기반 정리 ──
-        self._cleanup_retired_symbol_positions(pm, cleaned)
-
-        if cleaned:
-            logger.warning(
-                "Cleaned {} orphaned positions: {}",
-                len(cleaned),
-                cleaned,
-            )
-
-        return cleaned
-
-    def _cleanup_retired_symbol_positions(
-        self,
-        pm: EDAPortfolioManager,
-        cleaned: list[str],
-    ) -> None:
-        """RETIRED Pod의 심볼 기반 orphan 정리 (non-hedge fallback).
-
-        활성 Pod가 관리하지 않는 RETIRED Pod 심볼의 PM 포지션을 리셋합니다.
-        """
-        assert self._orchestrator is not None  # caller guarantees
-
-        from src.orchestrator.models import LifecycleState
-
-        retired_pods = [p for p in self._orchestrator.pods if p.state == LifecycleState.RETIRED]
-        if not retired_pods:
-            return
-
-        active_symbols: set[str] = set()
-        for pod in self._orchestrator.pods:
-            if pod.is_active:
-                active_symbols.update(pod.symbols)
-
-        orphan_symbols: set[str] = set()
-        for pod in retired_pods:
-            orphan_symbols.update(set(pod.symbols) - active_symbols)
-
-        for symbol in orphan_symbols:
-            if symbol in cleaned:
-                continue
-            pos = pm._positions.get(symbol)
-            if pos is None or not pos.is_open:
-                continue
-
-            logger.info(
-                "Orphan position cleanup: {} (reason=retired-symbol, size={:.6f})",
-                symbol,
-                pos.size,
-            )
-
-            self._reset_orphan_position(pm, symbol, pos)
-            cleaned.append(symbol)
-
-    async def _close_orphan_on_exchange(
-        self,
-        symbol: str,
-        pos: Position,
-    ) -> None:
-        """거래소에서 orphan 포지션 시장가 청산."""
-        assert self._futures_client is not None
-
-        from src.models.types import Direction
-
-        futures_symbol = self._futures_client.to_futures_symbol(symbol)
-
-        if pos.direction == Direction.LONG:
-            side = "sell"
-            position_side = "LONG" if self._hedge_mode else None
-        elif pos.direction == Direction.SHORT:
-            side = "buy"
-            position_side = "SHORT" if self._hedge_mode else None
-        else:
-            return  # NEUTRAL → nothing to close
-
-        ts = int(time.time() * 1000)
-        client_order_id = f"orphan-close-{symbol.replace('/', '')}-{ts}"
-
-        await self._futures_client.create_order(
-            symbol=futures_symbol,
-            side=side,
-            amount=pos.size,
-            position_side=position_side,
-            client_order_id=client_order_id,
-        )
-        logger.info(
-            "Exchange orphan close sent: {} side={} amount={:.6f} position_side={}",
-            futures_symbol,
-            side,
-            pos.size,
-            position_side,
-        )
-
-    @staticmethod
-    def _reset_orphan_position(
-        pm: EDAPortfolioManager,
-        pos_key: str,
-        pos: Position,
-    ) -> None:
-        """Orphan position의 PM 상태를 NEUTRAL로 리셋."""
-        from src.models.types import Direction
-
-        pos.size = 0.0
-        pos.direction = Direction.NEUTRAL
-        pos.avg_entry_price = 0.0
-        pos.unrealized_pnl = 0.0
-        pos.current_weight = 0.0
-        pos.last_price = 0.0
-        pos.peak_price_since_entry = 0.0
-        pos.trough_price_since_entry = 0.0
-        pos.atr_values = []
-
-        pm._last_target_weights.pop(pos_key, None)
-        pm._last_executed_targets.pop(pos_key, None)
-        pm._pending_signals.pop(pos_key, None)
-        pm._pending_close.discard(pos_key)
-        pm._deferred_close_targets.pop(pos_key, None)
-        pm._last_tf_atr.pop(pos_key, None)
 
     async def _setup_reconciler(
         self,
@@ -1657,127 +980,6 @@ class LiveRunner:
                 notification_queue=notification_queue,
             )
         )
-
-    async def _stop_derivatives_feed(self) -> None:
-        """DerivativesFeed 종료 (설정된 경우)."""
-        if self._derivatives_feed is not None:
-            await self._derivatives_feed.stop()
-
-    async def _start_derivatives_feed(self) -> Any:
-        """DerivativesFeed 시작 (설정된 경우).
-
-        Returns:
-            DerivativesProvider 또는 None
-        """
-        if self._derivatives_feed is None:
-            return None
-        await self._derivatives_feed.start()
-        return self._derivatives_feed
-
-    def _init_onchain_feed(self, symbols: list[str]) -> None:
-        """LiveOnchainFeed 인스턴스 생성 (Silver 데이터 존재 시)."""
-        from src.eda.onchain_feed import LiveOnchainFeed
-
-        self._onchain_feed = LiveOnchainFeed(symbols)
-
-    async def _start_onchain_feed(self) -> Any:
-        """OnchainFeed 시작 (설정된 경우).
-
-        Returns:
-            OnchainProvider 또는 None
-        """
-        if self._onchain_feed is None:
-            return None
-        await self._onchain_feed.start()
-        # 캐시가 비어있으면 None 반환 (Silver 데이터 없음)
-        if not self._onchain_feed._cache:
-            await self._onchain_feed.stop()
-            self._onchain_feed = None
-            return None
-        return self._onchain_feed
-
-    async def _stop_onchain_feed(self) -> None:
-        """OnchainFeed 종료 (설정된 경우)."""
-        if self._onchain_feed is not None:
-            await self._onchain_feed.stop()
-
-    def _init_macro_feed(self) -> None:
-        """LiveMacroFeed 인스턴스 생성."""
-        from src.eda.macro_feed import LiveMacroFeed
-
-        self._macro_feed = LiveMacroFeed()
-
-    async def _start_macro_feed(self) -> Any:
-        """MacroFeed 시작 (설정된 경우).
-
-        Returns:
-            MacroProvider 또는 None
-        """
-        if self._macro_feed is None:
-            return None
-        await self._macro_feed.start()
-        if not self._macro_feed._cache:
-            await self._macro_feed.stop()
-            self._macro_feed = None
-            return None
-        return self._macro_feed
-
-    async def _stop_macro_feed(self) -> None:
-        """MacroFeed 종료 (설정된 경우)."""
-        if self._macro_feed is not None:
-            await self._macro_feed.stop()
-
-    def _init_options_feed(self) -> None:
-        """LiveOptionsFeed 인스턴스 생성."""
-        from src.eda.options_feed import LiveOptionsFeed
-
-        self._options_feed = LiveOptionsFeed()
-
-    async def _start_options_feed(self) -> Any:
-        """OptionsFeed 시작 (설정된 경우).
-
-        Returns:
-            OptionsProvider 또는 None
-        """
-        if self._options_feed is None:
-            return None
-        await self._options_feed.start()
-        if not self._options_feed._cache:
-            await self._options_feed.stop()
-            self._options_feed = None
-            return None
-        return self._options_feed
-
-    async def _stop_options_feed(self) -> None:
-        """OptionsFeed 종료 (설정된 경우)."""
-        if self._options_feed is not None:
-            await self._options_feed.stop()
-
-    def _init_deriv_ext_feed(self, symbols: list[str]) -> None:
-        """LiveDerivExtFeed 인스턴스 생성."""
-        from src.eda.deriv_ext_feed import LiveDerivExtFeed
-
-        self._deriv_ext_feed = LiveDerivExtFeed(symbols)
-
-    async def _start_deriv_ext_feed(self) -> Any:
-        """DerivExtFeed 시작 (설정된 경우).
-
-        Returns:
-            DerivExtProvider 또는 None
-        """
-        if self._deriv_ext_feed is None:
-            return None
-        await self._deriv_ext_feed.start()
-        if not self._deriv_ext_feed._cache:
-            await self._deriv_ext_feed.stop()
-            self._deriv_ext_feed = None
-            return None
-        return self._deriv_ext_feed
-
-    async def _stop_deriv_ext_feed(self) -> None:
-        """DerivExtFeed 종료 (설정된 경우)."""
-        if self._deriv_ext_feed is not None:
-            await self._deriv_ext_feed.stop()
 
     async def _preflight_checks(self) -> float:
         """LIVE 모드 시작 전 거래소 상태 검증.
@@ -1848,25 +1050,15 @@ class LiveRunner:
             except Exception:
                 logger.warning("Pre-flight: Failed to check open orders for {}", symbol)
 
-        # 4. SmartExecutor: stale limit order cleanup
-        if isinstance(self._executor, SmartExecutor):
-            await self._executor.cleanup_stale_orders(self._symbols)
-            logger.info("Pre-flight: stale limit orders cleaned up")
-
         logger.info("Pre-flight checks PASSED — using exchange balance ${:.2f}", total_balance)
         return total_balance
 
     def _log_startup_summary(self, capital: float) -> None:
         """구조화된 startup summary 로그."""
-        strategy_label = (
-            f"Orchestrator ({len(self._orchestrator.pods)} pods)"
-            if self._orchestrator is not None
-            else self._strategy.name
-        )
         summary = (
             f"=== LiveRunner Startup Summary ===\n"
             f"  Mode:       {self._mode.value}\n"
-            f"  Strategy:   {strategy_label}\n"
+            f"  Strategy:   {self._strategy.name}\n"
             f"  Symbols:    {', '.join(self._symbols) if self._symbols else 'N/A'}\n"
             f"  Timeframe:  {self._target_timeframe}\n"
             f"  Capital:    ${capital:,.2f}\n"
@@ -1893,12 +1085,10 @@ class LiveRunner:
         pm: EDAPortfolioManager,
         rm: EDARiskManager,
         oms: OMS | None = None,
-        orch_persistence: Any = None,
-        orchestrator: Any = None,
         exchange_stop_mgr: Any = None,
         interval: float = _DEFAULT_SAVE_INTERVAL,
     ) -> None:
-        """주기적으로 PM/RM/OMS/ExchangeStops/Orchestrator 상태를 저장."""
+        """주기적으로 PM/RM/OMS/ExchangeStops 상태를 저장."""
         while True:
             await asyncio.sleep(interval)
             try:
@@ -1906,8 +1096,6 @@ class LiveRunner:
                     exchange_stop_mgr.get_state() if exchange_stop_mgr is not None else None
                 )
                 await state_mgr.save_all(pm, rm, oms=oms, exchange_stops_state=exchange_stops_state)
-                if orch_persistence is not None and orchestrator is not None:
-                    await orch_persistence.save(orchestrator)
             except Exception:
                 logger.exception("Periodic state save failed")
 
@@ -1946,19 +1134,10 @@ class LiveRunner:
         trading_mode_enum.state(self._mode.value)
 
         # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
-        # + LiveExecutor에 PrometheusLiveExecutorMetrics 주입
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
 
-        if isinstance(self._executor, SmartExecutor):
-            from src.monitoring.metrics import (
-                PrometheusLiveExecutorMetrics,
-                PrometheusSmartExecutorMetrics,
-            )
-
-            self._executor.inner.set_metrics(PrometheusLiveExecutorMetrics())
-            self._executor.set_smart_metrics(PrometheusSmartExecutorMetrics())
-        elif isinstance(self._executor, LiveExecutor):
+        if isinstance(self._executor, LiveExecutor):
             from src.monitoring.metrics import PrometheusLiveExecutorMetrics
 
             self._executor.set_metrics(PrometheusLiveExecutorMetrics())
@@ -1968,16 +1147,6 @@ class LiveRunner:
         self._feed.set_ws_callback(ws_detail_cb)
         self._ws_detail_callback: PrometheusWsDetailCallback | None = ws_detail_cb
 
-        # OrchestratorMetrics (Orchestrator 활성 시)
-        if self._orchestrator is not None:
-            from src.orchestrator.metrics import OrchestratorMetrics
-
-            self._orchestrator_metrics: OrchestratorMetrics | None = OrchestratorMetrics(
-                self._orchestrator
-            )
-        else:
-            self._orchestrator_metrics = None
-
         return exporter
 
     @staticmethod
@@ -1985,16 +1154,10 @@ class LiveRunner:
         exporter: MetricsExporter,
         bus: EventBus,
         futures_client: BinanceFuturesClient | None,
-        orchestrator_metrics: OrchestratorMetrics | None = None,
         ws_detail_callback: Any = None,
-        onchain_feed: Any = None,
-        derivatives_feed: Any = None,
-        macro_feed: Any = None,
-        options_feed: Any = None,
-        deriv_ext_feed: Any = None,
         interval: float = 30.0,
     ) -> None:
-        """주기적으로 uptime + EventBus + exchange health + bar ages + orchestrator + feeds 메트릭 갱신."""
+        """주기적으로 uptime + EventBus + exchange health + bar ages 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
@@ -2002,14 +1165,8 @@ class LiveRunner:
             exporter.update_bar_ages()
             if futures_client is not None:
                 exporter.update_exchange_health(futures_client.consecutive_failures)
-            if orchestrator_metrics is not None:
-                orchestrator_metrics.update()
             if ws_detail_callback is not None:
                 ws_detail_callback.update_message_ages()
-            # 전 피드 cache 메트릭 갱신
-            for feed in (onchain_feed, derivatives_feed, macro_feed, options_feed, deriv_ext_feed):
-                if feed is not None:
-                    feed.update_cache_metrics()
             # Execution health check — fill rate gauge + alert
             from src.monitoring.metrics import execution_fill_rate_gauge
 
@@ -2092,181 +1249,6 @@ class LiveRunner:
                         )
                     )
 
-    def _start_surveillance_if_enabled(
-        self,
-        bus: EventBus,
-        orch_persistence: object | None,
-        notification_queue: object | None,
-    ) -> None:
-        """Surveillance task 시작 (조건 충족 시)."""
-        if (
-            self._surveillance_config is not None
-            and self._surveillance_config.enabled
-            and self._client is not None
-            and self._orchestrator is not None
-        ):
-            self._surveillance_task = asyncio.create_task(
-                self._periodic_surveillance_scan(
-                    self._orchestrator,
-                    self._feed,
-                    bus,
-                    orch_persistence,
-                    notification_queue,
-                )
-            )
-
-    async def _periodic_surveillance_scan(
-        self,
-        orchestrator: StrategyOrchestrator,
-        feed: LiveDataFeed,
-        bus: EventBus,
-        orch_persistence: Any,
-        notification_queue: Any,
-    ) -> None:
-        """주기적 surveillance 스캔 (주간).
-
-        Args:
-            orchestrator: StrategyOrchestrator 인스턴스
-            feed: LiveDataFeed 인스턴스
-            bus: EventBus 인스턴스
-            orch_persistence: OrchestratorStatePersistence
-            notification_queue: NotificationQueue (선택)
-        """
-        from src.orchestrator.surveillance import MarketSurveillanceService
-
-        if self._surveillance_config is None or self._client is None:
-            return
-
-        service = MarketSurveillanceService(
-            config=self._surveillance_config,
-            client=self._client,
-        )
-
-        # 상태 복원
-        if orch_persistence is not None:
-            await orch_persistence.restore_surveillance(service)
-
-        # 시작 후 60초 대기 (warmup 완료 보장)
-        _initial_delay = 60.0
-        await asyncio.sleep(_initial_delay)
-
-        interval = service.config.scan_interval_hours * 3600
-
-        while True:
-            try:
-                scan_result = await service.scan()
-
-                if scan_result.added or scan_result.dropped:
-                    # 1. LiveDataFeed에 새 심볼 추가 (WS 스트림)
-                    for sym in scan_result.added:
-                        if sym not in feed.symbols:
-                            await feed.add_symbol(sym, bus)
-
-                    # 2. Orchestrator에 유니버스 변경 적용
-                    pod_additions = await orchestrator.on_universe_update(
-                        scan_result, self._fetch_warmup_bars
-                    )
-
-                    # 3. SQLite universe_events 로깅
-                    await self._log_universe_events(scan_result)
-
-                    # 4. surveillance 상태 저장
-                    if orch_persistence is not None:
-                        await orch_persistence.save_surveillance(service)
-
-                    # 5. Discord 알림
-                    if notification_queue is not None:
-                        from src.notification.formatters import (
-                            format_surveillance_scan_embed,
-                        )
-
-                        embed = format_surveillance_scan_embed(scan_result, pod_additions)
-                        await notification_queue.enqueue(
-                            NotificationItem(
-                                severity=Severity.INFO,
-                                channel=ChannelRoute.ALERTS,
-                                embed=embed,
-                                spam_key="surveillance_scan",
-                            )
-                        )
-
-                # Prometheus 메트릭 업데이트
-                self._update_surveillance_metrics(scan_result)
-
-            except Exception:
-                logger.exception("Surveillance scan failed")
-
-            await asyncio.sleep(interval)
-
-    async def _log_universe_events(self, scan_result: Any) -> None:
-        """Surveillance 이벤트를 SQLite universe_events 테이블에 기록."""
-        if self._db_path is None:
-            return
-
-        from src.eda.persistence.database import Database
-
-        try:
-            db = Database(self._db_path)
-            await db.connect()
-            conn = db.connection
-            now = scan_result.timestamp.isoformat()
-
-            # SCAN 이벤트
-            scan_sql = (
-                "INSERT INTO universe_events (action, reason, metadata, timestamp)"
-                " VALUES (?, ?, ?, ?)"
-            )
-            await conn.execute(
-                scan_sql,
-                (
-                    "SCAN",
-                    f"{len(scan_result.qualified_symbols)} qualified",
-                    f'{{"added": {len(scan_result.added)}, "dropped": {len(scan_result.dropped)}}}',
-                    now,
-                ),
-            )
-
-            # ADDED / DROPPED 이벤트
-            event_sql = (
-                "INSERT INTO universe_events (action, symbol, reason, timestamp)"
-                " VALUES (?, ?, ?, ?)"
-            )
-            for sym in scan_result.added:
-                await conn.execute(
-                    event_sql,
-                    ("ADDED", sym, "surveillance_scan", now),
-                )
-            for sym in scan_result.dropped:
-                await conn.execute(
-                    event_sql,
-                    ("DROPPED", sym, "surveillance_scan", now),
-                )
-
-            await conn.commit()
-            await db.close()
-        except Exception:
-            logger.exception("Failed to log universe events")
-
-    @staticmethod
-    def _update_surveillance_metrics(scan_result: Any) -> None:
-        """Surveillance Prometheus 메트릭 업데이트."""
-        try:
-            from src.monitoring.metrics import (
-                surveillance_active_assets,
-                surveillance_assets_added,
-                surveillance_assets_dropped,
-                surveillance_last_scan_ts,
-                surveillance_scan_duration,
-            )
-
-            surveillance_active_assets.set(len(scan_result.qualified_symbols))
-            surveillance_last_scan_ts.set(scan_result.timestamp.timestamp())
-            surveillance_scan_duration.set(scan_result.scan_duration_seconds)
-            surveillance_assets_added.inc(len(scan_result.added))
-            surveillance_assets_dropped.inc(len(scan_result.dropped))
-        except ImportError:
-            pass  # 메트릭 미등록 시 무시
-
     @property
     def feed(self) -> LiveDataFeed:
         """LiveDataFeed 인스턴스."""
@@ -2295,21 +1277,12 @@ class LiveRunner:
 
         from src.notification.lifecycle import format_startup_embed
 
-        strategy_label = (
-            f"Orchestrator ({len(self._orchestrator.pods)} pods)"
-            if self._orchestrator is not None
-            else self._strategy.name
-        )
-        pod_summaries = (
-            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
-        )
         embed = format_startup_embed(
             mode=self._mode.value,
-            strategy_name=strategy_label,
+            strategy_name=self._strategy.name,
             symbols=self._symbols,
             capital=capital,
             timeframe=self._target_timeframe,
-            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.INFO,
@@ -2339,9 +1312,6 @@ class LiveRunner:
             if t.exit_time and t.exit_time >= today_start and t.pnl is not None
         )
         unrealized_pnl = sum(p.unrealized_pnl for p in pm.positions.values() if p.is_open)
-        pod_summaries = (
-            self._orchestrator.get_pod_summary() if self._orchestrator is not None else None
-        )
 
         embed = format_shutdown_embed(
             reason="Graceful shutdown",
@@ -2351,7 +1321,6 @@ class LiveRunner:
             realized_pnl=realized_pnl,
             unrealized_pnl=unrealized_pnl,
             open_positions=pm.open_position_count,
-            pod_summaries=pod_summaries,
         )
         item = NotificationItem(
             severity=Severity.WARNING,

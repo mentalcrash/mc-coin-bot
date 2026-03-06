@@ -421,31 +421,8 @@ class OnchainDataService:
         Returns:
             oc_* 컬럼이 포함된 DataFrame (DatetimeIndex)
         """
-        from src.eda.onchain_feed import build_precompute_map
-
-        precompute_map = build_precompute_map([symbol])
-        sources = precompute_map.get(symbol, [])
-        if not sources:
-            return pd.DataFrame(index=ohlcv_index)
-
-        result = pd.DataFrame(index=ohlcv_index)
-        for source, name, columns, rename_map in sources:
-            part = self._load_and_prepare(source, name, columns, rename_map)
-            if part is None:
-                continue
-            result = pd.merge_asof(
-                result,
-                part,
-                left_index=True,
-                right_index=True,
-                direction="backward",
-            )
-
-        # 비어있으면 빈 DataFrame 반환
-        if result.columns.empty:
-            return pd.DataFrame(index=ohlcv_index)
-
-        return result
+        # Onchain precompute disabled (onchain_feed removed in Phase 0)
+        return pd.DataFrame(index=ohlcv_index)
 
     def _resolve_lag_days(self, source: str) -> int:
         """source의 publication lag 일수 조회 (catalog 우선)."""

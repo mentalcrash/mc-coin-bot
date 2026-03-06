@@ -10,7 +10,7 @@ from src.backtest.validation.levels import ValidationLevel
 from src.backtest.validation.validator import TieredValidator
 from src.data.market_data import MarketDataSet
 from src.portfolio import Portfolio
-from src.strategy.tsmom import TSMOMStrategy
+from src.strategy.supertrend import SuperTrendStrategy
 
 _VBT_AVAILABLE = True
 try:
@@ -47,9 +47,9 @@ def sample_market_data() -> MarketDataSet:
 
 
 @pytest.fixture
-def strategy() -> TSMOMStrategy:
+def strategy() -> SuperTrendStrategy:
     """Create strategy for testing."""
-    return TSMOMStrategy()
+    return SuperTrendStrategy()
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ class TestTieredValidator:
     def test_quick_validation(
         self,
         sample_market_data: MarketDataSet,
-        strategy: TSMOMStrategy,
+        strategy: SuperTrendStrategy,
         portfolio: Portfolio,
     ) -> None:
         """Test quick (IS/OOS) validation."""
@@ -102,7 +102,7 @@ class TestTieredValidator:
     def test_milestone_validation(
         self,
         sample_market_data: MarketDataSet,
-        strategy: TSMOMStrategy,
+        strategy: SuperTrendStrategy,
         portfolio: Portfolio,
     ) -> None:
         """Test milestone (Walk-Forward) validation."""
@@ -123,7 +123,7 @@ class TestTieredValidator:
     def test_verdict_property(
         self,
         sample_market_data: MarketDataSet,
-        strategy: TSMOMStrategy,
+        strategy: SuperTrendStrategy,
         portfolio: Portfolio,
     ) -> None:
         """Test that verdict is computed."""
@@ -142,7 +142,7 @@ class TestTieredValidator:
     def test_overfit_probability(
         self,
         sample_market_data: MarketDataSet,
-        strategy: TSMOMStrategy,
+        strategy: SuperTrendStrategy,
         portfolio: Portfolio,
     ) -> None:
         """Test that overfit probability is computed."""

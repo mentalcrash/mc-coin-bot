@@ -152,57 +152,8 @@ class ICBatchScanner:
         Returns:
             ScanEntry 리스트
         """
-        from src.backtest.ic_analyzer import ICAnalyzer
-        from src.market.feature_store import DEFAULT_SPECS, compute_indicator
-
-        periods = forward_periods or self._config.forward_periods
-        entries: list[ScanEntry] = []
-
-        for symbol, df in ohlcv_data.items():
-            close: pd.Series = df["close"]  # type: ignore[assignment]
-            for spec in DEFAULT_SPECS:
-                for fwd in periods:
-                    fwd_ret: pd.Series = close.pct_change(fwd).shift(-fwd)  # type: ignore[assignment]
-                    try:
-                        indicator = compute_indicator(spec, df)
-                        # Check min data coverage
-                        valid_ratio = (
-                            float(indicator.notna().sum()) / len(df) if len(df) > 0 else 0.0
-                        )
-                        if valid_ratio < self._config.min_data_coverage:
-                            entries.append(
-                                ScanEntry(
-                                    indicator_name=spec.name,
-                                    source="ohlcv",
-                                    symbol=symbol,
-                                    forward_period=fwd,
-                                    ic_result=None,
-                                    error=f"Insufficient data coverage: {valid_ratio:.1%}",
-                                )
-                            )
-                            continue
-                        result = ICAnalyzer.analyze(indicator, fwd_ret)
-                        entries.append(
-                            ScanEntry(
-                                indicator_name=spec.name,
-                                source="ohlcv",
-                                symbol=symbol,
-                                forward_period=fwd,
-                                ic_result=result,
-                            )
-                        )
-                    except Exception as exc:
-                        entries.append(
-                            ScanEntry(
-                                indicator_name=spec.name,
-                                source="ohlcv",
-                                symbol=symbol,
-                                forward_period=fwd,
-                                ic_result=None,
-                                error=str(exc),
-                            )
-                        )
-        return entries
+        # feature_store removed in Phase 0 — scan_ohlcv disabled
+        return []
 
     def scan_enriched_columns(
         self,

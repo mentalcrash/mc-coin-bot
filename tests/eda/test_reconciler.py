@@ -750,9 +750,7 @@ class TestParseExchangePositionsHedgeFull:
                 },
             ]
         )
-        result = await PositionReconciler.parse_exchange_positions_hedge_full(
-            client, ["BTC/USDT"]
-        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(client, ["BTC/USDT"])
         assert "BTC/USDT" in result
         long_info = result["BTC/USDT"]["long"]
         short_info = result["BTC/USDT"]["short"]
@@ -777,9 +775,7 @@ class TestParseExchangePositionsHedgeFull:
                 },
             ]
         )
-        result = await PositionReconciler.parse_exchange_positions_hedge_full(
-            client, ["ETH/USDT"]
-        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(client, ["ETH/USDT"])
         assert result["ETH/USDT"]["long"] is not None
         assert result["ETH/USDT"]["short"] is None
 
@@ -796,7 +792,5 @@ class TestParseExchangePositionsHedgeFull:
                 },
             ]
         )
-        result = await PositionReconciler.parse_exchange_positions_hedge_full(
-            client, ["BTC/USDT"]
-        )
+        result = await PositionReconciler.parse_exchange_positions_hedge_full(client, ["BTC/USDT"])
         assert result == {}

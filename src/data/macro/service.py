@@ -224,25 +224,8 @@ class MacroDataService:
         Returns:
             macro_* 컬럼이 포함된 DataFrame (DatetimeIndex)
         """
-        from src.eda.onchain_feed import MACRO_GLOBAL_SOURCES
-
-        result = pd.DataFrame(index=ohlcv_index)
-        for source, name, columns, rename_map in MACRO_GLOBAL_SOURCES:
-            part = self._load_and_prepare(source, name, columns, rename_map)
-            if part is None:
-                continue
-            result = pd.merge_asof(
-                result,
-                part,
-                left_index=True,
-                right_index=True,
-                direction="backward",
-            )
-
-        if result.columns.empty:
-            return pd.DataFrame(index=ohlcv_index)
-
-        return result
+        # Macro precompute disabled (onchain_feed removed in Phase 0)
+        return pd.DataFrame(index=ohlcv_index)
 
     def _resolve_lag_days(self, source: str, name: str) -> int:
         """source/name의 publication lag 일수 조회.
