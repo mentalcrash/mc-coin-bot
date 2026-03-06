@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
-from src.data.regime_score import classify_regime, compute_regime_score
 from src.notification.health_formatters import (
     _COLOR_BLUE,
     _COLOR_GREEN,
@@ -14,16 +11,12 @@ from src.notification.health_formatters import (
     _COLOR_YELLOW,
     _heartbeat_color,
     format_heartbeat_embed,
-    format_onchain_alert_embed,
-    format_regime_embed,
     format_strategy_health_embed,
     format_uptime,
 )
 from src.notification.health_models import (
-    MarketRegimeReport,
     PositionStatus,
     StrategyHealthSnapshot,
-    SymbolDerivativesSnapshot,
     SystemHealthSnapshot,
 )
 
@@ -52,43 +45,6 @@ def _make_health_snapshot(**overrides: object) -> SystemHealthSnapshot:
     }
     defaults.update(overrides)
     return SystemHealthSnapshot(**defaults)  # type: ignore[arg-type]
-
-
-# ─── regime_score 테스트 ──────────────────────────────────
-
-
-class TestRegimeScore:
-    def test_neutral_inputs(self) -> None:
-        score = compute_regime_score(0.0, 0.0, 1.0, 1.0)
-        assert score == pytest.approx(0.0, abs=0.01)
-
-    def test_extreme_greed(self) -> None:
-        score = compute_regime_score(0.002, 0.3, 0.3, 1.3)
-        assert score > 0.5
-
-    def test_extreme_fear(self) -> None:
-        score = compute_regime_score(-0.002, -0.3, 1.8, 0.7)
-        assert score < -0.5
-
-    def test_clamping(self) -> None:
-        """극단적 입력도 -1~+1 범위 내."""
-        score = compute_regime_score(1.0, 10.0, 100.0, 100.0)
-        assert -1.0 <= score <= 1.0
-
-    def test_classify_extreme_greed(self) -> None:
-        assert classify_regime(0.6) == "Extreme Greed"
-
-    def test_classify_bullish(self) -> None:
-        assert classify_regime(0.3) == "Bullish"
-
-    def test_classify_neutral(self) -> None:
-        assert classify_regime(0.0) == "Neutral"
-
-    def test_classify_bearish(self) -> None:
-        assert classify_regime(-0.3) == "Bearish"
-
-    def test_classify_extreme_fear(self) -> None:
-        assert classify_regime(-0.6) == "Extreme Fear"
 
 
 # ─── Heartbeat color 테스트 ────────────────────────────────
@@ -165,53 +121,6 @@ class TestFormatHeartbeatEmbed:
         assert "ALERT" in embed["title"]
 
 
-# ─── Regime embed 테스트 ─────────────────────────────────
-
-
-class TestFormatRegimeEmbed:
-    def test_basic_structure(self) -> None:
-        sym = SymbolDerivativesSnapshot(
-            symbol="BTC/USDT",
-            price=97420.0,
-            funding_rate=0.00023,
-            funding_rate_annualized=25.2,
-            open_interest=5e9,
-            ls_ratio=1.47,
-            taker_ratio=1.12,
-        )
-        report = MarketRegimeReport(
-            timestamp=datetime(2026, 2, 14, tzinfo=UTC),
-            regime_score=0.42,
-            regime_label="Bullish",
-            symbols=(sym,),
-        )
-        embed = format_regime_embed(report)
-        assert "Bullish" in embed["title"]
-        assert "+0.42" in embed["title"]
-        assert "BTC/USDT" in embed["description"]
-        assert embed["color"] == _COLOR_GREEN
-
-    def test_extreme_greed_color(self) -> None:
-        report = MarketRegimeReport(
-            timestamp=datetime(2026, 2, 14, tzinfo=UTC),
-            regime_score=0.7,
-            regime_label="Extreme Greed",
-            symbols=(),
-        )
-        embed = format_regime_embed(report)
-        assert embed["color"] == _COLOR_RED
-
-    def test_neutral_color(self) -> None:
-        report = MarketRegimeReport(
-            timestamp=datetime(2026, 2, 14, tzinfo=UTC),
-            regime_score=0.0,
-            regime_label="Neutral",
-            symbols=(),
-        )
-        embed = format_regime_embed(report)
-        assert embed["color"] == _COLOR_BLUE
-
-
 # ─── Strategy health embed 테스트 ────────────────────────
 
 
@@ -285,50 +194,3 @@ class TestFormatStrategyHealthEmbed:
         embed = format_strategy_health_embed(snap)
         pos_field = next(f for f in embed["fields"] if "Open Positions" in f["name"])
         assert pos_field["value"] == "None"
-
-
-# ─── On-chain heartbeat field 테스트 ─────────────────────
-
-
-class TestHeartbeatOnchainField:
-    def test_onchain_field_present_when_sources_configured(self) -> None:
-        """onchain_sources_total > 0이면 On-chain 필드가 embed에 포함."""
-        snap = _make_health_snapshot(
-            onchain_sources_ok=4,
-            onchain_sources_total=5,
-            onchain_cache_columns=12,
-        )
-        embed = format_heartbeat_embed(snap)
-        onchain_field = next((f for f in embed["fields"] if f["name"] == "On-chain"), None)
-        assert onchain_field is not None
-        assert "4/5 OK" in onchain_field["value"]
-        assert "12 cols" in onchain_field["value"]
-
-    def test_onchain_field_absent_when_no_sources(self) -> None:
-        """onchain_sources_total == 0이면 On-chain 필드 없음."""
-        snap = _make_health_snapshot()  # defaults: onchain_sources_total=0
-        embed = format_heartbeat_embed(snap)
-        onchain_field = next((f for f in embed["fields"] if f["name"] == "On-chain"), None)
-        assert onchain_field is None
-
-    def test_yellow_when_onchain_stale(self) -> None:
-        """On-chain sources 일부 stale → YELLOW."""
-        snap = _make_health_snapshot(
-            onchain_sources_ok=3,
-            onchain_sources_total=5,
-            onchain_cache_columns=8,
-        )
-        assert _heartbeat_color(snap) == _COLOR_YELLOW
-
-
-# ─── On-chain alert embed 테스트 ─────────────────────────
-
-
-class TestFormatOnchainAlertEmbed:
-    def test_basic_structure(self) -> None:
-        embed = format_onchain_alert_embed("Cache refresh failed", "LiveOnchainFeed")
-        assert embed["title"] == "On-chain Alert — LiveOnchainFeed"
-        assert embed["description"] == "Cache refresh failed"
-        assert embed["color"] == _COLOR_YELLOW
-        assert "timestamp" in embed
-        assert embed["footer"]["text"] == "MC-Coin-Bot"

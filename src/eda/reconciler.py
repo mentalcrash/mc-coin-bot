@@ -26,6 +26,7 @@ from src.notification.reconciler_formatters import DriftDetail
 if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager, Position
     from src.exchange.binance_futures_client import BinanceFuturesClient
+    from src.exchange.binance_spot_client import BinanceSpotClient
 
 
 @dataclass(frozen=True)
@@ -640,3 +641,58 @@ class PositionReconciler:
             )
 
         return reasons
+
+    # =========================================================================
+    # Spot Helpers
+    # =========================================================================
+
+    @staticmethod
+    async def parse_spot_balances(
+        spot_client: BinanceSpotClient,
+        symbols: list[str],
+    ) -> dict[str, tuple[float, Direction]]:
+        """Spot 잔고 → {symbol: (base_amount, LONG)}.
+
+        Args:
+            spot_client: BinanceSpotClient
+            symbols: 트레이딩 심볼 리스트 (예: ["BTC/USDT", "ETH/USDT"])
+
+        Returns:
+            {symbol: (base_amount, Direction.LONG)} — amount > 0인 것만
+        """
+        balance = await spot_client.fetch_balance()
+        result: dict[str, tuple[float, Direction]] = {}
+        for symbol in symbols:
+            base = symbol.split("/")[0]  # BTC/USDT → BTC
+            asset_info = balance.get(base, {})
+            total = float(asset_info.get("total", 0) if isinstance(asset_info, dict) else 0)
+            if total > 0:
+                result[symbol] = (total, Direction.LONG)
+        return result
+
+    @staticmethod
+    async def compute_spot_equity(
+        spot_client: BinanceSpotClient,
+        symbols: list[str],
+    ) -> float:
+        """USDT + sum(asset * last_price).
+
+        Args:
+            spot_client: BinanceSpotClient
+            symbols: 트레이딩 심볼 리스트
+
+        Returns:
+            총 Spot equity (USDT 기준)
+        """
+        balance = await spot_client.fetch_balance()
+        usdt_info = balance.get("USDT", {})
+        usdt = float(usdt_info.get("total", 0) if isinstance(usdt_info, dict) else 0)
+        asset_value = 0.0
+        for symbol in symbols:
+            base = symbol.split("/")[0]
+            asset_info = balance.get(base, {})
+            qty = float(asset_info.get("total", 0) if isinstance(asset_info, dict) else 0)
+            if qty > 0:
+                ticker = await spot_client.fetch_ticker(symbol)
+                asset_value += qty * float(ticker.get("last", 0) or 0)
+        return usdt + asset_value

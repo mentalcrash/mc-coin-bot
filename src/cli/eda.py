@@ -479,3 +479,134 @@ def run_live(
             raise typer.Exit(code=0)
 
     launch_live(config_path, mode=mode.value, db_path=db_path)
+
+
+# ---------------------------------------------------------------------------
+# spot-live: Spot real trading
+# ---------------------------------------------------------------------------
+
+
+def launch_spot_live(
+    config_path: str,
+    *,
+    db_path: str | None = "data/trading.db",
+    enable_discord: bool = True,
+) -> None:
+    """Spot LiveRunner 실행.
+
+    Args:
+        config_path: YAML config 파일 경로.
+        db_path: SQLite 경로. ``None``이면 영속화 비활성.
+        enable_discord: Discord Bot 활성화 여부 (기본 True).
+    """
+    from src.eda.live_runner import LiveRunner
+    from src.exchange.binance_client import BinanceClient
+    from src.exchange.binance_spot_client import BinanceSpotClient
+    from src.notification.config import DiscordBotConfig
+
+    cfg = load_config(config_path)
+    strategy = build_strategy(cfg)
+    symbol_list = cfg.backtest.symbols
+
+    # Safety: Spot 검증
+    if cfg.portfolio.max_leverage_cap > 1.0:
+        console.print("[red]Spot mode: max_leverage_cap must be <= 1.0[/red]")
+        raise typer.Exit(code=1)
+
+    tf = cfg.backtest.timeframe
+    target_tf = tf.upper() if tf.lower() == "1d" else tf
+
+    is_multi = len(symbol_list) > 1
+    asset_weights: dict[str, float] | None = None
+    if is_multi:
+        asset_weights = {s: 1.0 / len(symbol_list) for s in symbol_list}
+
+    capital = cfg.backtest.capital
+
+    # Discord config 로드
+    discord_config = None
+    if enable_discord:
+        discord_config = DiscordBotConfig()
+        if discord_config.is_bot_configured:
+            console.print("[dim]Discord Bot enabled[/dim]")
+        else:
+            discord_config = None
+
+    header = f"[bold cyan]Spot LIVE: {cfg.strategy.name} / {len(symbol_list)} symbols (1m → {target_tf})[/bold cyan]"
+    console.print(header)
+    console.print(f"[dim]Symbols: {', '.join(symbol_list)}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop gracefully.[/dim]")
+
+    logger.info(
+        "Starting Spot LiveRunner: strategy={}, symbols={}, tf=1m→{}",
+        cfg.strategy.name,
+        len(symbol_list),
+        target_tf,
+    )
+
+    async def _run() -> None:
+        from src.config.settings import get_deployment_config
+
+        deploy_cfg = get_deployment_config()
+        async with BinanceClient() as client, BinanceSpotClient() as spot_client:
+            runner = LiveRunner.spot_live(
+                strategy=strategy,
+                symbols=symbol_list,
+                target_timeframe=target_tf,
+                config=cfg.portfolio,
+                client=client,
+                spot_client=spot_client,
+                initial_capital=capital,
+                asset_weights=asset_weights,
+                db_path=db_path,
+                discord_config=discord_config,
+                metrics_port=deploy_cfg.metrics_port,
+            )
+            await runner.run()
+
+    asyncio.run(_run())
+
+
+@app.command("spot-live")
+def spot_live(
+    config_path: Annotated[str, typer.Argument(help="YAML config file path")],
+    db_path: Annotated[
+        str | None,
+        typer.Option("--db-path", help="SQLite DB path for persistence (None=disabled)"),
+    ] = "data/trading.db",
+    verbose: Annotated[bool, typer.Option("--verbose", "-V", help="Enable verbose output")] = False,
+) -> None:
+    """Run Spot LIVE trading (real orders on Binance Spot).
+
+    Long-Only 전략을 Binance Spot에서 실행합니다.
+    leverage_cap은 반드시 1.0 이하여야 합니다.
+    """
+    setup_logger(console_level="DEBUG" if verbose else "INFO")
+
+    # config 요약 표시
+    cfg = load_config(config_path)
+    summary_table = Table(title="Spot LIVE Mode Configuration", show_header=False)
+    summary_table.add_column("Key", style="cyan")
+    summary_table.add_column("Value", style="bold red")
+    summary_table.add_row("Strategy", cfg.strategy.name)
+    summary_table.add_row("Symbols", ", ".join(cfg.backtest.symbols))
+    summary_table.add_row("Capital", f"${cfg.backtest.capital:,.0f}")
+    summary_table.add_row("Leverage", f"{cfg.portfolio.max_leverage_cap:.1f}x")
+    sl_str = f"{cfg.portfolio.system_stop_loss:.0%}" if cfg.portfolio.system_stop_loss else "OFF"
+    summary_table.add_row("System SL", sl_str)
+    ts_str = (
+        f"{cfg.portfolio.trailing_stop_atr_multiplier:.1f}x ATR"
+        if cfg.portfolio.use_trailing_stop
+        else "OFF"
+    )
+    summary_table.add_row("Trailing Stop", ts_str)
+    console.print(summary_table)
+
+    confirm = typer.confirm(
+        "WARNING: Spot LIVE mode trades with real funds on Binance Spot. Continue?"
+    )
+    if not confirm:
+        console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(code=0)
+
+    launch_spot_live(config_path, db_path=db_path)

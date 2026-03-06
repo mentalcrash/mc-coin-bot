@@ -40,7 +40,7 @@ class StrategySection(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str = "tsmom"
+    name: str = "supertrend"
     params: dict[str, Any] = Field(default_factory=dict)
     sub_strategies: list[dict[str, Any]] | None = Field(
         default=None,

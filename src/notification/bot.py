@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.eda.risk_manager import EDARiskManager
     from src.notification.config import DiscordBotConfig
-    from src.orchestrator.orchestrator import StrategyOrchestrator
 
 
 def _read_gauge_value(gauge: Gauge) -> float:
@@ -59,11 +58,9 @@ class TradingContext:
     rm: EDARiskManager
     analytics: AnalyticsEngine
     runner_shutdown: Callable[[], None]
-    orchestrator: StrategyOrchestrator | None = None
     report_trigger: Callable[[], Coroutine[object, object, None]] | None = None
     health_collector: object | None = None
     exchange_stop_mgr: object | None = None
-    onchain_feed: object | None = None
     _active: bool = field(default=True, init=False)
 
     @property
@@ -197,9 +194,6 @@ class DiscordBotService:
         async def balance_cmd(interaction: discord.Interaction) -> None:
             await self._handle_balance(interaction)
 
-        async def strategies_cmd(interaction: discord.Interaction) -> None:
-            await self._handle_strategies(interaction)
-
         async def report_cmd(interaction: discord.Interaction) -> None:
             await self._handle_report(interaction)
 
@@ -209,17 +203,11 @@ class DiscordBotService:
         async def metrics_cmd(interaction: discord.Interaction) -> None:
             await self._handle_metrics(interaction)
 
-        async def onchain_cmd(interaction: discord.Interaction) -> None:
-            await self._handle_onchain(interaction)
-
         self._tree.command(
             name="status", description="Open positions and equity status", guild=guild_obj
         )(status_cmd)
         self._tree.command(name="balance", description="Account balance overview", guild=guild_obj)(
             balance_cmd
-        )
-        self._tree.command(name="strategies", description="Strategy pod overview", guild=guild_obj)(
-            strategies_cmd
         )
         self._tree.command(name="report", description="Trigger daily report now", guild=guild_obj)(
             report_cmd
@@ -230,9 +218,6 @@ class DiscordBotService:
         self._tree.command(name="metrics", description="Key metrics summary", guild=guild_obj)(
             metrics_cmd
         )
-        self._tree.command(
-            name="onchain", description="On-chain data source status", guild=guild_obj
-        )(onchain_cmd)
 
     def _setup_action_commands(self) -> None:
         """액션형 Slash Commands 등록."""
@@ -242,28 +227,7 @@ class DiscordBotService:
         async def kill_cmd(interaction: discord.Interaction) -> None:
             await self._handle_kill(interaction)
 
-        @app_commands.describe(name="Strategy pod name")
-        async def strategy_cmd(interaction: discord.Interaction, name: str) -> None:
-            await self._handle_strategy_detail(interaction, name)
-
-        @app_commands.describe(name="Strategy pod name to pause")
-        async def pause_cmd(interaction: discord.Interaction, name: str) -> None:
-            await self._handle_pause(interaction, name)
-
-        @app_commands.describe(name="Strategy pod name to resume")
-        async def resume_cmd(interaction: discord.Interaction, name: str) -> None:
-            await self._handle_resume(interaction, name)
-
         self._tree.command(name="kill", description="Emergency shutdown", guild=guild_obj)(kill_cmd)
-        self._tree.command(name="strategy", description="Strategy detail", guild=guild_obj)(
-            strategy_cmd
-        )
-        self._tree.command(name="pause", description="Pause a strategy pod", guild=guild_obj)(
-            pause_cmd
-        )
-        self._tree.command(name="resume", description="Resume a strategy pod", guild=guild_obj)(
-            resume_cmd
-        )
 
     async def _handle_status(self, interaction: discord.Interaction) -> None:
         """``/status`` -- 오픈 포지션 + equity."""
@@ -380,131 +344,6 @@ class DiscordBotService:
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)
 
-    # ── L3-3 New Command Handlers ────────────────────────────────
-
-    async def _handle_strategies(self, interaction: discord.Interaction) -> None:
-        """``/strategies`` -- 전략 Pod 요약 목록."""
-        ctx = self._trading_ctx
-        if ctx is None or ctx.orchestrator is None:
-            await interaction.response.send_message("Orchestrator not available.", ephemeral=True)
-            return
-
-        pods = ctx.orchestrator.pods
-        embed = discord.Embed(title="Strategy Pods", color=0x3498DB)
-
-        for pod in pods:
-            perf = pod.performance
-            status = "PAUSED" if pod.paused else pod.state.value
-            value = (
-                f"State: **{status}** | Sharpe: {perf.sharpe_ratio:.2f}\n"
-                f"DD: {perf.max_drawdown:.1%} | WR: {perf.win_rate:.1%} | "
-                f"Trades: {perf.trade_count}"
-            )
-            embed.add_field(name=pod.pod_id, value=value, inline=False)
-
-        embed.set_footer(text=f"{len(pods)} pods total | MC-Coin-Bot")
-        await interaction.response.send_message(embed=embed)
-
-    async def _handle_strategy_detail(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-    ) -> None:
-        """``/strategy <name>`` -- 개별 전략 상세."""
-        ctx = self._trading_ctx
-        if ctx is None or ctx.orchestrator is None:
-            await interaction.response.send_message("Orchestrator not available.", ephemeral=True)
-            return
-
-        pod = self._find_pod(name)
-        if pod is None:
-            await interaction.response.send_message(f"Pod `{name}` not found.", ephemeral=True)
-            return
-
-        perf = pod.performance
-        status = "PAUSED" if pod.paused else pod.state.value
-        embed = discord.Embed(title=f"Strategy: {pod.pod_id}", color=0x9B59B6)
-        embed.add_field(name="State", value=status, inline=True)
-        embed.add_field(name="Capital %", value=f"{pod.capital_fraction:.1%}", inline=True)
-        embed.add_field(name="Sharpe", value=f"{perf.sharpe_ratio:.2f}", inline=True)
-        embed.add_field(name="Max DD", value=f"{perf.max_drawdown:.1%}", inline=True)
-        embed.add_field(name="Win Rate", value=f"{perf.win_rate:.1%}", inline=True)
-        embed.add_field(name="Trades", value=str(perf.trade_count), inline=True)
-        embed.add_field(name="Live Days", value=str(perf.live_days), inline=True)
-        embed.add_field(name="Total Return", value=f"{perf.total_return:.2%}", inline=True)
-        embed.add_field(name="Symbols", value=", ".join(pod.symbols), inline=False)
-
-        # GBM result if available
-        if ctx.orchestrator.lifecycle is not None:
-            gbm = ctx.orchestrator.lifecycle.get_gbm_result(pod.pod_id)
-            if gbm is not None:
-                embed.add_field(
-                    name="GBM DD",
-                    value=f"{gbm.severity.value} | depth={gbm.current_depth:.1%} dur={gbm.current_duration_days}d",
-                    inline=False,
-                )
-
-        embed.set_footer(text="MC-Coin-Bot")
-        await interaction.response.send_message(embed=embed)
-
-    async def _handle_pause(self, interaction: discord.Interaction, name: str) -> None:
-        """``/pause <name>`` -- Pod 일시 중지 (확인 필요)."""
-        ctx = self._trading_ctx
-        if ctx is None or ctx.orchestrator is None:
-            await interaction.response.send_message("Orchestrator not available.", ephemeral=True)
-            return
-
-        pod = self._find_pod(name)
-        if pod is None:
-            await interaction.response.send_message(f"Pod `{name}` not found.", ephemeral=True)
-            return
-
-        if pod.paused:
-            await interaction.response.send_message(
-                f"Pod `{name}` is already paused.", ephemeral=True
-            )
-            return
-
-        view = _ConfirmView()
-        await interaction.response.send_message(
-            f"Pause strategy **{name}**? This will stop signal generation.",
-            view=view,
-        )
-        await view.wait()
-        if view.confirmed:
-            pod.pause()
-            await interaction.followup.send(f"Pod `{name}` paused.")
-        elif not view.confirmed:
-            await interaction.followup.send(f"Pause `{name}` cancelled/timed out.")
-
-    async def _handle_resume(self, interaction: discord.Interaction, name: str) -> None:
-        """``/resume <name>`` -- Pod 일시 중지 해제 (확인 필요)."""
-        ctx = self._trading_ctx
-        if ctx is None or ctx.orchestrator is None:
-            await interaction.response.send_message("Orchestrator not available.", ephemeral=True)
-            return
-
-        pod = self._find_pod(name)
-        if pod is None:
-            await interaction.response.send_message(f"Pod `{name}` not found.", ephemeral=True)
-            return
-
-        if not pod.paused:
-            await interaction.response.send_message(f"Pod `{name}` is not paused.", ephemeral=True)
-            return
-
-        view = _ConfirmView()
-        await interaction.response.send_message(
-            f"Resume strategy **{name}**?",
-            view=view,
-        )
-        await view.wait()
-        if view.confirmed:
-            pod.resume()
-            await interaction.followup.send(f"Pod `{name}` resumed.")
-        elif not view.confirmed:
-            await interaction.followup.send(f"Resume `{name}` cancelled/timed out.")
-
     async def _handle_report(self, interaction: discord.Interaction) -> None:
         """``/report`` -- 즉시 daily report 트리거."""
         ctx = self._trading_ctx
@@ -564,65 +403,6 @@ class DiscordBotService:
 
         embed.set_footer(text="MC-Coin-Bot")
         await interaction.response.send_message(embed=embed)
-
-    async def _handle_onchain(self, interaction: discord.Interaction) -> None:
-        """``/onchain`` -- On-chain 데이터 소스 상태."""
-        ctx = self._trading_ctx
-        if ctx is None:
-            await interaction.response.send_message(
-                "Trading context not available.", ephemeral=True
-            )
-            return
-
-        embed = discord.Embed(title="On-chain Data Status", color=0x9B59B6)
-
-        # Cache 상태
-        if ctx.onchain_feed is not None:
-            health = ctx.onchain_feed.get_health_status()  # type: ignore[union-attr]
-            embed.add_field(
-                name="Cache",
-                value=f"{health['symbols_cached']} symbols, {health['total_columns']} columns",
-                inline=True,
-            )
-        else:
-            embed.add_field(name="Cache", value="Not active", inline=True)
-
-        # Source별 마지막 fetch 상태 (Prometheus gauge)
-        try:
-            import time as _time
-
-            from src.monitoring.metrics import onchain_last_success_gauge
-
-            metrics = list(onchain_last_success_gauge.collect())
-            if metrics and metrics[0].samples:
-                now = _time.time()
-                lines: list[str] = []
-                for sample in metrics[0].samples:
-                    source = sample.labels.get("source", "?")
-                    age_h = (now - sample.value) / 3600
-                    icon = "[+]" if age_h < 48 else "[-]"  # noqa: PLR2004
-                    lines.append(f"{icon} **{source}** — {age_h:.1f}h ago")
-                if lines:
-                    embed.add_field(
-                        name="Sources",
-                        value="\n".join(lines),
-                        inline=False,
-                    )
-        except ImportError:
-            pass
-
-        embed.set_footer(text="MC-Coin-Bot")
-        await interaction.response.send_message(embed=embed)
-
-    def _find_pod(self, name: str) -> Any:
-        """Orchestrator에서 Pod 조회."""
-        ctx = self._trading_ctx
-        if ctx is None or ctx.orchestrator is None:
-            return None
-        for pod in ctx.orchestrator.pods:
-            if pod.pod_id == name:
-                return pod
-        return None
 
     async def send_embed(
         self,

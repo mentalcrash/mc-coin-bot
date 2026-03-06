@@ -161,7 +161,7 @@ class TestProcessMonitorConfig:
         assert cfg.rss_warn_bytes == 2 * 1024**3
         assert cfg.fd_warn_count == 1000
         assert cfg.cpu_warn_percent == 80.0
-        assert cfg.active_tasks_warn_count == 200
+        assert cfg.active_tasks_warn_count == 100
 
     def test_custom_values(self) -> None:
         """custom 설정 적용."""

@@ -103,11 +103,11 @@ class TestMultiAssetBacktestRequest:
         """Test that weights default to equal weight."""
         from src.backtest.request import MultiAssetBacktestRequest
         from src.portfolio import Portfolio
-        from src.strategy.tsmom import TSMOMStrategy
+        from src.strategy.supertrend import SuperTrendStrategy
 
         request = MultiAssetBacktestRequest(
             data=multi_symbol_data,
-            strategy=TSMOMStrategy(),
+            strategy=SuperTrendStrategy(),
             portfolio=Portfolio.create(),
         )
 
@@ -120,12 +120,12 @@ class TestMultiAssetBacktestRequest:
         """Test custom weight specification."""
         from src.backtest.request import MultiAssetBacktestRequest
         from src.portfolio import Portfolio
-        from src.strategy.tsmom import TSMOMStrategy
+        from src.strategy.supertrend import SuperTrendStrategy
 
         custom_weights = {"BTC/USDT": 0.7, "ETH/USDT": 0.3}
         request = MultiAssetBacktestRequest(
             data=multi_symbol_data,
-            strategy=TSMOMStrategy(),
+            strategy=SuperTrendStrategy(),
             portfolio=Portfolio.create(),
             weights=custom_weights,
         )

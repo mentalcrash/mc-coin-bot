@@ -10,12 +10,10 @@ Rules Applied:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.notification.health_models import (
-        MarketRegimeReport,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
     )
@@ -33,11 +31,6 @@ _DD_YELLOW_THRESHOLD = 0.05  # 5%
 _DD_RED_THRESHOLD = 0.08  # 8%
 _QUEUE_DEPTH_YELLOW = 50
 _SAFETY_STOP_FAILURE_THRESHOLD = 5
-
-# Regime color 임계값 (regime_score.py 라벨과 동일)
-_REGIME_EXTREME_THRESHOLD = 0.5
-_REGIME_BULLISH_THRESHOLD = 0.2
-_REGIME_BEARISH_THRESHOLD = -0.2
 
 
 def _heartbeat_color(snapshot: SystemHealthSnapshot) -> int:
@@ -61,15 +54,10 @@ def _heartbeat_color(snapshot: SystemHealthSnapshot) -> int:
         return _COLOR_RED
 
     # YELLOW 조건
-    onchain_stale = (
-        snapshot.onchain_sources_total > 0
-        and snapshot.onchain_sources_ok < snapshot.onchain_sources_total
-    )
     has_yellow = (
         snapshot.current_drawdown > _DD_YELLOW_THRESHOLD
         or snapshot.stale_symbol_count > 0
         or snapshot.max_queue_depth > _QUEUE_DEPTH_YELLOW
-        or onchain_stale
     )
     if has_yellow:
         return _COLOR_YELLOW
@@ -135,63 +123,11 @@ def format_heartbeat_embed(snapshot: SystemHealthSnapshot) -> dict[str, Any]:
         },
     ]
 
-    # On-chain 필드 (설정되어 있을 때만)
-    if snapshot.onchain_sources_total > 0:
-        ok = snapshot.onchain_sources_ok
-        total = snapshot.onchain_sources_total
-        label = f"{ok}/{total} OK ({snapshot.onchain_cache_columns} cols)"
-        fields.append({"name": "On-chain", "value": label, "inline": True})
-
     return {
         "title": f"System Heartbeat — {status}",
         "color": color,
         "fields": fields,
         "timestamp": snapshot.timestamp.isoformat(),
-        "footer": {"text": _FOOTER_TEXT},
-    }
-
-
-def _regime_color(score: float) -> int:
-    """Regime score에 따른 embed 색상."""
-    if score > _REGIME_EXTREME_THRESHOLD or score < -_REGIME_EXTREME_THRESHOLD:
-        return _COLOR_RED
-    if score > _REGIME_BULLISH_THRESHOLD:
-        return _COLOR_GREEN
-    if score > _REGIME_BEARISH_THRESHOLD:
-        return _COLOR_BLUE
-    return _COLOR_YELLOW
-
-
-def format_regime_embed(report: MarketRegimeReport) -> dict[str, Any]:
-    """MarketRegimeReport → Discord Embed dict (Tier 2).
-
-    Args:
-        report: 마켓 regime 리포트
-
-    Returns:
-        Discord Embed dict
-    """
-    color = _regime_color(report.regime_score)
-
-    # 심볼별 요약 라인
-    lines: list[str] = []
-    for sym in report.symbols:
-        fr_pct = sym.funding_rate * 100
-        ann_pct = sym.funding_rate_annualized
-        line = (
-            f"**{sym.symbol}**  ${sym.price:,.0f}\n"
-            f"  FR {fr_pct:+.3f}% (ann {ann_pct:.1f}%) | "
-            f"LS {sym.ls_ratio:.2f} | Taker {sym.taker_ratio:.2f}"
-        )
-        lines.append(line)
-
-    description = "\n\n".join(lines) if lines else "No data available"
-
-    return {
-        "title": f"Market Regime — {report.regime_label} ({report.regime_score:+.2f})",
-        "color": color,
-        "description": description,
-        "timestamp": report.timestamp.isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }
 
@@ -281,24 +217,5 @@ def format_strategy_health_embed(snapshot: StrategyHealthSnapshot) -> dict[str, 
         "color": color,
         "fields": fields,
         "timestamp": snapshot.timestamp.isoformat(),
-        "footer": {"text": _FOOTER_TEXT},
-    }
-
-
-def format_onchain_alert_embed(message: str, source: str) -> dict[str, Any]:
-    """On-chain 데이터 수집 실패 알림 Embed.
-
-    Args:
-        message: 알림 메시지
-        source: 소스 식별자
-
-    Returns:
-        Discord Embed dict
-    """
-    return {
-        "title": f"On-chain Alert — {source}",
-        "description": message,
-        "color": _COLOR_YELLOW,
-        "timestamp": datetime.now(UTC).isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

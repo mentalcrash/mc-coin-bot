@@ -17,11 +17,10 @@ Trading Events (EventBus)
 Scheduled Tasks (asyncio loops)
     -> HealthCheckScheduler (1h / 4h / 8h)
     -> ReportScheduler (daily / weekly)
-    -> OrchestratorNotificationEngine (daily 00:05 UTC)
 
 Slash Commands (interactive)
     -> DiscordBotService (discord.py CommandTree)
-        -> TradingContext (PM, RM, Analytics, Orchestrator)
+        -> TradingContext (PM, RM, Analytics)
 ```
 
 ### Key Files
@@ -39,8 +38,6 @@ Slash Commands (interactive)
 | `src/notification/health_scheduler.py` | 주기적 헬스체크 스케줄러 |
 | `src/notification/health_formatters.py` | 헬스체크 embed 포매터 |
 | `src/notification/report_scheduler.py` | Daily/Weekly 리포트 스케줄러 |
-| `src/notification/orchestrator_engine.py` | Orchestrator 이벤트 알림 |
-| `src/notification/orchestrator_formatters.py` | Orchestrator embed 포매터 |
 | `src/notification/reconciler_formatters.py` | 포지션 reconciliation embed |
 
 ---
@@ -50,10 +47,9 @@ Slash Commands (interactive)
 | Channel | Env Variable | 용도 |
 |---------|-------------|------|
 | `TRADE_LOG` | `DISCORD_TRADE_LOG_CHANNEL_ID` | 체결, 잔고, 포지션 업데이트 |
-| `ALERTS` | `DISCORD_ALERTS_CHANNEL_ID` | Circuit Breaker, Risk Alert, Lifecycle, Orchestrator, Safety Stop, Drift, On-chain |
+| `ALERTS` | `DISCORD_ALERTS_CHANNEL_ID` | Circuit Breaker, Risk Alert, Lifecycle, Safety Stop, Drift |
 | `DAILY_REPORT` | `DISCORD_DAILY_REPORT_CHANNEL_ID` | Daily/Weekly 리포트, Strategy Health (8h) |
 | `HEARTBEAT` | `DISCORD_HEARTBEAT_CHANNEL_ID` | System Health (1h) |
-| `MARKET_REGIME` | `DISCORD_REGIME_CHANNEL_ID` | Market Regime (4h) |
 
 ### Severity Levels
 
@@ -105,11 +101,6 @@ MC Coin Bot Started
   Timeframe:  1D
   Capital:    $100,000
   Symbols:    BTC/USDT, ETH/USDT, SOL/USDT, DOGE/USDT, BNB/USDT
-  Pods:
-    Pod              State       Alloc
-    ──────────────────────────────────
-    anchor-mom       production  50.0%
-    ctrend           incubation  30.0%
 ```
 
 ### Graceful Shutdown (YELLOW)
@@ -123,11 +114,6 @@ MC Coin Bot Stopped
   Realized:       $+300.00
   Unrealized:     $+200.00
   Open Positions: 2
-  Pods:
-    Pod              State       Alloc
-    ──────────────────────────────────
-    anchor-mom       production  50.0%
-    ctrend           incubation  30.0%
 ```
 
 ### Crash (RED)
@@ -201,21 +187,6 @@ MC Coin Bot CRASHED
 - Monthly Return Heatmap (RdYlGn colormap)
 - PnL Distribution (win/loss histogram)
 
-### Orchestrator Report
-
-| Schedule | Content | Channel |
-|----------|---------|---------|
-| Daily (00:05 UTC) | Pod table (State/Alloc/Days), Total Equity, Effective N, Correlation, Drawdown, Gross Leverage, Active Pods | DAILY_REPORT |
-| On Event | Lifecycle transition, Capital rebalance, Risk alerts | ALERTS / TRADE_LOG |
-
-**Lifecycle Color:**
-
-- Incubation -> BLUE
-- Production -> GREEN
-- Warning -> YELLOW
-- Probation -> ORANGE
-- Retired -> RED
-
 ---
 
 ## Position Reconciliation Alerts
@@ -283,19 +254,6 @@ SAFETY STOP STALE
 
 ---
 
-## On-chain Data Alerts
-
-`LiveOnchainFeed` 캐시 갱신 실패 시 ALERTS 채널 전송.
-
-```
-On-chain Alert — LiveOnchainFeed
-  Cache refresh failed
-```
-
-**Color:** YELLOW, **Severity:** WARNING, **Spam Key:** `onchain_refresh_fail` (300s 쿨다운)
-
----
-
 ## Discord Slash Commands
 
 ### Read-Only
@@ -306,20 +264,15 @@ On-chain Alert — LiveOnchainFeed
 | `/balance` | Account balance + leverage + margin | Embed |
 | `/health` | System health (triggers manual heartbeat) | Embed |
 | `/metrics` | Prometheus metrics summary | Embed |
-| `/strategies` | Orchestrator pod overview (state/sharpe/DD/WR) | Embed |
 | `/report` | Trigger daily report immediately | Charts + Embed |
-| `/strategy <name>` | Individual pod details (state/capital/performance/GBM) | Embed |
-| `/onchain` | On-chain 데이터 소스 상태 (cache + per-source last fetch) | Embed |
 
 ### Action Commands
 
 | Command | Description | Confirmation |
 |---------|-------------|-------------|
 | `/kill` | Emergency shutdown + 시스템 비활성화 | **없음** (즉시 실행) |
-| `/pause <name>` | Pod 시그널 생성 중지 | Button (30s timeout) |
-| `/resume <name>` | 중지된 pod 재개 | Button (30s timeout) |
 
-> **주의:** `/kill`은 확인 없이 즉시 실행됩니다. `/pause`, `/resume`만 `_ConfirmView` (Confirm/Cancel 버튼, 30초 timeout) 사용.
+> **주의:** `/kill`은 확인 없이 즉시 실행됩니다.
 
 ---
 
@@ -347,12 +300,9 @@ Fire-and-forget 비동기 큐. 트레이딩 로직을 절대 블로킹하지 않
 | `heartbeat` | health_scheduler.py | System heartbeat |
 | `regime_report` | health_scheduler.py | Market regime |
 | `strategy_health` | health_scheduler.py | Strategy health |
-| `orchestrator_rebalance` | orchestrator_engine.py | Capital rebalance |
-| `orch_risk:{type}` | orchestrator_engine.py | Orchestrator risk (유형별) |
 | `startup_drift` | live_runner.py | 시작 시 포지션 drift |
 | `position_drift` | live_runner.py | 주기적 포지션 drift |
 | `balance_drift` | live_runner.py | 잔고 drift |
-| `onchain_refresh_fail` | onchain_feed.py | On-chain 갱신 실패 |
 
 모든 spam key의 기본 쿨다운은 300초 (5분).
 
@@ -412,7 +362,6 @@ discord_tasks = await self._setup_discord(bus, pm, rm, analytics)
     # -> TradingContext + set on bot
     # -> ReportScheduler.start()
     # -> HealthCheckScheduler.start()
-    # -> OrchestratorNotificationEngine (if orchestrator)
 
 # 2. Lifecycle 알림
 await self._send_lifecycle_startup(discord_tasks, capital)

@@ -13,13 +13,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from src.notification.formatters import (
     format_daily_report_embed,
-    format_unified_daily_report_embed,
+    format_enhanced_daily_report_embed,
     format_weekly_report_embed,
 )
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from src.monitoring.chart_generator import ChartGenerator
     from src.notification.health_collector import HealthDataCollector
     from src.notification.queue import NotificationQueue
-    from src.orchestrator.orchestrator import StrategyOrchestrator
 
 # 월요일 = 0 (Python datetime.weekday())
 _MONDAY = 0
@@ -53,14 +52,12 @@ class ReportScheduler:
         chart_gen: ChartGenerator,
         pm: EDAPortfolioManager,
         health_collector: HealthDataCollector | None = None,
-        orchestrator: StrategyOrchestrator | None = None,
     ) -> None:
         self._queue = queue
         self._analytics = analytics
         self._chart_gen = chart_gen
         self._pm = pm
         self._health_collector = health_collector
-        self._orchestrator = orchestrator
         self._daily_task: asyncio.Task[None] | None = None
         self._weekly_task: asyncio.Task[None] | None = None
 
@@ -118,32 +115,23 @@ class ReportScheduler:
         # Health 데이터 수집 (collector 있을 때만)
         system_health = None
         strategy_health = None
-        regime_report = None
         if self._health_collector is not None:
             try:
                 system_health = self._health_collector.collect_system_health()
                 strategy_health = self._health_collector.collect_strategy_health()
-                regime_report = await self._health_collector.collect_regime_report()
             except Exception:
                 logger.exception("Failed to collect health data for daily report")
 
-        # Orchestrator 데이터 수집
-        orch_kwargs = self._collect_orchestrator_data()
-
         # Embed 결정
-        has_health = (
-            system_health is not None or strategy_health is not None or regime_report is not None
-        )
-        if has_health or orch_kwargs:
-            embed = format_unified_daily_report_embed(
+        has_health = system_health is not None or strategy_health is not None
+        if has_health:
+            embed = format_enhanced_daily_report_embed(
                 metrics=metrics,
                 open_positions=self._pm.open_position_count,
                 total_equity=self._pm.total_equity,
                 trades_today=trades_today,
                 system_health=system_health,
                 strategy_health=strategy_health,
-                regime_report=regime_report,
-                **orch_kwargs,
             )
         else:
             embed = format_daily_report_embed(
@@ -172,75 +160,7 @@ class ReportScheduler:
             files=files,
         )
         await self._queue.enqueue(item)
-        logger.info(
-            "Daily report enqueued ({} charts, orchestrator={})",
-            len(files),
-            self._orchestrator is not None,
-        )
-
-    def _collect_orchestrator_data(self) -> dict[str, Any]:
-        """Orchestrator 포트폴리오 메트릭 수집.
-
-        Returns:
-            format_unified_daily_report_embed()에 전달할 kwargs dict.
-            orchestrator가 없으면 빈 dict 반환.
-        """
-        if self._orchestrator is None:
-            return {}
-
-        try:
-            import pandas as pd
-
-            from src.orchestrator.netting import compute_gross_leverage
-            from src.orchestrator.risk_aggregator import (
-                check_correlation_stress,
-                compute_effective_n,
-                compute_portfolio_drawdown,
-                compute_risk_contributions,
-            )
-
-            orch = self._orchestrator
-            pod_summaries = orch.get_pod_summary()
-            active_pods = [p for p in orch.pods if p.is_active]
-
-            # Pod returns + weights
-            _min_pods_for_portfolio = 2
-            pod_returns_data: dict[str, list[float]] = {}
-            weights: dict[str, float] = {}
-            performances: dict[str, object] = {}
-            for pod in active_pods:
-                returns = list(pod.daily_returns_series)
-                pod_returns_data[pod.pod_id] = returns if returns else [0.0]
-                weights[pod.pod_id] = pod.capital_fraction
-                performances[pod.pod_id] = pod.performance
-
-            effective_n = 0.0
-            avg_correlation = 0.0
-
-            if len(active_pods) >= _min_pods_for_portfolio:
-                max_len = max(len(v) for v in pod_returns_data.values())
-                for pid, current in pod_returns_data.items():
-                    if len(current) < max_len:
-                        pod_returns_data[pid] = [0.0] * (max_len - len(current)) + current
-
-                pod_returns = pd.DataFrame(pod_returns_data)
-                prc = compute_risk_contributions(pod_returns, weights)
-                effective_n = compute_effective_n(prc)
-                _, avg_correlation = check_correlation_stress(pod_returns, 1.0)
-
-            portfolio_dd = compute_portfolio_drawdown(performances, weights)  # type: ignore[arg-type]
-            gross_leverage = compute_gross_leverage({})
-        except Exception:
-            logger.exception("Failed to collect orchestrator data for daily report")
-            return {}
-
-        return {
-            "pod_summaries": pod_summaries,
-            "effective_n": effective_n,
-            "avg_correlation": avg_correlation,
-            "portfolio_dd": portfolio_dd,
-            "gross_leverage": gross_leverage,
-        }
+        logger.info("Daily report enqueued ({} charts)", len(files))
 
     async def _send_weekly_report(self) -> None:
         """주간 리포트 생성 + enqueue."""

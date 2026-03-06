@@ -1938,9 +1938,7 @@ class TestSyncExchangePositions:
 
     def _make_empty_pm(self, *, hedge_mode: bool = False) -> EDAPortfolioManager:
         config = PortfolioManagerConfig(max_leverage_cap=2.0, rebalance_threshold=0.01)
-        return EDAPortfolioManager(
-            config=config, initial_capital=10000.0, hedge_mode=hedge_mode
-        )
+        return EDAPortfolioManager(config=config, initial_capital=10000.0, hedge_mode=hedge_mode)
 
     def test_sync_adds_exchange_only_position(self) -> None:
         """거래소에만 있는 포지션 → PM에 추가."""
@@ -2040,9 +2038,7 @@ class TestSyncExchangePositions:
         pm = self._make_empty_pm(hedge_mode=True)
         exchange: dict[str, dict[str, object]] = {
             "DOGE/USDT": {
-                "long": ExchangePositionInfo(
-                    size=100.0, direction=Direction.LONG, entry_price=0.1
-                ),
+                "long": ExchangePositionInfo(size=100.0, direction=Direction.LONG, entry_price=0.1),
                 "short": None,
             },
         }

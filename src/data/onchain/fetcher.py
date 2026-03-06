@@ -475,9 +475,7 @@ class OnchainFetcher:
         logger.info(f"Fetched {len(df)} Fear & Greed records")
         return df
 
-    async def fetch_blockchain_chart(
-        self, chart_name: str, timespan: str = "all"
-    ) -> pd.DataFrame:
+    async def fetch_blockchain_chart(self, chart_name: str, timespan: str = "all") -> pd.DataFrame:
         """Fetch Blockchain.com Chart data (BTC network health).
 
         API: GET https://api.blockchain.info/charts/{chartName}

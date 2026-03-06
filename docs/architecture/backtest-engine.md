@@ -13,17 +13,17 @@ Clean Architecture 원칙에 따라 설계되었으며, VBT(벡터화) + EDA(이
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Interface Layer                               │
 │  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │   CLI   │  │ Pipeline │  │   EDA    │  │ Orchest. │  │   Live   │  │
-│  └────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
-└───────┼────────────┼────────────┼────────────┼────────────┼────────────┘
-        │            │            │            │            │
-        ▼            ▼            ▼            ▼            ▼
+│  │   CLI   │  │ Pipeline │  │   EDA    │  │   Live   │               │
+│  └────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
+└───────┼────────────┼────────────┼────────────┼────────────────────────┘
+        │            │            │            │
+        ▼            ▼            ▼            ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        Application Layer                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
-│  │BacktestEngine│  │  EDARunner   │  │  OrchestratedRunner          │  │
-│  │ (VBT 벡터화) │  │ (이벤트기반) │  │  (멀티전략 이벤트기반)       │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┬───────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐                                    │
+│  │BacktestEngine│  │  EDARunner   │                                    │
+│  │ (VBT 벡터화) │  │ (이벤트기반) │                                    │
+│  └──────┬───────┘  └──────┬───────┘                                    │
 │  ┌──────┴───────┐  ┌──────┴───────────────────────────────────────┐    │
 │  │  Optimizer   │  │     Validation / IC / StressTest / Advisor   │    │
 │  │  (Optuna)    │  │                                              │    │
@@ -37,10 +37,10 @@ Clean Architecture 원칙에 따라 설계되었으며, VBT(벡터화) + EDA(이
 │  │  BaseStrategy │  │   Portfolio   │  │ PerformanceAnalyzer│          │
 │  │  (시그널생성) │  │ (자금/포지션) │  │   (성과 분석)      │          │
 │  └──────────────┘  └───────────────┘  └────────────────────┘          │
-│  ┌──────────────┐  ┌───────────────┐  ┌────────────────────┐          │
-│  │  CostModel   │  │  PM Config    │  │  SmartExecutor     │          │
-│  │  (비용 모델) │  │ (리스크 규칙) │  │  (Limit 우선 실행) │          │
-│  └──────────────┘  └───────────────┘  └────────────────────┘          │
+│  ┌──────────────┐  ┌───────────────┐                                  │
+│  │  CostModel   │  │  PM Config    │                                  │
+│  │  (비용 모델) │  │ (리스크 규칙) │                                  │
+│  └──────────────┘  └───────────────┘                                  │
 └─────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -59,7 +59,6 @@ Clean Architecture 원칙에 따라 설계되었으며, VBT(벡터화) + EDA(이
 |------|------|------|
 | **BacktestEngine (VBT)** | 전략 발굴, 파라미터 최적화, 빠른 검증 | 벡터화, 고속, Numba JIT |
 | **EDARunner** | 라이브 시뮬레이션, EDA Parity 검증 | 이벤트 기반, 1m bar-by-bar, 실거래 동일 경로 |
-| **OrchestratedRunner** | 멀티전략 포트폴리오 백테스트 | Pod 기반, 시그널 넷팅, Fill 귀속 |
 
 ### 1.3 핵심 설계 원칙
 
@@ -183,7 +182,7 @@ class BaseStrategy(ABC):
 
     @classmethod
     def from_params(cls, **params) -> BaseStrategy:
-        """파라미터 딕셔너리로 전략 생성 (sweep/orchestrator용)"""
+        """파라미터 딕셔너리로 전략 생성 (sweep용)"""
 
     @classmethod
     def recommended_config(cls) -> dict[str, Any]: ...
@@ -729,7 +728,6 @@ from src.backtest.metrics import (
 ```text
 [Backtest] 1m Parquet → CandleAggregator → BAR → StrategyEngine → SIGNAL → PM → RM → OMS → FILL
 [Live]     WebSocket  → CandleAggregator → BAR → StrategyEngine → SIGNAL → PM → RM → OMS → FILL
-[Multi]    1m → MultiTF Aggregator → BAR → Orchestrator → Pod SIGNAL → PM → RM → OMS → FILL
 ```
 
 ### 5.3 VBT-EDA Parity 핵심 포인트
@@ -751,9 +749,7 @@ from src.backtest.metrics import (
 | RiskManager | `src/eda/risk_manager.py` | 사전 검증, 서킷 브레이커 |
 | OMS | `src/eda/oms.py` | 주문 라우팅, 멱등성 |
 | BacktestExecutor | `src/eda/executors.py` | Deferred fill 실행 |
-| SmartExecutor | `src/eda/smart_executor.py` | Limit order 우선 (LiveExecutor 래핑) |
 | CandleAggregator | `src/eda/candle_aggregator.py` | 1m → TF 집계 (순수 로직) |
-| OrchestratedRunner | `src/eda/orchestrated_runner.py` | 멀티 Pod EDA 실행기 |
 
 ---
 
@@ -853,21 +849,6 @@ metrics = await EDARunner.backtest(
 )
 ```
 
-### 6.5 Orchestrated 백테스트
-
-```python
-from src.eda.orchestrated_runner import OrchestratedRunner
-
-runner = OrchestratedRunner(
-    orchestrator_config=orch_config,  # 4-Pod 설정
-    data=multi_data_1m,               # 1m MultiSymbolData
-    target_timeframe="12H",
-    initial_capital=10000.0,
-)
-
-result = await runner.run()
-```
-
 ---
 
 ## 7. CLI 사용법
@@ -953,7 +934,6 @@ src/
 │   ├── candle_aggregator.py     # 1m → TF 집계 (순수 로직)
 │   ├── data_feed.py             # HistoricalDataFeed
 │   ├── live_data_feed.py        # WebSocket 실시간 피드
-│   ├── orchestrated_runner.py   # 멀티 Pod EDA 실행기
 │   ├── analytics.py             # 성과 계산
 │   ├── reconciler.py            # 재시작 상태 복원
 │   ├── exchange_stop_manager.py # STOP_MARKET 안전장치
@@ -973,15 +953,7 @@ src/
 │   ├── donchian_ensemble/       # Donch-Multi (3-scale)
 │   ├── tri_channel/             # Tri-Channel (3채널×3스케일)
 │   ├── anchor_momentum/         # Anchor-Mom
-│   └── ...                      # 30+ 전략 구현
-└── orchestrator/
-    ├── orchestrator.py          # 멀티 Pod 넷팅/귀속
-    ├── pod.py                   # StrategyPod
-    ├── config.py                # OrchestratorConfig
-    ├── allocator.py             # 자본 배분 (Risk Parity, Kelly)
-    ├── netting.py               # 포지션 넷팅 (one-way/hedge)
-    ├── lifecycle.py             # Pod 졸업/퇴출 상태기계
-    └── risk_aggregator.py       # 포트폴리오 레벨 리스크
+│   └── ...                      # 전략 구현
 ```
 
 ---
@@ -1023,31 +995,18 @@ src/
 
 ## 10. 현재 운용 현황
 
-### 10.1 ACTIVE 전략 (2026-03-01)
+### 10.1 현재 전략 (Spot Single-Strategy)
 
-| 전략 | TF | Sharpe (VBT/EDA) | 최적 에셋 | Short Mode |
-|------|-----|-------------------|-----------|------------|
-| Anchor-Mom | 12H | 1.36 | DOGE | HEDGE_ONLY |
-| Donch-Multi | 12H | 1.61 / 1.45 | ETH, BTC | FULL |
-| Tri-Channel | 12H | 2.17 / 1.99 | ETH, SOL | HEDGE_ONLY |
+| 전략 | TF | 모드 | 비고 |
+|------|-----|------|------|
+| SuperTrend | 12H | Spot Long-Only | Phase 0 마이그레이션 후 단일 전략 운용 |
 
 ### 10.2 전략 탐색 통계
 
-- **총 시도**: 182+ 전략
-- **ACTIVE**: 3개 (12H TF)
-- **RETIRED**: 179개
-- **4H/8H 전멸**: 50+ 시도, 0 ACTIVE
-- **1D OHLCV 고갈**: 92개 시도, 0 ACTIVE
+- **총 시도**: 190+ 전략 (Futures 시대 포함)
+- **Spot 전환**: Futures Multi-Strategy → Spot Single-Strategy 마이그레이션 완료
+- **이전 ACTIVE (Futures)**: Anchor-Mom, Donch-Multi, Tri-Channel, MAD-Channel → Spot 전환으로 RETIRED
 - **ML 전략 전멸**: look-ahead bias로 4개 전부 폐기
-
-### 10.3 Orchestrator 최종 설정
-
-```text
-Pod 1: Anchor-Mom  → DOGE/USDT        (HEDGE_ONLY, 25%)
-Pod 2: Donch-Multi → BTC/USDT         (FULL, 25%)
-Pod 3: Tri-Channel → ETH/USDT, SOL/USDT (HEDGE_ONLY, 25%)
-Pod 4: Dual-Mom    → BTC,ETH,AVAX,LINK  (ACTIVE, 25%)
-```
 
 ---
 
@@ -1065,7 +1024,7 @@ Pod 4: Dual-Mom    → BTC,ETH,AVAX,LINK  (ACTIVE, 25%)
 
 | 항목 | 설명 | 대응 |
 |------|------|------|
-| `use_intrabar_trailing_stop` | `True`시 EDA에서 1m peak 추적 → 81% 편차 | Orchestrator에서 강제 `False` |
+| `use_intrabar_trailing_stop` | `True`시 EDA에서 1m peak 추적 → 81% 편차 | 강제 `False` 설정 |
 | HEDGE_ONLY + EDA | Drawdown 조건부 숏이 1m→12H 집계 차이에 민감 | 교훈 #086: DISABLED 전환으로 해소 |
 | 펀딩비 연환산 | VBT 기본 252일 vs 크립토 365일 | `_adjust_metrics_for_funding()` 자동 보정 |
 
@@ -1074,7 +1033,6 @@ Pod 4: Dual-Mom    → BTC,ETH,AVAX,LINK  (ACTIVE, 25%)
 - **1D OHLCV 검색공간 소진**: 새로운 1D 전략 발굴 가능성 매우 낮음
 - **대안데이터 단독 alpha 부재**: on-chain/deriv/macro 데이터 단독으로는 edge 불확인 (181건 검증)
 - **12H 단일 TF 의존**: TF 분산 불가 확정 (4H/8H 총 50+ 시도 전멸)
-- **심볼 비중복 필수**: Pod 간 동일 심볼 → netting 상쇄 (One-way Mode 제약)
 
 ### 11.4 테스트 현황
 

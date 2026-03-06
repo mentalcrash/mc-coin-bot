@@ -37,8 +37,8 @@ def mock_exchange():
 |-----------|--------|
 | `/strategy/` | `strategy` |
 | `/eda/` | `eda` |
-| `/core/`, `/models/`, `/config/`, `/market/`, `/regime/`, `/monitoring/`, `/catalog/`, `/portfolio/`, `/logging/` | `unit` |
-| `/backtest/`, `/orchestrator/`, `/notification/`, `/exchange/`, `/pipeline/`, `/cli/` | `integration` |
+| `/core/`, `/models/`, `/config/`, `/market/`, `/monitoring/`, `/catalog/`, `/portfolio/`, `/logging/` | `unit` |
+| `/backtest/`, `/notification/`, `/exchange/`, `/pipeline/`, `/cli/` | `integration` |
 | `/chaos/` | `chaos` |
 | `/data/` | `data` |
 | `/regression/` | `slow` |

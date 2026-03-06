@@ -299,25 +299,6 @@ class TestFormatEnhancedDailyReportEmbed:
         )
         assert "ctrend" in breakdown_field["value"]
 
-    def test_enhanced_daily_regime_section(self) -> None:
-        """Market Regime 필드."""
-        from unittest.mock import MagicMock
-
-        regime = MagicMock()
-        regime.regime_label = "Extreme Greed"
-        regime.regime_score = 0.65
-        regime.symbols = ()
-
-        embed = format_enhanced_daily_report_embed(
-            metrics=self._make_metrics(),
-            open_positions=0,
-            total_equity=10000.0,
-            trades_today=[],
-            regime_report=regime,
-        )
-        field_names = [f["name"] for f in embed["fields"]]
-        assert "Market Regime" in field_names
-
     def test_enhanced_daily_alpha_decay_color(self) -> None:
         """alpha_decay 시 RED 색상."""
         from unittest.mock import MagicMock

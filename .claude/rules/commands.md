@@ -24,6 +24,7 @@ uv run pytest
 ```bash
 uv run mcbot eda run config/default.yaml          # Backtest
 uv run mcbot eda run-live config/paper.yaml --mode paper  # Paper trading
+uv run mcbot eda spot-live config/spot_supertrend.yaml     # Spot live
 ```
 
 ## Full CLI Reference

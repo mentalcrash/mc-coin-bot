@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     )
     from src.models.backtest import PerformanceMetrics, TradeRecord
     from src.notification.health_models import (
-        MarketRegimeReport,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
     )
@@ -36,10 +35,6 @@ _COLOR_YELLOW = 0xFFFF00
 _COLOR_ORANGE = 0xE67E22
 
 _FOOTER_TEXT = "MC-Coin-Bot"
-
-# Drawdown 임계값 (unified daily report color 결정)
-_DD_WARN_THRESHOLD = 0.05
-_DD_CRITICAL_THRESHOLD = 0.10
 
 
 def format_fill_embed(fill: FillEvent) -> dict[str, Any]:
@@ -351,6 +346,31 @@ def format_safety_stop_stale_embed(symbol: str) -> dict[str, Any]:
     }
 
 
+def format_stop_ratchet_embed(symbol: str, old_stop: float, new_stop: float) -> dict[str, Any]:
+    """Stop-Limit Ratchet (stop price 상향) 알림.
+
+    Args:
+        symbol: 대상 심볼
+        old_stop: 이전 stop price
+        new_stop: 새 stop price
+
+    Returns:
+        Discord Embed dict
+    """
+    change_pct = ((new_stop - old_stop) / old_stop * 100) if old_stop > 0 else 0.0
+    return {
+        "title": f"Stop Ratchet: {symbol}",
+        "color": _COLOR_GREEN,
+        "fields": [
+            {"name": "Old Stop", "value": f"${old_stop:,.2f}", "inline": True},
+            {"name": "New Stop", "value": f"${new_stop:,.2f}", "inline": True},
+            {"name": "Change", "value": f"+{change_pct:.2f}%", "inline": True},
+        ],
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
 def format_enhanced_daily_report_embed(
     metrics: PerformanceMetrics,
     open_positions: int,
@@ -358,11 +378,10 @@ def format_enhanced_daily_report_embed(
     trades_today: list[TradeRecord],
     system_health: SystemHealthSnapshot | None = None,
     strategy_health: StrategyHealthSnapshot | None = None,
-    regime_report: MarketRegimeReport | None = None,
 ) -> dict[str, Any]:
     """Enhanced Daily Report -> Discord Embed dict.
 
-    기본 Daily Report에 시스템/전략/마켓 건강 데이터를 통합합니다.
+    기본 Daily Report에 시스템/전략 건강 데이터를 통합합니다.
     health 데이터가 None이면 기본 Daily Report와 동일한 결과를 반환합니다.
 
     Args:
@@ -372,7 +391,6 @@ def format_enhanced_daily_report_embed(
         trades_today: 오늘 거래 목록
         system_health: 시스템 건강 스냅샷 (None이면 생략)
         strategy_health: 전략 건강 스냅샷 (None이면 생략)
-        regime_report: 마켓 regime 리포트 (None이면 생략)
 
     Returns:
         Discord Embed dict
@@ -414,27 +432,6 @@ def format_enhanced_daily_report_embed(
                 "inline": False,
             }
         )
-
-    # Market Regime (inline 2)
-    if regime_report is not None:
-        fields.append(
-            {
-                "name": "Market Regime",
-                "value": f"{regime_report.regime_label} ({regime_report.regime_score:+.2f})",
-                "inline": True,
-            }
-        )
-        # Top funding rates
-        if regime_report.symbols:
-            top_fr = sorted(regime_report.symbols, key=lambda s: abs(s.funding_rate), reverse=True)
-            fr_lines = [f"{s.symbol}: {s.funding_rate * 100:+.3f}%" for s in top_fr[:3]]
-            fields.append(
-                {
-                    "name": "Top Funding Rates",
-                    "value": "\n".join(fr_lines),
-                    "inline": True,
-                }
-            )
 
     # Alpha Decay Warning (non-inline 1, 감지 시에만)
     if alpha_decay and strategy_health:
@@ -490,287 +487,5 @@ def format_enhanced_daily_report_embed(
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),
-        "footer": {"text": _FOOTER_TEXT},
-    }
-
-
-def format_unified_daily_report_embed(
-    metrics: PerformanceMetrics,
-    open_positions: int,
-    total_equity: float,
-    trades_today: list[TradeRecord],
-    system_health: SystemHealthSnapshot | None = None,
-    strategy_health: StrategyHealthSnapshot | None = None,
-    regime_report: MarketRegimeReport | None = None,
-    pod_summaries: list[dict[str, object]] | None = None,
-    effective_n: float = 0.0,
-    avg_correlation: float = 0.0,
-    portfolio_dd: float = 0.0,
-    gross_leverage: float = 0.0,
-) -> dict[str, Any]:
-    """Unified Daily Report → Discord Embed dict.
-
-    기존 Enhanced Daily Report에 Orchestrator 데이터(Pod 테이블 + 포트폴리오 메트릭)를
-    통합한 단일 리포트입니다.
-
-    Color 로직:
-        - alpha_decay → RED
-        - portfolio_dd >= 10% → RED
-        - portfolio_dd 5-10% → YELLOW
-        - 그 외 → GREEN (orchestrator 있을 때) / BLUE (없을 때)
-
-    Args:
-        metrics: 현재 성과 지표
-        open_positions: 오픈 포지션 수
-        total_equity: 현재 equity
-        trades_today: 오늘 거래 목록
-        system_health: 시스템 건강 스냅샷
-        strategy_health: 전략 건강 스냅샷
-        regime_report: 마켓 regime 리포트
-        pod_summaries: Orchestrator pod 요약 리스트
-        effective_n: 유효 분산 수
-        avg_correlation: 평균 상관계수
-        portfolio_dd: 포트폴리오 현재 낙폭
-        gross_leverage: 총 레버리지
-
-    Returns:
-        Discord Embed dict
-    """
-    total_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
-    alpha_decay = strategy_health.alpha_decay_detected if strategy_health else False
-    has_orchestrator = pod_summaries is not None
-
-    # Color 결정: alpha decay > DD threshold > default
-    if alpha_decay or (has_orchestrator and portfolio_dd >= _DD_CRITICAL_THRESHOLD):
-        color = _COLOR_RED
-    elif has_orchestrator and portfolio_dd >= _DD_WARN_THRESHOLD:
-        color = _COLOR_YELLOW
-    elif has_orchestrator:
-        color = _COLOR_GREEN
-    else:
-        color = _COLOR_BLUE
-
-    fields: list[dict[str, Any]] = [
-        # Performance (inline 3)
-        {"name": "Today's PnL", "value": f"${total_pnl:+,.2f}", "inline": True},
-        {"name": "Total Equity", "value": f"${total_equity:,.2f}", "inline": True},
-        {"name": "Max Drawdown", "value": f"{metrics.max_drawdown:.2f}%", "inline": True},
-        # Stats (inline 3)
-        {"name": "Sharpe Ratio", "value": f"{metrics.sharpe_ratio:.2f}", "inline": True},
-        {"name": "Open Positions", "value": str(open_positions), "inline": True},
-        {"name": "Today's Trades", "value": str(len(trades_today)), "inline": True},
-    ]
-
-    # ── Orchestrator 섹션 (Pod 테이블 + 포트폴리오 메트릭) ──
-    if has_orchestrator and pod_summaries:
-        table_lines: list[str] = []
-        table_lines.append("`Pod              State       Alloc   Days`")
-        table_lines.append("`─────────────────────────────────────────`")
-        for summary in pod_summaries:
-            pid = str(summary.get("pod_id", ""))
-            state = str(summary.get("state", ""))
-            raw_frac = summary.get("capital_fraction", 0.0)
-            frac = float(raw_frac) if isinstance(raw_frac, (int, float)) else 0.0
-            raw_days = summary.get("live_days", 0)
-            days = int(raw_days) if isinstance(raw_days, (int, float)) else 0
-            table_lines.append(f"`{pid:<16} {state:<11} {frac:>5.1%}  {days:>4}d`")
-        fields.append({"name": "Pod Summary", "value": "\n".join(table_lines), "inline": False})
-        fields.extend(
-            [
-                {"name": "Effective N", "value": f"{effective_n:.2f}", "inline": True},
-                {
-                    "name": "Avg Correlation",
-                    "value": f"{avg_correlation:.2%}",
-                    "inline": True,
-                },
-                {
-                    "name": "Gross Leverage",
-                    "value": f"{gross_leverage:.2f}x",
-                    "inline": True,
-                },
-                {
-                    "name": "Portfolio DD",
-                    "value": f"-{portfolio_dd:.1%}",
-                    "inline": True,
-                },
-            ]
-        )
-
-    # Health 섹션
-    _append_health_fields(fields, strategy_health, regime_report, system_health, alpha_decay)
-
-    return {
-        "title": "Daily Report",
-        "color": color,
-        "fields": fields,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "footer": {"text": _FOOTER_TEXT},
-    }
-
-
-def _append_health_fields(
-    fields: list[dict[str, Any]],
-    strategy_health: StrategyHealthSnapshot | None,
-    regime_report: MarketRegimeReport | None,
-    system_health: SystemHealthSnapshot | None,
-    alpha_decay: bool,
-) -> None:
-    """Unified daily report에 health 관련 필드를 추가.
-
-    PLR0912 분기 수 제한을 위해 분리된 헬퍼입니다.
-    """
-    # Strategy Breakdown
-    if strategy_health and strategy_health.strategy_breakdown:
-        _status_icons = {"HEALTHY": "+", "WATCH": "~", "DEGRADING": "-"}
-        breakdown_lines: list[str] = []
-        for sp in strategy_health.strategy_breakdown:
-            icon = _status_icons.get(sp.status, "?")
-            line = (
-                f"[{icon}] **{sp.strategy_name}** | "
-                + f"Sharpe {sp.rolling_sharpe:.2f} | "
-                + f"WR {sp.win_rate:.0%} | "
-                + f"PnL ${sp.total_pnl:+,.0f} | {sp.status}"
-            )
-            breakdown_lines.append(line)
-        fields.append(
-            {
-                "name": "Strategy Breakdown (30d)",
-                "value": "\n".join(breakdown_lines),
-                "inline": False,
-            }
-        )
-
-    # Market Regime
-    if regime_report is not None:
-        fields.append(
-            {
-                "name": "Market Regime",
-                "value": f"{regime_report.regime_label} ({regime_report.regime_score:+.2f})",
-                "inline": True,
-            }
-        )
-        if regime_report.symbols:
-            top_fr = sorted(regime_report.symbols, key=lambda s: abs(s.funding_rate), reverse=True)
-            fr_lines = [f"{s.symbol}: {s.funding_rate * 100:+.3f}%" for s in top_fr[:3]]
-            fields.append(
-                {
-                    "name": "Top Funding Rates",
-                    "value": "\n".join(fr_lines),
-                    "inline": True,
-                }
-            )
-
-    # Alpha Decay Warning
-    if alpha_decay and strategy_health:
-        fields.append(
-            {
-                "name": "Alpha Decay Warning",
-                "value": (
-                    f"Rolling Sharpe 3-period decline detected "
-                    f"(current: {strategy_health.rolling_sharpe_30d:.2f})"
-                ),
-                "inline": False,
-            }
-        )
-
-    # Open Position Detail
-    if strategy_health and strategy_health.open_positions:
-        pos_lines = [
-            f"{pos.direction} {pos.symbol}: ${pos.unrealized_pnl:+,.2f}"
-            for pos in strategy_health.open_positions
-        ]
-        fields.append(
-            {
-                "name": f"Position Detail ({len(strategy_health.open_positions)})",
-                "value": "\n".join(pos_lines),
-                "inline": False,
-            }
-        )
-
-    # System Status
-    if system_health is not None:
-        from src.notification.health_formatters import format_uptime
-
-        cb_label = "ACTIVE" if system_health.is_circuit_breaker_active else "OK"
-        ws_ok = system_health.total_symbols - system_health.stale_symbol_count
-        fields.extend(
-            [
-                {
-                    "name": "Uptime",
-                    "value": format_uptime(system_health.uptime_seconds),
-                    "inline": True,
-                },
-                {"name": "CB Status", "value": cb_label, "inline": True},
-                {
-                    "name": "WS Status",
-                    "value": f"{ws_ok}/{system_health.total_symbols} OK",
-                    "inline": True,
-                },
-            ]
-        )
-
-
-def format_surveillance_scan_embed(
-    scan_result: Any,
-    pod_additions: dict[str, list[str]],
-) -> dict[str, Any]:
-    """Surveillance 스캔 결과 Discord Embed.
-
-    Args:
-        scan_result: ScanResult 인스턴스
-        pod_additions: Pod별 추가된 심볼 {pod_id: [symbol, ...]}
-
-    Returns:
-        Discord Embed dict
-    """
-    has_dropped = len(scan_result.dropped) > 0
-    color = _COLOR_YELLOW if has_dropped else _COLOR_GREEN
-
-    fields: list[dict[str, Any]] = [
-        {
-            "name": "Universe",
-            "value": f"{len(scan_result.qualified_symbols)} assets",
-            "inline": True,
-        },
-        {
-            "name": "Scan Duration",
-            "value": f"{scan_result.scan_duration_seconds:.1f}s",
-            "inline": True,
-        },
-        {
-            "name": "Total Scanned",
-            "value": str(scan_result.total_scanned),
-            "inline": True,
-        },
-    ]
-
-    max_display = 10
-    if scan_result.added:
-        added_str = ", ".join(scan_result.added[:max_display])
-        if len(scan_result.added) > max_display:
-            added_str += f" (+{len(scan_result.added) - max_display} more)"
-        fields.append({"name": "Added", "value": added_str, "inline": False})
-
-    if scan_result.dropped:
-        dropped_str = ", ".join(scan_result.dropped[:max_display])
-        if len(scan_result.dropped) > max_display:
-            dropped_str += f" (+{len(scan_result.dropped) - max_display} more)"
-        fields.append({"name": "Dropped", "value": dropped_str, "inline": False})
-
-    if pod_additions:
-        pod_lines = [f"{pid}: +{len(syms)}" for pid, syms in pod_additions.items()]
-        fields.append(
-            {
-                "name": "Pod Assignments",
-                "value": ", ".join(pod_lines),
-                "inline": False,
-            }
-        )
-
-    return {
-        "title": "Market Surveillance Scan",
-        "color": color,
-        "fields": fields,
-        "timestamp": scan_result.timestamp.isoformat(),
         "footer": {"text": _FOOTER_TEXT},
     }

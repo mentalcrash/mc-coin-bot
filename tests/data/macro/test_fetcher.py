@@ -108,7 +108,9 @@ class TestMacroFetcher:
 
     async def test_all_fred_series_defined(self) -> None:
         """모든 FRED 시리즈가 정의되어 있는지."""
-        assert len(FRED_SERIES) == 12  # 6 original + 6 Tier 1 (t10yie, bamlhy, walcl, icsa, effr, wti)
+        assert (
+            len(FRED_SERIES) == 12
+        )  # 6 original + 6 Tier 1 (t10yie, bamlhy, walcl, icsa, effr, wti)
         assert "dxy" in FRED_SERIES
         assert "vix" in FRED_SERIES
         assert "m2" in FRED_SERIES

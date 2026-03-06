@@ -59,55 +59,6 @@ class SystemHealthSnapshot(BaseModel):
     is_notification_degraded: bool
     safety_stop_count: int = 0
     safety_stop_failures: int = 0
-    onchain_sources_ok: int = 0
-    onchain_sources_total: int = 0
-    onchain_cache_columns: int = 0
-
-
-class SymbolDerivativesSnapshot(BaseModel):
-    """개별 심볼의 파생상품 데이터 스냅샷.
-
-    Attributes:
-        symbol: 거래 심볼
-        price: 현재 가격
-        funding_rate: 최근 funding rate
-        funding_rate_annualized: 연환산 funding rate (%)
-        open_interest: 미결제약정 (USDT)
-        ls_ratio: Long/Short 계정 비율
-        taker_ratio: Taker Buy/Sell 비율
-        top_acct_ls_ratio: Top Trader Account L/S 비율
-        top_pos_ls_ratio: Top Trader Position L/S 비율
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    symbol: str
-    price: float
-    funding_rate: float
-    funding_rate_annualized: float
-    open_interest: float
-    ls_ratio: float
-    taker_ratio: float
-    top_acct_ls_ratio: float = 1.0
-    top_pos_ls_ratio: float = 1.0
-
-
-class MarketRegimeReport(BaseModel):
-    """Tier 2: Market Regime 리포트.
-
-    Attributes:
-        timestamp: 수집 시각
-        regime_score: 종합 regime 점수 (-1.0 ~ +1.0)
-        regime_label: 해석 라벨 (Extreme Greed, Bullish, ...)
-        symbols: 심볼별 스냅샷 목록
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    timestamp: datetime
-    regime_score: float
-    regime_label: str
-    symbols: tuple[SymbolDerivativesSnapshot, ...]
 
 
 class PositionStatus(BaseModel):

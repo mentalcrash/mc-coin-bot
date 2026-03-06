@@ -27,26 +27,7 @@ def _make_trade(exit_time: datetime) -> TradeRecord:
     )
 
 
-def _make_orchestrator_mock() -> MagicMock:
-    """테스트용 StrategyOrchestrator mock."""
-    mock_orch = MagicMock()
-    mock_pod = MagicMock()
-    mock_pod.is_active = True
-    mock_pod.pod_id = "pod-a"
-    mock_pod.capital_fraction = 1.0
-    mock_pod.daily_returns_series = [0.01, 0.02]
-    mock_pod.performance.current_equity = 1.03
-    mock_orch.pods = [mock_pod]
-    mock_orch.initial_capital = 10_000.0
-    mock_orch.get_pod_summary.return_value = [
-        {"pod_id": "pod-a", "state": "production", "capital_fraction": 1.0, "live_days": 30},
-    ]
-    return mock_orch
-
-
-def _make_scheduler(
-    orchestrator: MagicMock | None = None,
-) -> tuple[ReportScheduler, AsyncMock]:
+def _make_scheduler() -> tuple[ReportScheduler, AsyncMock]:
     """테스트용 ReportScheduler + mock queue."""
     queue = AsyncMock()
     queue.enqueue = AsyncMock()
@@ -77,9 +58,7 @@ def _make_scheduler(
     pm.open_position_count = 2
     pm.total_equity = 10100.0
 
-    scheduler = ReportScheduler(
-        queue=queue, analytics=analytics, chart_gen=chart_gen, pm=pm, orchestrator=orchestrator
-    )
+    scheduler = ReportScheduler(queue=queue, analytics=analytics, chart_gen=chart_gen, pm=pm)
     return scheduler, queue
 
 
@@ -185,9 +164,7 @@ class TestStartStop:
 # ─── Enhanced Daily Report 테스트 ────────────────────────
 
 
-def _make_scheduler_with_collector(
-    orchestrator: MagicMock | None = None,
-) -> tuple[ReportScheduler, AsyncMock, MagicMock]:
+def _make_scheduler_with_collector() -> tuple[ReportScheduler, AsyncMock, MagicMock]:
     """health_collector 포함 ReportScheduler 생성."""
     queue = AsyncMock()
     queue.enqueue = AsyncMock()
@@ -230,19 +207,12 @@ def _make_scheduler_with_collector(
     strategy_health.rolling_sharpe_30d = 1.2
     collector.collect_strategy_health.return_value = strategy_health
 
-    regime_report = MagicMock()
-    regime_report.regime_label = "Bullish"
-    regime_report.regime_score = 0.35
-    regime_report.symbols = ()
-    collector.collect_regime_report = AsyncMock(return_value=regime_report)
-
     scheduler = ReportScheduler(
         queue=queue,
         analytics=analytics,
         chart_gen=chart_gen,
         pm=pm,
         health_collector=collector,
-        orchestrator=orchestrator,
     )
     return scheduler, queue, collector
 
@@ -256,7 +226,7 @@ class TestEnhancedDailyReport:
         queue.enqueue.assert_called_once()
         item = queue.enqueue.call_args[0][0]
         assert item.embed["title"] == "Daily Report"
-        # enhanced는 fields가 6 + market regime 등 추가
+        # enhanced는 fields가 6 + system status 등 추가
         assert len(item.embed["fields"]) > 6
 
     async def test_daily_report_enhanced_without_collector(self) -> None:
@@ -267,20 +237,6 @@ class TestEnhancedDailyReport:
         item = queue.enqueue.call_args[0][0]
         assert item.embed["title"] == "Daily Report"
         assert len(item.embed["fields"]) == 6  # 기존 6개 필드
-
-    async def test_daily_report_enhanced_regime_none(self) -> None:
-        """regime 실패 시 graceful."""
-        scheduler, queue, collector = _make_scheduler_with_collector()
-        collector.collect_regime_report = AsyncMock(return_value=None)
-
-        await scheduler._send_daily_report()
-
-        queue.enqueue.assert_called_once()
-        item = queue.enqueue.call_args[0][0]
-        assert item.embed["title"] == "Daily Report"
-        # regime 없어도 enhanced embed (system_health가 있으므로)
-        field_names = [f["name"] for f in item.embed["fields"]]
-        assert "Market Regime" not in field_names
 
     async def test_daily_report_alpha_decay_severity(self) -> None:
         """alpha_decay → Severity.WARNING."""
@@ -294,75 +250,3 @@ class TestEnhancedDailyReport:
 
         item = queue.enqueue.call_args[0][0]
         assert item.severity == Severity.WARNING
-
-
-# ─── Unified Daily Report (with Orchestrator) 테스트 ────────────────
-
-
-def _patch_orch_deps():
-    """_collect_orchestrator_data 내부 의존 함수들을 patch."""
-    return (
-        patch(
-            "src.orchestrator.risk_aggregator.compute_portfolio_drawdown",
-            return_value=0.05,
-        ),
-        patch(
-            "src.orchestrator.netting.compute_gross_leverage",
-            return_value=1.0,
-        ),
-    )
-
-
-class TestUnifiedDailyReport:
-    async def test_unified_report_includes_pod_summary(self) -> None:
-        """orchestrator 있을 때 Pod Summary 필드 포함."""
-        orch = _make_orchestrator_mock()
-        scheduler, queue = _make_scheduler(orchestrator=orch)
-        p1, p2 = _patch_orch_deps()
-        with p1, p2:
-            await scheduler._send_daily_report()
-
-        item = queue.enqueue.call_args[0][0]
-        assert item.embed["title"] == "Daily Report"
-        field_names = [f["name"] for f in item.embed["fields"]]
-        assert "Pod Summary" in field_names
-        assert "Effective N" in field_names
-
-    async def test_unified_report_without_orchestrator(self) -> None:
-        """orchestrator=None → Pod Summary 필드 없음 (기존 Daily Report)."""
-        scheduler, queue = _make_scheduler(orchestrator=None)
-        await scheduler._send_daily_report()
-
-        item = queue.enqueue.call_args[0][0]
-        assert item.embed["title"] == "Daily Report"
-        field_names = [f["name"] for f in item.embed["fields"]]
-        assert "Pod Summary" not in field_names
-
-    async def test_unified_report_with_health_and_orchestrator(self) -> None:
-        """health + orchestrator 모두 있을 때 통합 embed."""
-        orch = _make_orchestrator_mock()
-        scheduler, queue, _collector = _make_scheduler_with_collector(orchestrator=orch)
-        p1, p2 = _patch_orch_deps()
-        with p1, p2:
-            await scheduler._send_daily_report()
-
-        item = queue.enqueue.call_args[0][0]
-        field_names = [f["name"] for f in item.embed["fields"]]
-        # health 필드
-        assert "Uptime" in field_names
-        # orchestrator 필드
-        assert "Pod Summary" in field_names
-        assert "Effective N" in field_names
-
-    async def test_unified_report_orchestrator_error_graceful(self) -> None:
-        """orchestrator 데이터 수집 실패 시 graceful fallback."""
-        orch = MagicMock()
-        orch.get_pod_summary.side_effect = RuntimeError("test error")
-        scheduler, queue = _make_scheduler(orchestrator=orch)
-
-        await scheduler._send_daily_report()
-
-        # 에러 시에도 기본 daily report는 전송됨
-        queue.enqueue.assert_called_once()
-        item = queue.enqueue.call_args[0][0]
-        assert item.embed["title"] == "Daily Report"

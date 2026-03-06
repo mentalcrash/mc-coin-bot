@@ -39,9 +39,11 @@ from src.logging.context import get_strategy_logger
 from src.portfolio import Portfolio, PortfolioManagerConfig
 from src.strategy import BaseStrategy, get_strategy, list_strategies
 
-# TSMOM strategy imports for diagnose/optimize commands
-from src.strategy.tsmom import ShortMode, TSMOMConfig, TSMOMStrategy
-from src.strategy.tsmom.signal import generate_signals_with_diagnostics
+# TSMOM strategy removed in Phase 0 — diagnose/optimize/info commands disabled
+TSMOMConfig = None  # type: ignore[assignment,misc]
+TSMOMStrategy = None  # type: ignore[assignment,misc]
+ShortMode = None  # type: ignore[assignment,misc]
+generate_signals_with_diagnostics = None  # type: ignore[assignment,misc]
 
 # Global Console Instance (Rich UI for user-facing output)
 console = Console()
@@ -472,6 +474,12 @@ def _run_single(  # noqa: PLR0912
         portfolio=portfolio,
     )
 
+    # Warmup 계산: 전략 config에 warmup_periods()가 있으면 데이터 로드 시작일 앞당김
+    warmup_bars = 0
+    strategy_config = strategy_instance.config
+    if strategy_config is not None and hasattr(strategy_config, "warmup_periods"):
+        warmup_bars = strategy_config.warmup_periods()  # type: ignore[union-attr]
+
     # 데이터 로드
     logger.info("Step 1: Loading data...")
     try:
@@ -483,10 +491,22 @@ def _run_single(  # noqa: PLR0912
 
         assert isinstance(cfg, RunConfig)
 
+        # Warmup buffer: 데이터 시작일을 앞당겨 로드
+        from src.eda.candle_aggregator import timeframe_to_seconds
+
+        data_start = start_date
+        if warmup_bars > 0:
+            from datetime import timedelta
+
+            tf_seconds = timeframe_to_seconds(cfg.backtest.timeframe)
+            warmup_delta = timedelta(seconds=tf_seconds * warmup_bars)
+            data_start = start_date - warmup_delta
+            logger.info(f"Warmup: loading {warmup_bars} extra bars from {data_start.date()}")
+
         data_request = MarketDataRequest(
             symbol=symbol,
             timeframe=cfg.backtest.timeframe,
-            start=start_date,
+            start=data_start,
             end=end_date,
         )
 
@@ -536,6 +556,7 @@ def _run_single(  # noqa: PLR0912
             strategy=strategy_instance,
             portfolio=portfolio,
             analyzer=PerformanceAnalyzer() if report else None,
+            warmup_bars=warmup_bars,
         )
 
         validation_level = validation.lower()
@@ -1459,127 +1480,9 @@ def ic_check(
         uv run mcbot backtest ic-check rsi BTC/USDT --tf 1D -p period=14
         uv run mcbot backtest ic-check momentum BTC/USDT -p period=10
     """
-    from src.backtest.ic_analyzer import ICAnalyzer, ICVerdict
-    from src.market.feature_store import IndicatorSpec, compute_indicator
-
-    setup_logger(console_level="WARNING")
-
-    # 파라미터 파싱
-    params: dict[str, object] = {}
-    for p in param or []:
-        key, _, val = p.partition("=")
-        try:
-            params[key] = int(val)
-        except ValueError:
-            try:
-                params[key] = float(val)
-            except ValueError:
-                params[key] = val
-
-    console.print(
-        Panel.fit(
-            (
-                f"[bold]IC Quick Check[/bold]\n"
-                f"Indicator: {indicator_name}\n"
-                f"Symbol: {symbol} | TF: {timeframe}\n"
-                f"Params: {params or 'default'}"
-            ),
-            border_style="cyan",
-        )
-    )
-
-    # 데이터 로드
-    logger.info("Loading data...")
-    try:
-        settings = get_settings()
-        data_service = MarketDataService(settings)
-
-        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
-        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
-
-        data = data_service.get(
-            MarketDataRequest(
-                symbol=symbol,
-                timeframe=timeframe,
-                start=start_date,
-                end=end_date,
-            ),
-        )
-    except DataNotFoundError as e:
-        console.print(f"[red]Data load failed: {e}[/red]")
-        raise typer.Exit(code=1) from e
-
-    # 지표 계산
-    spec = IndicatorSpec(name=indicator_name, params=dict(params))
-    try:
-        indicator_series = compute_indicator(spec, data.ohlcv)
-    except AttributeError:
-        console.print(f"[red]Indicator not found: {indicator_name}[/red]")
-        raise typer.Exit(code=1) from None
-
-    # Forward returns
-    close_series = data.ohlcv["close"]
-    forward_returns = close_series.pct_change().shift(-1)
-
-    # IC 분석
-    result = ICAnalyzer.analyze(indicator_series, forward_returns)  # type: ignore[arg-type]
-
-    # 결과 출력
-    def _verdict_str(passed: bool) -> str:
-        return "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
-
-    result_table = Table(title="IC Analysis Result")
-    result_table.add_column("Metric", style="cyan")
-    result_table.add_column("Value", justify="right")
-    result_table.add_column("Threshold", justify="right")
-    result_table.add_column("Status", justify="center")
-
-    from src.backtest.ic_analyzer import (
-        HIT_RATE_THRESHOLD,
-        IC_ABS_THRESHOLD,
-        IC_IR_ABS_THRESHOLD,
-    )
-
-    pvalue_threshold = 0.05
-
-    result_table.add_row(
-        "Rank IC",
-        f"{result.rank_ic:.4f}",
-        f"|IC| > {IC_ABS_THRESHOLD}",
-        _verdict_str(abs(result.rank_ic) > IC_ABS_THRESHOLD),
-    )
-    result_table.add_row(
-        "IC p-value",
-        f"{result.rank_ic_pvalue:.4f}",
-        f"< {pvalue_threshold}",
-        _verdict_str(result.rank_ic_pvalue < pvalue_threshold),
-    )
-    result_table.add_row(
-        "IC IR",
-        f"{result.ic_ir:.4f}",
-        f"|IR| > {IC_IR_ABS_THRESHOLD}",
-        _verdict_str(abs(result.ic_ir) > IC_IR_ABS_THRESHOLD),
-    )
-    result_table.add_row(
-        "Decay Stable",
-        str(result.ic_decay_stable),
-        "True",
-        _verdict_str(result.ic_decay_stable),
-    )
-    result_table.add_row(
-        "Hit Rate",
-        f"{result.hit_rate:.1f}%",
-        f"> {HIT_RATE_THRESHOLD}%",
-        _verdict_str(result.hit_rate > HIT_RATE_THRESHOLD),
-    )
-
-    console.print(result_table)
-
-    # 전체 Verdict
-    if result.verdict == ICVerdict.PASS:
-        console.print(Panel("[bold green]VERDICT: PASS[/bold green]", border_style="green"))
-    else:
-        console.print(Panel("[bold red]VERDICT: FAIL[/bold red]", border_style="red"))
+    # feature_store removed in Phase 0 — ic-check disabled
+    console.print("[red]ic-check command requires feature_store (removed in Phase 0 cleanup)[/red]")
+    raise typer.Exit(code=1)
 
 
 @app.command(name="ic-batch")
@@ -1609,142 +1512,9 @@ def ic_batch(
         uv run mcbot backtest ic-batch BTC/USDT --tf 1D
         uv run mcbot backtest ic-batch BTC/USDT --tf 1D --category oscillator
     """
-    from src.backtest.ic_analyzer import ICAnalyzer, ICBatchEntry, ICBatchResult, ICVerdict
-    from src.market.feature_store import IndicatorSpec, compute_indicator
-    from src.market.indicators import __all__ as all_indicators
-
-    setup_logger(console_level="WARNING")
-
-    # 지표 목록 결정
-    target_indicators: list[str] = list(all_indicators)
-    if category:
-        try:
-            from src.catalog.indicator_store import IndicatorCatalogStore
-
-            store = IndicatorCatalogStore()
-            filtered = store.get_by_category(category)
-            target_indicators = [i.id for i in filtered]
-        except Exception:
-            console.print("[yellow]Category filter failed, using all indicators[/yellow]")
-
-    console.print(
-        Panel.fit(
-            (
-                f"[bold]IC Batch Check[/bold]\n"
-                f"Symbol: {symbol} | TF: {timeframe}\n"
-                f"Indicators: {len(target_indicators)}"
-                + (f" (category: {category})" if category else "")
-            ),
-            border_style="cyan",
-        )
-    )
-
-    # 데이터 로드 (1회)
-    try:
-        settings = get_settings()
-        data_service = MarketDataService(settings)
-
-        start_date = datetime(min(year), 1, 1, tzinfo=UTC)
-        end_date = datetime(max(year), 12, 31, 23, 59, 59, tzinfo=UTC)
-
-        data = data_service.get(
-            MarketDataRequest(
-                symbol=symbol,
-                timeframe=timeframe,
-                start=start_date,
-                end=end_date,
-            ),
-        )
-    except DataNotFoundError as e:
-        console.print(f"[red]Data load failed: {e}[/red]")
-        raise typer.Exit(code=1) from e
-
-    # Forward returns (1회)
-    close_series = data.ohlcv["close"]
-    forward_returns = close_series.pct_change().shift(-1)
-
-    # 각 지표에 대해 IC 분석
-    entries: list[ICBatchEntry] = []
-    for ind_name in target_indicators:
-        spec = IndicatorSpec(name=ind_name, params={})
-        try:
-            indicator_series = compute_indicator(spec, data.ohlcv)
-            result = ICAnalyzer.analyze(indicator_series, forward_returns)  # type: ignore[arg-type]
-            entries.append(ICBatchEntry(indicator_name=ind_name, result=result))
-        except Exception as e:
-            entries.append(ICBatchEntry(indicator_name=ind_name, result=None, error=str(e)))
-
-    # 집계
-    passed = sum(1 for e in entries if e.result and e.result.verdict == ICVerdict.PASS)
-    failed = sum(1 for e in entries if e.result and e.result.verdict == ICVerdict.FAIL)
-    skipped = sum(1 for e in entries if e.result is None)
-    batch_result = ICBatchResult(
-        entries=entries, total=len(entries), passed=passed, failed=failed, skipped=skipped
-    )
-
-    # PASS 먼저, rank_ic 내림차순 정렬
-    sorted_entries = sorted(
-        entries,
-        key=lambda e: (
-            0 if e.result and e.result.verdict == ICVerdict.PASS else 1,
-            -(abs(e.result.rank_ic) if e.result else 0),
-        ),
-    )
-
-    # Rich 테이블 출력
-    from src.backtest.ic_analyzer import HIT_RATE_THRESHOLD, IC_ABS_THRESHOLD, IC_IR_ABS_THRESHOLD
-
-    result_table = Table(title=f"IC Batch Results ({batch_result.total} indicators)")
-    result_table.add_column("Indicator", style="cyan", min_width=20)
-    result_table.add_column("Rank IC", justify="right", width=10)
-    result_table.add_column("IC IR", justify="right", width=10)
-    result_table.add_column("Hit Rate", justify="right", width=10)
-    result_table.add_column("Decay", justify="center", width=7)
-    result_table.add_column("Verdict", justify="center", width=8)
-
-    for entry in sorted_entries:
-        if entry.result is None:
-            result_table.add_row(
-                entry.indicator_name,
-                "[dim]ERR[/dim]",
-                "[dim]ERR[/dim]",
-                "[dim]ERR[/dim]",
-                "[dim]ERR[/dim]",
-                "[dim]SKIP[/dim]",
-            )
-            continue
-
-        r = entry.result
-        ic_style = "green" if abs(r.rank_ic) > IC_ABS_THRESHOLD else "red"
-        ir_style = "green" if abs(r.ic_ir) > IC_IR_ABS_THRESHOLD else "red"
-        hr_style = "green" if r.hit_rate > HIT_RATE_THRESHOLD else "red"
-        decay_str = "[green]Y[/green]" if r.ic_decay_stable else "[red]N[/red]"
-        verdict_str = (
-            "[bold green]PASS[/bold green]"
-            if r.verdict == ICVerdict.PASS
-            else "[bold red]FAIL[/bold red]"
-        )
-
-        result_table.add_row(
-            entry.indicator_name,
-            f"[{ic_style}]{r.rank_ic:+.4f}[/{ic_style}]",
-            f"[{ir_style}]{r.ic_ir:+.4f}[/{ir_style}]",
-            f"[{hr_style}]{r.hit_rate:.1f}%[/{hr_style}]",
-            decay_str,
-            verdict_str,
-        )
-
-    console.print(result_table)
-
-    # Summary
-    summary = (
-        f"Total: {batch_result.total} | "
-        f"[green]PASS: {batch_result.passed}[/green] | "
-        f"[red]FAIL: {batch_result.failed}[/red] | "
-        f"[dim]SKIP: {batch_result.skipped}[/dim]"
-    )
-    border = "green" if batch_result.passed > 0 else "red"
-    console.print(Panel(summary, title="Summary", border_style=border))
+    # feature_store removed in Phase 0 — ic-batch disabled
+    console.print("[red]ic-batch command requires feature_store (removed in Phase 0 cleanup)[/red]")
+    raise typer.Exit(code=1)
 
 
 @app.command()

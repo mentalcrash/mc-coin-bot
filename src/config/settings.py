@@ -447,7 +447,7 @@ class DeploymentConfig(BaseSettings):
     기존 YAML config + 환경 변수 오버라이드 패턴 유지.
 
     Environment Variables:
-        - MC_EXECUTION_MODE: 실행 모드 (paper | shadow | live)
+        - MC_EXECUTION_MODE: 실행 모드 (paper | shadow | live | spot_live)
         - MC_CONFIG_PATH: YAML 설정 파일 경로
         - MC_INITIAL_CAPITAL: 초기 자본 (USD)
         - MC_DB_PATH: SQLite DB 경로 (빈 문자열 = 비활성)
@@ -464,10 +464,10 @@ class DeploymentConfig(BaseSettings):
 
     execution_mode: str = Field(
         default="paper",
-        description="실행 모드 (paper | shadow | live)",
+        description="실행 모드 (paper | shadow | live | spot_live)",
     )
     config_path: str = Field(
-        default="config/paper.yaml",
+        default="config/spot_supertrend.yaml",
         description="YAML 설정 파일 경로",
     )
     initial_capital: float = Field(
@@ -493,7 +493,7 @@ class DeploymentConfig(BaseSettings):
     @classmethod
     def validate_execution_mode(cls, v: str) -> str:
         """실행 모드 검증."""
-        allowed = {"paper", "shadow", "live"}
+        allowed = {"paper", "shadow", "live", "spot_live"}
         if v not in allowed:
             msg = f"execution_mode must be one of {allowed}, got '{v}'"
             raise ValueError(msg)

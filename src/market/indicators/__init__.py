@@ -85,6 +85,7 @@ from src.market.indicators.trend import (
     ema as ema,
     kama as kama,
     sma as sma,
+    supertrend as supertrend,
 )
 from src.market.indicators.volatility import (
     garman_klass_volatility as garman_klass_volatility,
@@ -165,6 +166,7 @@ __all__ = [
     "squeeze_detect",
     "stablecoin_supply_ratio",
     "stochastic",
+    "supertrend",
     "taker_buy_ratio",
     "taker_cvd",
     "trend_strength",

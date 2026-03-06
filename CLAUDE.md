@@ -57,15 +57,15 @@ PM→RM→OMS 3단계 방어, client order ID 멱등성.
 ### 이벤트 흐름
 
 ```
-[Backtest] 1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
-[Live]     WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
-[Multi-TF] 1m → MultiTimeframeCandleAggregator → BAR(4h,1D,...) → Orchestrator → SIGNAL → PM
+[Backtest]   1m Parquet → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
+[Live]       WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → FILL
+[Spot Live]  WebSocket  → CandleAggregator → BAR → Strategy → SIGNAL → PM → RM → OMS → SpotExecutor → FILL
 ```
 
 ### 의존성 흐름 (단방향)
 
 ```
-CLI → EDA, Backtest, Pipeline → Strategy, Market, Regime → Data, Exchange, Portfolio
+CLI → EDA, Backtest, Pipeline → Strategy, Market → Data, Exchange, Portfolio
   → Notification, Monitoring → Models, Core → Config
 Catalog → (standalone, Data/EDA에서 선택적 참조)
 ```
@@ -76,4 +76,5 @@ Catalog → (standalone, Data/EDA에서 선택적 참조)
 - `ccxt.RateLimitExceeded`는 `NetworkError` 서브클래스 → except 순서 주의
 - EventBus `flush()` 호출 필수 (bar-by-bar 동기 처리 보장)
 - Equity 계산: `cash + long_notional - short_notional` (notional에 unrealized 포함)
+- Spot Stop-Limit: `closePosition` 미지원 → 명시적 수량 + limit_price slip 0.5% 필수
 - 복잡한 아키텍처 변경 전 반드시 clarifying questions 요청할 것

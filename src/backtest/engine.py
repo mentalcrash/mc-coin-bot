@@ -35,7 +35,6 @@ from src.models.backtest import (
     MultiAssetConfig,
     PerformanceMetrics,
 )
-from src.orchestrator.asset_allocator import AssetAllocationConfig, IntraPodAllocator
 from src.portfolio.portfolio import Portfolio
 from src.strategy.base import BaseStrategy
 
@@ -222,209 +221,6 @@ def apply_trailing_stop_to_weights(  # noqa: PLR0912 - Numba @njit state machine
                 lowest_since_entry = 0.0
 
     return out_weights
-
-
-@njit(cache=True)  # type: ignore[misc]
-def _numba_single_bar_iv(  # noqa: PLR0912 - Numba @njit bar-by-bar IV; branching cannot be simplified
-    returns_matrix: npt.NDArray[np.float64],
-    bar_idx: int,
-    vol_lookback: int,
-    n_symbols: int,
-) -> npt.NDArray[np.float64]:
-    """단일 bar에서 IV weight 계산.
-
-    Args:
-        returns_matrix: (n_bars, n_symbols) 수익률 행렬 (NaN 포함)
-        bar_idx: 현재 bar 인덱스
-        vol_lookback: 변동성 계산 윈도우
-        n_symbols: 심볼 수
-
-    Returns:
-        (n_symbols,) IV weights (합계 1.0). 데이터 부족 시 EW.
-    """
-    weights = np.empty(n_symbols, dtype=np.float64)
-    ew = 1.0 / n_symbols
-
-    # Python slow path에서는 bar i의 returns_df[i]를 history에 추가한 뒤 on_bar() 호출.
-    # returns_matrix는 pct_change().shift(1) 결과이므로 row i = bar i-1→i의 return.
-    # bar i 시점 history = rows 0..i (inclusive) → end = bar_idx + 1
-    end = bar_idx + 1  # inclusive → Python slice exclusive
-    start = max(0, end - vol_lookback)
-
-    min_samples = 2  # Numba에서 모듈 상수 사용 불가 → 로컬 변수
-    if end - start < min_samples:
-        for j in range(n_symbols):
-            weights[j] = ew
-        return weights
-
-    inv_vols = np.empty(n_symbols, dtype=np.float64)
-    min_vol = 1e-8
-
-    for j in range(n_symbols):
-        # 유효 데이터 수 계산
-        vals = np.empty(end - start, dtype=np.float64)
-        count = 0
-        for k in range(start, end):
-            v = returns_matrix[k, j]
-            if not np.isnan(v):
-                vals[count] = v
-                count += 1
-
-        if count < min_samples:
-            # 데이터 부족 → EW fallback
-            for jj in range(n_symbols):
-                weights[jj] = ew
-            return weights
-
-        # std (ddof=1)
-        mean = 0.0
-        for m in range(count):
-            mean += vals[m]
-        mean /= count
-
-        var_sum = 0.0
-        for m in range(count):
-            diff = vals[m] - mean
-            var_sum += diff * diff
-        std = (var_sum / (count - 1)) ** 0.5
-        inv_vols[j] = 1.0 / max(std, min_vol)
-
-    total = 0.0
-    for j in range(n_symbols):
-        total += inv_vols[j]
-
-    clamp_tol = 1e-10  # Numba에서 모듈 상수 사용 불가
-    if total < clamp_tol:
-        for j in range(n_symbols):
-            weights[j] = ew
-    else:
-        for j in range(n_symbols):
-            weights[j] = inv_vols[j] / total
-
-    return weights
-
-
-@njit(cache=True)  # type: ignore[misc]
-def _numba_clamp_normalize(  # noqa: PLR0912 - Numba @njit water-filling clamp; branching cannot be simplified
-    weights: npt.NDArray[np.float64],
-    min_weight: float,
-    max_weight: float,
-) -> npt.NDArray[np.float64]:
-    """Water-filling clamp + sum=1.0 정규화.
-
-    Args:
-        weights: (n_symbols,) raw weights
-        min_weight: 에셋당 최소 비중
-        max_weight: 에셋당 최대 비중
-
-    Returns:
-        (n_symbols,) clamped & normalized weights (합계 1.0)
-    """
-    n = len(weights)
-    result = weights.copy()
-    fixed = np.zeros(n, dtype=np.int64)
-    tolerance = 1e-10
-
-    for _ in range(5):  # max iterations
-        changed = False
-        fixed_sum = 0.0
-        free_count = 0
-        free_total = 0.0
-
-        for j in range(n):
-            if fixed[j] == 1:
-                fixed_sum += result[j]
-            elif result[j] <= min_weight:
-                result[j] = min_weight
-                fixed[j] = 1
-                fixed_sum += min_weight
-                changed = True
-            elif result[j] >= max_weight:
-                result[j] = max_weight
-                fixed[j] = 1
-                fixed_sum += max_weight
-                changed = True
-            else:
-                free_count += 1
-                free_total += result[j]
-
-        if not changed:
-            break
-
-        remaining = 1.0 - fixed_sum
-        if free_count == 0 or remaining < tolerance:
-            break
-
-        if free_total < tolerance:
-            per_free = remaining / free_count
-            for j in range(n):
-                if fixed[j] == 0:
-                    result[j] = per_free
-        else:
-            scale = remaining / free_total
-            for j in range(n):
-                if fixed[j] == 0:
-                    result[j] *= scale
-
-    # 최종 정규화
-    final_total = 0.0
-    for j in range(n):
-        final_total += result[j]
-    if abs(final_total - 1.0) > tolerance:
-        for j in range(n):
-            result[j] /= final_total
-
-    return result
-
-
-@njit(cache=True)  # type: ignore[misc]
-def _numba_inverse_vol_weights(
-    returns_matrix: npt.NDArray[np.float64],
-    vol_lookback: int,
-    min_weight: float,
-    max_weight: float,
-    rebalance_bars: int,
-    n_symbols: int,
-) -> npt.NDArray[np.float64]:
-    """Bar-by-bar IV weight 계산 (EDA Pod bar_count parity 유지).
-
-    Args:
-        returns_matrix: (n_bars, n_symbols) 수익률 행렬 (pct_change().shift(1))
-        vol_lookback: 변동성 계산 윈도우
-        min_weight: 에셋당 최소 비중
-        max_weight: 에셋당 최대 비중
-        rebalance_bars: 비중 재계산 주기 (bar_count 기준)
-        n_symbols: 심볼 수
-
-    Returns:
-        (n_bars, n_symbols) rolling asset weights
-    """
-    n_bars = returns_matrix.shape[0]
-    result = np.empty((n_bars, n_symbols), dtype=np.float64)
-    ew = 1.0 / n_symbols
-
-    # 초기 weights
-    current_weights = np.empty(n_symbols, dtype=np.float64)
-    for j in range(n_symbols):
-        current_weights[j] = ew
-
-    bar_count = 0
-
-    for i in range(n_bars):
-        # EDA Pod parity: 심볼당 1회 on_bar() → bar_count += n_symbols
-        for _s in range(n_symbols):
-            bar_count += 1
-
-            if bar_count % rebalance_bars == 0:
-                # IV 재계산
-                raw_weights = _numba_single_bar_iv(returns_matrix, i, vol_lookback, n_symbols)
-                current_weights = _numba_clamp_normalize(raw_weights, min_weight, max_weight)
-
-        # 현재 bar weights 기록
-        for j in range(n_symbols):
-            result[i, j] = current_weights[j]
-
-    return result
 
 
 @njit(cache=True)  # type: ignore[misc]
@@ -628,6 +424,34 @@ class BacktestEngine:
         # 전략 실행 (전처리 + 시그널 생성)
         processed_df, signals = strategy.run(data.ohlcv)
 
+        # Warmup 트리밍: 전략에 필요한 초기 bar 제거
+        warmup = request.warmup_bars
+        ohlcv_for_benchmark = data.ohlcv
+        actual_start = data.start
+        if warmup > 0 and warmup < len(processed_df):
+            from src.strategy.types import StrategySignals
+
+            processed_df = processed_df.iloc[warmup:]
+            signals = StrategySignals(
+                entries=signals.entries.iloc[warmup:],
+                exits=signals.exits.iloc[warmup:],
+                direction=signals.direction.iloc[warmup:],
+                strength=signals.strength.iloc[warmup:],
+            )
+            ohlcv_for_benchmark = data.ohlcv.iloc[warmup:]
+            actual_start = (
+                processed_df.index[0]
+                .to_pydatetime()
+                .replace(  # type: ignore[union-attr]
+                    tzinfo=__import__("datetime").UTC,
+                )
+            )
+            logger.info(
+                "Warmup trimmed | {n} bars removed, backtest starts at {start}",
+                n=warmup,
+                start=actual_start.date(),
+            )
+
         # VectorBT Portfolio 생성
         vbt_portfolio = self._create_vbt_portfolio(
             vbt=vbt,
@@ -643,14 +467,14 @@ class BacktestEngine:
         metrics = self._adjust_metrics_for_funding(
             vbt_portfolio, metrics, portfolio.config.cost_model, data.freq
         )
-        benchmark = analyzer.compare_benchmark(vbt_portfolio, data.ohlcv, data.symbol)
+        benchmark = analyzer.compare_benchmark(vbt_portfolio, ohlcv_for_benchmark, data.symbol)
         trades = analyzer.extract_trades(vbt_portfolio, data.symbol)
 
         config = BacktestConfig(
             strategy_name=strategy.name,
             symbol=data.symbol,
             timeframe=data.timeframe,
-            start_date=data.start,
+            start_date=actual_start,
             end_date=data.end,
             initial_capital=portfolio.initial_capital,
             maker_fee=portfolio.config.cost_model.maker_fee,
@@ -1078,155 +902,7 @@ class BacktestEngine:
 
         return result, validation
 
-    @staticmethod
-    def _compute_rolling_asset_weights(
-        close_df: pd.DataFrame,
-        config: AssetAllocationConfig,
-        symbols: tuple[str, ...],
-        strengths_dict: dict[str, pd.Series] | None,  # type: ignore[type-arg]
-    ) -> dict[str, pd.Series]:  # type: ignore[type-arg]
-        """Bar-by-bar rolling asset weight 계산 (EDA Pod parity).
-
-        EDA Pod에서는 심볼당 1회 on_bar() 호출.
-        4개 심볼이면 TF bar당 4번 호출 → bar_count 4씩 증가.
-        이를 backtest에서 동일하게 복제.
-
-        Args:
-            close_df: 심볼별 종가 DataFrame (index=date, columns=symbols)
-            config: 에셋 배분 설정
-            symbols: 심볼 순서
-            strengths_dict: 심볼별 raw strength Series (signal_weighted용)
-
-        Returns:
-            심볼별 rolling weight Series (index 동일)
-        """
-        allocator = IntraPodAllocator(config=config, symbols=symbols)
-        n_bars = len(close_df)
-        n_symbols = len(symbols)
-
-        # 수익률 계산: pct_change().shift(1) → look-ahead bias 없음
-        returns_df = close_df.pct_change().shift(1)
-
-        # 결과 저장
-        weight_arrays: dict[str, list[float]] = {s: [] for s in symbols}
-
-        # 누적 수익률 히스토리 (allocator.on_bar()에 전달)
-        returns_history: dict[str, list[float]] = {s: [] for s in symbols}
-
-        for i in range(n_bars):
-            # 수익률 히스토리 업데이트
-            for s in symbols:
-                ret_val = returns_df[s].iloc[i]
-                if pd.notna(ret_val):
-                    returns_history[s].append(float(ret_val))
-
-            # EDA Pod parity: 심볼당 1회 on_bar() 호출
-            for _s in symbols:
-                strength_val: dict[str, float] | None = None
-                if strengths_dict is not None:
-                    strength_val = {
-                        sym: float(strengths_dict[sym].iloc[i])
-                        if pd.notna(strengths_dict[sym].iloc[i])
-                        else 0.0
-                        for sym in symbols
-                    }
-                allocator.on_bar(returns=returns_history, strengths=strength_val)
-
-            # 현재 weight 기록 (exposure 반영)
-            current_weights = allocator.weights
-            exposure = allocator.exposure
-            for s in symbols:
-                weight_arrays[s].append(current_weights.get(s, 1.0 / n_symbols) * exposure)
-
-        return {s: pd.Series(weight_arrays[s], index=close_df.index) for s in symbols}
-
-    @staticmethod
-    def _compute_rolling_asset_weights_fast(
-        close_df: pd.DataFrame,
-        config: AssetAllocationConfig,
-        symbols: tuple[str, ...],
-        strengths_dict: dict[str, pd.Series] | None,  # type: ignore[type-arg]
-    ) -> dict[str, pd.Series]:  # type: ignore[type-arg]
-        """Numba 최적화 rolling asset weight 계산.
-
-        IV/EW → Numba fast path, RP/SW → Python fallback.
-
-        Args:
-            close_df: 심볼별 종가 DataFrame (index=date, columns=symbols)
-            config: 에셋 배분 설정
-            symbols: 심볼 순서
-            strengths_dict: 심볼별 raw strength Series (signal_weighted용)
-
-        Returns:
-            심볼별 rolling weight Series (index 동일)
-        """
-        from src.orchestrator.models import AssetAllocationMethod
-
-        method = config.method
-        n_symbols = len(symbols)
-
-        # EW: trivial (전체 1/N Series)
-        if method == AssetAllocationMethod.EQUAL_WEIGHT:
-            ew = 1.0 / n_symbols
-            return {s: pd.Series(ew, index=close_df.index) for s in symbols}
-
-        # IV: Numba fast path
-        if method == AssetAllocationMethod.INVERSE_VOLATILITY:
-            returns_df = close_df.pct_change().shift(1)
-            returns_matrix = np.asarray(returns_df[list(symbols)].values, dtype=np.float64)
-
-            weight_matrix = _numba_inverse_vol_weights(
-                returns_matrix=returns_matrix,
-                vol_lookback=config.vol_lookback,
-                min_weight=config.min_weight,
-                max_weight=config.max_weight,
-                rebalance_bars=config.rebalance_bars,
-                n_symbols=n_symbols,
-            )
-
-            return {
-                s: pd.Series(weight_matrix[:, j], index=close_df.index)
-                for j, s in enumerate(symbols)
-            }
-
-        # RP/SW: Python fallback
-        return BacktestEngine._compute_rolling_asset_weights(
-            close_df=close_df,
-            config=config,
-            symbols=symbols,
-            strengths_dict=strengths_dict,
-        )
-
-    @staticmethod
-    def _scale_with_dynamic_weights(
-        raw_strengths: dict[str, pd.Series],  # type: ignore[type-arg]
-        rolling_weights: dict[str, pd.Series],  # type: ignore[type-arg]
-        processed_dict: dict[str, pd.DataFrame],
-        pm: Any,
-        n_symbols: int,
-    ) -> dict[str, pd.Series]:  # type: ignore[type-arg]
-        """Raw strength에 동적 asset weight를 적용하고 PM 규칙 적용.
-
-        scaled = raw_strength * rolling_weight * n_symbols + PM rules
-
-        Args:
-            raw_strengths: 심볼별 raw strength Series
-            rolling_weights: 심볼별 rolling asset weight Series
-            processed_dict: 심볼별 전처리된 DataFrame
-            pm: PortfolioManagerConfig
-            n_symbols: 심볼 수
-
-        Returns:
-            심볼별 최종 target weight Series
-        """
-        target_weights_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
-        for symbol, raw_strength in raw_strengths.items():
-            scaled = raw_strength * rolling_weights[symbol] * n_symbols
-            scaled = _apply_pm_rules_to_weights(scaled, processed_dict[symbol], pm)
-            target_weights_dict[symbol] = scaled
-        return target_weights_dict
-
-    def _execute_multi(  # noqa: PLR0912 — multi-asset orchestration requires branching
+    def _execute_multi(
         self,
         request: MultiAssetBacktestRequest,
     ) -> tuple[MultiAssetBacktestResult, Any]:
@@ -1281,33 +957,13 @@ class BacktestEngine:
             processed_dict[symbol] = processed
             raw_strengths[symbol] = signals.strength.copy()
 
-        # 2. 자산 배분 비중 적용 + PM 규칙
-        if request.asset_allocation is not None:
-            close_df_for_alloc = request.data.close_matrix
-            rolling_weights = self._compute_rolling_asset_weights_fast(
-                close_df=close_df_for_alloc,
-                config=request.asset_allocation,
-                symbols=tuple(symbols),
-                strengths_dict=raw_strengths,
-            )
-            target_weights_dict = self._scale_with_dynamic_weights(
-                raw_strengths=raw_strengths,
-                rolling_weights=rolling_weights,
-                processed_dict=processed_dict,
-                pm=pm,
-                n_symbols=len(symbols),
-            )
-            # 마지막 bar 기준 weight 기록 (결과 config용)
-            final_asset_weights = {s: float(rolling_weights[s].iloc[-1]) for s in symbols}
-            alloc_method_name = request.asset_allocation.method.value
-        else:
-            target_weights_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg,no-redef]
-            for symbol in symbols:
-                scaled = raw_strengths[symbol] * asset_weights[symbol]
-                scaled = _apply_pm_rules_to_weights(scaled, processed_dict[symbol], pm)
-                target_weights_dict[symbol] = scaled
-            final_asset_weights = asset_weights
-            alloc_method_name = None
+        # 2. 자산 배분 비중 적용 + PM 규칙 (EW 기반)
+        target_weights_dict: dict[str, pd.Series] = {}  # type: ignore[type-arg]
+        for symbol in symbols:
+            scaled = raw_strengths[symbol] * asset_weights[symbol]
+            scaled = _apply_pm_rules_to_weights(scaled, processed_dict[symbol], pm)
+            target_weights_dict[symbol] = scaled
+        final_asset_weights = asset_weights
 
         # 3. DataFrame으로 합성 (VectorBT 멀티에셋 입력)
         close_df = request.data.close_matrix
@@ -1396,7 +1052,6 @@ class BacktestEngine:
             end_date=request.data.end,
             initial_capital=portfolio.initial_capital,
             asset_weights=final_asset_weights,
-            asset_allocation_method=alloc_method_name,
             maker_fee=pm.cost_model.maker_fee,
             taker_fee=pm.cost_model.taker_fee,
             slippage=pm.cost_model.slippage,

@@ -44,26 +44,7 @@ class TestFormatStartupEmbed:
         fields = {f["name"]: f["value"] for f in embed["fields"]}
         assert fields["Symbols"] == "N/A"
 
-    def test_startup_with_pod_summaries(self) -> None:
-        pods = [
-            {"pod_id": "anchor-mom", "state": "production", "capital_fraction": 0.5},
-            {"pod_id": "ctrend", "state": "incubation", "capital_fraction": 0.3},
-        ]
-        embed = format_startup_embed(
-            mode="paper",
-            strategy_name="Orchestrator (2 pods)",
-            symbols=["BTC/USDT"],
-            capital=100000.0,
-            timeframe="1D",
-            pod_summaries=pods,
-        )
-        fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert "Pods" in fields
-        assert "anchor-mom" in fields["Pods"]
-        assert "production" in fields["Pods"]
-        assert "50.0%" in fields["Pods"]
-
-    def test_startup_without_pod_summaries(self) -> None:
+    def test_startup_no_pods_field(self) -> None:
         embed = format_startup_embed(
             mode="paper",
             strategy_name="TSMOM",
@@ -128,24 +109,6 @@ class TestFormatShutdownEmbed:
         assert "+5.00%" in fields["Today PnL"]
         assert "$+300.00" in fields["Realized"]
         assert "$+200.00" in fields["Unrealized"]
-
-    def test_shutdown_with_pod_summaries(self) -> None:
-        pods = [
-            {"pod_id": "ctrend", "state": "production", "capital_fraction": 0.6},
-        ]
-        embed = format_shutdown_embed(
-            reason="Graceful shutdown",
-            uptime_seconds=3600.0,
-            final_equity=10000.0,
-            initial_capital=10000.0,
-            realized_pnl=0.0,
-            unrealized_pnl=0.0,
-            open_positions=0,
-            pod_summaries=pods,
-        )
-        fields = {f["name"]: f["value"] for f in embed["fields"]}
-        assert "Pods" in fields
-        assert "ctrend" in fields["Pods"]
 
     def test_shutdown_zero_initial_capital(self) -> None:
         """Division by zero 방어."""

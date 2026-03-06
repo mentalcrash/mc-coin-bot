@@ -201,8 +201,38 @@ ExchangeStopManager (독립 클래스)
 
 | 파일 | 역할 |
 |------|------|
-| `src/eda/exchange_stop_manager.py` | 핵심 모듈 — stop lifecycle 관리 |
+| `src/eda/exchange_stop_manager.py` | Futures 핵심 모듈 — stop lifecycle 관리 |
+| `src/eda/spot_stop_manager.py` | **Spot 핵심 모듈** — STOP_LOSS_LIMIT 관리 |
 | `src/portfolio/config.py` | 설정 필드 5개 |
 | `src/exchange/binance_futures_client.py` | `create_stop_market_order()`, `cancel_all_symbol_orders()` |
+| `src/exchange/binance_spot_client.py` | `create_stop_limit_order()`, `cancel_order()` |
 | `src/eda/persistence/state_manager.py` | 상태 영속화 |
 | `src/eda/live_runner.py` | 통합 (생성, 등록, shutdown, preflight) |
+
+---
+
+## Spot Stop-Limit Ratchet
+
+Spot에서는 `STOP_MARKET`이 없으므로 `STOP_LOSS_LIMIT`를 사용합니다.
+`SpotStopManager`가 Futures `ExchangeStopManager`와 동일한 ratchet 로직을 제공합니다.
+
+### Futures vs Spot 차이
+
+| 항목 | Futures | Spot |
+|------|---------|------|
+| 주문 타입 | `STOP_MARKET(closePosition=true)` | `STOP_LOSS_LIMIT(quantity=보유수량)` |
+| 방향 | Long + Short | **Long-Only** (sell side만) |
+| Ratchet | stop price 올리기만 허용 | 동일 |
+| Limit Price | 불필요 (market) | `stop_price * (1 - 0.5%)` slip 마진 |
+| Client Order ID | `safety-stop-` prefix | `spot-stop-` prefix |
+
+### 설정
+
+Spot에서는 `use_exchange_safety_stop: true`만 설정하면 자동으로 `SpotStopManager`가 사용됩니다.
+Futures 설정 필드와 동일합니다.
+
+### 주의사항
+
+- Spot은 `closePosition=true` 옵션이 없으므로 **명시적 수량 지정 필수**
+- Limit price에 0.5% slip 마진을 두어 급락 시 체결 보장
+- 봇 재시작 시 `verify_exchange_stops()`로 기존 stop 주문 존재 확인

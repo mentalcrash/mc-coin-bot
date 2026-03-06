@@ -83,6 +83,95 @@ def adx(
     return pd.Series(result, index=close.index, name="adx")
 
 
+@numba.njit(cache=True)  # type: ignore[misc]
+def _compute_supertrend(
+    close: npt.NDArray[np.float64],
+    high: npt.NDArray[np.float64],
+    low: npt.NDArray[np.float64],
+    atr_arr: npt.NDArray[np.float64],
+    multiplier: float,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.int64]]:
+    """SuperTrend core computation (numba-optimized).
+
+    Returns:
+        (supertrend_line, direction) where direction 1=up(green), -1=down(red).
+    """
+    n = len(close)
+    st = np.empty(n)
+    direction = np.ones(n, dtype=np.int64)
+
+    hl2 = (high + low) / 2.0
+    upper_band = hl2 + multiplier * atr_arr
+    lower_band = hl2 - multiplier * atr_arr
+
+    st[0] = lower_band[0]
+    direction[0] = 1
+
+    for i in range(1, n):
+        # Ratchet: lower_band only goes up, upper_band only goes down
+        if lower_band[i] < lower_band[i - 1] and close[i - 1] > lower_band[i - 1]:
+            lower_band[i] = lower_band[i - 1]
+        if upper_band[i] > upper_band[i - 1] and close[i - 1] < upper_band[i - 1]:
+            upper_band[i] = upper_band[i - 1]
+
+        if direction[i - 1] == 1:  # Was uptrend (green)
+            if close[i] < lower_band[i]:
+                direction[i] = -1
+                st[i] = upper_band[i]
+            else:
+                direction[i] = 1
+                st[i] = lower_band[i]
+        elif close[i] > upper_band[i]:
+            direction[i] = 1
+            st[i] = lower_band[i]
+        else:
+            direction[i] = -1
+            st[i] = upper_band[i]
+
+    return st, direction
+
+
+def supertrend(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> tuple[pd.Series, pd.Series]:
+    """SuperTrend indicator.
+
+    ATR 기반 동적 지지/저항선. 가격이 선을 돌파하면 추세 전환.
+
+    Args:
+        high: 고가 시리즈.
+        low: 저가 시리즈.
+        close: 종가 시리즈.
+        period: ATR 계산 기간.
+        multiplier: ATR 배수.
+
+    Returns:
+        (supertrend_line, direction) 튜플.
+        direction: 1=상승추세(초록), -1=하락추세(빨강).
+    """
+    atr_val = atr(high, low, close, period)
+
+    st_arr, dir_arr = _compute_supertrend(
+        close.to_numpy().astype(np.float64),
+        high.to_numpy().astype(np.float64),
+        low.to_numpy().astype(np.float64),
+        atr_val.to_numpy().astype(np.float64),
+        multiplier,
+    )
+
+    # ATR warmup 구간은 NaN 처리
+    st_series = pd.Series(st_arr, index=close.index, name="supertrend")
+    dir_series = pd.Series(dir_arr, index=close.index, name="supertrend_dir")
+    st_series.iloc[: period - 1] = np.nan
+    dir_series.iloc[: period - 1] = 0
+
+    return st_series, dir_series
+
+
 def sma(close: pd.Series, period: int) -> pd.Series:
     """SMA (Simple Moving Average).
 

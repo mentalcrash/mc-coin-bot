@@ -27,8 +27,8 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 @pytest.fixture()
 def default_config_path() -> Path:
-    """config/default.yaml 경로."""
-    return Path("config/default.yaml")
+    """config/spot_supertrend.yaml 경로."""
+    return Path("config/spot_supertrend.yaml")
 
 
 @pytest.fixture()
@@ -56,12 +56,8 @@ def full_yaml(tmp_path: Path) -> Path:
             "capital": 50000.0,
         },
         "strategy": {
-            "name": "tsmom",
-            "params": {
-                "lookback": 30,
-                "vol_window": 30,
-                "vol_target": 0.35,
-            },
+            "name": "supertrend",
+            "params": {},
         },
         "portfolio": {
             "max_leverage_cap": 2.0,
@@ -106,7 +102,7 @@ class TestLoadConfig:
     """load_config 함수 검증."""
 
     def test_load_default_config(self, default_config_path: Path) -> None:
-        """config/default.yaml 로드 검증."""
+        """config/spot_supertrend.yaml 로드 검증."""
         cfg = load_config(default_config_path)
 
         assert isinstance(cfg, RunConfig)
@@ -114,12 +110,12 @@ class TestLoadConfig:
         assert isinstance(cfg.strategy, StrategySection)
         assert isinstance(cfg.portfolio, PortfolioManagerConfig)
 
-        assert len(cfg.backtest.symbols) == 8
+        assert len(cfg.backtest.symbols) == 6
         assert cfg.backtest.symbols[0] == "BTC/USDT"
         assert cfg.backtest.capital == 100000.0
-        assert cfg.strategy.name == "tsmom"
-        assert cfg.strategy.params["lookback"] == 30
-        assert cfg.portfolio.max_leverage_cap == 2.0
+        assert cfg.strategy.name == "supertrend"
+        assert cfg.strategy.params["atr_period"] == 7
+        assert cfg.portfolio.max_leverage_cap == 1.0
 
     def test_load_minimal_yaml(self, minimal_yaml: Path) -> None:
         """최소 설정 (symbols만) 로드."""
@@ -129,7 +125,7 @@ class TestLoadConfig:
         # defaults
         assert cfg.backtest.timeframe == "1D"
         assert cfg.backtest.capital == 100000.0
-        assert cfg.strategy.name == "tsmom"
+        assert cfg.strategy.name == "supertrend"
         assert cfg.strategy.params == {}
         assert isinstance(cfg.portfolio, PortfolioManagerConfig)
 
@@ -179,26 +175,21 @@ class TestLoadConfig:
 class TestBuildStrategy:
     """build_strategy 함수 검증."""
 
-    def test_build_strategy_tsmom(self, default_config_path: Path) -> None:
-        """tsmom 전략 생성."""
+    def test_build_strategy_supertrend(self, default_config_path: Path) -> None:
+        """supertrend 전략 생성."""
         cfg = load_config(default_config_path)
         strategy = build_strategy(cfg)
 
-        assert strategy.name == "VW-TSMOM"
+        assert strategy.name == "supertrend"
         assert strategy.config is not None
-        assert strategy.config.lookback == 30
-        assert strategy.config.vol_target == 0.35
 
     def test_build_strategy_no_params(self, minimal_yaml: Path) -> None:
         """params 없이 기본값으로 전략 생성."""
         cfg = load_config(minimal_yaml)
         strategy = build_strategy(cfg)
 
-        assert strategy.name == "VW-TSMOM"
-        # TSMOMConfig 기본값
+        assert strategy.name == "supertrend"
         assert strategy.config is not None
-        assert strategy.config.lookback == 30
-        assert strategy.config.vol_target == 0.30
 
     def test_build_strategy_unknown(self, tmp_path: Path) -> None:
         """알 수 없는 전략은 KeyError."""

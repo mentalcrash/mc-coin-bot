@@ -25,7 +25,6 @@ _DIR_MARKER_MAP: dict[str, str] = {
     "/data/": "data",
     "/backtest/": "integration",
     "/regression/": "slow",
-    "/orchestrator/": "integration",
     "/notification/": "integration",
     "/exchange/": "integration",
     "/pipeline/": "integration",
@@ -34,7 +33,6 @@ _DIR_MARKER_MAP: dict[str, str] = {
     "/models/": "unit",
     "/config/": "unit",
     "/market/": "unit",
-    "/regime/": "unit",
     "/monitoring/": "unit",
     "/catalog/": "unit",
     "/portfolio/": "unit",
@@ -99,17 +97,16 @@ def sample_ohlcv_df() -> pd.DataFrame:
 
 @pytest.fixture
 def sample_processed_df(sample_ohlcv_df: pd.DataFrame) -> pd.DataFrame:
-    """전처리된 DataFrame을 생성합니다."""
-    from src.strategy.tsmom.config import TSMOMConfig
-    from src.strategy.tsmom.preprocessor import preprocess
-
-    config = TSMOMConfig(
-        lookback=20,
-        vol_window=20,
-        vol_target=0.40,
-    )
-
-    return preprocess(sample_ohlcv_df, config)
+    """전처리된 DataFrame을 생성합니다 (전략 독립 synthetic 데이터)."""
+    df = sample_ohlcv_df.copy()
+    close: pd.Series = df["close"]  # type: ignore[assignment]
+    log_ret = np.log(close / close.shift(1))
+    df["log_return"] = log_ret
+    df["realized_vol"] = log_ret.rolling(20).std() * np.sqrt(365)
+    df["vol_scalar"] = 0.40 / df["realized_vol"].replace(0, np.nan)
+    df["vol_scalar"] = df["vol_scalar"].clip(upper=5.0).fillna(1.0)
+    df["momentum"] = close.pct_change(20)
+    return df
 
 
 @pytest.fixture
@@ -123,21 +120,15 @@ def sample_benchmark_returns(sample_ohlcv_df: pd.DataFrame) -> pd.Series:  # typ
 
 @pytest.fixture
 def sample_diagnostics_df(sample_processed_df: pd.DataFrame) -> pd.DataFrame:
-    """샘플 진단 DataFrame을 생성합니다."""
-    from src.strategy.tsmom.config import TSMOMConfig
-    from src.strategy.tsmom.signal import generate_signals_with_diagnostics
+    """샘플 진단 DataFrame을 생성합니다 (beta_attribution 테스트용 synthetic)."""
+    df = sample_processed_df.copy()
+    momentum = df["momentum"].fillna(0)
+    vol_scalar = df["vol_scalar"].fillna(1)
 
-    config = TSMOMConfig(
-        lookback=20,
-        vol_window=20,
-        vol_target=0.40,
-    )
-
-    result = generate_signals_with_diagnostics(sample_processed_df, config, symbol="BTC/USDT")
-    df = result.diagnostics_df
-
-    # beta_attribution 테스트에서 필요한 컬럼 보충 (Pure TSMOM에서는 deadband 미사용)
-    if "signal_after_deadband" not in df.columns:
-        df["signal_after_deadband"] = df["scaled_momentum"]
+    df["raw_momentum"] = momentum
+    df["scaled_momentum"] = momentum * vol_scalar
+    df["signal_after_deadband"] = df["scaled_momentum"]
+    df["final_target_weight"] = np.sign(df["scaled_momentum"])
+    df["signal_suppression_reason"] = "none"
 
     return df

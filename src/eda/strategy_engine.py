@@ -23,15 +23,6 @@ from src.models.types import Direction
 
 if TYPE_CHECKING:
     from src.core.event_bus import EventBus
-    from src.eda.ports import (
-        DerivativesProviderPort,
-        DerivExtProviderPort,
-        FeatureStorePort,
-        MacroProviderPort,
-        OnchainProviderPort,
-        OptionsProviderPort,
-    )
-    from src.regime.service import RegimeService
     from src.strategy.base import BaseStrategy
 
 
@@ -60,13 +51,6 @@ class StrategyEngine:
         target_timeframe: str = "1D",
         *,
         max_buffer_size: int | None = 5000,
-        regime_service: RegimeService | None = None,
-        derivatives_provider: DerivativesProviderPort | None = None,
-        feature_store: FeatureStorePort | None = None,
-        onchain_provider: OnchainProviderPort | None = None,
-        macro_provider: MacroProviderPort | None = None,
-        options_provider: OptionsProviderPort | None = None,
-        deriv_ext_provider: DerivExtProviderPort | None = None,
     ) -> None:
         self._strategy = strategy
         self._warmup = warmup_periods or self._detect_warmup()
@@ -76,13 +60,6 @@ class StrategyEngine:
         self._bus: EventBus | None = None
         self._target_timeframe = target_timeframe
         self._max_buffer_size = max_buffer_size
-        self._regime_service = regime_service
-        self._derivatives_provider = derivatives_provider
-        self._feature_store = feature_store
-        self._onchain_provider = onchain_provider
-        self._macro_provider = macro_provider
-        self._options_provider = options_provider
-        self._deriv_ext_provider = deriv_ext_provider
 
     async def register(self, bus: EventBus) -> None:
         """EventBus에 BarEvent 구독 등록.
@@ -144,26 +121,6 @@ class StrategyEngine:
             self._buffers[symbol],
             index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
         )
-
-        # 3.5~3.8 Enrichment (regime, derivatives, features, on-chain)
-        df = self._apply_enrichments(df, symbol)
-
-        # 3.9 필수 enrichment 검증 (라이브 무결성)
-        enrichment_issue = self._check_live_enrichments(df, symbol)
-        if enrichment_issue is not None:
-            logger.error(
-                "Live enrichment validation failed for {}: {}",
-                symbol,
-                enrichment_issue,
-            )
-            alert = RiskAlertEvent(
-                alert_level="CRITICAL",
-                message=f"Required enrichment data missing for {symbol}: {enrichment_issue}",
-                correlation_id=bar.correlation_id,
-                source="StrategyEngine",
-            )
-            await bus.publish(alert)
-            return
 
         try:
             _, signals = self._strategy.run(df)
@@ -249,186 +206,6 @@ class StrategyEngine:
             symbol,
             self._warmup,
         )
-
-    def _apply_enrichments(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """모든 enrichment를 순차 적용.
-
-        순서: regime→derivatives→features→on-chain→macro→options→deriv_ext
-        """
-        if self._regime_service is not None:
-            df = self._enrich_with_regime(df, symbol)
-        if self._derivatives_provider is not None:
-            df = self._enrich_with_derivatives(df, symbol)
-        if self._feature_store is not None:
-            df = self._enrich_with_features(df, symbol)
-        if self._onchain_provider is not None:
-            df = self._enrich_with_onchain(df, symbol)
-        if self._macro_provider is not None:
-            df = self._enrich_with_macro(df, symbol)
-        if self._options_provider is not None:
-            df = self._enrich_with_options(df, symbol)
-        if self._deriv_ext_provider is not None:
-            df = self._enrich_with_deriv_ext(df, symbol)
-        return df
-
-    def _check_live_enrichments(self, df: pd.DataFrame, symbol: str) -> str | None:
-        """라이브 모드에서 필수 enrichment 검증.
-
-        최신 bar(마지막 행)에 대해 required_enrichments 컬럼의
-        존재 여부와 NaN 여부를 검사한다.
-
-        Args:
-            df: enrichment이 적용된 DataFrame
-            symbol: 거래 심볼
-
-        Returns:
-            에러 메시지 (문제 있을 때) 또는 None (정상)
-        """
-        required = self._strategy.required_enrichments
-        if not required:
-            return None
-
-        # 컬럼 존재 확인
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            return f"missing columns: {missing}"
-
-        # 최신 bar NaN 확인
-        if df.empty:
-            return None
-
-        latest = df.iloc[-1]
-        nan_cols = [c for c in required if pd.isna(latest[c])]
-        if nan_cols:
-            return f"NaN in latest bar: {nan_cols}"
-
-        return None
-
-    def _enrich_with_regime(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """RegimeService로 DataFrame에 regime 컬럼을 추가.
-
-        1. 사전 계산 있으면 timestamp join
-        2. 없으면 현재 state를 전체 행에 broadcast (live fallback)
-        """
-        assert self._regime_service is not None
-        df = self._regime_service.enrich_dataframe(df, symbol)
-
-        # Live fallback: 사전 계산 없으면 현재 state broadcast
-        if "regime_label" not in df.columns:
-            cols = self._regime_service.get_regime_columns(symbol)
-            if cols is not None:
-                for col_name, col_val in cols.items():
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_derivatives(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """DerivativesProvider로 DataFrame에 derivatives 컬럼 추가.
-
-        1. precomputed 있으면 merge_asof
-        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._derivatives_provider is not None
-        df = self._derivatives_provider.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        if "funding_rate" not in df.columns:
-            cols = self._derivatives_provider.get_derivatives_columns(symbol)
-            if cols is not None:
-                for col_name, col_val in cols.items():
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_features(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """FeatureStore 캐시 지표를 DataFrame에 추가.
-
-        1. 사전 계산 있으면 timestamp join
-        2. 없으면 최신 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._feature_store is not None
-        df = self._feature_store.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        cols = self._feature_store.get_feature_columns(symbol)
-        if cols is not None:
-            for col_name, col_val in cols.items():
-                if col_name not in df.columns:
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_onchain(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """OnchainProvider로 DataFrame에 on-chain 컬럼 추가.
-
-        1. precomputed 있으면 merge_asof
-        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._onchain_provider is not None
-        df = self._onchain_provider.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        cols = self._onchain_provider.get_onchain_columns(symbol)
-        if cols is not None:
-            for col_name, col_val in cols.items():
-                if col_name not in df.columns:
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_macro(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """MacroProvider로 DataFrame에 macro 컬럼 추가.
-
-        1. precomputed 있으면 merge_asof
-        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._macro_provider is not None
-        df = self._macro_provider.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        cols = self._macro_provider.get_macro_columns(symbol)
-        if cols is not None:
-            for col_name, col_val in cols.items():
-                if col_name not in df.columns:
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_options(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """OptionsProvider로 DataFrame에 options 컬럼 추가.
-
-        1. precomputed 있으면 merge_asof
-        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._options_provider is not None
-        df = self._options_provider.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        cols = self._options_provider.get_options_columns(symbol)
-        if cols is not None:
-            for col_name, col_val in cols.items():
-                if col_name not in df.columns:
-                    df[col_name] = col_val
-
-        return df
-
-    def _enrich_with_deriv_ext(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-        """DerivExtProvider로 DataFrame에 deriv_ext 컬럼 추가.
-
-        1. precomputed 있으면 merge_asof
-        2. 없으면 현재 cached values를 전체 행에 broadcast (live fallback)
-        """
-        assert self._deriv_ext_provider is not None
-        df = self._deriv_ext_provider.enrich_dataframe(df, symbol)
-
-        # Live fallback: precomputed가 없으면 cached values broadcast
-        cols = self._deriv_ext_provider.get_deriv_ext_columns(symbol)
-        if cols is not None:
-            for col_name, col_val in cols.items():
-                if col_name not in df.columns:
-                    df[col_name] = col_val
-
-        return df
 
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지.
