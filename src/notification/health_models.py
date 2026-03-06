@@ -103,6 +103,70 @@ class StrategyPerformanceSnapshot(BaseModel):
     status: str
 
 
+class AssetDashboardItem(BaseModel):
+    """에셋별 대시보드 데이터 (Daily Report Section 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    signal: str  # "LONG" / "NEUTRAL"
+    current_price: float
+    change_24h_pct: float
+    position_value: float
+    day_pnl: float
+    stop_price: float | None = None
+    stop_distance_pct: float | None = None
+
+
+class StrategyIndicatorItem(BaseModel):
+    """에셋별 전략 지표 (Daily Report Section 4)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    supertrend_line: float | None = None
+    adx_value: float | None = None
+    outlook: str = ""
+
+
+class DailyReportData(BaseModel):
+    """Spot Daily Report 전체 데이터 (5 sections)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Section 1: Strategy Info
+    strategy_name: str
+    strategy_params: dict[str, str]
+    trailing_stop_config: str
+    timeframe: str
+
+    # Section 2: Portfolio Summary
+    total_equity: float
+    available_cash: float
+    cash_pct: float
+    today_pnl: float
+    invested_count: int
+    total_asset_count: int
+    cumulative_return_pct: float
+    max_drawdown_pct: float
+    rolling_sharpe_30d: float
+
+    # Section 3: Asset Dashboard
+    assets: tuple[AssetDashboardItem, ...]
+
+    # Section 4: Strategy Indicators
+    indicators: tuple[StrategyIndicatorItem, ...]
+
+    # Section 5: System Health
+    uptime_seconds: float
+    is_circuit_breaker_active: bool
+    ws_ok_count: int
+    ws_total_count: int
+    win_rate: float
+    profit_factor: float
+    alpha_decay_detected: bool
+
+
 class StrategyHealthSnapshot(BaseModel):
     """Tier 3: Strategy Health 리포트.
 

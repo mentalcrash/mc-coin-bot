@@ -191,8 +191,9 @@ def _make_scheduler_with_collector() -> tuple[ReportScheduler, AsyncMock, MagicM
     pm.open_position_count = 2
     pm.total_equity = 10100.0
 
-    # Mock HealthDataCollector
+    # Mock HealthDataCollector (legacy 경로 — spot_client 없음)
     collector = MagicMock()
+    collector._spot_client = None  # legacy fallback 유도
     system_health = MagicMock()
     system_health.uptime_seconds = 86400.0
     system_health.is_circuit_breaker_active = False

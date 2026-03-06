@@ -398,7 +398,9 @@ class LiveRunner:
 
             # 6. Discord Bot + NotificationEngine (선택적)
             discord_tasks = await self._setup_discord(
-                bus, pm, rm, analytics, exchange_stop_mgr=exchange_stop_mgr
+                bus, pm, rm, analytics,
+                exchange_stop_mgr=exchange_stop_mgr,
+                strategy_engine=strategy_engine,
             )
 
             # 6.5. ExchangeStopManager에 notification_queue 사후 주입
@@ -682,6 +684,7 @@ class LiveRunner:
         rm: EDARiskManager,
         analytics: AnalyticsEngine,
         exchange_stop_mgr: Any = None,
+        strategy_engine: StrategyEngine | None = None,
     ) -> _DiscordTasks | None:
         """Discord Bot + NotificationEngine 초기화 (선택적).
 
@@ -715,6 +718,9 @@ class LiveRunner:
         # HealthDataCollector 생성 + 시작
         from src.notification.health_collector import HealthDataCollector
 
+        # spot_client 참조 (SpotExecutor일 때)
+        spot_client = getattr(self._executor, "_client", None)
+
         health_collector = HealthDataCollector(
             pm=pm,
             rm=rm,
@@ -724,6 +730,8 @@ class LiveRunner:
             queue=notification_queue,
             symbols=self._symbols,
             exchange_stop_mgr=exchange_stop_mgr,
+            spot_client=spot_client,
+            strategy_engine=strategy_engine,
         )
         await health_collector.start()
 

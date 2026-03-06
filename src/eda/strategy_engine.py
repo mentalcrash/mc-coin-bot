@@ -57,6 +57,7 @@ class StrategyEngine:
         self._buffers: dict[str, list[dict[str, float]]] = {}
         self._timestamps: dict[str, list[datetime]] = {}
         self._consecutive_failures: dict[str, int] = {}
+        self._latest_indicators: dict[str, dict[str, float]] = {}
         self._bus: EventBus | None = None
         self._target_timeframe = target_timeframe
         self._max_buffer_size = max_buffer_size
@@ -123,7 +124,7 @@ class StrategyEngine:
         )
 
         try:
-            _, signals = self._strategy.run(df)
+            processed_df, signals = self._strategy.run(df)
         except (ValueError, TypeError) as exc:
             count = self._consecutive_failures.get(symbol, 0) + 1
             self._consecutive_failures[symbol] = count
@@ -149,8 +150,9 @@ class StrategyEngine:
                 await bus.publish(alert)
             return
 
-        # 성공 시 연속 실패 카운터 리셋
+        # 성공 시 연속 실패 카운터 리셋 + indicator 캐시
         self._consecutive_failures[symbol] = 0
+        self._latest_indicators[symbol] = self._extract_indicators(processed_df)
 
         # 4. 최신 시그널 추출 + SignalEvent 발행 (매 bar)
         latest_direction = int(signals.direction.iloc[-1])
@@ -224,6 +226,35 @@ class StrategyEngine:
         return 50  # 안전한 기본값
 
     @property
+    def strategy(self) -> BaseStrategy:
+        """내부 전략 인스턴스 (읽기 전용)."""
+        return self._strategy
+
+    @property
+    def target_timeframe(self) -> str:
+        """타겟 타임프레임."""
+        return self._target_timeframe
+
+    @property
     def warmup_periods(self) -> int:
         """현재 워밍업 기간."""
         return self._warmup
+
+    @property
+    def latest_indicators(self) -> dict[str, dict[str, float]]:
+        """심볼별 최신 전략 indicator 값 (읽기 전용)."""
+        return dict(self._latest_indicators)
+
+    _INDICATOR_COLS = ("supertrend", "supertrend_dir", "atr", "adx")
+
+    @staticmethod
+    def _extract_indicators(df: pd.DataFrame) -> dict[str, float]:
+        """processed DataFrame 마지막 행에서 알려진 indicator 컬럼 추출."""
+        last = df.iloc[-1]
+        result: dict[str, float] = {}
+        for col in StrategyEngine._INDICATOR_COLS:
+            if col in df.columns:
+                val = last[col]
+                if pd.notna(val):
+                    result[col] = float(val)
+        return result

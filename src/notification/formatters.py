@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     )
     from src.models.backtest import PerformanceMetrics, TradeRecord
     from src.notification.health_models import (
+        DailyReportData,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
     )
@@ -484,6 +485,133 @@ def format_enhanced_daily_report_embed(
 
     return {
         "title": "Daily Report",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
+    """Spot Daily Report -> 5-section Discord Embed.
+
+    Args:
+        data: DailyReportData (HealthDataCollector에서 수집)
+
+    Returns:
+        Discord Embed dict
+    """
+    color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Strategy Info
+    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
+    fields.append(
+        {
+            "name": f"Strategy: {data.strategy_name}",
+            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
+            "inline": False,
+        }
+    )
+
+    # Section 2: Portfolio Summary
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {
+                "name": "Cash",
+                "value": f"${data.available_cash:,.0f} ({data.cash_pct:.1f}%)",
+                "inline": True,
+            },
+            {"name": "Today PnL", "value": f"${data.today_pnl:+,.2f}", "inline": True},
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count} assets",
+                "inline": True,
+            },
+            {
+                "name": "Cum. Return",
+                "value": f"{data.cumulative_return_pct:+.2f}%",
+                "inline": True,
+            },
+            {"name": "MDD", "value": f"{data.max_drawdown_pct:.1f}%", "inline": True},
+        ]
+    )
+
+    # Section 3: Asset Dashboard
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.stop_distance_pct is not None:
+                stop_str = f"Stop {a.stop_distance_pct:.1f}%"
+            else:
+                stop_str = "—"
+            if a.position_value > 0:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%) | "
+                    f"${a.position_value:,.0f} | "
+                    f"PnL ${a.day_pnl:+,.2f} | {stop_str}"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Asset Dashboard ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 4: Strategy Indicators
+    if data.indicators:
+        ind_lines: list[str] = []
+        for i in data.indicators:
+            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
+            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
+            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
+        fields.append(
+            {
+                "name": "Strategy Indicators",
+                "value": "\n".join(ind_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 5: System Health
+    from src.notification.health_formatters import format_uptime
+
+    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
+    pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
+    fields.extend(
+        [
+            {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
+            {
+                "name": "CB / WS",
+                "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
+                "inline": True,
+            },
+            {
+                "name": "Sharpe (30d)",
+                "value": f"{data.rolling_sharpe_30d:.2f}",
+                "inline": True,
+            },
+            {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
+            {"name": "Profit Factor", "value": pf_str, "inline": True},
+            {
+                "name": "Alpha Decay",
+                "value": "DETECTED" if data.alpha_decay_detected else "OK",
+                "inline": True,
+            },
+        ]
+    )
+
+    return {
+        "title": "Spot Daily Report",
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),

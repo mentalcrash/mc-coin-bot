@@ -18,8 +18,11 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from src.notification.health_models import (
+    AssetDashboardItem,
+    DailyReportData,
     PositionStatus,
     StrategyHealthSnapshot,
+    StrategyIndicatorItem,
     StrategyPerformanceSnapshot,
     SystemHealthSnapshot,
 )
@@ -32,6 +35,8 @@ if TYPE_CHECKING:
     from src.eda.live_data_feed import LiveDataFeed
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.eda.risk_manager import EDARiskManager
+    from src.eda.strategy_engine import StrategyEngine
+    from src.exchange.binance_spot_client import BinanceSpotClient
     from src.notification.queue import NotificationQueue
 
 # Rolling Sharpe 계산 기간
@@ -70,6 +75,8 @@ class HealthDataCollector:
         queue: NotificationQueue,
         symbols: list[str],
         exchange_stop_mgr: Any = None,
+        spot_client: BinanceSpotClient | None = None,
+        strategy_engine: StrategyEngine | None = None,
     ) -> None:
         self._pm = pm
         self._rm = rm
@@ -79,6 +86,8 @@ class HealthDataCollector:
         self._queue = queue
         self._symbols = symbols
         self._exchange_stop_mgr = exchange_stop_mgr
+        self._spot_client = spot_client
+        self._strategy_engine = strategy_engine
 
         self._start_time = time.monotonic()
         self._sharpe_history: list[float] = []
@@ -154,7 +163,8 @@ class HealthDataCollector:
         alpha_decay = self.detect_alpha_decay()
 
         # 최근 20건 win rate / profit factor
-        recent_n = trades[-_RECENT_TRADES_COUNT:] if trades else []
+        trades_list = list(trades)
+        recent_n = trades_list[-_RECENT_TRADES_COUNT:] if trades_list else []
         win_rate, profit_factor = self.compute_trade_stats(recent_n)
 
         # 오픈 포지션
@@ -185,6 +195,178 @@ class HealthDataCollector:
             alpha_decay_detected=alpha_decay,
             strategy_breakdown=tuple(strategy_breakdown),
         )
+
+    # ─── Daily Report Data Collection ─────────────────────────
+
+    async def collect_daily_report_data(self) -> DailyReportData:
+        """Spot Daily Report용 전체 데이터 수집 (5 sections)."""
+        # Section 1: Strategy Info
+        strategy = self._strategy_engine.strategy if self._strategy_engine else None
+        strategy_name = strategy.name if strategy else "unknown"
+        strategy_params: dict[str, str] = {}
+        if strategy is not None and hasattr(strategy, "get_startup_info"):
+            strategy_params = strategy.get_startup_info()
+
+        ts_config = ""
+        pm_cfg = self._pm.pm_config
+        if pm_cfg.use_trailing_stop:
+            ts_config = f"{pm_cfg.trailing_stop_atr_multiplier}x ATR"
+
+        timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
+
+        # Section 2: Portfolio Summary
+        equity = self._pm.total_equity
+        cash = self._pm.available_cash
+        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
+
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        trades = self._analytics.closed_trades
+        trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
+        today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+
+        initial = self._pm.initial_capital
+        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
+
+        mdd = self._rm.current_drawdown * 100
+        cutoff_30d = datetime.now(UTC) - timedelta(days=_ROLLING_SHARPE_DAYS)
+        recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
+        sharpe = self.compute_rolling_sharpe(recent_30d)
+
+        # Sharpe history + alpha decay (동일 로직 재사용)
+        self._sharpe_history.append(sharpe)
+        if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
+            self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
+        alpha_decay = self.detect_alpha_decay()
+
+        all_trades = list(trades)
+        recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
+        win_rate, profit_factor = self.compute_trade_stats(recent_n)
+
+        # Section 3: Asset Dashboard (async — fetch_ticker)
+        assets = await self._collect_asset_dashboard()
+
+        # Section 4: Strategy Indicators
+        indicators = self._collect_strategy_indicators()
+
+        # Section 5: System Health
+        uptime = time.monotonic() - self._start_time
+        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
+
+        return DailyReportData(
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
+            trailing_stop_config=ts_config,
+            timeframe=timeframe,
+            total_equity=equity,
+            available_cash=cash,
+            cash_pct=cash_pct,
+            today_pnl=today_pnl,
+            invested_count=self._pm.open_position_count,
+            total_asset_count=len(self._symbols),
+            cumulative_return_pct=cum_return,
+            max_drawdown_pct=mdd,
+            rolling_sharpe_30d=sharpe,
+            assets=tuple(assets),
+            indicators=tuple(indicators),
+            uptime_seconds=uptime,
+            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
+            ws_ok_count=ws_ok,
+            ws_total_count=len(self._symbols),
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            alpha_decay_detected=alpha_decay,
+        )
+
+    async def _collect_asset_dashboard(self) -> list[AssetDashboardItem]:
+        """에셋별 가격/PnL/stop distance 수집."""
+        if self._spot_client is None:
+            return []
+
+        positions = self._pm.positions
+        active_stops: dict[str, Any] = (
+            self._exchange_stop_mgr.active_stops
+            if self._exchange_stop_mgr is not None
+            else {}
+        )
+
+        items: list[AssetDashboardItem] = []
+        for symbol in self._symbols:
+            try:
+                ticker = await self._spot_client.fetch_ticker(symbol)
+            except Exception:
+                logger.warning("fetch_ticker failed for {}, skipping", symbol)
+                continue
+
+            price = float(ticker.get("last", 0) or 0)
+            change_24h = float(ticker.get("percentage", 0) or 0)
+
+            pos = positions.get(symbol)
+            is_open = pos is not None and pos.is_open
+            pos_value = pos.size * pos.last_price if pos and is_open else 0.0
+            day_pnl = pos.unrealized_pnl if pos and is_open else 0.0
+            signal = pos.direction.name if pos and is_open else "NEUTRAL"
+
+            stop_state = active_stops.get(symbol)
+            stop_price = stop_state.stop_price if stop_state else None
+            stop_dist = (
+                (price - stop_price) / price * 100
+                if stop_price and price > 0
+                else None
+            )
+
+            items.append(
+                AssetDashboardItem(
+                    symbol=symbol,
+                    signal=signal,
+                    current_price=price,
+                    change_24h_pct=change_24h,
+                    position_value=pos_value,
+                    day_pnl=day_pnl,
+                    stop_price=stop_price,
+                    stop_distance_pct=stop_dist,
+                )
+            )
+        return items
+
+    def _collect_strategy_indicators(self) -> list[StrategyIndicatorItem]:
+        """StrategyEngine 캐시에서 에셋별 indicator 수집."""
+        if self._strategy_engine is None:
+            return []
+
+        indicators = self._strategy_engine.latest_indicators
+        items: list[StrategyIndicatorItem] = []
+
+        for symbol in self._symbols:
+            ind = indicators.get(symbol, {})
+            st_line = ind.get("supertrend")
+            adx_val = ind.get("adx")
+            st_dir = ind.get("supertrend_dir")
+            outlook = self._determine_outlook(adx_val, st_dir)
+
+            items.append(
+                StrategyIndicatorItem(
+                    symbol=symbol,
+                    supertrend_line=st_line,
+                    adx_value=adx_val,
+                    outlook=outlook,
+                )
+            )
+        return items
+
+    _OUTLOOK_ADX_THRESHOLD = 25
+    _OUTLOOK_ADX_STRONG = 35
+
+    @staticmethod
+    def _determine_outlook(adx: float | None, st_dir: float | None) -> str:
+        """ADX + SuperTrend direction → outlook 텍스트."""
+        if adx is None:
+            return "데이터 없음"
+        is_long = st_dir is not None and st_dir > 0
+        if adx < HealthDataCollector._OUTLOOK_ADX_THRESHOLD:
+            return "비추세"
+        if is_long:
+            return "강한 상승추세" if adx > HealthDataCollector._OUTLOOK_ADX_STRONG else "상승추세"
+        return "하락 전환 대기"
 
     # ─── Helper Functions ─────────────────────────────────────
 

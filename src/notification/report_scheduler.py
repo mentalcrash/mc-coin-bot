@@ -20,11 +20,14 @@ from loguru import logger
 from src.notification.formatters import (
     format_daily_report_embed,
     format_enhanced_daily_report_embed,
+    format_spot_daily_report_embed,
     format_weekly_report_embed,
 )
 from src.notification.models import ChannelRoute, NotificationItem, Severity
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from src.eda.analytics import AnalyticsEngine
     from src.eda.portfolio_manager import EDAPortfolioManager
     from src.monitoring.chart_generator import ChartGenerator
@@ -103,48 +106,33 @@ class ReportScheduler:
                 logger.exception("Failed to send weekly report")
 
     async def _send_daily_report(self) -> None:
-        """일일 리포트 생성 + enqueue (health + orchestrator 데이터 통합)."""
+        """일일 리포트 생성 + enqueue."""
         equity_series = self._analytics.get_equity_series()
         trades = self._analytics.closed_trades
         metrics = self._analytics.compute_metrics()
 
-        # 오늘 거래 필터
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
 
-        # Health 데이터 수집 (collector 있을 때만)
-        system_health = None
-        strategy_health = None
-        if self._health_collector is not None:
-            try:
-                system_health = self._health_collector.collect_system_health()
-                strategy_health = self._health_collector.collect_strategy_health()
-            except Exception:
-                logger.exception("Failed to collect health data for daily report")
-
-        # Embed 결정
-        has_health = system_health is not None or strategy_health is not None
-        if has_health:
-            embed = format_enhanced_daily_report_embed(
-                metrics=metrics,
-                open_positions=self._pm.open_position_count,
-                total_equity=self._pm.total_equity,
-                trades_today=trades_today,
-                system_health=system_health,
-                strategy_health=strategy_health,
-            )
-        else:
-            embed = format_daily_report_embed(
-                metrics=metrics,
-                open_positions=self._pm.open_position_count,
-                total_equity=self._pm.total_equity,
-                trades_today=trades_today,
-            )
-
-        # Severity — alpha decay 시 WARNING
+        # Spot Daily Report (새 경로: spot_client 있을 때)
+        embed: dict[str, object]
         severity = Severity.INFO
-        if strategy_health is not None and strategy_health.alpha_decay_detected:
-            severity = Severity.WARNING
+        _has_spot_report = (
+            self._health_collector is not None
+            and getattr(self._health_collector, "_spot_client", None) is not None
+        )
+        if _has_spot_report:
+            assert self._health_collector is not None  # narrowing for pyright
+            try:
+                report_data = await self._health_collector.collect_daily_report_data()
+                embed = format_spot_daily_report_embed(report_data)
+                if report_data.alpha_decay_detected:
+                    severity = Severity.WARNING
+            except Exception:
+                logger.exception("Spot daily report failed, falling back to legacy")
+                embed, severity = self._build_legacy_embed(metrics, trades_today)
+        else:
+            embed, severity = self._build_legacy_embed(metrics, trades_today)
 
         # 차트 생성 (blocking → executor)
         loop = asyncio.get_running_loop()
@@ -161,6 +149,50 @@ class ReportScheduler:
         )
         await self._queue.enqueue(item)
         logger.info("Daily report enqueued ({} charts)", len(files))
+
+    def _build_legacy_embed(
+        self,
+        metrics: object,
+        trades_today: Sequence[object],
+    ) -> tuple[dict[str, object], Severity]:
+        """Legacy daily report embed (fallback).
+
+        Returns:
+            (embed dict, severity) 튜플
+        """
+        system_health = None
+        strategy_health = None
+        if self._health_collector is not None:
+            try:
+                system_health = self._health_collector.collect_system_health()
+                strategy_health = self._health_collector.collect_strategy_health()
+            except Exception:
+                logger.exception("Failed to collect health data for daily report")
+
+        severity = Severity.INFO
+        if strategy_health is not None and strategy_health.alpha_decay_detected:
+            severity = Severity.WARNING
+
+        has_health = system_health is not None or strategy_health is not None
+        if has_health:
+            embed = format_enhanced_daily_report_embed(
+                metrics=metrics,  # type: ignore[arg-type]
+                open_positions=self._pm.open_position_count,
+                total_equity=self._pm.total_equity,
+                trades_today=trades_today,  # type: ignore[arg-type]
+                system_health=system_health,
+                strategy_health=strategy_health,
+            )
+            return embed, severity
+        return (
+            format_daily_report_embed(
+                metrics=metrics,  # type: ignore[arg-type]
+                open_positions=self._pm.open_position_count,
+                total_equity=self._pm.total_equity,
+                trades_today=trades_today,  # type: ignore[arg-type]
+            ),
+            severity,
+        )
 
     async def _send_weekly_report(self) -> None:
         """주간 리포트 생성 + enqueue."""
