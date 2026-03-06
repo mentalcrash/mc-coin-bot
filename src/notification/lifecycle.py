@@ -36,24 +36,6 @@ def _format_uptime(seconds: float) -> str:
     return " ".join(parts)
 
 
-def _format_pod_table(pod_summaries: list[dict[str, object]]) -> str:
-    """Pod 요약 리스트를 monospace 테이블 문자열로 변환.
-
-    orchestrator_formatters.py의 Pod 테이블 패턴 재사용.
-    """
-    lines: list[str] = [
-        "`Pod              State       Alloc`",
-        "`──────────────────────────────────`",
-    ]
-    for summary in pod_summaries:
-        pid = str(summary.get("pod_id", ""))
-        state = str(summary.get("state", ""))
-        raw_frac = summary.get("capital_fraction", 0.0)
-        frac = float(raw_frac) if isinstance(raw_frac, (int, float)) else 0.0
-        lines.append(f"`{pid:<16} {state:<11} {frac:>5.1%}`")
-    return "\n".join(lines)
-
-
 def format_startup_embed(
     *,
     mode: str,
@@ -61,7 +43,6 @@ def format_startup_embed(
     symbols: list[str],
     capital: float,
     timeframe: str,
-    pod_summaries: list[dict[str, object]] | None = None,
 ) -> dict[str, Any]:
     """봇 시작 → GREEN embed.
 
@@ -71,7 +52,6 @@ def format_startup_embed(
         symbols: 거래 심볼 리스트
         capital: 초기 자본
         timeframe: 타임프레임
-        pod_summaries: Orchestrator pod 요약 (None이면 Pods 필드 미포함)
 
     Returns:
         Discord Embed dict
@@ -85,9 +65,6 @@ def format_startup_embed(
         {"name": "Capital", "value": f"${capital:,.0f}", "inline": True},
         {"name": "Symbols", "value": symbols_str, "inline": False},
     ]
-
-    if pod_summaries is not None:
-        fields.append({"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False})
 
     return {
         "title": "MC Coin Bot Started",
@@ -107,7 +84,6 @@ def format_shutdown_embed(
     realized_pnl: float,
     unrealized_pnl: float,
     open_positions: int,
-    pod_summaries: list[dict[str, object]] | None = None,
 ) -> dict[str, Any]:
     """봇 정상 종료 → YELLOW embed.
 
@@ -119,7 +95,6 @@ def format_shutdown_embed(
         realized_pnl: 금일 실현 PnL
         unrealized_pnl: 미실현 PnL
         open_positions: 오픈 포지션 수
-        pod_summaries: Orchestrator pod 요약 (None이면 Pods 필드 미포함)
 
     Returns:
         Discord Embed dict
@@ -140,9 +115,6 @@ def format_shutdown_embed(
         {"name": "Unrealized", "value": f"${unrealized_pnl:+,.2f}", "inline": True},
         {"name": "Open Positions", "value": str(open_positions), "inline": True},
     ]
-
-    if pod_summaries is not None:
-        fields.append({"name": "Pods", "value": _format_pod_table(pod_summaries), "inline": False})
 
     return {
         "title": "MC Coin Bot Stopped",

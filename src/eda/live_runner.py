@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from src.eda.reconciler import PositionReconciler
     from src.exchange.binance_client import BinanceClient
     from src.exchange.binance_futures_client import BinanceFuturesClient
+    from src.exchange.binance_spot_client import BinanceSpotClient
     from src.monitoring.metrics import MetricsExporter
     from src.notification.bot import DiscordBotService
     from src.notification.config import DiscordBotConfig
@@ -81,6 +82,7 @@ class LiveMode(StrEnum):
     PAPER = "paper"
     SHADOW = "shadow"
     LIVE = "live"
+    SPOT_LIVE = "spot_live"
 
 
 # Reconciler 검증 주기 (초)
@@ -136,6 +138,7 @@ class LiveRunner:
         self._metrics_port = metrics_port
         self._client: BinanceClient | None = None
         self._futures_client: BinanceFuturesClient | None = None
+        self._spot_client: BinanceSpotClient | None = None
         self._symbols: list[str] = []
         self._start_time = time.monotonic()
 
@@ -250,6 +253,53 @@ class LiveRunner:
         runner._symbols = symbols
         return runner
 
+    @classmethod
+    def spot_live(
+        cls,
+        strategy: BaseStrategy,
+        symbols: list[str],
+        target_timeframe: str,
+        config: PortfolioManagerConfig,
+        client: BinanceClient,
+        spot_client: BinanceSpotClient,
+        initial_capital: float = 10000.0,
+        asset_weights: dict[str, float] | None = None,
+        db_path: str | None = None,
+        discord_config: DiscordBotConfig | None = None,
+        metrics_port: int = 0,
+    ) -> LiveRunner:
+        """Spot Live 모드: LiveDataFeed(Spot) + SpotExecutor(Spot).
+
+        Args:
+            strategy: 전략 인스턴스
+            symbols: 거래 심볼 리스트 (예: ["BTC/USDT"])
+            target_timeframe: 집계 목표 TF
+            config: 포트폴리오 설정
+            client: BinanceClient (데이터 스트리밍용)
+            spot_client: BinanceSpotClient (거래용)
+        """
+        from src.eda.spot_executor import SpotExecutor
+
+        feed = LiveDataFeed(symbols, target_timeframe, client)
+        executor = SpotExecutor(spot_client)
+        runner = cls(
+            strategy=strategy,
+            feed=feed,
+            executor=executor,
+            target_timeframe=target_timeframe,
+            config=config,
+            mode=LiveMode.SPOT_LIVE,
+            initial_capital=initial_capital,
+            asset_weights=asset_weights,
+            db_path=db_path,
+            discord_config=discord_config,
+            metrics_port=metrics_port,
+        )
+        runner._client = client
+        runner._spot_client = spot_client
+        runner._symbols = symbols
+        return runner
+
     async def _init_capital_and_db(self) -> tuple[float, Any]:
         """Pre-flight checks + DB 초기화.
 
@@ -261,6 +311,8 @@ class LiveRunner:
         capital = self._initial_capital
         if self._mode == LiveMode.LIVE and self._futures_client is not None:
             capital = await self._preflight_checks()
+        elif self._mode == LiveMode.SPOT_LIVE and self._spot_client is not None:
+            capital = await self._spot_preflight_checks()
 
         db: Database | None = None
         if self._db_path:
@@ -298,8 +350,8 @@ class LiveRunner:
                 max_order_size_usd=capital * self._config.max_leverage_cap,
                 enable_circuit_breaker=True,
             )
-            # LIVE 모드: 동적 max_order_size 활성화
-            if self._mode == LiveMode.LIVE:
+            # LIVE/SPOT_LIVE 모드: 동적 max_order_size 활성화
+            if self._mode in (LiveMode.LIVE, LiveMode.SPOT_LIVE):
                 rm.enable_dynamic_max_order_size()
             oms = OMS(executor=self._executor, portfolio_manager=pm)
             analytics = AnalyticsEngine(initial_capital=self._initial_capital)
@@ -313,8 +365,8 @@ class LiveRunner:
             # 3.6. 거래소 기준 PM reconciliation (sync_capital 전에 실행!)
             _removed, _synced = await self._reconcile_positions(pm)
 
-            # 3.7. LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
-            if self._mode == LiveMode.LIVE:
+            # 3.7. LIVE/SPOT_LIVE 모드: state 복원 후 거래소 잔고로 PM/RM 동기화
+            if self._mode in (LiveMode.LIVE, LiveMode.SPOT_LIVE):
                 pm.sync_capital(capital)
                 rm.sync_peak_equity(capital)
                 logger.info(
@@ -380,7 +432,7 @@ class LiveRunner:
                     self._periodic_metrics_update(
                         metrics_exporter,
                         bus,
-                        self._futures_client,
+                        self._futures_client or self._spot_client,
                         ws_detail_callback=getattr(self, "_ws_detail_callback", None),
                     )
                 )
@@ -545,6 +597,24 @@ class LiveRunner:
         Returns:
             ExchangeStopManager 또는 None
         """
+        # Spot Live: SpotStopManager
+        if self._mode == LiveMode.SPOT_LIVE and self._spot_client is not None:
+            if not self._config.use_exchange_safety_stop:
+                return None
+            from src.eda.spot_stop_manager import SpotStopManager
+
+            spot_mgr = SpotStopManager(self._config, self._spot_client, pm)
+            if state_mgr is not None:
+                stops_state = await state_mgr.load_exchange_stops_state()
+                if stops_state:
+                    spot_mgr.restore_state(stops_state)
+            await spot_mgr.verify_exchange_stops()
+            placed = await spot_mgr.place_missing_stops()
+            if placed:
+                logger.info("Spot safety stops re-placed for {} symbols", placed)
+            return spot_mgr
+
+        # Futures Live: ExchangeStopManager
         if (
             self._mode != LiveMode.LIVE
             or self._futures_client is None
@@ -652,7 +722,6 @@ class LiveRunner:
             feed=self._feed,
             bus=bus,
             queue=notification_queue,
-            futures_client=self._futures_client,
             symbols=self._symbols,
             exchange_stop_mgr=exchange_stop_mgr,
         )
@@ -839,6 +908,9 @@ class LiveRunner:
             bus.subscribe(EventType.BAR, executor_bar_handler)
         elif isinstance(self._executor, LiveExecutor):
             self._executor.set_pm(pm)
+        # SpotExecutor or other executor with set_pm
+        elif hasattr(self._executor, "set_pm"):
+            self._executor.set_pm(pm)  # type: ignore[union-attr]
 
     async def _register_and_warmup(
         self,
@@ -877,6 +949,29 @@ class LiveRunner:
         Returns:
             (제거된 심볼/키 리스트, 동기화된 심볼/키 리스트) 튜플
         """
+        # Spot Live: Spot 잔고 기반 reconciliation
+        if self._mode == LiveMode.SPOT_LIVE and self._spot_client is not None:
+            from src.eda.reconciler import PositionReconciler
+
+            removed_list: list[str] = []
+            try:
+                spot_positions = await PositionReconciler.parse_spot_balances(
+                    self._spot_client, self._symbols
+                )
+                removed_list = pm.reconcile_with_exchange(spot_positions)
+            except Exception:
+                logger.exception(
+                    "Spot startup reconciliation failed — continuing with existing state"
+                )
+                return [], []
+            if removed_list:
+                logger.warning(
+                    "Spot reconciliation: removed {} phantom positions: {}",
+                    len(removed_list),
+                    removed_list,
+                )
+            return removed_list, []
+
         if self._mode != LiveMode.LIVE or self._futures_client is None:
             return [], []
 
@@ -924,6 +1019,10 @@ class LiveRunner:
         synced_symbols: list[str] | None = None,
     ) -> asyncio.Task[None] | None:
         """Live 모드: PositionReconciler 초기 + 주기적 검증 task 생성."""
+        # SPOT_LIVE: skip futures-based reconciler (Spot reconciliation done in _reconcile_positions)
+        if self._mode == LiveMode.SPOT_LIVE:
+            return None
+
         if self._mode != LiveMode.LIVE or self._futures_client is None:
             return None
 
@@ -1053,6 +1152,75 @@ class LiveRunner:
         logger.info("Pre-flight checks PASSED — using exchange balance ${:.2f}", total_balance)
         return total_balance
 
+    async def _spot_preflight_checks(self) -> float:
+        """SPOT_LIVE 모드 시작 전 Spot 잔고 검증.
+
+        - USDT + 보유 자산 가치 합산
+        - 미체결 주문 감지 시 CRITICAL 로그
+
+        Returns:
+            Spot equity (USDT + asset value)
+
+        Raises:
+            RuntimeError: equity 0 이하
+        """
+        assert self._spot_client is not None
+        logger.info("Running Spot pre-flight checks...")
+
+        from src.eda.reconciler import PositionReconciler
+        from src.eda.spot_stop_manager import SPOT_STOP_PREFIX
+
+        total_equity = await PositionReconciler.compute_spot_equity(
+            self._spot_client, self._symbols
+        )
+
+        if total_equity <= 0:
+            msg = f"Spot pre-flight FAIL: equity is {total_equity:.2f} (must be > 0)"
+            logger.critical(msg)
+            raise RuntimeError(msg)
+
+        logger.info("Spot pre-flight: equity = ${:.2f}", total_equity)
+
+        # Config capital 대비 차이 확인
+        config_capital = self._initial_capital
+        if config_capital > 0:
+            _balance_warn_ratio = 0.5
+            diff_ratio = abs(total_equity - config_capital) / config_capital
+            if diff_ratio > _balance_warn_ratio:
+                logger.warning(
+                    "Spot pre-flight WARNING: equity ${:.0f} differs from config capital ${:.0f} by {:.0%}",
+                    total_equity,
+                    config_capital,
+                    diff_ratio,
+                )
+
+        # 미체결 주문 감지 (spot-stop 주문 제외)
+        for symbol in self._symbols:
+            try:
+                open_orders = await self._spot_client.fetch_open_orders(symbol)
+                non_safety = [
+                    o
+                    for o in open_orders
+                    if not str(o.get("clientOrderId", "")).startswith(SPOT_STOP_PREFIX)
+                ]
+                if non_safety:
+                    logger.critical(
+                        "Spot pre-flight: {} stale open orders for {} — cancel manually!",
+                        len(non_safety),
+                        symbol,
+                    )
+                elif open_orders:
+                    logger.info(
+                        "Spot pre-flight: {} safety-stop orders found for {} (retained)",
+                        len(open_orders),
+                        symbol,
+                    )
+            except Exception:
+                logger.warning("Spot pre-flight: Failed to check open orders for {}", symbol)
+
+        logger.info("Spot pre-flight checks PASSED — equity ${:.2f}", total_equity)
+        return total_equity
+
     def _log_startup_summary(self, capital: float) -> None:
         """구조화된 startup summary 로그."""
         summary = (
@@ -1136,11 +1304,18 @@ class LiveRunner:
         # LIVE 모드: BinanceFuturesClient에 PrometheusApiCallback 주입
         if self._futures_client is not None:
             self._futures_client.set_metrics_callback(PrometheusApiCallback())
+        # SPOT_LIVE 모드: BinanceSpotClient에 PrometheusApiCallback 주입
+        if self._spot_client is not None:
+            self._spot_client.set_metrics_callback(PrometheusApiCallback())
 
         if isinstance(self._executor, LiveExecutor):
             from src.monitoring.metrics import PrometheusLiveExecutorMetrics
 
             self._executor.set_metrics(PrometheusLiveExecutorMetrics())
+        elif hasattr(self._executor, "set_metrics"):
+            from src.monitoring.metrics import PrometheusLiveExecutorMetrics
+
+            self._executor.set_metrics(PrometheusLiveExecutorMetrics())  # type: ignore[union-attr]
 
         # LiveDataFeed에 WS 상태 콜백 주입 (상세 메트릭 포함)
         ws_detail_cb = PrometheusWsDetailCallback()
@@ -1153,7 +1328,7 @@ class LiveRunner:
     async def _periodic_metrics_update(
         exporter: MetricsExporter,
         bus: EventBus,
-        futures_client: BinanceFuturesClient | None,
+        exchange_client: Any = None,
         ws_detail_callback: Any = None,
         interval: float = 30.0,
     ) -> None:
@@ -1163,8 +1338,8 @@ class LiveRunner:
             exporter.update_uptime()
             exporter.update_eventbus_metrics(bus)
             exporter.update_bar_ages()
-            if futures_client is not None:
-                exporter.update_exchange_health(futures_client.consecutive_failures)
+            if exchange_client is not None:
+                exporter.update_exchange_health(exchange_client.consecutive_failures)
             if ws_detail_callback is not None:
                 ws_detail_callback.update_message_ages()
             # Execution health check — fill rate gauge + alert

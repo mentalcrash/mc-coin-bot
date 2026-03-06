@@ -35,14 +35,19 @@ def app() -> None:
     db_path = config.db_path if config.enable_persistence else None
 
     try:
-        from src.cli.eda import launch_live
+        if config.execution_mode == "spot_live":
+            from src.cli.eda import launch_spot_live
 
-        launch_live(
-            config.config_path,
-            mode=config.execution_mode,
-            initial_capital=config.initial_capital,
-            db_path=db_path,
-        )
+            launch_spot_live(config.config_path, db_path=db_path)
+        else:
+            from src.cli.eda import launch_live
+
+            launch_live(
+                config.config_path,
+                mode=config.execution_mode,
+                initial_capital=config.initial_capital,
+                db_path=db_path,
+            )
     except KeyboardInterrupt:
         logger.info("Shutdown requested (KeyboardInterrupt)")
     except Exception:

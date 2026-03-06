@@ -207,12 +207,6 @@ def _make_scheduler_with_collector() -> tuple[ReportScheduler, AsyncMock, MagicM
     strategy_health.rolling_sharpe_30d = 1.2
     collector.collect_strategy_health.return_value = strategy_health
 
-    regime_report = MagicMock()
-    regime_report.regime_label = "Bullish"
-    regime_report.regime_score = 0.35
-    regime_report.symbols = ()
-    collector.collect_regime_report = AsyncMock(return_value=regime_report)
-
     scheduler = ReportScheduler(
         queue=queue,
         analytics=analytics,
@@ -232,7 +226,7 @@ class TestEnhancedDailyReport:
         queue.enqueue.assert_called_once()
         item = queue.enqueue.call_args[0][0]
         assert item.embed["title"] == "Daily Report"
-        # enhanced는 fields가 6 + market regime 등 추가
+        # enhanced는 fields가 6 + system status 등 추가
         assert len(item.embed["fields"]) > 6
 
     async def test_daily_report_enhanced_without_collector(self) -> None:
@@ -243,20 +237,6 @@ class TestEnhancedDailyReport:
         item = queue.enqueue.call_args[0][0]
         assert item.embed["title"] == "Daily Report"
         assert len(item.embed["fields"]) == 6  # 기존 6개 필드
-
-    async def test_daily_report_enhanced_regime_none(self) -> None:
-        """regime 실패 시 graceful."""
-        scheduler, queue, collector = _make_scheduler_with_collector()
-        collector.collect_regime_report = AsyncMock(return_value=None)
-
-        await scheduler._send_daily_report()
-
-        queue.enqueue.assert_called_once()
-        item = queue.enqueue.call_args[0][0]
-        assert item.embed["title"] == "Daily Report"
-        # regime 없어도 enhanced embed (system_health가 있으므로)
-        field_names = [f["name"] for f in item.embed["fields"]]
-        assert "Market Regime" not in field_names
 
     async def test_daily_report_alpha_decay_severity(self) -> None:
         """alpha_decay → Severity.WARNING."""

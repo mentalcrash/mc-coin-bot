@@ -3,7 +3,6 @@ paths:
   - "src/eda/**"
   - "src/core/event_bus.py"
   - "src/core/events.py"
-  - "src/orchestrator/**"
 ---
 
 # EDA (Event-Driven Architecture) Rules
@@ -30,7 +29,7 @@ DataFeed → BAR(1m) → CandleAggregator → BAR(TF)
 
 | Policy | Events | Behavior |
 |--------|--------|----------|
-| **DROPPABLE** | BAR, HEARTBEAT, RISK_ALERT, REGIME_CHANGE | Queue full → drop (non-blocking `put_nowait`) |
+| **DROPPABLE** | BAR, HEARTBEAT, RISK_ALERT | Queue full → drop (non-blocking `put_nowait`) |
 | **NEVER_DROP** | SIGNAL, FILL, ORDER_REQUEST, ORDER_ACK, ORDER_REJECTED, POSITION_UPDATE, BALANCE_UPDATE, CIRCUIT_BREAKER | Block until queue space (awaitable `put`) |
 
 - Consecutive drop 10+ → circuit breaker alert
@@ -109,4 +108,4 @@ Position reduction (반대 방향): 항상 통과
 - **DataFeedPort**: `start()`, `stop()` — Backtest: Parquet iteration, Live: WebSocket
 - **ExecutorPort**: `execute(order)` → `FillEvent | None`
   - Backtest: deferred fill, Live: Binance API
-- Strategy enrichment: regime → derivatives → features → onchain → macro → options → deriv_ext
+- Strategy enrichment: features

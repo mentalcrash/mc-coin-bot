@@ -4,11 +4,12 @@ EventBus subscriber로 실시간 메트릭을 수집하고,
 prometheus_client HTTP 서버를 통해 /metrics endpoint로 노출합니다.
 
 Layers:
-    1. Order Execution — 주문 지연시간/슬리피지/수수료
-    2. Position & PnL — 포지션/잔고/레버리지
-    3. Exchange API — API 호출/지연시간/WS 상태
-    4. Bot Health — uptime/heartbeat/EventBus 상태
-    5. Meta — Info/Enum (봇 메타데이터/모드)
+    L1. Order Execution — 주문 지연시간/슬리피지/수수료
+    L2. Position & PnL — 포지션/잔고/레버리지
+    L3. Exchange API — API 호출/지연시간/WS 상태
+    L4. Bot Health — uptime/heartbeat/EventBus 상태
+    L5. Per-Strategy — 전략별 PnL/슬리피지/이상 탐지
+    Meta — Info/Enum (봇 메타데이터/모드)
 
 Rules Applied:
     - EDA 패턴: EventBus subscribe
@@ -165,100 +166,6 @@ eventbus_handler_errors_counter = Counter(
 )
 
 # ==========================================================================
-# Layer 9: On-chain Data
-# ==========================================================================
-onchain_fetch_total = Counter(
-    "mcbot_onchain_fetch_total",
-    "On-chain fetch attempts",
-    ["source", "status"],  # status: success | failure | empty
-)
-onchain_fetch_latency_histogram = Histogram(
-    "mcbot_onchain_fetch_latency_seconds",
-    "Fetch latency per source",
-    ["source"],
-    buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
-)
-onchain_fetch_rows_gauge = Gauge(
-    "mcbot_onchain_fetch_rows",
-    "Rows returned by last fetch",
-    ["source", "name"],
-)
-onchain_last_success_gauge = Gauge(
-    "mcbot_onchain_last_success_timestamp",
-    "Last successful fetch Unix timestamp",
-    ["source"],
-)
-onchain_cache_size_gauge = Gauge(
-    "mcbot_onchain_cache_size",
-    "Cached on-chain columns per symbol",
-    ["symbol"],
-)
-onchain_cache_refresh_total = Counter(
-    "mcbot_onchain_cache_refresh_total",
-    "Cache refresh count",
-    ["status"],  # success | failure
-)
-
-# ==========================================================================
-# Layer 10: Surveillance
-# ==========================================================================
-surveillance_active_assets = Gauge(
-    "mcbot_surveillance_active_assets",
-    "Number of assets in current universe",
-)
-surveillance_last_scan_ts = Gauge(
-    "mcbot_surveillance_last_scan_timestamp",
-    "Last scan timestamp (unix epoch)",
-)
-surveillance_scan_duration = Gauge(
-    "mcbot_surveillance_scan_duration_seconds",
-    "Last scan duration",
-)
-surveillance_assets_added = Counter(
-    "mcbot_surveillance_assets_added_total",
-    "Total assets added by surveillance",
-)
-surveillance_assets_dropped = Counter(
-    "mcbot_surveillance_assets_dropped_total",
-    "Total assets dropped by surveillance",
-)
-
-# ==========================================================================
-# Layer 11: Unified Data Feeds
-# ==========================================================================
-datafeed_fetch_total = Counter(
-    "mcbot_datafeed_fetch_total",
-    "Data feed fetch attempts",
-    ["feed", "source", "status"],  # feed: onchain|derivatives|macro|options|deriv_ext|trade_flow
-)
-datafeed_fetch_latency_histogram = Histogram(
-    "mcbot_datafeed_fetch_latency_seconds",
-    "Fetch latency",
-    ["feed", "source"],
-    buckets=(0.5, 1, 2.5, 5, 10, 30, 60, 120),
-)
-datafeed_fetch_rows_gauge = Gauge(
-    "mcbot_datafeed_fetch_rows",
-    "Rows from last fetch",
-    ["feed", "source", "name"],
-)
-datafeed_last_success_gauge = Gauge(
-    "mcbot_datafeed_last_success_timestamp",
-    "Last success Unix ts",
-    ["feed", "source"],
-)
-datafeed_cache_size_gauge = Gauge(
-    "mcbot_datafeed_cache_size",
-    "Cached columns per feed+symbol",
-    ["feed", "symbol"],
-)
-datafeed_cache_refresh_total = Counter(
-    "mcbot_datafeed_cache_refresh_total",
-    "Cache refresh count",
-    ["feed", "status"],
-)
-
-# ==========================================================================
 # Meta
 # ==========================================================================
 bot_info = Info("mcbot", "Bot metadata")
@@ -337,20 +244,6 @@ class OnchainMetricsCallback(Protocol):
             row_count: 반환된 행 수
         """
         ...
-
-
-class PrometheusOnchainCallback:
-    """Prometheus 기반 On-chain 메트릭 콜백 구현."""
-
-    def on_fetch(
-        self, source: str, name: str, duration: float, status: str, row_count: int
-    ) -> None:
-        """Fetch 결과를 Prometheus 메트릭으로 기록."""
-        onchain_fetch_total.labels(source=source, status=status).inc()
-        onchain_fetch_latency_histogram.labels(source=source).observe(duration)
-        if status == "success" and row_count > 0:
-            onchain_fetch_rows_gauge.labels(source=source, name=name).set(row_count)
-            onchain_last_success_gauge.labels(source=source).set(time.time())
 
 
 # ==========================================================================
@@ -502,91 +395,6 @@ class PrometheusLiveExecutorMetrics:
     def on_fill_parse_failure(self, symbol: str) -> None:
         """Fill parse 실패 → counter 증가."""
         live_fill_parse_failure_counter.labels(symbol=symbol).inc()
-
-
-# ==========================================================================
-# SmartExecutor Counters
-# ==========================================================================
-smart_limit_placed_counter = Counter(
-    "mcbot_smart_limit_placed_total",
-    "Limit orders placed by SmartExecutor",
-    ["symbol"],
-)
-smart_limit_filled_counter = Counter(
-    "mcbot_smart_limit_filled_total",
-    "Limit orders fully filled",
-    ["symbol"],
-)
-smart_limit_timeout_counter = Counter(
-    "mcbot_smart_limit_timeout_total",
-    "Limit orders timed out",
-    ["symbol"],
-)
-smart_market_fallback_counter = Counter(
-    "mcbot_smart_market_fallback_total",
-    "Market fallback after limit timeout/deviation",
-    ["symbol"],
-)
-smart_partial_fill_merged_counter = Counter(
-    "mcbot_smart_partial_fill_merged_total",
-    "Partial limit + market fills merged (VWAP)",
-    ["symbol"],
-)
-
-
-# ==========================================================================
-# SmartExecutorMetrics — SmartExecutor 계측 Protocol
-# ==========================================================================
-@runtime_checkable
-class SmartExecutorMetrics(Protocol):
-    """SmartExecutor 내부 이벤트 메트릭 콜백 Protocol.
-
-    SmartExecutor에 주입하여 관심사 분리.
-    """
-
-    def on_limit_placed(self, symbol: str) -> None:
-        """Limit 주문 배치."""
-        ...
-
-    def on_limit_filled(self, symbol: str) -> None:
-        """Limit 주문 완전 체결."""
-        ...
-
-    def on_limit_timeout(self, symbol: str) -> None:
-        """Limit 주문 타임아웃."""
-        ...
-
-    def on_market_fallback(self, symbol: str) -> None:
-        """Market fallback 발생."""
-        ...
-
-    def on_partial_fill_merged(self, symbol: str) -> None:
-        """Partial limit + market fill VWAP merge."""
-        ...
-
-
-class PrometheusSmartExecutorMetrics:
-    """Prometheus 기반 SmartExecutor 메트릭 콜백 구현."""
-
-    def on_limit_placed(self, symbol: str) -> None:
-        """Limit 배치 → counter 증가."""
-        smart_limit_placed_counter.labels(symbol=symbol).inc()
-
-    def on_limit_filled(self, symbol: str) -> None:
-        """Limit 체결 → counter 증가."""
-        smart_limit_filled_counter.labels(symbol=symbol).inc()
-
-    def on_limit_timeout(self, symbol: str) -> None:
-        """Limit 타임아웃 → counter 증가."""
-        smart_limit_timeout_counter.labels(symbol=symbol).inc()
-
-    def on_market_fallback(self, symbol: str) -> None:
-        """Market fallback → counter 증가."""
-        smart_market_fallback_counter.labels(symbol=symbol).inc()
-
-    def on_partial_fill_merged(self, symbol: str) -> None:
-        """Partial merge → counter 증가."""
-        smart_partial_fill_merged_counter.labels(symbol=symbol).inc()
 
 
 # ==========================================================================

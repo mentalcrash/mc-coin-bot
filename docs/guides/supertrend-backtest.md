@@ -74,6 +74,12 @@ portfolio:
   rebalance_threshold: 0.05
   system_stop_loss: null       # PM 없음 (내장 손절 사용)
   use_trailing_stop: false
+  cost_model:
+    maker_fee: 0.001           # Spot 0.1% (VIP0)
+    taker_fee: 0.001           # Spot 0.1%
+    slippage: 0.0005           # 0.05%
+    funding_rate_8h: 0.0       # Spot — 펀딩 비용 없음
+    use_taker: true
 ```
 
 ---
@@ -251,9 +257,9 @@ Neutral: ADX(t-1) < 25                       → direction =  0
 ### 악화 원인
 
 1. **크립토 구조적 상승 편향** — 장기 우상향 시장에서 숏은 역추세
-2. **MDD 대폭 악화** (-64% → -85%) — 숏 진입 후 반등 시 손실 확대
-3. **거래 수 2.2배 증가** (59 → 127) — 롱↔숏 전환 비용
-4. **숏 구간 승률 저조** — 하락추세에서도 반등이 잦음
+1. **MDD 대폭 악화** (-64% → -85%) — 숏 진입 후 반등 시 손실 확대
+1. **거래 수 2.2배 증가** (59 → 127) — 롱↔숏 전환 비용
+1. **숏 구간 승률 저조** — 하락추세에서도 반등이 잦음
 
 **결론: Long-only가 SuperTrend에서 최적. FULL Short는 크립토에서 역효과.**
 
@@ -289,6 +295,7 @@ ACTIVE 전략과 동일한 PM 방어: SL 10% + TS 3.0x ATR.
 ### 왜 PM 방어가 역효과인가?
 
 SuperTrend **자체가 이미 Trailing Stop**:
+
 - lower_band의 Ratchet 메커니즘 = 내장형 동적 손절
 - 외부 SL 10% 추가 → **이중 손절** → 조기 청산 → 재진입 비용 증가
 - SL 10%가 SuperTrend 시그널보다 먼저 발동 → 시그널 간섭
@@ -364,9 +371,9 @@ Exit: 전체 일괄 청산 (ST 빨강 OR ADX < 25)
 ### 왜 Pyramid이 효과적인가?
 
 1. **초기 노출 제한**: 40%만 진입 → 하락 시 손실 40%로 제한 (외부 SL 불필요)
-2. **SuperTrend 내장 손절과 비간섭**: 포지션 사이징만 조절, 시그널 타이밍 미변경
-3. **확인 후 추가 진입**: 신고점 + 추세 강화 = 추세 확인 후 비중 확대
-4. **승률 대폭 개선**: 소규모 초기 진입 → 실패 시 작은 손실 → WR 53.7% (Full 36%)
+1. **SuperTrend 내장 손절과 비간섭**: 포지션 사이징만 조절, 시그널 타이밍 미변경
+1. **확인 후 추가 진입**: 신고점 + 추세 강화 = 추세 확인 후 비중 확대
+1. **승률 대폭 개선**: 소규모 초기 진입 → 실패 시 작은 손실 → WR 53.7% (Full 36%)
 
 **핵심**: 외부 PM 방어(SL/TS)는 SuperTrend 내장 손절과 **간섭**하여 역효과.
 분할 진입은 **비간섭적**으로 리스크 관리 → MDD 16.8%p 개선 달성.
@@ -510,6 +517,7 @@ atr_period
 ```
 
 **핵심 결론:**
+
 - **파라미터 고원 완전 확인** — 200개 조합 전부 Sharpe ≥ 0.5, 91.4%가 ≥ 0.8
 - **ATR/Mult 거의 무감** — 어떤 값을 써도 Sharpe 1.0+ 달성
 - **ADX만 상대적 민감** — 25가 최적이나 20~30 전 구간 양호
@@ -539,9 +547,9 @@ atr_period
 ## Next Steps
 
 1. ~~P5 파라미터 로버스트니스~~ ✅ **PASS** (6/6 assets, 91.4% Sharpe ≥ 0.8)
-2. **P6 WFA + CPCV 10-fold**: OOS Sharpe decay 30% 이내 확인
-3. **Tier 1 포트폴리오 합산**: 6에셋 Equal-Weight 합산 성과 → Orchestrator v6 비교
-4. **P7 EDA Parity**: VBT↔EDA 편차 10% 이내 확인
+1. **P6 WFA + CPCV 10-fold**: OOS Sharpe decay 30% 이내 확인
+1. **Tier 1 포트폴리오 합산**: 6에셋 Equal-Weight 합산 성과 → Orchestrator v6 비교
+1. **P7 EDA Parity**: VBT↔EDA 편차 10% 이내 확인
 
 ---
 
@@ -550,7 +558,6 @@ atr_period
 - SuperTrend code: `src/strategy/supertrend/`
 - SuperTrend indicator: `src/market/indicators/trend.py` (`supertrend()`, `_compute_supertrend()`)
 - SuperTrend config: `config/supertrend_btc.yaml`
-- MA Cross backtest: [ma-cross-backtest.md](ma-cross-backtest.md) (MA Cross 전략 이력)
 - Multi-TF script: `scripts/st_v11_multi_tf_backtest.py`
 - FULL Short script: `scripts/st_v11_full_short_backtest.py`
 - PM Protected script: `scripts/st_v11_pm_protected_backtest.py`

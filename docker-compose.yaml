@@ -2,9 +2,14 @@ services:
   mc-bot:
     build: .
     env_file: .env
+    # Spot Live 실행 시 .env에 아래 설정:
+    #   MC_EXECUTION_MODE=spot_live
+    #   MC_CONFIG_PATH=config/spot_supertrend.yaml
     volumes:
       - bot-data:/app/data
       - bot-logs:/app/logs
+      # config 핫스왑: 호스트 config를 bind mount
+      # - ./config:/app/config:ro
     restart: unless-stopped
 
   prometheus:

@@ -75,7 +75,7 @@ allowed-tools:
 ### B. 운영 원칙 (Operational Principles)
 
 1. **참신성 추구**: 폐기된 150개+ 전략과 차별화. 동일 지표 조합 재시도 금지
-1. **전 시장환경 대응**: 특정 레짐 전용 지양. RegimeService 적응적 대응 권장
+1. **전 시장환경 대응**: 특정 레짐 전용 지양
 1. **단일 에셋 전용**: 멀티에셋/횡단면은 범위 밖 (PM이 처리)
 1. **적극적 Long/Short 활용 (One-way Mode)**: 거래소는 One-way Mode(심볼당 단일 방향, netting).
    동일 심볼 Long+Short 동시 보유 불가. 포지션 전환은 flat 거치거나 방향 flip.
@@ -83,7 +83,7 @@ allowed-tools:
    DISABLED는 명확한 근거가 있을 때만 선택
 1. **크립토 네이티브 edge**: 전통금융 단순 포팅 위험 (교훈 #13~#16)
 1. **활성 전략 상관 최소화**: `pipeline list --status ACTIVE`로 동적 확인, 낮은 상관이 포트폴리오 가치 극대화
-1. **RegimeService 활용**: 공유 레짐 인프라로 적응형 설계 가능
+1. **적응형 설계**: 시장 상태에 따른 적응형 설계 가능
 1. **앙상블 기여도 관점**: 단독 Sharpe 0.5+라도 낮은 상관 + 독립 alpha면 앙상블로 Sharpe 0.8~1.0 달성 가능
 1. **1D OHLCV 검색공간 고갈 (2026-02-24 확정)**:
     92개 1D 전략 시도 → 0개 ACTIVE. OHLCV 5변수로 만들 수 있는 의미 있는 조합이 소진됨.
@@ -324,25 +324,6 @@ uv run mcbot pipeline p1-briefing --tf {TF}
 ```
 
 ### Step 4: 전략 설계 — ShortMode + TF + 레짐 적응
-
-#### 4-0. RegimeService 활용 설계
-
-공유 RegimeService가 StrategyEngine을 통해 6개 레짐 컬럼을 자동 주입한다.
-
-| 패턴 | 설명 | 적합 상황 |
-|------|------|----------|
-| A. 확률 가중 | 레짐 확률로 파라미터 연속 조절 | 부드러운 전환 필요 시 |
-| B. 조건부 필터 | 특정 레짐에서 시그널 활성화/비활성화 | 명확한 On/Off 로직 |
-| C. 방향 가중 | trend_direction/strength로 시그널 가중 | 추세 방향 활용 시 |
-
-**올바른 vs 잘못된 사용:**
-
-- OK: 기존 alpha에 레짐을 오버레이/필터로 적용 (사이징/강도 조절)
-- OK: `regime_service=None` 시 기본 동작 유지 (backward compatible)
-- NG: 레짐 전환 자체를 매매 시그널로 사용 (7개 전략 전멸)
-- NG: 레짐 없이 시그널이 생성되지 않는 구조
-
-상세: [references/regime-design.md](references/regime-design.md)
 
 #### 4-A. ShortMode 결정 매트릭스
 

@@ -27,8 +27,8 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 @pytest.fixture()
 def default_config_path() -> Path:
-    """config/default.yaml 경로."""
-    return Path("config/default.yaml")
+    """config/spot_supertrend.yaml 경로."""
+    return Path("config/spot_supertrend.yaml")
 
 
 @pytest.fixture()
@@ -102,7 +102,7 @@ class TestLoadConfig:
     """load_config 함수 검증."""
 
     def test_load_default_config(self, default_config_path: Path) -> None:
-        """config/default.yaml 로드 검증."""
+        """config/spot_supertrend.yaml 로드 검증."""
         cfg = load_config(default_config_path)
 
         assert isinstance(cfg, RunConfig)
@@ -110,12 +110,12 @@ class TestLoadConfig:
         assert isinstance(cfg.strategy, StrategySection)
         assert isinstance(cfg.portfolio, PortfolioManagerConfig)
 
-        assert len(cfg.backtest.symbols) == 8
+        assert len(cfg.backtest.symbols) == 6
         assert cfg.backtest.symbols[0] == "BTC/USDT"
         assert cfg.backtest.capital == 100000.0
         assert cfg.strategy.name == "supertrend"
-        assert cfg.strategy.params == {}
-        assert cfg.portfolio.max_leverage_cap == 2.0
+        assert cfg.strategy.params["atr_period"] == 7
+        assert cfg.portfolio.max_leverage_cap == 1.0
 
     def test_load_minimal_yaml(self, minimal_yaml: Path) -> None:
         """최소 설정 (symbols만) 로드."""

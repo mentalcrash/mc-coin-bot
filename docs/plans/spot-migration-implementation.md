@@ -14,8 +14,8 @@
 - [Phase 2: Notification / Discord 최적화](#phase-2-notification--discord-최적화)
 - [Phase 3: Monitoring (Prometheus/Grafana) 최적화](#phase-3-monitoring-prometheusgrafana-최적화)
 - [Phase 4: 문서 / Rules / Skills 정리](#phase-4-문서--rules--skills-정리)
-- [Phase 5: Paper Trading 검증](#phase-5-paper-trading-검증)
-- [Phase 6: Live 배포](#phase-6-live-배포)
+- [Phase 5: Paper Trading 검증 → SKIP](#phase-5-paper-trading-검증--skip)
+- [Phase 5(Live): 소액 Live 배포](#phase-5live-소액-live-배포-paper-겸용)
 - [Appendix A: 파일 변경 총괄표](#appendix-a-파일-변경-총괄표)
 - [Appendix B: 삭제 대상 전략 목록](#appendix-b-삭제-대상-전략-목록)
 
@@ -110,6 +110,7 @@ src/regime/
 **대상**: `src/strategy/` 하위 190개 디렉토리 중 `supertrend/` 외 전부
 
 **유지 파일**:
+
 - `src/strategy/__init__.py` (수정: supertrend만 import)
 - `src/strategy/registry.py` (유지)
 - `src/strategy/base.py` (유지)
@@ -217,6 +218,7 @@ class BinanceSpotClient:
 | `fetch_ticker(symbol)` | 현재가 조회 |
 
 **구현 포인트**:
+
 - String Protocol 준수: `Decimal` → `amount_to_precision()` → `str`
 - RateLimitExceeded → NetworkError 순서 except
 - `_retry_with_backoff()` 3회 재시도
@@ -250,6 +252,7 @@ class SpotExecutor:
 | `set_pm(pm)` | PM 참조 (잔고/포지션 조회용) |
 
 **핵심 로직**:
+
 ```
 order.target_weight > 0 (진입):
   available_usdt = total_equity * target_weight
@@ -295,6 +298,7 @@ class SpotStopManager:
 | `async recover_from_exchange()` | 봇 재시작 시 `fetch_open_orders()` 복구 |
 
 **Ratchet 로직**:
+
 ```
 새 stop = high_watermark - 3.0 * current_atr
 if 새 stop > 기존 stop:
@@ -393,13 +397,15 @@ uv run mcbot eda spot-live config/spot_supertrend.yaml      # Spot Live
 
 ### Phase 1 완료 기준
 
-- [ ] `BinanceSpotClient` 구현 + 단위 테스트 (mock exchange)
-- [ ] `SpotExecutor` 구현 + ExecutorPort 준수 테스트
-- [ ] `SpotStopManager` 구현 + Ratchet 로직 테스트
-- [ ] PM Spot equity 계산 테스트
-- [ ] LiveRunner `spot_paper()` / `spot_live()` 팩토리 동작
-- [ ] CLI `spot-paper` / `spot-live` 명령 동작
-- [ ] 전체 테스트 통과 + lint + typecheck
+- [x] `BinanceSpotClient` 구현 + 단위 테스트 (mock exchange) — 13 cases
+- [x] `SpotExecutor` 구현 + ExecutorPort 준수 테스트 — 10 cases
+- [x] `SpotStopManager` 구현 + Ratchet 로직 테스트 — 11 cases
+- [x] PM Spot equity: `cash + long_notional` (short=0이므로 기존 수식 그대로 동작, 변경 불필요)
+- [x] LiveRunner `spot_live()` 팩토리 동작 (`spot_paper`는 기존 `paper()` + Spot config로 충분)
+- [x] CLI `spot-live` 명령 동작 (`mcbot eda spot-live --help` 확인)
+- [x] `PositionReconciler` Spot 확장 (`parse_spot_balances`, `compute_spot_equity`)
+- [x] 전체 테스트 통과 (1997 passed) + ruff 0 errors + pyright 0 errors
+- [x] **완료일: 2026-03-06**
 
 ---
 
@@ -467,11 +473,17 @@ uv run mcbot eda spot-live config/spot_supertrend.yaml      # Spot Live
 
 ### Phase 2 완료 기준
 
-- [ ] Orchestrator 알림 파일 삭제
-- [ ] Bot slash commands 간소화
-- [ ] Spot 전용 Embed 포매터 동작
-- [ ] 신규 알림 이벤트 5종 동작
-- [ ] MARKET_REGIME 채널 비활성화
+- [x] Orchestrator 알림 파일 삭제 (Phase 0에서 완료)
+- [x] Dead code 제거: `SymbolDerivativesSnapshot`, `MarketRegimeReport`, `onchain_*` 필드
+- [x] `health_collector.py`: `DerivativesSnapshotFetcher`/`collect_regime_report()`/`_count_onchain_sources()` 제거
+- [x] `health_formatters.py`: `format_regime_embed()`/`format_onchain_alert_embed()` 제거
+- [x] `formatters.py`: `format_unified_daily_report_embed()`/`_append_health_fields()`/`format_surveillance_scan_embed()` 제거
+- [x] `lifecycle.py`: `_format_pod_table()`/`pod_summaries` 파라미터 제거
+- [x] `report_scheduler.py`: unified → enhanced 교체, regime 수집 제거
+- [x] `live_runner.py`: `futures_client=` 파라미터 제거
+- [x] Stop-Limit Ratchet 알림 추가 (`format_stop_ratchet_embed` + `SpotStopManager._notify_ratchet`)
+- [x] 테스트 통과 (1975 passed) + ruff 0 errors + pyright 0 new errors
+- [x] **완료일: 2026-03-06**
 
 ---
 
@@ -499,6 +511,7 @@ uv run mcbot eda spot-live config/spot_supertrend.yaml      # Spot Live
 ### 3.2. 유지 메트릭 (핵심 ~27개)
 
 **L1: Order Execution**
+
 ```
 mcbot_orders_total{status}              # 주문 수 (ack/filled/rejected)
 mcbot_order_latency_seconds             # 주문→체결 지연
@@ -507,6 +520,7 @@ mcbot_fees_usdt_total                   # 누적 수수료
 ```
 
 **L2: Position & PnL**
+
 ```
 mcbot_equity_usdt                       # 현재 equity
 mcbot_drawdown_pct                      # 현재 drawdown %
@@ -519,6 +533,7 @@ mcbot_realized_loss_usdt_total          # 누적 실현 손실
 ```
 
 **L3: Exchange API**
+
 ```
 mcbot_exchange_api_calls_total{endpoint,status}
 mcbot_exchange_api_latency_seconds{endpoint}
@@ -528,6 +543,7 @@ mcbot_ws_last_message_age_seconds{symbol}
 ```
 
 **L4: Bot Health**
+
 ```
 mcbot_heartbeat_timestamp
 mcbot_last_bar_age_seconds{symbol}
@@ -536,6 +552,7 @@ mcbot_eventbus_queue_depth
 ```
 
 **신규: Spot 전용**
+
 ```
 mcbot_stop_limit_active{symbol}          # 활성 Stop-Limit 수
 mcbot_stop_limit_ratchets_total{symbol}  # Ratchet 횟수
@@ -606,12 +623,14 @@ Row 4: System Health
 
 ### Phase 3 완료 기준
 
-- [ ] 불필요한 메트릭 코드 제거 (70+ 개)
-- [ ] Spot 전용 메트릭 5개 추가
-- [ ] Process monitor 임계값 조정
-- [ ] Grafana 대시보드 JSON 재구성 (12 패널)
-- [ ] Health check 스케줄 간소화
-- [ ] Prometheus `/metrics` 엔드포인트 정상 확인
+- [x] 불필요한 메트릭 코드 제거 — L9 On-chain(6) + L10 Surveillance(5) + L11 DataFeed(6) + SmartExecutor(5+Protocol/impl) + PrometheusOnchainCallback 삭제 (~120줄)
+- [ ] Spot 전용 메트릭 5개 추가 → Live 운영 실측 후
+- [x] Process monitor 임계값 조정 — active_tasks_warn_count 200→100
+- [x] Grafana 대시보드 JSON 정리 — orchestrator.json, regime.json, onchain.json 삭제 (3파일)
+- [ ] Grafana Spot 대시보드 재구성 (12 패널) → Live 운영 실측 후
+- [x] Health check 스케줄 간소화 — Phase 2에서 regime_report 이미 제거 완료
+- [x] `_periodic_metrics_update` Spot 호환 — futures_client→exchange_client 범용화
+- [x] Prometheus `/metrics` 엔드포인트 정상 확인 — pyright 0 new errors, 1970 tests passed
 
 ---
 
@@ -706,102 +725,87 @@ Row 4: System Health
 | Strategy Results Summary | ACTIVE 4개 → supertrend 1개 (Spot) |
 | Lessons Learned | Orchestrator → Spot 교훈 추가 |
 
-### Phase 4 완료 기준
+### Phase 4 완료 기준 — ✅ 완료 (2026-03-06)
 
-- [ ] 아키텍처 문서 재작성 (Spot 중심)
-- [ ] 운영 문서 갱신 (Discord/Monitoring)
-- [ ] 삭제 대상 가이드/기획 문서 제거
-- [ ] Claude Rules 9개 파일 검토/수정
-- [ ] Skills 수정 (p7-live, audit)
-- [ ] CLAUDE.md + MEMORY.md 갱신
-- [ ] `markdownlint-cli2 --fix "docs/**/*.md"` 통과
+- [x] 아키텍처 문서 재작성 (Spot 중심)
+- [x] 운영 문서 갱신 (Discord/Monitoring)
+- [x] 삭제 대상 가이드/기획 문서 제거
+- [x] Claude Rules 9개 파일 검토/수정
+- [x] Skills 수정 (p7-live, audit)
+- [x] CLAUDE.md + MEMORY.md 갱신
+- [x] `markdownlint-cli2 --fix "docs/**/*.md"` 통과
 
 ---
 
-## Phase 5: Paper Trading 검증
+## ~~Phase 5: Paper Trading 검증~~ → SKIP
 
-> **목표**: Spot Paper 모드로 실시간 데이터 검증. 1주일 이상 운영.
+> Paper 스킵. 소액 실자금으로 테스트와 실전을 겸함.
+> **이유**: Binance에 소액만 보유 → 소액 Live가 곧 Paper 역할.
+
+---
+
+## Phase 5(Live): 소액 Live 배포 (Paper 겸용)
+
+> **목표**: 소액 실자금으로 Binance Spot 거래. 테스트와 실전을 동시 수행.
 
 ### 5.1. 사전 조건
 
-- [ ] Phase 0-4 완료
-- [ ] `config/spot_supertrend.yaml` 에 `mode: paper` 설정
+- [x] Phase 0-4 완료
+- [x] `src/live/main.py` — `spot_live` 실행 모드 분기 추가
+- [x] `src/config/settings.py` — `DeploymentConfig` 허용값 + 기본 config 경로 변경
+- [x] `docker-compose.yaml` — Spot Live 환경 주석 추가
+- [x] `.env.example` — Spot 반영 (API 설명, 실행 모드, config 경로, Regime 채널 제거)
+- [x] `config/` — Futures/구전략 config 21+ 파일 삭제 (spot_supertrend.yaml만 유지)
+- [x] `config/spot_supertrend.yaml` — Live 용도 주석 보강
+- [x] `.github/workflows/ci.yml` — 작업 브랜치 push 트리거 추가
+- [ ] Binance Spot 계정 API Key 발급 (IP Whitelist)
+- [ ] BNB 소량 보유 (수수료 25% 할인)
 - [ ] Docker 환경 준비 (또는 로컬)
 
-### 5.2. 검증 항목
+### 5.2. 검증 항목 (Paper 대체)
 
 | # | 항목 | 확인 방법 | 기준 |
 |---|------|----------|------|
 | 5.2.1 | WebSocket 연결 | 6 심볼 1m bar 수신 확인 | ws_connected=1 × 6 |
 | 5.2.2 | 12H 캔들 생성 | CandleAggregator 출력 로그 | 하루 2회 × 6 심볼 |
 | 5.2.3 | 시그널 발생 | StrategyEngine 로그 | SuperTrend LONG/NEUTRAL |
-| 5.2.4 | Stop price 계산 | SpotStopManager 로그 | `entry - 3.0 * ATR` |
-| 5.2.5 | Ratchet 동작 | Stop price 상향 이력 | 상향만 확인, 하향 없음 |
-| 5.2.6 | Equity 추적 | AnalyticsEngine 로그 | 일관된 equity 계산 |
-| 5.2.7 | Discord 알림 | 채널별 메시지 수신 | 진입/청산/TS 알림 |
-| 5.2.8 | Prometheus 메트릭 | `:8000/metrics` 확인 | 27개 핵심 메트릭 |
-| 5.2.9 | 정상 종료 | SIGTERM 전송 | graceful shutdown 완료 |
-| 5.2.10 | 재시작 복구 | 봇 재시작 | StateManager 복구 확인 |
+| 5.2.4 | 실주문 체결 | Market Buy/Sell 체결 확인 | quoteOrderQty 정확, BNB 수수료 |
+| 5.2.5 | Stop-Limit 설정 | 거래소 Open Orders 확인 | `entry - 3.0 * ATR` |
+| 5.2.6 | Ratchet 동작 | Stop price 상향 이력 | 상향만 확인, 하향 없음 |
+| 5.2.7 | Equity 추적 | AnalyticsEngine 로그 | USDT + Σ(에셋 × 현재가) |
+| 5.2.8 | Discord 알림 | 채널별 메시지 수신 | 진입/청산/TS 알림 |
+| 5.2.9 | Prometheus 메트릭 | `:8000/metrics` 확인 | 핵심 메트릭 정상 |
+| 5.2.10 | 정상 종료 | SIGTERM 전송 | graceful shutdown + Stop-Limit 잔존 |
+| 5.2.11 | 재시작 복구 | 봇 재시작 | StateManager 복구 + Stop-Limit 확인 |
+| 5.2.12 | PositionReconciler | 거래소 잔고 vs PM | 정합성 일치 |
 
-### 5.3. 모니터링 체크리스트 (1주일)
+### 5.3. 운영 단계
 
-| 일차 | 확인 |
-|------|------|
-| Day 1 | WebSocket 안정성, 12H bar 생성, 시그널 발생 |
-| Day 2 | 첫 거래 시뮬레이션 (진입 시그널 기다림) |
-| Day 3 | Stop-Limit 계산 정합성, Ratchet 동작 |
-| Day 4-5 | Discord 알림 정상, Daily Report 생성 |
-| Day 6-7 | 정상 종료/재시작 테스트, 메모리 누수 확인 |
-
-### Phase 5 완료 기준
-
-- [ ] 1주일 무중단 운영 (또는 계획된 재시작만)
-- [ ] 12H bar 누락 0건
-- [ ] 시그널 정합성 (EDA 백테스트와 동일 방향)
-- [ ] Stop price 계산 정합성
-- [ ] Discord/Prometheus 정상 동작
-
----
-
-## Phase 6: Live 배포
-
-> **목표**: 실제 자금으로 Binance Spot 거래.
-> 소액 → 단일 에셋 → 전체 에셋 순차 투입.
-
-### 6.1. 사전 조건
-
-- [ ] Phase 5 Paper 검증 완료
-- [ ] Binance Spot 계정 API Key 발급 (IP Whitelist)
-- [ ] BNB 소량 보유 (수수료 25% 할인)
-- [ ] `config/spot_supertrend.yaml` 에 `mode: live` 설정
-
-### 6.2. 단계적 투입
-
-| 단계 | 자금 | 에셋 | 기간 | 검증 |
+| 단계 | 자금 | 에셋 | 기간 | 기준 |
 |------|------|------|------|------|
-| 6.2.1 | $100 | BTC 1개 | 3일 | 실주문 체결, Stop-Limit 설정, 수수료 확인 |
-| 6.2.2 | $600 | 6개 전체 | 1주일 | EW 배분, 다중 심볼 동시 관리 |
-| 6.2.3 | 목표 자금 | 6개 전체 | 지속 | 풀 운영, 입금 시 자연 반영 |
+| 5.3.1 | 소액 (현재 잔고) | 6개 전체 | 1주일 | 실주문 체결, Stop-Limit, 수수료 확인 |
+| 5.3.2 | 목표 자금 | 6개 전체 | 지속 | 안정 확인 후 자본 증액 |
 
-### 6.3. 실거래 체크리스트
+### 5.4. 인프라 준비 완료 기준 — ✅ 완료 (2026-03-06)
 
-| # | 항목 | 확인 |
-|---|------|------|
-| 6.3.1 | Market Buy 체결 | quoteOrderQty 정확, 수수료 BNB 차감 |
-| 6.3.2 | Stop-Limit 설정 | 거래소 Open Orders에 표시 |
-| 6.3.3 | Ratchet 갱신 | 12H bar마다 stop 상향 확인 |
-| 6.3.4 | Market Sell (시그널 청산) | Stop-Limit 취소 → 전량 매도 |
-| 6.3.5 | Stop-Limit 발동 (TS 청산) | 가격 하락 시 자동 매도 확인 |
-| 6.3.6 | 봇 다운 시 보호 | Stop-Limit 거래소에 잔존 확인 |
-| 6.3.7 | PositionReconciler | 거래소 잔고 vs PM 정합성 |
-| 6.3.8 | 입금 반영 | USDT 추가 → 다음 진입 시 새 금액 사용 |
+- [x] `src/live/main.py` — Docker ENTRYPOINT `spot_live` 모드 분기
+- [x] `src/config/settings.py` — `DeploymentConfig` 허용값 `spot_live` + 기본 config 경로 변경
+- [x] `docker-compose.yaml` — Spot Live `.env` 설정 + config bind mount 주석
+- [x] `.env.example` — Spot 반영 (API 설명, 실행 모드, config 경로, Regime 채널 제거)
+- [x] `config/` — Futures/구전략 config 38개 파일 삭제 (`spot_supertrend.yaml`만 유지)
+- [x] `config/spot_supertrend.yaml` — `start`/`end`/`capital` Live 무시 주석
+- [x] `.github/workflows/ci.yml` — `refactor/spot-migration` 브랜치 push 트리거
+- [x] `tests/config/test_config_loader.py` — fixture `default.yaml` → `spot_supertrend.yaml` 교체
+- [x] 전체 테스트 통과 (1970 passed) + pyright 0 errors
 
-### Phase 6 완료 기준
+### Phase 5(Live) 운영 완료 기준
 
-- [ ] 단일 에셋 소액 거래 성공
-- [ ] 6에셋 동시 운영 1주일 무사고
-- [ ] Stop-Limit 발동 최소 1회 확인 (또는 시뮬레이션)
+- [ ] 6에셋 동시 Live 배포 성공
+- [ ] 실주문 체결 + Stop-Limit 설정/Ratchet 정상
+- [ ] 12H bar 누락 0건 (1주일)
+- [ ] Discord/Prometheus 정상 동작
 - [ ] 봇 재시작 시 상태 복구 + Stop-Limit 잔존 확인
+- [ ] 안정 확인 후 자본 증액 완료
 
 ---
 
@@ -859,6 +863,19 @@ Row 4: System Health
 | `docs/architecture/spot-system.md` | Spot 아키텍처 문서 |
 | `docs/architecture/stop-limit-ratchet.md` | TS Ratchet 설계 문서 |
 
+### 수정/삭제 대상 (Phase 5 — 배포 준비)
+
+| 파일 | 작업 | 변경 요약 |
+|------|------|----------|
+| `src/live/main.py` | EDIT | `spot_live` 모드 분기 추가 |
+| `src/config/settings.py` | EDIT | 허용값 `spot_live` 추가, 기본 config → `spot_supertrend.yaml` |
+| `docker-compose.yaml` | EDIT | Spot Live `.env` 설정 + config bind mount 주석 |
+| `.env.example` | EDIT | API 설명 Spot 반영, `spot_live` 모드, Regime 채널 제거 |
+| `config/` (38 파일) | DELETE | Futures/구전략 config 전부 삭제 (`spot_supertrend.yaml`만 유지) |
+| `config/spot_supertrend.yaml` | EDIT | `start`/`end`/`capital` Live 무시 주석 |
+| `.github/workflows/ci.yml` | EDIT | 작업 브랜치 push 트리거 |
+| `tests/config/test_config_loader.py` | EDIT | fixture `default.yaml` → `spot_supertrend.yaml` |
+
 ---
 
 ## Appendix B: 삭제 대상 전략 목록
@@ -867,6 +884,7 @@ Row 4: System Health
 > 태그 `archive/futures-multi-strategy` 에서 복원 가능.
 
 **ACTIVE 전략 (4개, 보관)**:
+
 - `anchor_mom/` — Sharpe 1.36
 - `donch_multi/` — Sharpe 1.61
 - `tri_channel_trend/` — Sharpe 2.17
@@ -875,6 +893,7 @@ Row 4: System Health
 **기타 186개 RETIRED 전략**: Pipeline YAML에 기록 보관.
 
 **미등록 전략 (git status untracked)**:
+
 - `ma_cross/`, `ma_st_cross/`, `st_donch/`, `st_regime/`
 
 ---
@@ -882,17 +901,17 @@ Row 4: System Health
 ## 작업 순서 요약
 
 ```
-Phase 0 (Cleanup)     ← 가장 먼저. 코드베이스 축소
+Phase 0 (Cleanup)          ✅ 코드베이스 축소 (2029 files, 228K lines 삭제)
   ↓
-Phase 1 (Spot Core)   ← 핵심 구현. 가장 중요
+Phase 1 (Spot Core)        ✅ BinanceSpotClient + SpotExecutor + SpotStopManager
   ↓
 Phase 2 (Discord)     ─┐
-Phase 3 (Monitoring)  ─┤ 병렬 가능
+Phase 3 (Monitoring)  ─┤  ✅ 병렬 완료
 Phase 4 (Docs/Rules)  ─┘
   ↓
-Phase 5 (Paper)       ← 1주일 검증
+Phase 5 (Live 배포 준비)   ✅ Docker/CI/Config/환경변수 정비
   ↓
-Phase 6 (Live)        ← 단계적 투입
+Phase 5 (Live 운영)        ← 소액 실자금 배포 + 검증
 ```
 
-**의존성**: Phase 0 → Phase 1 → Phase 2/3/4 (병렬) → Phase 5 → Phase 6
+**의존성**: Phase 0 → Phase 1 → Phase 2/3/4 (병렬) → Phase 5 (배포 준비 → 운영)

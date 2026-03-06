@@ -36,6 +36,9 @@ symbols = get_symbols_at_date(backtest_date)
 # Binance Futures (Maker): 0.02%, (Taker): 0.04%
 futures_maker_fee: Decimal = Decimal("0.0002")
 futures_taker_fee: Decimal = Decimal("0.0004")
+
+# Binance Spot (Maker/Taker): 0.1%
+spot_taker_fee: Decimal = Decimal("0.001")
 ```
 
 ## Tiered Validation (`src/backtest/validation/`)
@@ -45,7 +48,6 @@ futures_taker_fee: Decimal = Decimal("0.0004")
 | **Quick** | IS/OOS Split (70/30) | OOS Sharpe > 0.5, Decay < 50% |
 | **Milestone** | Walk-Forward (5-fold) | Consistency > 60%, OOS Sharpe > 0.3 |
 | **Final** | CPCV + DSR + PBO | PBO < 0.4, DSR > 1.0 |
-| **Multi** | Multi-asset 전용 | 위 기준 + 포트폴리오 레벨 검증 |
 
 ```python
 from src.backtest.validation import TieredValidator, ValidationLevel

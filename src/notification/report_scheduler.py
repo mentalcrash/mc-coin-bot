@@ -19,7 +19,7 @@ from loguru import logger
 
 from src.notification.formatters import (
     format_daily_report_embed,
-    format_unified_daily_report_embed,
+    format_enhanced_daily_report_embed,
     format_weekly_report_embed,
 )
 from src.notification.models import ChannelRoute, NotificationItem, Severity
@@ -115,28 +115,23 @@ class ReportScheduler:
         # Health 데이터 수집 (collector 있을 때만)
         system_health = None
         strategy_health = None
-        regime_report = None
         if self._health_collector is not None:
             try:
                 system_health = self._health_collector.collect_system_health()
                 strategy_health = self._health_collector.collect_strategy_health()
-                regime_report = await self._health_collector.collect_regime_report()
             except Exception:
                 logger.exception("Failed to collect health data for daily report")
 
         # Embed 결정
-        has_health = (
-            system_health is not None or strategy_health is not None or regime_report is not None
-        )
+        has_health = system_health is not None or strategy_health is not None
         if has_health:
-            embed = format_unified_daily_report_embed(
+            embed = format_enhanced_daily_report_embed(
                 metrics=metrics,
                 open_positions=self._pm.open_position_count,
                 total_equity=self._pm.total_equity,
                 trades_today=trades_today,
                 system_health=system_health,
                 strategy_health=strategy_health,
-                regime_report=regime_report,
             )
         else:
             embed = format_daily_report_embed(

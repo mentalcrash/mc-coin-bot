@@ -534,18 +534,21 @@ Spot:    BTC, ETH, SOL 등 에셋별 개별 잔고
 | `src/eda/live_runner.py` | 수정 | `spot_live()` / `spot_paper()` 팩토리 추가 |
 | `src/eda/portfolio_manager.py` | 수정 | Spot equity 계산 (에셋별 잔고) |
 
-### Phase B: Paper Trading 검증
+### Phase B: ~~Paper Trading 검증~~ → SKIP
 
-1. Paper 모드로 1주일 라이브 데이터 검증
-   - 12H bar 생성 확인
-   - 시그널 발생 → 로그 출력
-   - TS stop price 계산 확인
+> Paper 스킵. 소액 실자금으로 테스트와 실전을 겸함.
+> 이유: Binance에 소액만 보유 → 소액 Live가 곧 Paper 역할.
 
-### Phase C: Live 전환
+### Phase C: Live 배포 (소액 테스트 겸 실전)
 
-1. 소액 ($100) 단일 에셋 (BTC) 실거래 테스트
-2. 정상 확인 후 6개 에셋 순차 추가
-3. 풀 자본 투입
+1. 소액 실자금으로 6에셋 동시 배포 (`mode: live`)
+2. 검증 항목 (Phase B 대체):
+   - WebSocket 연결 + 12H bar 생성
+   - 시그널 발생 → 실주문 체결 확인
+   - Stop-Limit 설정 + Ratchet 동작
+   - Discord 알림 / Prometheus 메트릭
+   - 봇 재시작 시 상태 복구
+3. 안정 확인 후 자본 증액
 
 ---
 
@@ -596,10 +599,10 @@ Spot:    BTC, ETH, SOL 등 에셋별 개별 잔고
 - [ ] `config/spot_supertrend.yaml` 작성
 - [ ] 단위 테스트 (mock exchange)
 
-### 검증
-- [ ] Paper Trading 1주 검증
-- [ ] Live 소액 BTC 단일 테스트
-- [ ] 6개 에셋 순차 투입
+### 검증 (소액 Live = Paper 겸용)
+- [ ] 소액 6에셋 동시 Live 배포
+- [ ] 실주문 체결 + Stop-Limit 설정 확인
+- [ ] 1주일 안정 운영 후 자본 증액
 
 ### 운영
 - [ ] BNB 최소 보유량 확보 (수수료 25% 할인)

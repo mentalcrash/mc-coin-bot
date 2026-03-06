@@ -27,7 +27,7 @@ WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM
                     Lifecycle Manager        (5-check defense)
 ```
 
-> 상세: [`docs/architecture/eda-orchestrator.md`](docs/architecture/eda-orchestrator.md)
+> 상세: [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md)
 
 ### 핵심 설계 원칙
 
@@ -35,8 +35,6 @@ WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM
 - **Target Weights 기반** -- "사라/팔아라" 대신 "적정 비중은 X%"
 - **Look-Ahead Bias 원천 차단** -- Signal at Close → Execute at Next Open
 - **PM/RM 분리 모델** -- Portfolio Manager → Risk Manager → OMS 3단계 방어
-- **Pod 독립성** -- 각 전략은 독립 Pod으로 운영 (독립 P&L, 독립 리스크)
-- **Net Execution** -- 심볼별 포지션 넷팅으로 마진 효율 극대화
 - **자동 방어** -- Degradation 감지 → 자동 축소 → Probation → Retirement
 
 ### 기술 스택
@@ -183,7 +181,7 @@ pods:
 | `signal_weighted` | 시그널 강도 비례 | 전략의 확신도 차이 반영 |
 | `dual_momentum` | 절대+상대 모멘텀 | 승자 overweight + 폭락 시 현금 대피 |
 
-> 상세 설정 및 아키텍처: [`docs/architecture/eda-orchestrator.md`](docs/architecture/eda-orchestrator.md)
+> 상세 설정 및 아키텍처: [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md)
 
 ---
 
@@ -365,7 +363,7 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 멀티 전략(Orchestrator) + 멀티 에셋(Pod) 구조로 4개 ACTIVE 전략을 운용합니다.
 
 1. **자산 다각화**: ✅ 16종 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
-1. **에셋 배분 고도화**: ✅ Pod 내 동적 배분 — EW/IV/RP/SW/DM 5가지 방법 + Numba 최적화 ([Asset Allocation 설계](docs/architecture/eda-orchestrator.md#53-intra-pod-asset-allocation))
+1. **에셋 배분 고도화**: ✅ EW/IV/RP/SW/DM 5가지 방법 + Numba 최적화
 1. **데이터 인프라**: ✅ 14개 소스, 75개 데이터셋 수집 완료 — FRED/Deribit/Coinalyze 등 (리스크 관리 보조용)
 
 ---
@@ -408,11 +406,8 @@ uv run mcbot audit latest                     # 최신 스냅샷
 | 문서 | 설명 |
 |------|------|
 | **Architecture** | |
-| [`docs/architecture/eda-orchestrator.md`](docs/architecture/eda-orchestrator.md) | **EDA + Orchestrator 아키텍처** (이벤트, 컴포넌트, Pod, 배분, 생애주기, 넷팅) |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 아키텍처 (VBT + EDA 이중 엔진 + 검증) |
-| [`docs/architecture/smart-executor.md`](docs/architecture/smart-executor.md) | SmartExecutor (Limit Order 우선 실행기, Decorator 패턴) |
 | [`docs/architecture/reconciler.md`](docs/architecture/reconciler.md) | PositionReconciler (거래소↔PM 포지션 교차 검증, auto-correction) |
-| [`docs/architecture/regime-system.md`](docs/architecture/regime-system.md) | Regime 감지 앙상블 (Funding/OI/LS Ratio → Regime Score) |
 | **Guides** | |
 | [`docs/guides/strategy-pipeline.md`](docs/guides/strategy-pipeline.md) | **전략 파이프라인** (Phase 1~7, PASS 기준, YAML 스키마) |
 | [`docs/guides/data-collection.md`](docs/guides/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |

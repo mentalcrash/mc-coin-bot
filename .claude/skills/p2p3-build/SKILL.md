@@ -121,20 +121,10 @@ touch tests/strategy/{name_snake}/__init__.py
 
 **주의**: `from __future__ import annotations` 사용 시 `TYPE_CHECKING` import 활용.
 
-### Step 2.5: 레짐 적응형 전략 (해당 시)
+### Step 2.5: 데이터 전략 (해당 시)
 
-레짐 활용이 지정된 경우: [references/regime-implementation.md](references/regime-implementation.md) 참조.
-
-- 접근 A: RegimeService 자동 주입 (권장, EDA live 호환)
-- 접근 B: 자체 레짐 감지 (regime-tsmom 참고)
-
-### Step 2.6: Derivatives 데이터 전략 (해당 시)
-
-OHLCV 외 Derivatives 데이터 필요 시: [references/derivatives-implementation.md](references/derivatives-implementation.md) 참조.
-
-### Step 2.7: On-chain / Multi-Source 데이터 전략 (해당 시)
-
-On-chain, Macro, Options 데이터 활용 시: [references/onchain-implementation.md](references/onchain-implementation.md) 참조.
+> 참고: Regime/Derivatives/On-chain 구현 가이드 문서는 Phase 0에서 삭제됨 (현재 미사용).
+> 향후 레짐/대안데이터 인프라 재구축 시 새로 작성.
 
 **핵심 패턴: Multi-Source Context Architecture (12H + 1D)**
 
@@ -280,7 +270,6 @@ uv run python -c "from src.strategy import list_strategies; print('{name}' in li
 - **test_signal.py**: 구조, shift(1) 첫 bar 중립, ShortMode 3종, 전략 고유 로직
 - **test_strategy.py**: registry, properties, pipeline, from_params, recommended_config
 
-레짐 적응형 전략은 `TestRegimeAdaptation` 추가 (with/without regime 컬럼).
 
 **필수 Look-Ahead Bias 방어 테스트** (test_signal.py에 포함):
 
@@ -785,9 +774,6 @@ uv run mcbot pipeline report
 |------|------|
 | [references/code-templates.md](references/code-templates.md) | 4-file 코드 템플릿 |
 | [references/implementation-checklist.md](references/implementation-checklist.md) | 구현 체크리스트 + 폐기 패턴 + 테스트 목록 |
-| [references/regime-implementation.md](references/regime-implementation.md) | 레짐 적응형 구현 가이드 |
-| [references/derivatives-implementation.md](references/derivatives-implementation.md) | Derivatives 데이터 구현 가이드 |
-| [references/onchain-implementation.md](references/onchain-implementation.md) | On-chain / Multi-Source 데이터 구현 가이드 |
 | [references/critical-checklist.md](references/critical-checklist.md) | C1-C7 상세 검증 패턴 |
 | [references/warning-checklist.md](references/warning-checklist.md) | W1-W7 경고 체크리스트 |
 | [references/report-template.md](references/report-template.md) | Phase 3 리포트 형식 |

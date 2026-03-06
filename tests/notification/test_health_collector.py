@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.notification.health_collector import HealthDataCollector
 from src.notification.health_models import (
     StrategyHealthSnapshot,
-    SymbolDerivativesSnapshot,
     SystemHealthSnapshot,
 )
 
@@ -80,7 +79,6 @@ def _make_collector(
         feed=feed,  # type: ignore[arg-type]
         bus=bus,  # type: ignore[arg-type]
         queue=queue,  # type: ignore[arg-type]
-        futures_client=None,
         symbols=symbols,  # type: ignore[arg-type]
     )
 
@@ -261,47 +259,6 @@ class TestDetectAlphaDecay:
         assert collector._alpha_decay_streak == 0
 
 
-# ─── Collect Regime Report 테스트 ────────────────────────
-
-
-class TestCollectRegimeReport:
-    @pytest.mark.asyncio
-    async def test_returns_report(self) -> None:
-        collector = _make_collector()
-
-        sym_snap = SymbolDerivativesSnapshot(
-            symbol="BTC/USDT",
-            price=97420.0,
-            funding_rate=0.0002,
-            funding_rate_annualized=21.9,
-            open_interest=5e9,
-            ls_ratio=1.4,
-            taker_ratio=1.1,
-        )
-
-        with patch.object(
-            collector._snapshot_fetcher, "fetch_all", new_callable=AsyncMock
-        ) as mock_fetch:
-            mock_fetch.return_value = [sym_snap]
-            report = await collector.collect_regime_report()
-
-        assert report is not None
-        assert report.regime_score != 0.0
-        assert len(report.symbols) == 1
-
-    @pytest.mark.asyncio
-    async def test_no_data_returns_none(self) -> None:
-        collector = _make_collector()
-
-        with patch.object(
-            collector._snapshot_fetcher, "fetch_all", new_callable=AsyncMock
-        ) as mock_fetch:
-            mock_fetch.return_value = []
-            report = await collector.collect_regime_report()
-
-        assert report is None
-
-
 # ─── Lifecycle 테스트 ────────────────────────────────────
 
 
@@ -309,8 +266,5 @@ class TestLifecycle:
     @pytest.mark.asyncio
     async def test_start_stop(self) -> None:
         collector = _make_collector()
-        with patch.object(collector._snapshot_fetcher, "start", new_callable=AsyncMock):
-            await collector.start()
-
-        with patch.object(collector._snapshot_fetcher, "stop", new_callable=AsyncMock):
-            await collector.stop()
+        await collector.start()
+        await collector.stop()
