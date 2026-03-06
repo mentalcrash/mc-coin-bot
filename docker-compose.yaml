@@ -33,6 +33,18 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     restart: unless-stopped
 
+  alertmanager:
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.alertmanager
+    restart: unless-stopped
+
+  alertmanager-discord:
+    image: benjojo/alertmanager-discord:latest
+    environment:
+      DISCORD_WEBHOOK: ${ALERTMANAGER_DISCORD_WEBHOOK_URL}
+    restart: unless-stopped
+
   node-exporter:
     image: prom/node-exporter:latest
     restart: unless-stopped

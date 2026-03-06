@@ -1,0 +1,46 @@
+# ==============================================================================
+# Alertmanager — Discord Webhook 연동
+# ==============================================================================
+# Discord Webhook URL은 환경변수 ALERTMANAGER_DISCORD_WEBHOOK_URL로 주입.
+# Alertmanager는 네이티브 Discord 지원이 없으므로 webhook_configs를 사용하며,
+# 별도의 alertmanager-discord 브릿지 컨테이너를 통해 Discord Embed로 변환합니다.
+# ==============================================================================
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: discord
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # CRITICAL — 즉시 전송, 1시간 반복
+    - match:
+        severity: critical
+      receiver: discord
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # INFO — 느슨한 그룹핑
+    - match:
+        severity: info
+      receiver: discord
+      group_wait: 1m
+      repeat_interval: 12h
+
+receivers:
+  - name: discord
+    webhook_configs:
+      - url: http://alertmanager-discord:9094
+        send_resolved: true
+
+# 동일 알림 반복 억제 (예: BotRestarted 10분 이내 중복)
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname]
