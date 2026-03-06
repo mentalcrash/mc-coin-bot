@@ -70,7 +70,7 @@ backtest:
     - SOL/USDT
     - AVAX/USDT
     - XRP/USDT
-    - FTM/USDT
+    - S/USDT
   timeframe: "12h"
   start: "2020-01-01"    # Backtest 전용. Live에서 무시.
   end: "2026-03-06"      # Backtest 전용. Live에서 무시.
@@ -118,7 +118,7 @@ portfolio:
 
 | 전략 | 에셋 | TF | Avg Sharpe | 상태 |
 |------|------|-----|-----------|------|
-| **SuperTrend v1.1** | BTC, ETH, SOL, XRP, AVAX, FTM | 12H | 1.104 | **ACTIVE (Spot)** |
+| **SuperTrend v1.1** | BTC, ETH, SOL, XRP, AVAX, S(Sonic) | 12H | 1.104 | **ACTIVE (Spot)** |
 
 > 185개 전략: 1 ACTIVE (Spot) + 184 RETIRED. 이전 Futures ACTIVE 4개는 Phase 0에서 Orchestrator와 함께 제거.
 > 상세: `uv run mcbot pipeline report`

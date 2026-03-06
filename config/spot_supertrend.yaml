@@ -8,7 +8,7 @@ backtest:
     - SOL/USDT
     - AVAX/USDT
     - XRP/USDT
-    - FTM/USDT
+    - S/USDT
   timeframe: "12h"
   start: "2020-01-01"    # Backtest 전용. Live에서 무시.
   end: "2026-03-06"      # Backtest 전용. Live에서 무시.

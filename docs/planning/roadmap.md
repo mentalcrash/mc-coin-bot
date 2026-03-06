@@ -13,7 +13,7 @@ Spot SuperTrend 단일 전략 운용 로드맵.
 | 전략 | SuperTrend v1.1 (ATR 10, mult 3.0, ADX 14, threshold 25) |
 | 모드 | Long-only + Pyramid (40/35/25) |
 | TF | 12H |
-| Tier 1 에셋 | BTC, ETH, SOL, XRP, AVAX, FTM |
+| Tier 1 에셋 | BTC, ETH, SOL, XRP, AVAX, S(Sonic) |
 | Avg Sharpe (6에셋) | 1.104 |
 | P5 Robustness | PASS (6/6 assets, 91.4% Sharpe >= 0.8) |
 | 마이그레이션 | Phase 0-3 완료 (Futures Multi -> Spot Single) |
