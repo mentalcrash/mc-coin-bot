@@ -167,6 +167,43 @@ class DailyReportData(BaseModel):
     alpha_decay_detected: bool
 
 
+class SignalChangeItem(BaseModel):
+    """시그널 변동 항목 (Bar Close Report)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    prev_signal: str  # "LONG" / "NEUTRAL"
+    new_signal: str
+    realized_pnl: float | None = None  # 청산 시 실현 PnL
+
+
+class BarCloseReportData(BaseModel):
+    """12H Bar Close Report 데이터."""
+
+    model_config = ConfigDict(frozen=True)
+
+    bar_time_utc: str  # "00:00" / "12:00"
+
+    # Section 1: Signal Changes
+    signal_changes: tuple[SignalChangeItem, ...]
+
+    # Section 2: Asset Dashboard (간소화)
+    assets: tuple[AssetDashboardItem, ...]
+
+    # Section 3: Portfolio Snapshot
+    total_equity: float
+    today_pnl: float
+    invested_count: int
+    total_asset_count: int
+
+    # Section 4: System Status
+    uptime_seconds: float
+    is_circuit_breaker_active: bool
+    ws_ok_count: int
+    ws_total_count: int
+
+
 class StrategyHealthSnapshot(BaseModel):
     """Tier 3: Strategy Health 리포트.
 

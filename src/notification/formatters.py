@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     )
     from src.models.backtest import PerformanceMetrics, TradeRecord
     from src.notification.health_models import (
+        BarCloseReportData,
         DailyReportData,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
@@ -612,6 +613,89 @@ def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
 
     return {
         "title": "Spot Daily Report",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_bar_close_report_embed(data: BarCloseReportData) -> dict[str, Any]:
+    """12H Bar Close Report -> Discord Embed.
+
+    Args:
+        data: BarCloseReportData (HealthDataCollector에서 수집)
+
+    Returns:
+        Discord Embed dict
+    """
+    from src.notification.health_formatters import format_uptime
+
+    color = _COLOR_RED if data.is_circuit_breaker_active else _COLOR_GREEN
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Signal Changes
+    if data.signal_changes:
+        sc_lines: list[str] = []
+        for sc in data.signal_changes:
+            pnl_str = f" (PnL ${sc.realized_pnl:+,.2f})" if sc.realized_pnl is not None else ""
+            sc_lines.append(f"{sc.symbol}: {sc.prev_signal} -> {sc.new_signal}{pnl_str}")
+        fields.append(
+            {"name": "Signal Changes", "value": "\n".join(sc_lines), "inline": False}
+        )
+    else:
+        fields.append(
+            {"name": "Signal Changes", "value": "No changes", "inline": False}
+        )
+
+    # Section 2: Asset Dashboard (compact)
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.position_value > 0:
+                stop_str = f"| Stop {a.stop_distance_pct:.1f}%" if a.stop_distance_pct is not None else ""
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%) | "
+                    f"${a.position_value:,.0f} {stop_str}"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Assets ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 3: Portfolio Snapshot
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {"name": "Today PnL", "value": f"${data.today_pnl:+,.2f}", "inline": True},
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count}",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 4: System Status (one line)
+    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
+    status_str = (
+        f"CB {cb_label} | WS {data.ws_ok_count}/{data.ws_total_count} | "
+        f"Uptime {format_uptime(data.uptime_seconds)}"
+    )
+    fields.append({"name": "System", "value": status_str, "inline": False})
+
+    return {
+        "title": f"12H Bar Close ({data.bar_time_utc} UTC)",
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),

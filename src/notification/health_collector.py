@@ -19,8 +19,10 @@ from loguru import logger
 
 from src.notification.health_models import (
     AssetDashboardItem,
+    BarCloseReportData,
     DailyReportData,
     PositionStatus,
+    SignalChangeItem,
     StrategyHealthSnapshot,
     StrategyIndicatorItem,
     StrategyPerformanceSnapshot,
@@ -92,6 +94,7 @@ class HealthDataCollector:
         self._start_time = time.monotonic()
         self._sharpe_history: list[float] = []
         self._alpha_decay_streak: int = 0
+        self._prev_signals: dict[str, str] = {}  # symbol → "LONG"/"NEUTRAL"
 
     async def start(self) -> None:
         """HealthDataCollector 시작."""
@@ -367,6 +370,80 @@ class HealthDataCollector:
         if is_long:
             return "강한 상승추세" if adx > HealthDataCollector._OUTLOOK_ADX_STRONG else "상승추세"
         return "하락 전환 대기"
+
+    # ─── Bar Close Report ──────────────────────────────────────
+
+    async def collect_bar_close_report_data(self, bar_time_utc: str) -> BarCloseReportData:
+        """12H Bar Close Report 데이터 수집.
+
+        Args:
+            bar_time_utc: 봉 마감 시각 ("00:00" / "12:00")
+        """
+        # Section 1: Signal Changes
+        signal_changes = self._detect_signal_changes()
+
+        # Section 2: Asset Dashboard
+        assets = await self._collect_asset_dashboard()
+
+        # Section 3: Portfolio Snapshot
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        trades = self._analytics.closed_trades
+        trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
+        today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+
+        # Section 4: System Status
+        uptime = time.monotonic() - self._start_time
+        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
+
+        return BarCloseReportData(
+            bar_time_utc=bar_time_utc,
+            signal_changes=tuple(signal_changes),
+            assets=tuple(assets),
+            total_equity=self._pm.total_equity,
+            today_pnl=today_pnl,
+            invested_count=self._pm.open_position_count,
+            total_asset_count=len(self._symbols),
+            uptime_seconds=uptime,
+            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
+            ws_ok_count=ws_ok,
+            ws_total_count=len(self._symbols),
+        )
+
+    def _detect_signal_changes(self) -> list[SignalChangeItem]:
+        """이전 스냅샷 대비 포지션 방향 변동 감지 + 스냅샷 갱신."""
+        positions = self._pm.positions
+        changes: list[SignalChangeItem] = []
+
+        # 현재 상태 수집
+        current: dict[str, str] = {}
+        for symbol in self._symbols:
+            pos = positions.get(symbol)
+            current[symbol] = pos.direction.name if pos and pos.is_open else "NEUTRAL"
+
+        # 이전 상태와 비교
+        for symbol in self._symbols:
+            prev = self._prev_signals.get(symbol, "NEUTRAL")
+            curr = current[symbol]
+            if prev != curr:
+                # 청산 시 realized PnL 계산
+                realized_pnl: float | None = None
+                if curr == "NEUTRAL":
+                    pos = positions.get(symbol)
+                    if pos is not None:
+                        realized_pnl = pos.realized_pnl
+
+                changes.append(
+                    SignalChangeItem(
+                        symbol=symbol,
+                        prev_signal=prev,
+                        new_signal=curr,
+                        realized_pnl=realized_pnl,
+                    )
+                )
+
+        # 스냅샷 갱신
+        self._prev_signals = current
+        return changes
 
     # ─── Helper Functions ─────────────────────────────────────
 

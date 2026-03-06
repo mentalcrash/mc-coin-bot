@@ -251,3 +251,120 @@ class TestEnhancedDailyReport:
 
         item = queue.enqueue.call_args[0][0]
         assert item.severity == Severity.WARNING
+
+
+# ─── Bar Close Report 테스트 ────────────────────────────
+
+
+def _make_scheduler_with_spot_collector() -> tuple[ReportScheduler, AsyncMock, MagicMock]:
+    """spot_client 포함 ReportScheduler 생성 (Bar Close Report 용)."""
+    from src.notification.health_models import (
+        AssetDashboardItem,
+        BarCloseReportData,
+        SignalChangeItem,
+    )
+
+    queue = AsyncMock()
+    queue.enqueue = AsyncMock()
+
+    analytics = MagicMock()
+    analytics.get_equity_series.return_value = pd.Series(
+        [10000.0, 10050.0, 10100.0],
+        index=pd.date_range("2025-01-01", periods=3, freq="D", tz=UTC),
+        dtype=float,
+    )
+    now = datetime.now(UTC)
+    analytics.closed_trades = [_make_trade(now - timedelta(hours=1))]
+    metrics_mock = MagicMock()
+    metrics_mock.sharpe_ratio = 1.5
+    metrics_mock.max_drawdown = 5.0
+    metrics_mock.total_return = 10.0
+    analytics.compute_metrics.return_value = metrics_mock
+
+    chart_gen = MagicMock()
+    chart_gen.generate_daily_report.return_value = [("equity.png", b"\x89PNG")]
+
+    pm = MagicMock()
+    pm.open_position_count = 2
+    pm.total_equity = 10100.0
+
+    collector = MagicMock()
+    collector._spot_client = MagicMock()  # spot_client 존재 → bar close 활성화
+    collector.collect_bar_close_report_data = AsyncMock(
+        return_value=BarCloseReportData(
+            bar_time_utc="12:00",
+            signal_changes=(
+                SignalChangeItem(
+                    symbol="BTC/USDT",
+                    prev_signal="NEUTRAL",
+                    new_signal="LONG",
+                    realized_pnl=None,
+                ),
+            ),
+            assets=(
+                AssetDashboardItem(
+                    symbol="BTC/USDT",
+                    signal="LONG",
+                    current_price=42000.0,
+                    change_24h_pct=2.5,
+                    position_value=4200.0,
+                    day_pnl=100.0,
+                    stop_price=40000.0,
+                    stop_distance_pct=4.8,
+                ),
+            ),
+            total_equity=10100.0,
+            today_pnl=100.0,
+            invested_count=2,
+            total_asset_count=6,
+            uptime_seconds=86400.0,
+            is_circuit_breaker_active=False,
+            ws_ok_count=6,
+            ws_total_count=6,
+        )
+    )
+
+    scheduler = ReportScheduler(
+        queue=queue,
+        analytics=analytics,
+        chart_gen=chart_gen,
+        pm=pm,
+        health_collector=collector,
+    )
+    return scheduler, queue, collector
+
+
+class TestBarCloseReport:
+    async def test_enqueues_bar_close_report(self) -> None:
+        """Bar close report가 정상 enqueue."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_collector()
+        await scheduler._send_bar_close_report()
+
+        queue.enqueue.assert_called_once()
+        item = queue.enqueue.call_args[0][0]
+        assert "12H Bar Close" in item.embed["title"]
+        assert item.files == ()
+
+    async def test_bar_close_has_signal_changes(self) -> None:
+        """Signal change 섹션 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_collector()
+        await scheduler._send_bar_close_report()
+
+        item = queue.enqueue.call_args[0][0]
+        signal_field = item.embed["fields"][0]
+        assert signal_field["name"] == "Signal Changes"
+        assert "BTC/USDT" in signal_field["value"]
+
+    async def test_bar_close_skipped_without_spot_client(self) -> None:
+        """spot_client 없으면 skip."""
+        scheduler, queue, collector = _make_scheduler_with_spot_collector()
+        collector._spot_client = None
+
+        await scheduler._send_bar_close_report()
+        queue.enqueue.assert_not_called()
+
+    async def test_bar_close_skipped_without_collector(self) -> None:
+        """health_collector 없으면 skip."""
+        scheduler, queue = _make_scheduler()
+        await scheduler._send_bar_close_report()
+        queue.enqueue.assert_not_called()

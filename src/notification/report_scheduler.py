@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from src.notification.formatters import (
+    format_bar_close_report_embed,
     format_daily_report_embed,
     format_enhanced_daily_report_embed,
     format_spot_daily_report_embed,
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
 
 # 월요일 = 0 (Python datetime.weekday())
 _MONDAY = 0
+# Bar close 후 데이터 안정화 대기 (초)
+_BAR_CLOSE_DELAY_SECONDS = 120
 
 
 class ReportScheduler:
@@ -63,16 +66,18 @@ class ReportScheduler:
         self._health_collector = health_collector
         self._daily_task: asyncio.Task[None] | None = None
         self._weekly_task: asyncio.Task[None] | None = None
+        self._bar_close_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """스케줄 task 시작."""
         self._daily_task = asyncio.create_task(self._daily_loop())
         self._weekly_task = asyncio.create_task(self._weekly_loop())
-        logger.info("ReportScheduler started (daily + weekly)")
+        self._bar_close_task = asyncio.create_task(self._bar_close_loop())
+        logger.info("ReportScheduler started (daily + weekly + bar_close)")
 
     async def stop(self) -> None:
         """Task 취소."""
-        for task in (self._daily_task, self._weekly_task):
+        for task in (self._daily_task, self._weekly_task, self._bar_close_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -95,6 +100,38 @@ class ReportScheduler:
                 await self._send_daily_report()
             except Exception:
                 logger.exception("Failed to send daily report")
+
+    async def _bar_close_loop(self) -> None:
+        """매일 12:00 UTC (21:00 KST) bar close 리포트."""
+        while True:
+            await _sleep_until_next(hour=12, minute=0)
+            # Bar close 후 데이터 안정화 대기
+            await asyncio.sleep(_BAR_CLOSE_DELAY_SECONDS)
+            try:
+                await self._send_bar_close_report()
+            except Exception:
+                logger.exception("Failed to send bar close report")
+
+    async def _send_bar_close_report(self) -> None:
+        """12H bar close 리포트 생성 + enqueue."""
+        if self._health_collector is None:
+            logger.warning("Bar close report skipped: no health_collector")
+            return
+        if getattr(self._health_collector, "_spot_client", None) is None:
+            logger.warning("Bar close report skipped: no spot_client")
+            return
+
+        report_data = await self._health_collector.collect_bar_close_report_data("12:00")
+        embed = format_bar_close_report_embed(report_data)
+
+        severity = Severity.WARNING if report_data.is_circuit_breaker_active else Severity.INFO
+        item = NotificationItem(
+            severity=severity,
+            channel=ChannelRoute.DAILY_REPORT,
+            embed=embed,
+        )
+        await self._queue.enqueue(item)
+        logger.info("Bar close report enqueued")
 
     async def _weekly_loop(self) -> None:
         """매주 월요일 00:00 UTC 주간 리포트."""
