@@ -172,7 +172,7 @@ bot_info = Info("mcbot", "Bot metadata")
 trading_mode_enum = Enum(
     "mcbot_trading_mode",
     "Current trading mode",
-    states=["backtest", "paper", "shadow", "live"],
+    states=["backtest", "paper", "shadow", "live", "spot_live"],
 )
 
 
