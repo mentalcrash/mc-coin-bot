@@ -2,29 +2,27 @@
 
 Event-Driven Architecture 기반 암호화폐 퀀트 트레이딩 시스템.
 
-185개 전략을 7단계 Phase 파이프라인으로 평가하여 실전 운용 후보를 선별합니다.
-현재 **4개 전략 ACTIVE** (Anchor-Mom, Donch-Multi, Tri-Channel, Dual-Mom) 운용 중.
+185개 전략을 7단계 Phase 파이프라인으로 평가한 결과,
+**SuperTrend v1.1 (Spot Long-Only)** 1개 전략을 6에셋에서 운용 중.
 
 ---
 
 ## 아키텍처
 
-### 단일 전략 (EDA)
+### Spot Live 파이프라인
 
 ```
-WebSocket → MarketData → Strategy → Signal → PM → RM → OMS → Fill
+WebSocket → 1m Bar → CandleAggregator → 12H Bar
+  → Strategy(SuperTrend+ADX) → Signal
+  → PM → RM → OMS → SpotExecutor → Fill
+                       ↓
+              SpotStopManager (Stop-Limit Ratchet)
 ```
 
-### 멀티 전략 (Orchestrator)
+### Backtest 파이프라인
 
 ```
-                    ┌─ Pod A (Anchor-Mom)   ─┐
-                    ├─ Pod B (Donch-Multi)  ─┤
-WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM → RM → OMS → Fill
-                    └─ Pod D (Dual-Mom)     ─┘
-                         ▲                        ▲
-                    Capital Allocator        Risk Aggregator
-                    Lifecycle Manager        (5-check defense)
+1m Parquet → CandleAggregator → 12H Bar → Strategy → Signal → PM → RM → OMS → Fill
 ```
 
 > 상세: [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md)
@@ -35,7 +33,7 @@ WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM
 - **Target Weights 기반** -- "사라/팔아라" 대신 "적정 비중은 X%"
 - **Look-Ahead Bias 원천 차단** -- Signal at Close → Execute at Next Open
 - **PM/RM 분리 모델** -- Portfolio Manager → Risk Manager → OMS 3단계 방어
-- **자동 방어** -- Degradation 감지 → 자동 축소 → Probation → Retirement
+- **Stop-Limit Ratchet** -- 거래소에 Stop-Limit 위임 + 12H bar마다 상향 조정 (봇 장애 시에도 안전)
 
 ### 기술 스택
 
@@ -44,7 +42,7 @@ WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM
 | Language | Python 3.13 |
 | Package Manager | uv |
 | Type Safety | Pydantic V2 + pyright |
-| Exchange | CCXT Pro (WebSocket + REST) |
+| Exchange | CCXT Pro (WebSocket + REST) — Binance Spot |
 | Backtesting | VectorBT + Numba |
 | EDA Backtesting | EventBus + CandleAggregator |
 | Data | Parquet (Medallion Architecture) |
@@ -59,129 +57,47 @@ WebSocket → Data ──→├─ Pod C (Tri-Channel)  ─┼→ Netting → PM
 ## 전략 설정 (Config YAML)
 
 모든 백테스트와 실행은 YAML 설정 파일 하나로 제어됩니다.
-VBT 백테스트와 EDA 백테스트에서 동일한 설정을 공유합니다.
+현재 활성 config는 `config/spot_supertrend.yaml` 1개입니다.
 
 ### 설정 구조
 
 ```yaml
-# config/my_strategy.yaml
+# config/spot_supertrend.yaml
 backtest:
-  symbols: [BTC/USDT, ETH/USDT]   # 1개: 단일에셋, 2개+: 멀티에셋 (기본 Equal Weight, 동적 배분 가능)
-  timeframe: "1D"                   # 1D, 4h, 1h 등
-  start: "2020-01-01"
-  end: "2025-12-31"
-  capital: 100000.0
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - AVAX/USDT
+    - XRP/USDT
+    - FTM/USDT
+  timeframe: "12h"
+  start: "2020-01-01"    # Backtest 전용. Live에서 무시.
+  end: "2026-03-06"      # Backtest 전용. Live에서 무시.
+  capital: 100000.0       # Paper/Backtest 전용. Live는 거래소 잔고 자동 조회.
 
 strategy:
-  name: tsmom                       # 등록된 전략 이름 (strategies 명령으로 확인)
-  params:                           # 전략별 파라미터 (각 전략의 config.py 참조)
-    lookback: 30
-    vol_window: 30
-    vol_target: 0.35
-    short_mode: 1                   # 0=DISABLED, 1=HEDGE_ONLY, 2=FULL
-    hedge_threshold: -0.07
-    hedge_strength_ratio: 0.3
-  # sub_strategies:                 # (선택) 앙상블 전략 전용
-  #   - name: tsmom
-  #     params: { lookback: 30 }
+  name: supertrend
+  params:
+    atr_period: 7
+    multiplier: 2.5
+    adx_period: 14
+    adx_threshold: 25
+    short_mode: 0         # DISABLED (Long-Only)
 
 portfolio:
-  max_leverage_cap: 2.0
-  rebalance_threshold: 0.10         # 비중 변화 10% 이상 시 리밸런싱
-  system_stop_loss: 0.10            # 10% 시스템 손절 (안전망)
+  max_leverage_cap: 1.0   # Spot: 레버리지 없음
+  rebalance_threshold: 0.05
   use_trailing_stop: true
-  trailing_stop_atr_multiplier: 3.0 # 3x ATR 트레일링 스톱
-  cost_model:                       # 선택 (기본값 있음)
-    maker_fee: 0.0002
-    taker_fee: 0.0004
+  trailing_stop_atr_multiplier: 3.0
+  use_intrabar_trailing_stop: false  # 12H bar에서만 TS 체크
+  cost_model:
+    maker_fee: 0.001      # Spot 0.1%
+    taker_fee: 0.001
     slippage: 0.0005
-    funding_rate_8h: 0.0001
-    market_impact: 0.0002
+    funding_rate_8h: 0.0  # Spot: Funding Rate 없음
+    market_impact: 0.0
 ```
-
-### 새 전략 설정 작성법
-
-1. `config/` 디렉토리에 YAML 파일 생성
-1. `strategy.name`에 등록된 전략 이름 지정 (`uv run mcbot backtest strategies`로 확인)
-1. `strategy.params`에 해당 전략의 파라미터 입력 (각 전략의 `src/strategy/<name>/config.py` 참조)
-1. `backtest.symbols`에 테스트할 심볼 나열 (2개 이상이면 자동으로 Equal Weight 멀티에셋)
-
-### 앙상블 전략 설정
-
-여러 전략의 시그널을 하나로 결합하는 메타 전략입니다. `strategy.name: ensemble`로 지정하고 `sub_strategies`에 서브 전략을 나열합니다.
-
-```yaml
-# config/ensemble-example.yaml
-strategy:
-  name: ensemble
-  params:
-    aggregation: inverse_volatility  # equal_weight | inverse_volatility | majority_vote | strategy_momentum
-    vol_lookback: 63
-    vol_target: 0.35
-  sub_strategies:
-    - name: tsmom
-      params: { lookback: 30, vol_target: 0.35 }
-    - name: donchian-ensemble
-      params: { lookbacks: [20, 60, 150] }
-    - name: vol-adaptive
-      params: {}
-```
-
-**Aggregation 방법 4가지:**
-
-| 방법 | 설명 |
-|------|------|
-| `equal_weight` | 동일 가중 평균 (기본값) |
-| `inverse_volatility` | 안정적인 전략에 높은 가중치 |
-| `majority_vote` | 다수결 합의 (min_agreement 이상) |
-| `strategy_momentum` | 최근 Sharpe 상위 top_n 선택 |
-
-### Orchestrator 설정 (멀티 전략)
-
-독립 전략들을 **사업부처럼** 병렬 운영합니다. 각 Pod은 독립 자본 슬롯과 P&L을 가지며, 성과에 따라 자본이 동적 배분됩니다.
-
-```yaml
-# config/orchestrator-example.yaml
-orchestrator:
-  allocation_method: risk_parity
-  rebalance:
-    trigger: hybrid
-    calendar_days: 7
-
-pods:
-  - pod_id: pod-tsmom-major
-    strategy: tsmom
-    params: { lookback: 30, vol_target: 0.35 }
-    symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
-    initial_fraction: 0.15
-    max_fraction: 0.40
-
-    # Pod 내 에셋 배분 (생략 시 equal_weight)
-    asset_allocation:
-      method: inverse_volatility
-      vol_lookback: 60
-      rebalance_bars: 5
-      min_weight: 0.10
-      max_weight: 0.50
-
-  - pod_id: pod-donchian-alt
-    strategy: donchian-ensemble
-    symbols: [SOL/USDT, BNB/USDT]
-    initial_fraction: 0.10
-    # asset_allocation 생략 → equal_weight (1/N)
-```
-
-**Pod 내 에셋 배분 방법:**
-
-| 방법 | 설명 | 적합 상황 |
-|------|------|----------|
-| `equal_weight` | 1/N 균등 (기본값) | 에셋 수 적거나 변동성 유사 |
-| `inverse_volatility` | 저변동 에셋에 높은 비중 | BTC vs SOL 등 변동성 차이 큰 경우 |
-| `risk_parity` | 리스크 기여 균등화 | 상관관계까지 반영한 정밀 배분 |
-| `signal_weighted` | 시그널 강도 비례 | 전략의 확신도 차이 반영 |
-| `dual_momentum` | 절대+상대 모멘텀 | 승자 overweight + 폭락 시 현금 대피 |
-
-> 상세 설정 및 아키텍처: [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md)
 
 ---
 
@@ -193,10 +109,19 @@ pods:
 | 구분 | Phase | 검증 내용 |
 |------|-------|----------|
 | 발굴 · 구현 | P1 → P3 | 데이터 기반 알파 발굴, 4-file 구현, C1~C7 코드 검증 |
-| 백테스트 검증 | P4 → P6 | 5코인x6년, IS/OOS, 파라미터 최적화, WFA+CPCV+PBO+DSR |
+| 백테스트 검증 | P4 → P6 | 6에셋x6년, IS/OOS, 파라미터 최적화, WFA+CPCV+PBO+DSR |
 | 라이브 전환 | P7 | VBT↔EDA Parity, 라이브 인프라 검증, 배포 설정 |
 
 > Phase별 상세 기준: [`docs/guides/strategy-pipeline.md`](docs/guides/strategy-pipeline.md)
+
+### 전략 현황
+
+| 전략 | 에셋 | TF | Avg Sharpe | 상태 |
+|------|------|-----|-----------|------|
+| **SuperTrend v1.1** | BTC, ETH, SOL, XRP, AVAX, FTM | 12H | 1.104 | **ACTIVE (Spot)** |
+
+> 185개 전략: 1 ACTIVE (Spot) + 184 RETIRED. 이전 Futures ACTIVE 4개는 Phase 0에서 Orchestrator와 함께 제거.
+> 상세: `uv run mcbot pipeline report`
 
 ---
 
@@ -209,23 +134,16 @@ uv sync --group dev --group research
 cp .env.example .env  # API 키 설정
 ```
 
-### 전략 목록 확인
-
-```bash
-uv run mcbot backtest strategies      # 등록된 전략 목록
-uv run mcbot backtest info            # 전략 상세 정보
-```
-
 ### 백테스트
 
 > **VBT**: Vectorized 고속 백테스트 (탐색용) / **EDA**: Event-Driven (라이브 동일 코드, 최종 검증)
 
 ```bash
-# VBT 백테스트 (단일에셋 / 멀티에셋은 config의 symbols 수로 자동 판별)
-uv run mcbot backtest run config/default.yaml
+# VBT 백테스트
+uv run mcbot backtest run config/spot_supertrend.yaml
 
-# EDA 백테스트 (1m 데이터 → target TF 집계)
-uv run mcbot eda run config/default.yaml
+# EDA 백테스트 (1m 데이터 → 12H 집계)
+uv run mcbot eda run config/spot_supertrend.yaml
 
 # 옵션: --report (QuantStats HTML), --advisor (Strategy Advisor), -V (Verbose)
 ```
@@ -233,72 +151,47 @@ uv run mcbot eda run config/default.yaml
 ### Live Trading
 
 ```bash
-uv run mcbot eda run-live config/paper.yaml --mode paper    # Paper — 시뮬레이션 체결
-uv run mcbot eda run-live config/paper.yaml --mode shadow   # Shadow — 시그널 로깅만
-uv run mcbot eda run-live config/paper.yaml --mode live     # Live — Binance 실주문 ⚠️
+# Paper — 시뮬레이션 체결
+uv run mcbot eda run-live config/spot_supertrend.yaml --mode paper
+
+# Spot Live — Binance Spot 실주문
+uv run mcbot eda spot-live config/spot_supertrend.yaml
 ```
 
-Live 모드는 Binance USDT-M Futures에서 Hedge Mode(Cross Margin, 1x Leverage)로 실행됩니다.
-60초마다 거래소 포지션과 PM 상태를 교차 검증(PositionReconciler)하며, 불일치 시 경고만 발행합니다(자동 수정 없음).
-봇 장애 시 포지션 보호를 위한 거래소 STOP_MARKET 안전망은 [`docs/operations/exchange-safety-stop.md`](docs/operations/exchange-safety-stop.md) 참조.
-
-### 일괄 백테스트
-
-```bash
-uv run python scripts/bulk_backtest.py   # 전 전략 일괄 백테스트
-```
+Spot Live 모드는 Binance Spot에서 Long-Only(레버리지 없음)로 실행됩니다.
+60초마다 거래소 잔고와 PM 상태를 교차 검증(PositionReconciler)하며, 불일치 시 경고를 발행합니다.
+봇 장애 시 포지션 보호를 위한 Stop-Limit Ratchet은 [`docs/operations/exchange-safety-stop.md`](docs/operations/exchange-safety-stop.md) 참조.
 
 ---
 
 ## 데이터 수집
 
-14개 소스, 75개 데이터셋을 Medallion Architecture(Bronze→Silver)로 수집·정제합니다. 완전 무료($0/mo).
+Medallion Architecture(Bronze→Silver)로 OHLCV 1분봉을 수집·정제합니다.
 
 ```bash
 # OHLCV (1분봉)
 uv run mcbot ingest pipeline BTC/USDT --year 2024 --year 2025
 
-# 파생상품 — Binance Futures (16 자산: Tier1 전체 + Tier2 FR only)
-uv run mcbot ingest derivatives batch                      # 전체 16 에셋
-uv run mcbot ingest derivatives batch --tier 1             # Tier 1 (8) — 6종 전체
-uv run mcbot ingest derivatives batch --tier 2 --fr-only   # Tier 2 (8) — FR만
-
-# On-chain — DeFiLlama, Coin Metrics, F&G 등 (22 데이터셋)
-uv run mcbot ingest onchain batch --type all
-
-# Macro — FRED(DXY/VIX/Gold/Yields/M2) + yfinance(SPY/QQQ/GLD/TLT) + CoinGecko
-uv run mcbot ingest macro batch --type all
-
-# Options — Deribit (DVOL, Put/Call Ratio, Historical Vol, Term Structure, Max Pain)
-uv run mcbot ingest options batch
-
-# Extended Derivatives — Coinalyze(멀티거래소 OI/Funding/Liq/CVD) + Hyperliquid
-uv run mcbot ingest deriv-ext batch --type all
-
 # 데이터 상태
 uv run mcbot ingest info
 ```
 
-> 상세 (저장 구조, Rate Limit, Publication Lag, 데이터 품질 등): [`docs/guides/data-collection.md`](docs/guides/data-collection.md)
+> 상세: [`docs/guides/data-collection.md`](docs/guides/data-collection.md)
 
 ### 데이터 카탈로그
 
-14개 소스, 75개 데이터셋의 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다. 전략 발굴 시 어떤 데이터가 있고, 어떤 컬럼이 나오고, publication lag은 며칠인지 빠르게 탐색할 수 있습니다.
+데이터셋 메타데이터를 [`catalogs/datasets.yaml`](catalogs/datasets.yaml)에서 YAML로 관리합니다.
 
 ```bash
-uv run mcbot catalog list                      # 전체 75개 데이터셋 목록
-uv run mcbot catalog list --type macro         # 유형 필터 (ohlcv, derivatives, onchain, macro, options, deriv_ext)
-uv run mcbot catalog list --group macro_rates  # 그룹 필터
-uv run mcbot catalog show btc_metrics          # 상세 (컬럼, enrichment 설정, 전략 힌트)
+uv run mcbot catalog list                      # 데이터셋 목록
+uv run mcbot catalog show btc_metrics          # 상세 (컬럼, enrichment 설정)
 ```
-
-각 데이터셋에는 `strategy_hints`(전략 활용 아이디어)와 `enrichment`(OHLCV 병합 설정, scope: global/per_asset)가 포함되어 있어, 새 전략 발굴 시 데이터 탐색 → 아이디어 도출 흐름을 지원합니다.
 
 ---
 
 ## 배포 (Docker Compose + Coolify)
 
-3개 서비스(트레이딩 봇, Prometheus, Grafana)를 `docker-compose.yml`로 실행합니다.
+3개 서비스(트레이딩 봇, Prometheus, Grafana)를 `docker-compose.yaml`로 실행합니다.
 
 ```bash
 docker compose up --build -d      # 전체 스택 실행
@@ -308,13 +201,13 @@ docker compose down               # 중지
 
 ### 환경 변수
 
-DigitalOcean Droplet + Coolify로 배포합니다. `MC_*` 환경 변수로 실행 모드를 제어합니다.
+Coolify로 배포합니다. `MC_*` 환경 변수로 실행 모드를 제어합니다.
 
 | 환경 변수 | 기본값 | 설명 |
 |----------|--------|------|
-| `MC_EXECUTION_MODE` | `paper` | 실행 모드 (`paper` / `shadow` / `live`) |
-| `MC_CONFIG_PATH` | `config/paper.yaml` | YAML 설정 파일 경로 (orchestrator YAML 자동 감지) |
-| `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 (USD) |
+| `MC_EXECUTION_MODE` | `paper` | 실행 모드 (`paper` / `shadow` / `live` / `spot_live`) |
+| `MC_CONFIG_PATH` | `config/spot_supertrend.yaml` | YAML 설정 파일 경로 |
+| `MC_INITIAL_CAPITAL` | `10000` | 초기 자본 — `spot_live`에서는 거래소 잔고 자동 조회 |
 | `MC_DB_PATH` | `data/trading.db` | SQLite DB 경로 (상태 영속화, 빈 문자열=비활성) |
 | `MC_ENABLE_PERSISTENCE` | `true` | 상태 영속화 on/off |
 | `MC_METRICS_PORT` | `8000` | Prometheus metrics 포트 (`0`이면 비활성) |
@@ -324,10 +217,9 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 ### 모니터링 & 알림
 
 - **Prometheus** (`localhost:9090`) + **Grafana** (`localhost:3000`) — 상세: [`docs/operations/monitoring.md`](docs/operations/monitoring.md)
-- **Discord 알림**: 체결, Circuit Breaker, 리스크 알림 실시간 전송 + `/status`, `/kill`, `/balance` Slash Commands
-- **System Heartbeat** (1시간): equity, drawdown, 레버리지, CB 상태
-- **Market Regime Report** (4시간): Funding Rate, OI, LS Ratio → Regime Score
-- **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, Alpha Decay 감지
+- **Discord 알림**: 체결, Stop-Limit Ratchet, 리스크 알림 실시간 전송 + `/status`, `/kill`, `/balance` Slash Commands
+- **System Heartbeat** (1시간): equity, drawdown, CB 상태
+- **Strategy Health Report** (8시간): Rolling Sharpe, Win Rate, 6에셋 요약
 
 ---
 
@@ -341,43 +233,22 @@ Discord 채널 ID 등 추가 환경 변수는 `.env.example` 참조.
 |------|------|
 | **1D 고갈** | 92개 1D OHLCV 전략 시도 → 0 ACTIVE. 검색공간 소진 |
 | **4H/8H 사망** | 50개+ 4H/8H 전략 전멸 — 거래비용이 edge 잠식, CPCV 로버스트니스 미달 |
-| **12H 최적** | 4개 ACTIVE (Anchor-Mom, Donch-Multi, Tri-Channel, Dual-Mom) — 비용/노이즈/신호 균형점 |
+| **12H 최적** | SuperTrend P5 PASS (91.4% Sharpe ≥ 0.8) — 비용/노이즈/신호 균형점 |
 | **TF 분산 불가** | 4H/8H에서 단 하나도 ACTIVE 없음. 12H 단일 TF 운용이 최적 |
 | **대안데이터 한계** | On-chain/Deriv/Macro/TradeFlow 단독 alpha 0건 (181개+ 전략 검증) |
 
-### "느리지 않은가?" — SL/TS가 해결
+### "느리지 않은가?" — Stop-Limit Ratchet이 해결
 
-시그널은 12H로 판단하지만, 리스크 관리는 TF bar 단위로 방어합니다.
+시그널은 12H로 판단하지만, 리스크 관리는 거래소 Stop-Limit으로 상시 방어합니다.
 
 ```
 시그널 생성:  12H bar close 시 (하루 2회, 노이즈 없는 판단)
-리스크 방어:  12H bar마다 SL/TS 체크 (Trailing Stop 3.0x ATR)
+리스크 방어:  Stop-Limit Ratchet (3.0x ATR, 거래소 위임 — 봇 장애 시에도 동작)
 ```
 
-- Trailing Stop (3.0x ATR): TF bar 단위 체크 → MDD 방어의 핵심
-- System Stop-Loss (5~10%): 포트폴리오 레벨 circuit breaker
-- Deferred Execution: 다음 bar open 체결 → look-ahead bias 차단
-
-### 현재 운용 구조
-
-멀티 전략(Orchestrator) + 멀티 에셋(Pod) 구조로 4개 ACTIVE 전략을 운용합니다.
-
-1. **자산 다각화**: ✅ 16종 — Tier 1 (BTC/ETH/BNB/SOL/DOGE/LINK/ADA/AVAX) + Tier 2 (XRP/DOT/POL/UNI/NEAR/ATOM/FIL/LTC). `src/config/universe.py`에서 중앙 관리
-1. **에셋 배분 고도화**: ✅ EW/IV/RP/SW/DM 5가지 방법 + Numba 최적화
-1. **데이터 인프라**: ✅ 14개 소스, 75개 데이터셋 수집 완료 — FRED/Deribit/Coinalyze 등 (리스크 관리 보조용)
-
----
-
-## 전략 현황
-
-| 전략 | Best Asset | TF | Sharpe (VBT) | Sharpe (EDA) | 상태 |
-|------|-----------|-----|-------------|-------------|------|
-| **Anchor-Mom** | DOGE/USDT | 12H | 1.36 | — | ACTIVE |
-| **Donch-Multi** | ETH/USDT | 12H | 1.61 | 1.45 | ACTIVE |
-| **Tri-Channel** | ETH/USDT | 12H | 2.17 | 1.99 | ACTIVE |
-| **Dual-Mom** | BTC/USDT | 12H | — | — | ACTIVE |
-
-> 185개 전략: 4 ACTIVE + 181 RETIRED. 상세: `uv run mcbot pipeline report`
+- **Stop-Limit Ratchet**: 12H bar마다 high watermark 갱신 → stop price 상향만 허용
+- **System Stop-Loss**: 포트폴리오 레벨 circuit breaker
+- **Deferred Execution**: 다음 bar open 체결 → look-ahead bias 차단
 
 ---
 
@@ -390,7 +261,7 @@ uv run mcbot backtest validate -m milestone   # Walk-Forward (5-fold)
 uv run mcbot backtest validate -m final       # CPCV + DSR + PBO
 
 # 시그널 진단
-uv run mcbot backtest diagnose BTC/USDT -s tsmom
+uv run mcbot backtest diagnose BTC/USDT -s supertrend
 
 # 교훈 관리 (lessons/*.yaml)
 uv run mcbot pipeline lessons-list            # 전체 교훈 목록
@@ -407,14 +278,15 @@ uv run mcbot audit latest                     # 최신 스냅샷
 |------|------|
 | **Architecture** | |
 | [`docs/architecture/backtest-engine.md`](docs/architecture/backtest-engine.md) | 백테스트 엔진 아키텍처 (VBT + EDA 이중 엔진 + 검증) |
-| [`docs/architecture/reconciler.md`](docs/architecture/reconciler.md) | PositionReconciler (거래소↔PM 포지션 교차 검증, auto-correction) |
+| [`docs/architecture/reconciler.md`](docs/architecture/reconciler.md) | PositionReconciler (거래소↔PM 잔고 교차 검증) |
 | **Guides** | |
 | [`docs/guides/strategy-pipeline.md`](docs/guides/strategy-pipeline.md) | **전략 파이프라인** (Phase 1~7, PASS 기준, YAML 스키마) |
-| [`docs/guides/data-collection.md`](docs/guides/data-collection.md) | **데이터 수집 가이드** (OHLCV, Derivatives, On-chain, 저장 구조, CLI) |
-| [`docs/guides/lessons-system.md`](docs/guides/lessons-system.md) | Lessons 시스템 (97개 교훈, YAML 스키마, CLI) |
+| [`docs/guides/data-collection.md`](docs/guides/data-collection.md) | **데이터 수집 가이드** (OHLCV, 저장 구조, CLI) |
+| [`docs/guides/lessons-system.md`](docs/guides/lessons-system.md) | Lessons 시스템 (102개 교훈, YAML 스키마, CLI) |
 | **Operations** | |
 | [`docs/operations/monitoring.md`](docs/operations/monitoring.md) | Prometheus + Grafana 모니터링 (메트릭, 대시보드, 알림 규칙) |
-| [`docs/operations/notification.md`](docs/operations/notification.md) | Discord 알림 시스템 (체결, Circuit Breaker, Slash Commands) |
-| [`docs/operations/exchange-safety-stop.md`](docs/operations/exchange-safety-stop.md) | Exchange Safety Stop (봇 장애 시 거래소 STOP_MARKET 안전망) |
+| [`docs/operations/notification.md`](docs/operations/notification.md) | Discord 알림 시스템 (체결, Stop-Limit, Slash Commands) |
+| [`docs/operations/exchange-safety-stop.md`](docs/operations/exchange-safety-stop.md) | Stop-Limit Ratchet (봇 장애 시 거래소 안전망) |
 | **Planning** | |
-| [`docs/planning/roadmap.md`](docs/planning/roadmap.md) | 미착수 개선 로드맵 (동적 슬리피지, FR/OI 감지, Alpha Decay, Taker Volume) |
+| [`docs/planning/roadmap.md`](docs/planning/roadmap.md) | Spot 운영 로드맵 |
+| [`docs/plans/spot-migration-implementation.md`](docs/plans/spot-migration-implementation.md) | Spot Migration 구현 계획 (Phase 0~5) |
