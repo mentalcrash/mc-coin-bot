@@ -209,6 +209,19 @@ class StrategyEngine:
             self._warmup,
         )
 
+        # warmup 데이터로 즉시 indicator 캐시 (리포트용)
+        if len(bars) >= self._warmup:
+            try:
+                df = pd.DataFrame(
+                    self._buffers[symbol],
+                    index=pd.DatetimeIndex(self._timestamps[symbol], tz=UTC),
+                )
+                processed_df, _ = self._strategy.run(df)
+                self._latest_indicators[symbol] = self._extract_indicators(processed_df)
+                logger.debug("Warmup indicators cached for {}", symbol)
+            except Exception:
+                logger.warning("Failed to cache warmup indicators for {}", symbol)
+
     def _detect_warmup(self) -> int:
         """전략 설정에서 warmup 기간 자동 감지.
 
