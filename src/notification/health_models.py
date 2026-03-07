@@ -129,16 +129,36 @@ class StrategyIndicatorItem(BaseModel):
     outlook: str = ""
 
 
-class DailyReportData(BaseModel):
-    """Spot Daily Report 전체 데이터 (5 sections)."""
+class StrategyInfoMixin(BaseModel):
+    """Strategy Info 공통 필드."""
 
     model_config = ConfigDict(frozen=True)
 
-    # Section 1: Strategy Info
     strategy_name: str
     strategy_params: dict[str, str]
     trailing_stop_config: str
     timeframe: str
+
+
+class SystemHealthMixin(BaseModel):
+    """System Health 공통 필드."""
+
+    model_config = ConfigDict(frozen=True)
+
+    uptime_seconds: float
+    is_circuit_breaker_active: bool
+    ws_ok_count: int
+    ws_total_count: int
+    rolling_sharpe_30d: float
+    win_rate: float
+    profit_factor: float
+    alpha_decay_detected: bool
+
+
+class DailyReportData(StrategyInfoMixin):
+    """Spot Daily Report 전체 데이터 (5 sections)."""
+
+    model_config = ConfigDict(frozen=True)
 
     # Section 2: Portfolio Summary
     total_equity: float
@@ -157,7 +177,7 @@ class DailyReportData(BaseModel):
     # Section 4: Strategy Indicators
     indicators: tuple[StrategyIndicatorItem, ...]
 
-    # Section 5: System Health
+    # Section 5: System Health (partial — no rolling_sharpe_30d in mixin)
     uptime_seconds: float
     is_circuit_breaker_active: bool
     ws_ok_count: int
@@ -217,16 +237,10 @@ class AssetWeeklyPerformance(BaseModel):
     week_trades: int
 
 
-class WeeklyReportData(BaseModel):
+class WeeklyReportData(StrategyInfoMixin, SystemHealthMixin):
     """Spot Weekly Report 전체 데이터 (6 sections)."""
 
     model_config = ConfigDict(frozen=True)
-
-    # Section 1: Strategy Info
-    strategy_name: str
-    strategy_params: dict[str, str]
-    trailing_stop_config: str
-    timeframe: str
 
     # Section 2: Weekly Portfolio Summary
     total_equity: float
@@ -252,16 +266,6 @@ class WeeklyReportData(BaseModel):
 
     # Section 5: Strategy Indicators
     indicators: tuple[StrategyIndicatorItem, ...]
-
-    # Section 6: System Health
-    uptime_seconds: float
-    is_circuit_breaker_active: bool
-    ws_ok_count: int
-    ws_total_count: int
-    rolling_sharpe_30d: float
-    win_rate: float
-    profit_factor: float
-    alpha_decay_detected: bool
 
 
 class AssetMonthlyPerformance(BaseModel):
@@ -289,16 +293,10 @@ class MonthlyPerformanceTrend(BaseModel):
     sharpe: float
 
 
-class MonthlyReportData(BaseModel):
+class MonthlyReportData(StrategyInfoMixin, SystemHealthMixin):
     """Spot Monthly Report 전체 데이터 (8 sections)."""
 
     model_config = ConfigDict(frozen=True)
-
-    # Section 1: Strategy Info
-    strategy_name: str
-    strategy_params: dict[str, str]
-    trailing_stop_config: str
-    timeframe: str
 
     # Section 2: Monthly Portfolio Summary
     total_equity: float
@@ -331,18 +329,131 @@ class MonthlyReportData(BaseModel):
     # Section 6: Strategy Indicators
     indicators: tuple[StrategyIndicatorItem, ...]
 
-    # Section 7: System Health
-    uptime_seconds: float
-    is_circuit_breaker_active: bool
-    ws_ok_count: int
-    ws_total_count: int
-    rolling_sharpe_30d: float
-    win_rate: float
-    profit_factor: float
-    alpha_decay_detected: bool
-
     # Section 8: Risk Summary
     month_max_drawdown_pct: float
+    longest_losing_streak: int
+
+
+class AssetQuarterlyPerformance(BaseModel):
+    """에셋별 분기 성과 (Quarterly Report Section 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    signal: str
+    current_price: float
+    quarter_change_pct: float
+    quarter_pnl: float
+    quarter_trades: int
+
+
+class QuarterlyReportData(StrategyInfoMixin, SystemHealthMixin):
+    """Spot Quarterly Report 전체 데이터 (8 sections)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Section 2: Quarterly Portfolio Summary
+    total_equity: float
+    available_cash: float
+    cash_pct: float
+    quarter_pnl: float
+    quarter_trades: int
+    quarter_return_pct: float
+    invested_count: int
+    total_asset_count: int
+    cumulative_return_pct: float
+    max_drawdown_pct: float
+
+    # Section 3: Asset Quarterly Performance
+    assets: tuple[AssetQuarterlyPerformance, ...]
+
+    # Section 4: Quarterly Trade Summary
+    best_trade_symbol: str
+    best_trade_pnl: float
+    worst_trade_symbol: str
+    worst_trade_pnl: float
+    quarter_win_rate: float
+    quarter_profit_factor: float
+    avg_trade_pnl: float
+    total_fees: float
+
+    # Section 5: Monthly Performance Trend (3개월)
+    performance_trend: tuple[MonthlyPerformanceTrend, ...]
+
+    # Section 6: Strategy Indicators
+    indicators: tuple[StrategyIndicatorItem, ...]
+
+    # Section 8: Risk Summary
+    quarter_max_drawdown_pct: float
+    longest_losing_streak: int
+
+
+class AssetYearlyPerformance(BaseModel):
+    """에셋별 연간 성과 (Yearly Report Section 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    signal: str
+    current_price: float
+    year_change_pct: float
+    year_pnl: float
+    year_trades: int
+
+
+class QuarterlyPerformanceTrend(BaseModel):
+    """분기별 성과 추이 항목 (Yearly Report Section 5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    year_quarter: str  # "2026-Q1"
+    pnl: float
+    return_pct: float
+    trades: int
+    sharpe: float
+
+
+class YearlyReportData(StrategyInfoMixin, SystemHealthMixin):
+    """Spot Yearly Report 전체 데이터 (9 sections)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Section 2: Yearly Portfolio Summary
+    total_equity: float
+    available_cash: float
+    cash_pct: float
+    year_pnl: float
+    year_trades: int
+    year_return_pct: float
+    invested_count: int
+    total_asset_count: int
+    cumulative_return_pct: float
+    max_drawdown_pct: float
+
+    # Section 3: Asset Yearly Performance
+    assets: tuple[AssetYearlyPerformance, ...]
+
+    # Section 4: Yearly Trade Summary
+    best_trade_symbol: str
+    best_trade_pnl: float
+    worst_trade_symbol: str
+    worst_trade_pnl: float
+    year_win_rate: float
+    year_profit_factor: float
+    avg_trade_pnl: float
+    total_fees: float
+
+    # Section 5: Quarterly Performance Trend (4분기)
+    quarterly_trend: tuple[QuarterlyPerformanceTrend, ...]
+
+    # Section 6: Monthly Performance Trend (12개월)
+    monthly_trend: tuple[MonthlyPerformanceTrend, ...]
+
+    # Section 7: Strategy Indicators
+    indicators: tuple[StrategyIndicatorItem, ...]
+
+    # Section 9: Risk Summary
+    year_max_drawdown_pct: float
     longest_losing_streak: int
 
 

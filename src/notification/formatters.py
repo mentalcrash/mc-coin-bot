@@ -26,9 +26,14 @@ if TYPE_CHECKING:
         BarCloseReportData,
         DailyReportData,
         MonthlyReportData,
+        QuarterlyReportData,
         StrategyHealthSnapshot,
+        StrategyIndicatorItem,
         SystemHealthSnapshot,
         WeeklyReportData,
+        YearlyReportData,
+        StrategyInfoMixin,
+        SystemHealthMixin,
     )
 
 # Discord Embed 색상 코드 (decimal)
@@ -495,6 +500,58 @@ def format_enhanced_daily_report_embed(
     }
 
 
+def _build_strategy_info_field(data: StrategyInfoMixin) -> dict[str, Any]:
+    """Section: Strategy Info embed field."""
+    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
+    return {
+        "name": f"Strategy: {data.strategy_name}",
+        "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
+        "inline": False,
+    }
+
+
+def _build_indicator_fields(indicators: tuple[StrategyIndicatorItem, ...]) -> dict[str, Any]:
+    """Section: Strategy Indicators embed field."""
+    ind_lines: list[str] = []
+    for i in indicators:
+        st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
+        adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
+        ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
+    return {
+        "name": "Strategy Indicators",
+        "value": "\n".join(ind_lines) if ind_lines else "—",
+        "inline": False,
+    }
+
+
+def _build_system_health_fields(data: SystemHealthMixin) -> list[dict[str, Any]]:
+    """Section: System Health embed fields."""
+    from src.notification.health_formatters import format_uptime
+
+    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
+    pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
+    return [
+        {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
+        {
+            "name": "CB / WS",
+            "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
+            "inline": True,
+        },
+        {
+            "name": "Sharpe (30d)",
+            "value": f"{data.rolling_sharpe_30d:.2f}",
+            "inline": True,
+        },
+        {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
+        {"name": "Profit Factor", "value": pf_str, "inline": True},
+        {
+            "name": "Alpha Decay",
+            "value": "DETECTED" if data.alpha_decay_detected else "OK",
+            "inline": True,
+        },
+    ]
+
+
 def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
     """Spot Daily Report -> 5-section Discord Embed.
 
@@ -508,14 +565,7 @@ def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
     fields: list[dict[str, Any]] = []
 
     # Section 1: Strategy Info
-    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
-    fields.append(
-        {
-            "name": f"Strategy: {data.strategy_name}",
-            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
-            "inline": False,
-        }
-    )
+    fields.append(_build_strategy_info_field(data))
 
     # Section 2: Portfolio Summary
     fields.extend(
@@ -572,18 +622,7 @@ def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
 
     # Section 4: Strategy Indicators
     if data.indicators:
-        ind_lines: list[str] = []
-        for i in data.indicators:
-            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
-            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
-            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
-        fields.append(
-            {
-                "name": "Strategy Indicators",
-                "value": "\n".join(ind_lines),
-                "inline": False,
-            }
-        )
+        fields.append(_build_indicator_fields(data.indicators))
 
     # Section 5: System Health
     from src.notification.health_formatters import format_uptime
@@ -642,20 +681,18 @@ def format_bar_close_report_embed(data: BarCloseReportData) -> dict[str, Any]:
         for sc in data.signal_changes:
             pnl_str = f" (PnL ${sc.realized_pnl:+,.2f})" if sc.realized_pnl is not None else ""
             sc_lines.append(f"{sc.symbol}: {sc.prev_signal} -> {sc.new_signal}{pnl_str}")
-        fields.append(
-            {"name": "Signal Changes", "value": "\n".join(sc_lines), "inline": False}
-        )
+        fields.append({"name": "Signal Changes", "value": "\n".join(sc_lines), "inline": False})
     else:
-        fields.append(
-            {"name": "Signal Changes", "value": "No changes", "inline": False}
-        )
+        fields.append({"name": "Signal Changes", "value": "No changes", "inline": False})
 
     # Section 2: Asset Dashboard (compact)
     if data.assets:
         lines: list[str] = []
         for a in data.assets:
             if a.position_value > 0:
-                stop_str = f"| Stop {a.stop_distance_pct:.1f}%" if a.stop_distance_pct is not None else ""
+                stop_str = (
+                    f"| Stop {a.stop_distance_pct:.1f}%" if a.stop_distance_pct is not None else ""
+                )
                 line = (
                     f"**{a.symbol}** {a.signal} | "
                     f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%) | "
@@ -714,20 +751,11 @@ def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
     Returns:
         Discord Embed dict
     """
-    from src.notification.health_formatters import format_uptime
-
     color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
     fields: list[dict[str, Any]] = []
 
     # Section 1: Strategy Info
-    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
-    fields.append(
-        {
-            "name": f"Strategy: {data.strategy_name}",
-            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
-            "inline": False,
-        }
-    )
+    fields.append(_build_strategy_info_field(data))
 
     # Section 2: Weekly Portfolio Summary
     fields.extend(
@@ -783,11 +811,7 @@ def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
         )
 
     # Section 4: Weekly Trade Summary
-    pf_str = (
-        f"{data.week_profit_factor:.2f}"
-        if data.week_profit_factor != float("inf")
-        else "INF"
-    )
+    pf_str = f"{data.week_profit_factor:.2f}" if data.week_profit_factor != float("inf") else "INF"
     fields.extend(
         [
             {
@@ -810,44 +834,10 @@ def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
 
     # Section 5: Strategy Indicators
     if data.indicators:
-        ind_lines: list[str] = []
-        for i in data.indicators:
-            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
-            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
-            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
-        fields.append(
-            {
-                "name": "Strategy Indicators",
-                "value": "\n".join(ind_lines),
-                "inline": False,
-            }
-        )
+        fields.append(_build_indicator_fields(data.indicators))
 
     # Section 6: System Health
-    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
-    all_pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
-    fields.extend(
-        [
-            {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
-            {
-                "name": "CB / WS",
-                "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
-                "inline": True,
-            },
-            {
-                "name": "Sharpe (30d)",
-                "value": f"{data.rolling_sharpe_30d:.2f}",
-                "inline": True,
-            },
-            {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
-            {"name": "Profit Factor", "value": all_pf_str, "inline": True},
-            {
-                "name": "Alpha Decay",
-                "value": "DETECTED" if data.alpha_decay_detected else "OK",
-                "inline": True,
-            },
-        ]
-    )
+    fields.extend(_build_system_health_fields(data))
 
     return {
         "title": "Spot Weekly Report",
@@ -867,20 +857,11 @@ def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
     Returns:
         Discord Embed dict
     """
-    from src.notification.health_formatters import format_uptime
-
     color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
     fields: list[dict[str, Any]] = []
 
     # Section 1: Strategy Info
-    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
-    fields.append(
-        {
-            "name": f"Strategy: {data.strategy_name}",
-            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
-            "inline": False,
-        }
-    )
+    fields.append(_build_strategy_info_field(data))
 
     # Section 2: Monthly Portfolio Summary
     fields.extend(
@@ -941,9 +922,7 @@ def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
 
     # Section 4: Monthly Trade Summary
     pf_str = (
-        f"{data.month_profit_factor:.2f}"
-        if data.month_profit_factor != float("inf")
-        else "INF"
+        f"{data.month_profit_factor:.2f}" if data.month_profit_factor != float("inf") else "INF"
     )
     fields.extend(
         [
@@ -994,44 +973,10 @@ def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
 
     # Section 6: Strategy Indicators
     if data.indicators:
-        ind_lines: list[str] = []
-        for i in data.indicators:
-            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
-            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
-            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
-        fields.append(
-            {
-                "name": "Strategy Indicators",
-                "value": "\n".join(ind_lines),
-                "inline": False,
-            }
-        )
+        fields.append(_build_indicator_fields(data.indicators))
 
     # Section 7: System Health
-    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
-    all_pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
-    fields.extend(
-        [
-            {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
-            {
-                "name": "CB / WS",
-                "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
-                "inline": True,
-            },
-            {
-                "name": "Sharpe (30d)",
-                "value": f"{data.rolling_sharpe_30d:.2f}",
-                "inline": True,
-            },
-            {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
-            {"name": "Profit Factor", "value": all_pf_str, "inline": True},
-            {
-                "name": "Alpha Decay",
-                "value": "DETECTED" if data.alpha_decay_detected else "OK",
-                "inline": True,
-            },
-        ]
-    )
+    fields.extend(_build_system_health_fields(data))
 
     # Section 8: Risk Summary
     fields.extend(
@@ -1051,6 +996,317 @@ def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
 
     return {
         "title": "Spot Monthly Report",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_spot_quarterly_report_embed(data: QuarterlyReportData) -> dict[str, Any]:
+    """Spot Quarterly Report -> 8-section Discord Embed."""
+    color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Strategy Info
+    fields.append(_build_strategy_info_field(data))
+
+    # Section 2: Quarterly Portfolio Summary
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {
+                "name": "Cash",
+                "value": f"${data.available_cash:,.0f} ({data.cash_pct:.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Quarter PnL",
+                "value": f"${data.quarter_pnl:+,.2f} ({data.quarter_return_pct:+.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Quarter Trades",
+                "value": str(data.quarter_trades),
+                "inline": True,
+            },
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count} assets",
+                "inline": True,
+            },
+            {
+                "name": "Cum. Return",
+                "value": f"{data.cumulative_return_pct:+.2f}%",
+                "inline": True,
+            },
+            {"name": "MDD", "value": f"{data.max_drawdown_pct:.1f}%", "inline": True},
+        ]
+    )
+
+    # Section 3: Asset Quarterly Performance
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.quarter_trades > 0:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.quarter_change_pct:+.1f}%) | "
+                    f"PnL ${a.quarter_pnl:+,.2f} | {a.quarter_trades} trades"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.quarter_change_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Asset Quarterly Performance ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 4: Quarterly Trade Summary
+    pf_str = (
+        f"{data.quarter_profit_factor:.2f}" if data.quarter_profit_factor != float("inf") else "INF"
+    )
+    fields.extend(
+        [
+            {
+                "name": "Best Trade",
+                "value": f"{data.best_trade_symbol} ${data.best_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Worst Trade",
+                "value": f"{data.worst_trade_symbol} ${data.worst_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Quarter WR / PF",
+                "value": f"{data.quarter_win_rate:.0%} / {pf_str}",
+                "inline": True,
+            },
+            {
+                "name": "Avg Trade PnL",
+                "value": f"${data.avg_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Total Fees",
+                "value": f"${data.total_fees:,.2f}",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 5: Monthly Performance Trend
+    if data.performance_trend:
+        trend_lines = [
+            (
+                f"**{t.year_month}**: ${t.pnl:+,.0f} ({t.return_pct:+.1f}%) | "
+                f"{t.trades} trades | Sharpe {t.sharpe:.2f}"
+            )
+            for t in data.performance_trend
+        ]
+        fields.append(
+            {
+                "name": "Monthly Trend (3M)",
+                "value": "\n".join(trend_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 6: Strategy Indicators
+    if data.indicators:
+        fields.append(_build_indicator_fields(data.indicators))
+
+    # Section 7: System Health
+    fields.extend(_build_system_health_fields(data))
+
+    # Section 8: Risk Summary
+    fields.extend(
+        [
+            {
+                "name": "Quarter Max DD",
+                "value": f"{data.quarter_max_drawdown_pct:.2f}%",
+                "inline": True,
+            },
+            {
+                "name": "Longest Losing Streak",
+                "value": str(data.longest_losing_streak),
+                "inline": True,
+            },
+        ]
+    )
+
+    return {
+        "title": "Spot Quarterly Report",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_spot_yearly_report_embed(data: YearlyReportData) -> dict[str, Any]:
+    """Spot Yearly Report -> 9-section Discord Embed."""
+    color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Strategy Info
+    fields.append(_build_strategy_info_field(data))
+
+    # Section 2: Yearly Portfolio Summary
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {
+                "name": "Cash",
+                "value": f"${data.available_cash:,.0f} ({data.cash_pct:.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Year PnL",
+                "value": f"${data.year_pnl:+,.2f} ({data.year_return_pct:+.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Year Trades",
+                "value": str(data.year_trades),
+                "inline": True,
+            },
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count} assets",
+                "inline": True,
+            },
+            {
+                "name": "Cum. Return",
+                "value": f"{data.cumulative_return_pct:+.2f}%",
+                "inline": True,
+            },
+            {"name": "MDD", "value": f"{data.max_drawdown_pct:.1f}%", "inline": True},
+        ]
+    )
+
+    # Section 3: Asset Yearly Performance
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.year_trades > 0:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.year_change_pct:+.1f}%) | "
+                    f"PnL ${a.year_pnl:+,.2f} | {a.year_trades} trades"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.year_change_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Asset Yearly Performance ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 4: Yearly Trade Summary
+    pf_str = f"{data.year_profit_factor:.2f}" if data.year_profit_factor != float("inf") else "INF"
+    fields.extend(
+        [
+            {
+                "name": "Best Trade",
+                "value": f"{data.best_trade_symbol} ${data.best_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Worst Trade",
+                "value": f"{data.worst_trade_symbol} ${data.worst_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Year WR / PF",
+                "value": f"{data.year_win_rate:.0%} / {pf_str}",
+                "inline": True,
+            },
+            {
+                "name": "Avg Trade PnL",
+                "value": f"${data.avg_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Total Fees",
+                "value": f"${data.total_fees:,.2f}",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 5: Quarterly Performance Trend
+    if data.quarterly_trend:
+        q_lines = [
+            (
+                f"**{t.year_quarter}**: ${t.pnl:+,.0f} ({t.return_pct:+.1f}%) | "
+                f"{t.trades} trades | Sharpe {t.sharpe:.2f}"
+            )
+            for t in data.quarterly_trend
+        ]
+        fields.append(
+            {
+                "name": "Quarterly Trend",
+                "value": "\n".join(q_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 6: Monthly Performance Trend
+    if data.monthly_trend:
+        m_lines = [
+            (
+                f"**{t.year_month}**: ${t.pnl:+,.0f} ({t.return_pct:+.1f}%) | "
+                f"{t.trades} trades | Sharpe {t.sharpe:.2f}"
+            )
+            for t in data.monthly_trend
+        ]
+        fields.append(
+            {
+                "name": "Monthly Trend (12M)",
+                "value": "\n".join(m_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 7: Strategy Indicators
+    if data.indicators:
+        fields.append(_build_indicator_fields(data.indicators))
+
+    # Section 8: System Health
+    fields.extend(_build_system_health_fields(data))
+
+    # Section 9: Risk Summary
+    fields.extend(
+        [
+            {
+                "name": "Year Max DD",
+                "value": f"{data.year_max_drawdown_pct:.2f}%",
+                "inline": True,
+            },
+            {
+                "name": "Longest Losing Streak",
+                "value": str(data.longest_losing_streak),
+                "inline": True,
+            },
+        ]
+    )
+
+    return {
+        "title": "Spot Yearly Report",
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),

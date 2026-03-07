@@ -20,18 +20,23 @@ from loguru import logger
 from src.notification.health_models import (
     AssetDashboardItem,
     AssetMonthlyPerformance,
+    AssetQuarterlyPerformance,
     AssetWeeklyPerformance,
+    AssetYearlyPerformance,
     BarCloseReportData,
     DailyReportData,
     MonthlyPerformanceTrend,
     MonthlyReportData,
     PositionStatus,
+    QuarterlyPerformanceTrend,
+    QuarterlyReportData,
     SignalChangeItem,
     StrategyHealthSnapshot,
     StrategyIndicatorItem,
     StrategyPerformanceSnapshot,
     SystemHealthSnapshot,
     WeeklyReportData,
+    YearlyReportData,
 )
 
 if TYPE_CHECKING:
@@ -204,11 +209,10 @@ class HealthDataCollector:
             strategy_breakdown=tuple(strategy_breakdown),
         )
 
-    # ─── Daily Report Data Collection ─────────────────────────
+    # ─── Common Helpers ──────────────────────────────────────
 
-    async def collect_daily_report_data(self) -> DailyReportData:
-        """Spot Daily Report용 전체 데이터 수집 (5 sections)."""
-        # Section 1: Strategy Info
+    def _collect_strategy_info(self) -> dict[str, object]:
+        """Strategy Info 공통 수집 (4필드)."""
         strategy = self._strategy_engine.strategy if self._strategy_engine else None
         strategy_name = strategy.name if strategy else "unknown"
         strategy_params: dict[str, str] = {}
@@ -222,25 +226,25 @@ class HealthDataCollector:
 
         timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
 
-        # Section 2: Portfolio Summary
-        equity = self._pm.total_equity
-        cash = self._pm.available_cash
-        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
+        return {
+            "strategy_name": strategy_name,
+            "strategy_params": strategy_params,
+            "trailing_stop_config": ts_config,
+            "timeframe": timeframe,
+        }
 
-        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    def _collect_system_health_fields(self) -> dict[str, object]:
+        """System Health 공통 수집 (uptime, cb, ws, sharpe, win_rate, pf, alpha_decay)."""
         trades = self._analytics.closed_trades
-        trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
-        today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+        now = datetime.now(UTC)
 
-        initial = self._pm.initial_capital
-        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
+        uptime = time.monotonic() - self._start_time
+        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
 
-        mdd = self._rm.current_drawdown * 100
-        cutoff_30d = datetime.now(UTC) - timedelta(days=_ROLLING_SHARPE_DAYS)
+        cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
         recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
         sharpe = self.compute_rolling_sharpe(recent_30d)
 
-        # Sharpe history + alpha decay (동일 로직 재사용)
         self._sharpe_history.append(sharpe)
         if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
             self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
@@ -250,39 +254,134 @@ class HealthDataCollector:
         recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
         win_rate, profit_factor = self.compute_trade_stats(recent_n)
 
-        # Section 3: Asset Dashboard (async — fetch_ticker)
-        assets = await self._collect_asset_dashboard()
+        return {
+            "uptime_seconds": uptime,
+            "is_circuit_breaker_active": self._rm.is_circuit_breaker_active,
+            "ws_ok_count": ws_ok,
+            "ws_total_count": len(self._symbols),
+            "rolling_sharpe_30d": sharpe,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "alpha_decay_detected": alpha_decay,
+        }
 
-        # Section 4: Strategy Indicators
+    def _collect_portfolio_summary(self) -> dict[str, object]:
+        """Portfolio Summary 공통 수집 (equity, cash, cum_return, mdd 등)."""
+        equity = self._pm.total_equity
+        cash = self._pm.available_cash
+        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
+        initial = self._pm.initial_capital
+        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
+        mdd = self._rm.current_drawdown * 100
+
+        return {
+            "total_equity": equity,
+            "available_cash": cash,
+            "cash_pct": cash_pct,
+            "invested_count": self._pm.open_position_count,
+            "total_asset_count": len(self._symbols),
+            "cumulative_return_pct": cum_return,
+            "max_drawdown_pct": mdd,
+        }
+
+    def _extract_trade_stats(
+        self,
+        trades: Sequence[object],
+    ) -> dict[str, object]:
+        """기간별 trade summary (best/worst/win_rate/pf/avg_pnl/fees) 추출."""
+        best_sym, best_pnl, worst_sym, worst_pnl = self._extract_best_worst(trades)
+        wr, pf = self.compute_trade_stats(trades)
+        pnls = [
+            float(t.pnl)  # type: ignore[union-attr]
+            for t in trades
+            if getattr(t, "pnl", None) is not None
+        ]
+        avg_pnl = sum(pnls) / len(pnls) if pnls else 0.0
+        total_fees = sum(float(getattr(t, "fees", 0) or 0) for t in trades)
+        return {
+            "best_trade_symbol": best_sym,
+            "best_trade_pnl": best_pnl,
+            "worst_trade_symbol": worst_sym,
+            "worst_trade_pnl": worst_pnl,
+            "win_rate_period": wr,
+            "profit_factor_period": pf,
+            "avg_trade_pnl": avg_pnl,
+            "total_fees": total_fees,
+        }
+
+    async def _collect_asset_period_performance(
+        self,
+        trades_period: Sequence[object],
+    ) -> tuple[dict[str, float], dict[str, int], list[tuple[str, str, float, float]]]:
+        """에셋별 기간 성과 공통 수집.
+
+        Returns:
+            (pnl_by_sym, count_by_sym, ticker_data: [(symbol, signal, price, change_pct)])
+        """
+        pnl_by_sym: dict[str, float] = {}
+        count_by_sym: dict[str, int] = {}
+        for t in trades_period:
+            sym = getattr(t, "symbol", None)
+            pnl = getattr(t, "pnl", None)
+            if sym and pnl is not None:
+                pnl_by_sym[sym] = pnl_by_sym.get(sym, 0.0) + float(pnl)
+                count_by_sym[sym] = count_by_sym.get(sym, 0) + 1
+
+        positions = self._pm.positions
+        ticker_data: list[tuple[str, str, float, float]] = []
+        if self._spot_client is not None:
+            for symbol in self._symbols:
+                try:
+                    ticker = await self._spot_client.fetch_ticker(symbol)
+                except Exception:
+                    logger.warning("fetch_ticker failed for {}, skipping", symbol)
+                    continue
+
+                price = float(ticker.get("last", 0) or 0)
+                change_pct = float(ticker.get("percentage", 0) or 0)
+                pos = positions.get(symbol)
+                is_open = pos is not None and pos.is_open
+                signal = pos.direction.name if pos and is_open else "NEUTRAL"
+                ticker_data.append((symbol, signal, price, change_pct))
+
+        return pnl_by_sym, count_by_sym, ticker_data
+
+    # ─── Daily Report Data Collection ─────────────────────────
+
+    async def collect_daily_report_data(self) -> DailyReportData:
+        """Spot Daily Report용 전체 데이터 수집 (5 sections)."""
+        si = self._collect_strategy_info()
+        ps = self._collect_portfolio_summary()
+
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        trades = self._analytics.closed_trades
+        trades_today = [t for t in trades if t.exit_time and t.exit_time >= today_start]
+        today_pnl = sum(float(t.pnl) for t in trades_today if t.pnl is not None)
+
+        sh = self._collect_system_health_fields()
+        assets = await self._collect_asset_dashboard()
         indicators = self._collect_strategy_indicators()
 
-        # Section 5: System Health
-        uptime = time.monotonic() - self._start_time
-        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
-
         return DailyReportData(
-            strategy_name=strategy_name,
-            strategy_params=strategy_params,
-            trailing_stop_config=ts_config,
-            timeframe=timeframe,
-            total_equity=equity,
-            available_cash=cash,
-            cash_pct=cash_pct,
+            **si,  # type: ignore[arg-type]
+            total_equity=ps["total_equity"],  # type: ignore[arg-type]
+            available_cash=ps["available_cash"],  # type: ignore[arg-type]
+            cash_pct=ps["cash_pct"],  # type: ignore[arg-type]
             today_pnl=today_pnl,
-            invested_count=self._pm.open_position_count,
-            total_asset_count=len(self._symbols),
-            cumulative_return_pct=cum_return,
-            max_drawdown_pct=mdd,
-            rolling_sharpe_30d=sharpe,
+            invested_count=ps["invested_count"],  # type: ignore[arg-type]
+            total_asset_count=ps["total_asset_count"],  # type: ignore[arg-type]
+            cumulative_return_pct=ps["cumulative_return_pct"],  # type: ignore[arg-type]
+            max_drawdown_pct=ps["max_drawdown_pct"],  # type: ignore[arg-type]
+            rolling_sharpe_30d=sh["rolling_sharpe_30d"],  # type: ignore[arg-type]
             assets=tuple(assets),
             indicators=tuple(indicators),
-            uptime_seconds=uptime,
-            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
-            ws_ok_count=ws_ok,
-            ws_total_count=len(self._symbols),
-            win_rate=win_rate,
-            profit_factor=profit_factor,
-            alpha_decay_detected=alpha_decay,
+            uptime_seconds=sh["uptime_seconds"],  # type: ignore[arg-type]
+            is_circuit_breaker_active=sh["is_circuit_breaker_active"],  # type: ignore[arg-type]
+            ws_ok_count=sh["ws_ok_count"],  # type: ignore[arg-type]
+            ws_total_count=sh["ws_total_count"],  # type: ignore[arg-type]
+            win_rate=sh["win_rate"],  # type: ignore[arg-type]
+            profit_factor=sh["profit_factor"],  # type: ignore[arg-type]
+            alpha_decay_detected=sh["alpha_decay_detected"],  # type: ignore[arg-type]
         )
 
     async def _collect_asset_dashboard(self) -> list[AssetDashboardItem]:
@@ -292,9 +391,7 @@ class HealthDataCollector:
 
         positions = self._pm.positions
         active_stops: dict[str, Any] = (
-            self._exchange_stop_mgr.active_stops
-            if self._exchange_stop_mgr is not None
-            else {}
+            self._exchange_stop_mgr.active_stops if self._exchange_stop_mgr is not None else {}
         )
 
         items: list[AssetDashboardItem] = []
@@ -316,11 +413,7 @@ class HealthDataCollector:
 
             stop_state = active_stops.get(symbol)
             stop_price = stop_state.stop_price if stop_state else None
-            stop_dist = (
-                (price - stop_price) / price * 100
-                if stop_price and price > 0
-                else None
-            )
+            stop_dist = (price - stop_price) / price * 100 if stop_price and price > 0 else None
 
             items.append(
                 AssetDashboardItem(
@@ -382,89 +475,38 @@ class HealthDataCollector:
         """Spot Weekly Report용 전체 데이터 수집 (6 sections)."""
         now = datetime.now(UTC)
         week_start = (now - timedelta(days=now.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
 
-        # Section 1: Strategy Info (Daily와 동일)
-        strategy = self._strategy_engine.strategy if self._strategy_engine else None
-        strategy_name = strategy.name if strategy else "unknown"
-        strategy_params: dict[str, str] = {}
-        if strategy is not None and hasattr(strategy, "get_startup_info"):
-            strategy_params = strategy.get_startup_info()
-
-        ts_config = ""
-        pm_cfg = self._pm.pm_config
-        if pm_cfg.use_trailing_stop:
-            ts_config = f"{pm_cfg.trailing_stop_atr_multiplier}x ATR"
-
-        timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
-
-        # Section 2: Portfolio Summary
-        equity = self._pm.total_equity
-        cash = self._pm.available_cash
-        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
-        initial = self._pm.initial_capital
-        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
-        mdd = self._rm.current_drawdown * 100
+        si = self._collect_strategy_info()
+        ps = self._collect_portfolio_summary()
 
         trades = self._analytics.closed_trades
         trades_week = [t for t in trades if t.exit_time and t.exit_time >= week_start]
         week_pnl = sum(float(t.pnl) for t in trades_week if t.pnl is not None)
 
-        # Section 3: Asset Weekly Performance
         asset_perfs = await self._collect_asset_weekly_performance(trades_week)
-
-        # Section 4: Trade Summary
-        best_sym, best_pnl, worst_sym, worst_pnl = self._extract_best_worst(trades_week)
-        week_wr, week_pf = self.compute_trade_stats(trades_week)
-
-        # Section 5: Strategy Indicators
+        ts = self._extract_trade_stats(trades_week)
         indicators = self._collect_strategy_indicators()
-
-        # Section 6: System Health
-        uptime = time.monotonic() - self._start_time
-        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
-        cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
-        recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
-        sharpe = self.compute_rolling_sharpe(recent_30d)
-        self._sharpe_history.append(sharpe)
-        if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
-            self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
-        alpha_decay = self.detect_alpha_decay()
-        all_trades = list(trades)
-        recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
-        win_rate, profit_factor = self.compute_trade_stats(recent_n)
+        sh = self._collect_system_health_fields()
 
         return WeeklyReportData(
-            strategy_name=strategy_name,
-            strategy_params=strategy_params,
-            trailing_stop_config=ts_config,
-            timeframe=timeframe,
-            total_equity=equity,
-            available_cash=cash,
-            cash_pct=cash_pct,
+            **si,  # type: ignore[arg-type]
+            **ps,  # type: ignore[arg-type]
+            **sh,  # type: ignore[arg-type]
             week_pnl=week_pnl,
             week_trades=len(trades_week),
-            invested_count=self._pm.open_position_count,
-            total_asset_count=len(self._symbols),
-            cumulative_return_pct=cum_return,
-            max_drawdown_pct=mdd,
             assets=tuple(asset_perfs),
-            best_trade_symbol=best_sym,
-            best_trade_pnl=best_pnl,
-            worst_trade_symbol=worst_sym,
-            worst_trade_pnl=worst_pnl,
-            week_win_rate=week_wr,
-            week_profit_factor=week_pf,
+            best_trade_symbol=ts["best_trade_symbol"],  # type: ignore[arg-type]
+            best_trade_pnl=ts["best_trade_pnl"],  # type: ignore[arg-type]
+            worst_trade_symbol=ts["worst_trade_symbol"],  # type: ignore[arg-type]
+            worst_trade_pnl=ts["worst_trade_pnl"],  # type: ignore[arg-type]
+            week_win_rate=ts["win_rate_period"],  # type: ignore[arg-type]
+            week_profit_factor=ts["profit_factor_period"],  # type: ignore[arg-type]
             indicators=tuple(indicators),
-            uptime_seconds=uptime,
-            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
-            ws_ok_count=ws_ok,
-            ws_total_count=len(self._symbols),
-            rolling_sharpe_30d=sharpe,
-            win_rate=win_rate,
-            profit_factor=profit_factor,
-            alpha_decay_detected=alpha_decay,
         )
 
     async def _collect_asset_weekly_performance(
@@ -549,113 +591,46 @@ class HealthDataCollector:
         now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        # Section 1: Strategy Info
-        strategy = self._strategy_engine.strategy if self._strategy_engine else None
-        strategy_name = strategy.name if strategy else "unknown"
-        strategy_params: dict[str, str] = {}
-        if strategy is not None and hasattr(strategy, "get_startup_info"):
-            strategy_params = strategy.get_startup_info()
-
-        ts_config = ""
-        pm_cfg = self._pm.pm_config
-        if pm_cfg.use_trailing_stop:
-            ts_config = f"{pm_cfg.trailing_stop_atr_multiplier}x ATR"
-
-        timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
-
-        # Section 2: Portfolio Summary
-        equity = self._pm.total_equity
-        cash = self._pm.available_cash
-        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
-        initial = self._pm.initial_capital
-        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
-        mdd = self._rm.current_drawdown * 100
+        si = self._collect_strategy_info()
+        ps = self._collect_portfolio_summary()
+        equity = ps["total_equity"]
 
         trades = self._analytics.closed_trades
         trades_month = [t for t in trades if t.exit_time and t.exit_time >= month_start]
         month_pnl = sum(float(t.pnl) for t in trades_month if t.pnl is not None)
 
-        # Month return: 월초 equity 추정 (현재 equity - 월간 PnL)
-        equity_at_month_start = equity - month_pnl
+        equity_at_month_start = float(equity) - month_pnl  # type: ignore[arg-type]
         month_return = (
-            (month_pnl / equity_at_month_start * 100)
-            if equity_at_month_start > 0
-            else 0.0
+            (month_pnl / equity_at_month_start * 100) if equity_at_month_start > 0 else 0.0
         )
 
-        # Section 3: Asset Monthly Performance
         asset_perfs = await self._collect_asset_monthly_performance(trades_month)
-
-        # Section 4: Trade Summary
-        best_sym, best_pnl, worst_sym, worst_pnl = self._extract_best_worst(trades_month)
-        month_wr, month_pf = self.compute_trade_stats(trades_month)
-        pnls = [
-            float(t.pnl) for t in trades_month  # type: ignore[union-attr]
-            if getattr(t, "pnl", None) is not None
-        ]
-        avg_pnl = sum(pnls) / len(pnls) if pnls else 0.0
-        total_fees = sum(
-            float(getattr(t, "fees", 0) or 0) for t in trades_month
-        )
-
-        # Section 5: Performance Trend
+        ts = self._extract_trade_stats(trades_month)
         trend = self._build_performance_trend(list(trades))
-
-        # Section 6: Strategy Indicators
         indicators = self._collect_strategy_indicators()
+        sh = self._collect_system_health_fields()
 
-        # Section 7: System Health
-        uptime = time.monotonic() - self._start_time
-        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
-        cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
-        recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
-        sharpe = self.compute_rolling_sharpe(recent_30d)
-        self._sharpe_history.append(sharpe)
-        if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
-            self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
-        alpha_decay = self.detect_alpha_decay()
-        all_trades = list(trades)
-        recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
-        win_rate, profit_factor = self.compute_trade_stats(recent_n)
-
-        # Section 8: Risk Summary
-        month_max_dd = self._compute_month_max_drawdown(trades_month, equity)
+        month_max_dd = self._compute_month_max_drawdown(trades_month, float(equity))  # type: ignore[arg-type]
         longest_streak = self._compute_longest_losing_streak(trades_month)
 
         return MonthlyReportData(
-            strategy_name=strategy_name,
-            strategy_params=strategy_params,
-            trailing_stop_config=ts_config,
-            timeframe=timeframe,
-            total_equity=equity,
-            available_cash=cash,
-            cash_pct=cash_pct,
+            **si,  # type: ignore[arg-type]
+            **ps,  # type: ignore[arg-type]
+            **sh,  # type: ignore[arg-type]
             month_pnl=month_pnl,
             month_trades=len(trades_month),
             month_return_pct=month_return,
-            invested_count=self._pm.open_position_count,
-            total_asset_count=len(self._symbols),
-            cumulative_return_pct=cum_return,
-            max_drawdown_pct=mdd,
             assets=tuple(asset_perfs),
-            best_trade_symbol=best_sym,
-            best_trade_pnl=best_pnl,
-            worst_trade_symbol=worst_sym,
-            worst_trade_pnl=worst_pnl,
-            month_win_rate=month_wr,
-            month_profit_factor=month_pf,
-            avg_trade_pnl=avg_pnl,
-            total_fees=total_fees,
+            best_trade_symbol=ts["best_trade_symbol"],  # type: ignore[arg-type]
+            best_trade_pnl=ts["best_trade_pnl"],  # type: ignore[arg-type]
+            worst_trade_symbol=ts["worst_trade_symbol"],  # type: ignore[arg-type]
+            worst_trade_pnl=ts["worst_trade_pnl"],  # type: ignore[arg-type]
+            month_win_rate=ts["win_rate_period"],  # type: ignore[arg-type]
+            month_profit_factor=ts["profit_factor_period"],  # type: ignore[arg-type]
+            avg_trade_pnl=ts["avg_trade_pnl"],  # type: ignore[arg-type]
+            total_fees=ts["total_fees"],  # type: ignore[arg-type]
             performance_trend=tuple(trend),
             indicators=tuple(indicators),
-            uptime_seconds=uptime,
-            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
-            ws_ok_count=ws_ok,
-            ws_total_count=len(self._symbols),
-            rolling_sharpe_30d=sharpe,
-            win_rate=win_rate,
-            profit_factor=profit_factor,
-            alpha_decay_detected=alpha_decay,
             month_max_drawdown_pct=month_max_dd,
             longest_losing_streak=longest_streak,
         )
@@ -708,13 +683,15 @@ class HealthDataCollector:
     def _build_performance_trend(
         self,
         all_trades: list[object],
+        months: int | None = None,
     ) -> list[MonthlyPerformanceTrend]:
         """최근 N개월 월별 성과 추이 계산."""
+        num_months = months if months is not None else self._PERFORMANCE_TREND_MONTHS
 
         now = datetime.now(UTC)
-        months: list[MonthlyPerformanceTrend] = []
+        result: list[MonthlyPerformanceTrend] = []
 
-        for i in range(self._PERFORMANCE_TREND_MONTHS):
+        for i in range(num_months):
             # i=0: 이번 달, i=1: 지난 달, ...
             ref = now.replace(day=1) - timedelta(days=i * 28)
             ref = ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -727,16 +704,17 @@ class HealthDataCollector:
                 next_month = ref.replace(month=ref.month + 1)
 
             month_trades = [
-                t for t in all_trades
-                if getattr(t, "exit_time", None)
-                and ref <= t.exit_time < next_month  # type: ignore[operator]
+                t
+                for t in all_trades
+                if getattr(t, "exit_time", None) and ref <= t.exit_time < next_month  # type: ignore[operator]
             ]
 
             if not month_trades:
                 continue
 
             pnl = sum(
-                float(t.pnl) for t in month_trades  # type: ignore[union-attr]
+                float(t.pnl)  # type: ignore[union-attr]
+                for t in month_trades
                 if getattr(t, "pnl", None) is not None
             )
             sharpe = self.compute_rolling_sharpe(month_trades)
@@ -745,7 +723,7 @@ class HealthDataCollector:
             equity = self._pm.total_equity
             return_pct = (pnl / equity * 100) if equity > 0 else 0.0
 
-            months.append(
+            result.append(
                 MonthlyPerformanceTrend(
                     year_month=year_month,
                     pnl=pnl,
@@ -755,7 +733,7 @@ class HealthDataCollector:
                 )
             )
 
-        return months
+        return result
 
     @staticmethod
     def _compute_month_max_drawdown(
@@ -767,7 +745,8 @@ class HealthDataCollector:
             return 0.0
 
         pnls = [
-            float(t.pnl) for t in trades_month  # type: ignore[union-attr]
+            float(t.pnl)  # type: ignore[union-attr]
+            for t in trades_month
             if getattr(t, "pnl", None) is not None
         ]
         if not pnls:
@@ -798,6 +777,201 @@ class HealthDataCollector:
             else:
                 current_streak = 0
         return max_streak
+
+    # ─── Quarterly Report Data Collection ─────────────────────────
+
+    async def collect_quarterly_report_data(self) -> QuarterlyReportData:
+        """Spot Quarterly Report용 전체 데이터 수집 (8 sections)."""
+        now = datetime.now(UTC)
+        quarter_month = ((now.month - 1) // 3) * 3 + 1
+        quarter_start = now.replace(
+            month=quarter_month, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+        si = self._collect_strategy_info()
+        ps = self._collect_portfolio_summary()
+        equity = ps["total_equity"]
+
+        trades = self._analytics.closed_trades
+        trades_quarter = [t for t in trades if t.exit_time and t.exit_time >= quarter_start]
+        quarter_pnl = sum(float(t.pnl) for t in trades_quarter if t.pnl is not None)
+
+        equity_at_start = float(equity) - quarter_pnl  # type: ignore[arg-type]
+        quarter_return = (quarter_pnl / equity_at_start * 100) if equity_at_start > 0 else 0.0
+
+        asset_perfs = await self._collect_asset_quarterly_performance(trades_quarter)
+        ts = self._extract_trade_stats(trades_quarter)
+        trend = self._build_performance_trend(list(trades))
+        indicators = self._collect_strategy_indicators()
+        sh = self._collect_system_health_fields()
+
+        q_max_dd = self._compute_month_max_drawdown(trades_quarter, float(equity))  # type: ignore[arg-type]
+        longest_streak = self._compute_longest_losing_streak(trades_quarter)
+
+        return QuarterlyReportData(
+            **si,  # type: ignore[arg-type]
+            **ps,  # type: ignore[arg-type]
+            **sh,  # type: ignore[arg-type]
+            quarter_pnl=quarter_pnl,
+            quarter_trades=len(trades_quarter),
+            quarter_return_pct=quarter_return,
+            assets=tuple(asset_perfs),
+            best_trade_symbol=ts["best_trade_symbol"],  # type: ignore[arg-type]
+            best_trade_pnl=ts["best_trade_pnl"],  # type: ignore[arg-type]
+            worst_trade_symbol=ts["worst_trade_symbol"],  # type: ignore[arg-type]
+            worst_trade_pnl=ts["worst_trade_pnl"],  # type: ignore[arg-type]
+            quarter_win_rate=ts["win_rate_period"],  # type: ignore[arg-type]
+            quarter_profit_factor=ts["profit_factor_period"],  # type: ignore[arg-type]
+            avg_trade_pnl=ts["avg_trade_pnl"],  # type: ignore[arg-type]
+            total_fees=ts["total_fees"],  # type: ignore[arg-type]
+            performance_trend=tuple(trend),
+            indicators=tuple(indicators),
+            quarter_max_drawdown_pct=q_max_dd,
+            longest_losing_streak=longest_streak,
+        )
+
+    async def _collect_asset_quarterly_performance(
+        self,
+        trades_quarter: Sequence[object],
+    ) -> list[AssetQuarterlyPerformance]:
+        """에셋별 분기 성과 수집."""
+        pnl_by_sym, count_by_sym, ticker_data = await self._collect_asset_period_performance(
+            trades_quarter
+        )
+        return [
+            AssetQuarterlyPerformance(
+                symbol=sym,
+                signal=sig,
+                current_price=price,
+                quarter_change_pct=change,
+                quarter_pnl=pnl_by_sym.get(sym, 0.0),
+                quarter_trades=count_by_sym.get(sym, 0),
+            )
+            for sym, sig, price, change in ticker_data
+        ]
+
+    # ─── Yearly Report Data Collection ──────────────────────────
+
+    async def collect_yearly_report_data(self) -> YearlyReportData:
+        """Spot Yearly Report용 전체 데이터 수집 (9 sections)."""
+        now = datetime.now(UTC)
+        year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        si = self._collect_strategy_info()
+        ps = self._collect_portfolio_summary()
+        equity = ps["total_equity"]
+
+        trades = self._analytics.closed_trades
+        trades_year = [t for t in trades if t.exit_time and t.exit_time >= year_start]
+        year_pnl = sum(float(t.pnl) for t in trades_year if t.pnl is not None)
+
+        equity_at_start = float(equity) - year_pnl  # type: ignore[arg-type]
+        year_return = (year_pnl / equity_at_start * 100) if equity_at_start > 0 else 0.0
+
+        asset_perfs = await self._collect_asset_yearly_performance(trades_year)
+        ts = self._extract_trade_stats(trades_year)
+        q_trend = self._build_quarterly_performance_trend(list(trades))
+        m_trend = self._build_performance_trend(list(trades), months=12)
+        indicators = self._collect_strategy_indicators()
+        sh = self._collect_system_health_fields()
+
+        y_max_dd = self._compute_month_max_drawdown(trades_year, float(equity))  # type: ignore[arg-type]
+        longest_streak = self._compute_longest_losing_streak(trades_year)
+
+        return YearlyReportData(
+            **si,  # type: ignore[arg-type]
+            **ps,  # type: ignore[arg-type]
+            **sh,  # type: ignore[arg-type]
+            year_pnl=year_pnl,
+            year_trades=len(trades_year),
+            year_return_pct=year_return,
+            assets=tuple(asset_perfs),
+            best_trade_symbol=ts["best_trade_symbol"],  # type: ignore[arg-type]
+            best_trade_pnl=ts["best_trade_pnl"],  # type: ignore[arg-type]
+            worst_trade_symbol=ts["worst_trade_symbol"],  # type: ignore[arg-type]
+            worst_trade_pnl=ts["worst_trade_pnl"],  # type: ignore[arg-type]
+            year_win_rate=ts["win_rate_period"],  # type: ignore[arg-type]
+            year_profit_factor=ts["profit_factor_period"],  # type: ignore[arg-type]
+            avg_trade_pnl=ts["avg_trade_pnl"],  # type: ignore[arg-type]
+            total_fees=ts["total_fees"],  # type: ignore[arg-type]
+            quarterly_trend=tuple(q_trend),
+            monthly_trend=tuple(m_trend),
+            indicators=tuple(indicators),
+            year_max_drawdown_pct=y_max_dd,
+            longest_losing_streak=longest_streak,
+        )
+
+    async def _collect_asset_yearly_performance(
+        self,
+        trades_year: Sequence[object],
+    ) -> list[AssetYearlyPerformance]:
+        """에셋별 연간 성과 수집."""
+        pnl_by_sym, count_by_sym, ticker_data = await self._collect_asset_period_performance(
+            trades_year
+        )
+        return [
+            AssetYearlyPerformance(
+                symbol=sym,
+                signal=sig,
+                current_price=price,
+                year_change_pct=change,
+                year_pnl=pnl_by_sym.get(sym, 0.0),
+                year_trades=count_by_sym.get(sym, 0),
+            )
+            for sym, sig, price, change in ticker_data
+        ]
+
+    def _build_quarterly_performance_trend(
+        self,
+        all_trades: list[object],
+    ) -> list[QuarterlyPerformanceTrend]:
+        """최근 4분기 성과 추이 계산."""
+        now = datetime.now(UTC)
+        quarters: list[QuarterlyPerformanceTrend] = []
+
+        for i in range(4):
+            # i=0: 현재 분기, i=1: 지난 분기, ...
+            ref = now - timedelta(days=i * 91)
+            q_month = ((ref.month - 1) // 3) * 3 + 1
+            q_start = ref.replace(month=q_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+            q_num = (q_month - 1) // 3 + 1
+            label = f"{q_start.year}-Q{q_num}"
+
+            # 분기 끝
+            if q_month + 3 > 12:  # noqa: PLR2004
+                q_end = q_start.replace(year=q_start.year + 1, month=(q_month + 3) - 12)
+            else:
+                q_end = q_start.replace(month=q_month + 3)
+
+            q_trades = [
+                t
+                for t in all_trades
+                if getattr(t, "exit_time", None) and q_start <= t.exit_time < q_end  # type: ignore[operator]
+            ]
+
+            if not q_trades:
+                continue
+
+            pnl = sum(
+                float(t.pnl)  # type: ignore[union-attr]
+                for t in q_trades
+                if getattr(t, "pnl", None) is not None
+            )
+            sharpe = self.compute_rolling_sharpe(q_trades)
+            equity = self._pm.total_equity
+            return_pct = (pnl / equity * 100) if equity > 0 else 0.0
+
+            quarters.append(
+                QuarterlyPerformanceTrend(
+                    year_quarter=label,
+                    pnl=pnl,
+                    return_pct=return_pct,
+                    trades=len(q_trades),
+                    sharpe=sharpe,
+                )
+            )
+
+        return quarters
 
     # ─── Bar Close Report ──────────────────────────────────────
 
