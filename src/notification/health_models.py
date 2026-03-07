@@ -264,6 +264,88 @@ class WeeklyReportData(BaseModel):
     alpha_decay_detected: bool
 
 
+class AssetMonthlyPerformance(BaseModel):
+    """에셋별 월간 성과 (Monthly Report Section 3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    signal: str  # "LONG" / "NEUTRAL"
+    current_price: float
+    month_change_pct: float
+    month_pnl: float
+    month_trades: int
+
+
+class MonthlyPerformanceTrend(BaseModel):
+    """월별 성과 추이 항목 (Monthly Report Section 5)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    year_month: str  # "2026-03"
+    pnl: float
+    return_pct: float
+    trades: int
+    sharpe: float
+
+
+class MonthlyReportData(BaseModel):
+    """Spot Monthly Report 전체 데이터 (8 sections)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Section 1: Strategy Info
+    strategy_name: str
+    strategy_params: dict[str, str]
+    trailing_stop_config: str
+    timeframe: str
+
+    # Section 2: Monthly Portfolio Summary
+    total_equity: float
+    available_cash: float
+    cash_pct: float
+    month_pnl: float
+    month_trades: int
+    month_return_pct: float
+    invested_count: int
+    total_asset_count: int
+    cumulative_return_pct: float
+    max_drawdown_pct: float
+
+    # Section 3: Asset Monthly Performance
+    assets: tuple[AssetMonthlyPerformance, ...]
+
+    # Section 4: Monthly Trade Summary
+    best_trade_symbol: str
+    best_trade_pnl: float
+    worst_trade_symbol: str
+    worst_trade_pnl: float
+    month_win_rate: float
+    month_profit_factor: float
+    avg_trade_pnl: float
+    total_fees: float
+
+    # Section 5: Performance Trend (최근 3개월)
+    performance_trend: tuple[MonthlyPerformanceTrend, ...]
+
+    # Section 6: Strategy Indicators
+    indicators: tuple[StrategyIndicatorItem, ...]
+
+    # Section 7: System Health
+    uptime_seconds: float
+    is_circuit_breaker_active: bool
+    ws_ok_count: int
+    ws_total_count: int
+    rolling_sharpe_30d: float
+    win_rate: float
+    profit_factor: float
+    alpha_decay_detected: bool
+
+    # Section 8: Risk Summary
+    month_max_drawdown_pct: float
+    longest_losing_streak: int
+
+
 class StrategyHealthSnapshot(BaseModel):
     """Tier 3: Strategy Health 리포트.
 

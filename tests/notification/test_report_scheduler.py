@@ -544,3 +544,239 @@ class TestReportPriority:
                 await scheduler._daily_loop()
 
         queue.enqueue.assert_not_called()
+
+    async def test_daily_skipped_on_first_of_month(self) -> None:
+        """매월 1일에는 daily loop가 skip."""
+        scheduler, queue = _make_scheduler()
+
+        first_day = datetime(2026, 4, 1, 0, 0, 1, tzinfo=UTC)  # 4/1 수요일
+
+        call_count = 0
+
+        async def fake_sleep_until_next(**_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError
+
+        with (
+            patch(
+                "src.notification.report_scheduler._sleep_until_next",
+                side_effect=fake_sleep_until_next,
+            ),
+            patch(
+                "src.notification.report_scheduler.datetime",
+            ) as mock_dt,
+        ):
+            mock_dt.now.return_value = first_day
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler._daily_loop()
+
+        queue.enqueue.assert_not_called()
+
+    async def test_weekly_skipped_on_first_of_month(self) -> None:
+        """매월 1일이 월요일이면 weekly loop가 skip."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_weekly()
+
+        # 2026-06-01 is Monday
+        first_monday = datetime(2026, 6, 1, 0, 0, 1, tzinfo=UTC)
+
+        call_count = 0
+
+        async def fake_sleep_until_next(**_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError
+
+        with (
+            patch(
+                "src.notification.report_scheduler._sleep_until_next",
+                side_effect=fake_sleep_until_next,
+            ),
+            patch(
+                "src.notification.report_scheduler.datetime",
+            ) as mock_dt,
+        ):
+            mock_dt.now.return_value = first_monday
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler._weekly_loop()
+
+        queue.enqueue.assert_not_called()
+
+
+# ─── Spot Monthly Report 테스트 ─────────────────────────
+
+
+def _make_scheduler_with_spot_monthly() -> tuple[ReportScheduler, AsyncMock, MagicMock]:
+    """spot_client 포함 ReportScheduler (Monthly Report 용)."""
+    from src.notification.health_models import (
+        AssetMonthlyPerformance,
+        MonthlyPerformanceTrend,
+        MonthlyReportData,
+        StrategyIndicatorItem,
+    )
+
+    queue = AsyncMock()
+    queue.enqueue = AsyncMock()
+
+    analytics = MagicMock()
+    analytics.get_equity_series.return_value = pd.Series(
+        [10000.0, 10050.0, 10100.0],
+        index=pd.date_range("2025-01-01", periods=3, freq="D", tz=UTC),
+        dtype=float,
+    )
+    now = datetime.now(UTC)
+    analytics.closed_trades = [_make_trade(now - timedelta(hours=1))]
+    metrics_mock = MagicMock()
+    metrics_mock.sharpe_ratio = 1.5
+    metrics_mock.max_drawdown = 5.0
+    metrics_mock.total_return = 10.0
+    analytics.compute_metrics.return_value = metrics_mock
+
+    chart_gen = MagicMock()
+    chart_gen.generate_weekly_report.return_value = [
+        ("equity.png", b"\x89PNG"),
+        ("drawdown.png", b"\x89PNG2"),
+    ]
+
+    pm = MagicMock()
+    pm.open_position_count = 3
+    pm.total_equity = 10500.0
+
+    collector = MagicMock()
+    collector._spot_client = MagicMock()
+    collector.collect_monthly_report_data = AsyncMock(
+        return_value=MonthlyReportData(
+            strategy_name="SuperTrend",
+            strategy_params={"ATR": "7", "mult": "2.5"},
+            trailing_stop_config="3.0x ATR",
+            timeframe="12h",
+            total_equity=10500.0,
+            available_cash=4000.0,
+            cash_pct=38.1,
+            month_pnl=500.0,
+            month_trades=15,
+            month_return_pct=5.0,
+            invested_count=3,
+            total_asset_count=6,
+            cumulative_return_pct=5.0,
+            max_drawdown_pct=3.0,
+            assets=(
+                AssetMonthlyPerformance(
+                    symbol="BTC/USDT",
+                    signal="LONG",
+                    current_price=42000.0,
+                    month_change_pct=12.3,
+                    month_pnl=350.0,
+                    month_trades=8,
+                ),
+            ),
+            best_trade_symbol="BTC/USDT",
+            best_trade_pnl=120.0,
+            worst_trade_symbol="ETH/USDT",
+            worst_trade_pnl=-30.0,
+            month_win_rate=0.73,
+            month_profit_factor=3.5,
+            avg_trade_pnl=33.3,
+            total_fees=15.0,
+            performance_trend=(
+                MonthlyPerformanceTrend(
+                    year_month="2026-03",
+                    pnl=500.0,
+                    return_pct=5.0,
+                    trades=15,
+                    sharpe=1.1,
+                ),
+                MonthlyPerformanceTrend(
+                    year_month="2026-02",
+                    pnl=310.0,
+                    return_pct=3.2,
+                    trades=10,
+                    sharpe=0.95,
+                ),
+            ),
+            indicators=(
+                StrategyIndicatorItem(
+                    symbol="BTC/USDT",
+                    supertrend_line=40000.0,
+                    adx_value=30.0,
+                    outlook="상승추세",
+                ),
+            ),
+            uptime_seconds=2592000.0,
+            is_circuit_breaker_active=False,
+            ws_ok_count=6,
+            ws_total_count=6,
+            rolling_sharpe_30d=1.1,
+            win_rate=0.65,
+            profit_factor=2.0,
+            alpha_decay_detected=False,
+            month_max_drawdown_pct=1.5,
+            longest_losing_streak=3,
+        )
+    )
+
+    scheduler = ReportScheduler(
+        queue=queue,
+        analytics=analytics,
+        chart_gen=chart_gen,
+        pm=pm,
+        health_collector=collector,
+    )
+    return scheduler, queue, collector
+
+
+class TestSpotMonthlyReport:
+    async def test_enqueues_spot_monthly_report(self) -> None:
+        """Spot monthly report 정상 enqueue."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_monthly()
+        await scheduler._send_monthly_report()
+
+        queue.enqueue.assert_called_once()
+        item = queue.enqueue.call_args[0][0]
+        assert item.embed["title"] == "Spot Monthly Report"
+        assert len(item.files) == 2
+
+    async def test_monthly_has_performance_trend(self) -> None:
+        """Performance Trend 섹션 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_monthly()
+        await scheduler._send_monthly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Performance Trend" in field_names
+
+    async def test_monthly_has_risk_summary(self) -> None:
+        """Risk Summary 섹션 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_monthly()
+        await scheduler._send_monthly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Month Max DD" in field_names
+        assert "Longest Losing Streak" in field_names
+
+    async def test_monthly_has_fees_and_avg_pnl(self) -> None:
+        """Avg Trade PnL, Total Fees 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_monthly()
+        await scheduler._send_monthly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Avg Trade PnL" in field_names
+        assert "Total Fees" in field_names
+
+    async def test_monthly_fallback_without_spot_client(self) -> None:
+        """spot_client 없으면 legacy fallback."""
+        scheduler, queue, collector = _make_scheduler_with_spot_monthly()
+        collector._spot_client = None
+
+        await scheduler._send_monthly_report()
+
+        item = queue.enqueue.call_args[0][0]
+        assert item.embed["title"] == "Weekly Report"

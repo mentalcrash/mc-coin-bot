@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from src.notification.health_models import (
         BarCloseReportData,
         DailyReportData,
+        MonthlyReportData,
         StrategyHealthSnapshot,
         SystemHealthSnapshot,
         WeeklyReportData,
@@ -850,6 +851,206 @@ def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
 
     return {
         "title": "Spot Weekly Report",
+        "color": color,
+        "fields": fields,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "footer": {"text": _FOOTER_TEXT},
+    }
+
+
+def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
+    """Spot Monthly Report -> 8-section Discord Embed.
+
+    Args:
+        data: MonthlyReportData (HealthDataCollector에서 수집)
+
+    Returns:
+        Discord Embed dict
+    """
+    from src.notification.health_formatters import format_uptime
+
+    color = _COLOR_RED if data.alpha_decay_detected else _COLOR_BLUE
+    fields: list[dict[str, Any]] = []
+
+    # Section 1: Strategy Info
+    params_str = " | ".join(f"{k}: {v}" for k, v in data.strategy_params.items())
+    fields.append(
+        {
+            "name": f"Strategy: {data.strategy_name}",
+            "value": f"{params_str}\nTS: {data.trailing_stop_config} | TF: {data.timeframe}",
+            "inline": False,
+        }
+    )
+
+    # Section 2: Monthly Portfolio Summary
+    fields.extend(
+        [
+            {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {
+                "name": "Cash",
+                "value": f"${data.available_cash:,.0f} ({data.cash_pct:.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Month PnL",
+                "value": f"${data.month_pnl:+,.2f} ({data.month_return_pct:+.1f}%)",
+                "inline": True,
+            },
+            {
+                "name": "Month Trades",
+                "value": str(data.month_trades),
+                "inline": True,
+            },
+            {
+                "name": "Invested",
+                "value": f"{data.invested_count}/{data.total_asset_count} assets",
+                "inline": True,
+            },
+            {
+                "name": "Cum. Return",
+                "value": f"{data.cumulative_return_pct:+.2f}%",
+                "inline": True,
+            },
+            {"name": "MDD", "value": f"{data.max_drawdown_pct:.1f}%", "inline": True},
+        ]
+    )
+
+    # Section 3: Asset Monthly Performance
+    if data.assets:
+        lines: list[str] = []
+        for a in data.assets:
+            if a.month_trades > 0:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.month_change_pct:+.1f}%) | "
+                    f"PnL ${a.month_pnl:+,.2f} | {a.month_trades} trades"
+                )
+            else:
+                line = (
+                    f"**{a.symbol}** {a.signal} | "
+                    f"${a.current_price:,.4g} ({a.month_change_pct:+.1f}%)"
+                )
+            lines.append(line)
+        fields.append(
+            {
+                "name": f"Asset Monthly Performance ({len(data.assets)})",
+                "value": "\n".join(lines),
+                "inline": False,
+            }
+        )
+
+    # Section 4: Monthly Trade Summary
+    pf_str = (
+        f"{data.month_profit_factor:.2f}"
+        if data.month_profit_factor != float("inf")
+        else "INF"
+    )
+    fields.extend(
+        [
+            {
+                "name": "Best Trade",
+                "value": f"{data.best_trade_symbol} ${data.best_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Worst Trade",
+                "value": f"{data.worst_trade_symbol} ${data.worst_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Month WR / PF",
+                "value": f"{data.month_win_rate:.0%} / {pf_str}",
+                "inline": True,
+            },
+            {
+                "name": "Avg Trade PnL",
+                "value": f"${data.avg_trade_pnl:+,.2f}",
+                "inline": True,
+            },
+            {
+                "name": "Total Fees",
+                "value": f"${data.total_fees:,.2f}",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 5: Performance Trend
+    if data.performance_trend:
+        trend_lines = [
+            (
+                f"**{t.year_month}**: ${t.pnl:+,.0f} ({t.return_pct:+.1f}%) | "
+                f"{t.trades} trades | Sharpe {t.sharpe:.2f}"
+            )
+            for t in data.performance_trend
+        ]
+        fields.append(
+            {
+                "name": "Performance Trend",
+                "value": "\n".join(trend_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 6: Strategy Indicators
+    if data.indicators:
+        ind_lines: list[str] = []
+        for i in data.indicators:
+            st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
+            adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
+            ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
+        fields.append(
+            {
+                "name": "Strategy Indicators",
+                "value": "\n".join(ind_lines),
+                "inline": False,
+            }
+        )
+
+    # Section 7: System Health
+    cb_label = "ACTIVE" if data.is_circuit_breaker_active else "OK"
+    all_pf_str = f"{data.profit_factor:.2f}" if data.profit_factor != float("inf") else "INF"
+    fields.extend(
+        [
+            {"name": "Uptime", "value": format_uptime(data.uptime_seconds), "inline": True},
+            {
+                "name": "CB / WS",
+                "value": f"{cb_label} | {data.ws_ok_count}/{data.ws_total_count}",
+                "inline": True,
+            },
+            {
+                "name": "Sharpe (30d)",
+                "value": f"{data.rolling_sharpe_30d:.2f}",
+                "inline": True,
+            },
+            {"name": "Win Rate", "value": f"{data.win_rate:.0%}", "inline": True},
+            {"name": "Profit Factor", "value": all_pf_str, "inline": True},
+            {
+                "name": "Alpha Decay",
+                "value": "DETECTED" if data.alpha_decay_detected else "OK",
+                "inline": True,
+            },
+        ]
+    )
+
+    # Section 8: Risk Summary
+    fields.extend(
+        [
+            {
+                "name": "Month Max DD",
+                "value": f"{data.month_max_drawdown_pct:.2f}%",
+                "inline": True,
+            },
+            {
+                "name": "Longest Losing Streak",
+                "value": str(data.longest_losing_streak),
+                "inline": True,
+            },
+        ]
+    )
+
+    return {
+        "title": "Spot Monthly Report",
         "color": color,
         "fields": fields,
         "timestamp": datetime.now(UTC).isoformat(),

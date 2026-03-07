@@ -19,9 +19,12 @@ from loguru import logger
 
 from src.notification.health_models import (
     AssetDashboardItem,
+    AssetMonthlyPerformance,
     AssetWeeklyPerformance,
     BarCloseReportData,
     DailyReportData,
+    MonthlyPerformanceTrend,
+    MonthlyReportData,
     PositionStatus,
     SignalChangeItem,
     StrategyHealthSnapshot,
@@ -536,6 +539,265 @@ class HealthDataCollector:
             getattr(worst_t, "symbol", "?"),
             float(getattr(worst_t, "pnl", 0) or 0),
         )
+
+    # ─── Monthly Report Data Collection ─────────────────────────
+
+    _PERFORMANCE_TREND_MONTHS = 3
+
+    async def collect_monthly_report_data(self) -> MonthlyReportData:
+        """Spot Monthly Report용 전체 데이터 수집 (8 sections)."""
+        now = datetime.now(UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Section 1: Strategy Info
+        strategy = self._strategy_engine.strategy if self._strategy_engine else None
+        strategy_name = strategy.name if strategy else "unknown"
+        strategy_params: dict[str, str] = {}
+        if strategy is not None and hasattr(strategy, "get_startup_info"):
+            strategy_params = strategy.get_startup_info()
+
+        ts_config = ""
+        pm_cfg = self._pm.pm_config
+        if pm_cfg.use_trailing_stop:
+            ts_config = f"{pm_cfg.trailing_stop_atr_multiplier}x ATR"
+
+        timeframe = self._strategy_engine.target_timeframe if self._strategy_engine else "?"
+
+        # Section 2: Portfolio Summary
+        equity = self._pm.total_equity
+        cash = self._pm.available_cash
+        cash_pct = (cash / equity * 100) if equity > 0 else 0.0
+        initial = self._pm.initial_capital
+        cum_return = ((equity - initial) / initial * 100) if initial > 0 else 0.0
+        mdd = self._rm.current_drawdown * 100
+
+        trades = self._analytics.closed_trades
+        trades_month = [t for t in trades if t.exit_time and t.exit_time >= month_start]
+        month_pnl = sum(float(t.pnl) for t in trades_month if t.pnl is not None)
+
+        # Month return: 월초 equity 추정 (현재 equity - 월간 PnL)
+        equity_at_month_start = equity - month_pnl
+        month_return = (
+            (month_pnl / equity_at_month_start * 100)
+            if equity_at_month_start > 0
+            else 0.0
+        )
+
+        # Section 3: Asset Monthly Performance
+        asset_perfs = await self._collect_asset_monthly_performance(trades_month)
+
+        # Section 4: Trade Summary
+        best_sym, best_pnl, worst_sym, worst_pnl = self._extract_best_worst(trades_month)
+        month_wr, month_pf = self.compute_trade_stats(trades_month)
+        pnls = [
+            float(t.pnl) for t in trades_month  # type: ignore[union-attr]
+            if getattr(t, "pnl", None) is not None
+        ]
+        avg_pnl = sum(pnls) / len(pnls) if pnls else 0.0
+        total_fees = sum(
+            float(getattr(t, "fees", 0) or 0) for t in trades_month
+        )
+
+        # Section 5: Performance Trend
+        trend = self._build_performance_trend(list(trades))
+
+        # Section 6: Strategy Indicators
+        indicators = self._collect_strategy_indicators()
+
+        # Section 7: System Health
+        uptime = time.monotonic() - self._start_time
+        ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
+        cutoff_30d = now - timedelta(days=_ROLLING_SHARPE_DAYS)
+        recent_30d = [t for t in trades if t.exit_time and t.exit_time >= cutoff_30d]
+        sharpe = self.compute_rolling_sharpe(recent_30d)
+        self._sharpe_history.append(sharpe)
+        if len(self._sharpe_history) > _MAX_SHARPE_HISTORY:
+            self._sharpe_history = self._sharpe_history[-_MAX_SHARPE_HISTORY:]
+        alpha_decay = self.detect_alpha_decay()
+        all_trades = list(trades)
+        recent_n = all_trades[-_RECENT_TRADES_COUNT:] if all_trades else []
+        win_rate, profit_factor = self.compute_trade_stats(recent_n)
+
+        # Section 8: Risk Summary
+        month_max_dd = self._compute_month_max_drawdown(trades_month, equity)
+        longest_streak = self._compute_longest_losing_streak(trades_month)
+
+        return MonthlyReportData(
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
+            trailing_stop_config=ts_config,
+            timeframe=timeframe,
+            total_equity=equity,
+            available_cash=cash,
+            cash_pct=cash_pct,
+            month_pnl=month_pnl,
+            month_trades=len(trades_month),
+            month_return_pct=month_return,
+            invested_count=self._pm.open_position_count,
+            total_asset_count=len(self._symbols),
+            cumulative_return_pct=cum_return,
+            max_drawdown_pct=mdd,
+            assets=tuple(asset_perfs),
+            best_trade_symbol=best_sym,
+            best_trade_pnl=best_pnl,
+            worst_trade_symbol=worst_sym,
+            worst_trade_pnl=worst_pnl,
+            month_win_rate=month_wr,
+            month_profit_factor=month_pf,
+            avg_trade_pnl=avg_pnl,
+            total_fees=total_fees,
+            performance_trend=tuple(trend),
+            indicators=tuple(indicators),
+            uptime_seconds=uptime,
+            is_circuit_breaker_active=self._rm.is_circuit_breaker_active,
+            ws_ok_count=ws_ok,
+            ws_total_count=len(self._symbols),
+            rolling_sharpe_30d=sharpe,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            alpha_decay_detected=alpha_decay,
+            month_max_drawdown_pct=month_max_dd,
+            longest_losing_streak=longest_streak,
+        )
+
+    async def _collect_asset_monthly_performance(
+        self,
+        trades_month: Sequence[object],
+    ) -> list[AssetMonthlyPerformance]:
+        """에셋별 월간 성과 수집."""
+        if self._spot_client is None:
+            return []
+
+        pnl_by_sym: dict[str, float] = {}
+        count_by_sym: dict[str, int] = {}
+        for t in trades_month:
+            sym = getattr(t, "symbol", None)
+            pnl = getattr(t, "pnl", None)
+            if sym and pnl is not None:
+                pnl_by_sym[sym] = pnl_by_sym.get(sym, 0.0) + float(pnl)
+                count_by_sym[sym] = count_by_sym.get(sym, 0) + 1
+
+        positions = self._pm.positions
+        items: list[AssetMonthlyPerformance] = []
+        for symbol in self._symbols:
+            try:
+                ticker = await self._spot_client.fetch_ticker(symbol)
+            except Exception:
+                logger.warning("fetch_ticker failed for {}, skipping", symbol)
+                continue
+
+            price = float(ticker.get("last", 0) or 0)
+            change_pct = float(ticker.get("percentage", 0) or 0)
+
+            pos = positions.get(symbol)
+            is_open = pos is not None and pos.is_open
+            signal = pos.direction.name if pos and is_open else "NEUTRAL"
+
+            items.append(
+                AssetMonthlyPerformance(
+                    symbol=symbol,
+                    signal=signal,
+                    current_price=price,
+                    month_change_pct=change_pct,
+                    month_pnl=pnl_by_sym.get(symbol, 0.0),
+                    month_trades=count_by_sym.get(symbol, 0),
+                )
+            )
+        return items
+
+    def _build_performance_trend(
+        self,
+        all_trades: list[object],
+    ) -> list[MonthlyPerformanceTrend]:
+        """최근 N개월 월별 성과 추이 계산."""
+
+        now = datetime.now(UTC)
+        months: list[MonthlyPerformanceTrend] = []
+
+        for i in range(self._PERFORMANCE_TREND_MONTHS):
+            # i=0: 이번 달, i=1: 지난 달, ...
+            ref = now.replace(day=1) - timedelta(days=i * 28)
+            ref = ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            year_month = ref.strftime("%Y-%m")
+
+            # 해당 월 다음 달 첫째 날
+            if ref.month == 12:  # noqa: PLR2004
+                next_month = ref.replace(year=ref.year + 1, month=1)
+            else:
+                next_month = ref.replace(month=ref.month + 1)
+
+            month_trades = [
+                t for t in all_trades
+                if getattr(t, "exit_time", None)
+                and ref <= t.exit_time < next_month  # type: ignore[operator]
+            ]
+
+            if not month_trades:
+                continue
+
+            pnl = sum(
+                float(t.pnl) for t in month_trades  # type: ignore[union-attr]
+                if getattr(t, "pnl", None) is not None
+            )
+            sharpe = self.compute_rolling_sharpe(month_trades)
+
+            # 월 수익률: 누적 PnL / 현재 equity에서 역산 (근사치)
+            equity = self._pm.total_equity
+            return_pct = (pnl / equity * 100) if equity > 0 else 0.0
+
+            months.append(
+                MonthlyPerformanceTrend(
+                    year_month=year_month,
+                    pnl=pnl,
+                    return_pct=return_pct,
+                    trades=len(month_trades),
+                    sharpe=sharpe,
+                )
+            )
+
+        return months
+
+    @staticmethod
+    def _compute_month_max_drawdown(
+        trades_month: Sequence[object],
+        current_equity: float,
+    ) -> float:
+        """월간 거래 기반 최대 낙폭 (%) 근사 계산."""
+        if not trades_month:
+            return 0.0
+
+        pnls = [
+            float(t.pnl) for t in trades_month  # type: ignore[union-attr]
+            if getattr(t, "pnl", None) is not None
+        ]
+        if not pnls:
+            return 0.0
+
+        # 누적 equity curve → max drawdown
+        cumulative = 0.0
+        peak = 0.0
+        max_dd = 0.0
+        for p in pnls:
+            cumulative += p
+            peak = max(peak, cumulative)
+            dd = peak - cumulative
+            max_dd = max(max_dd, dd)
+
+        return (max_dd / current_equity * 100) if current_equity > 0 else 0.0
+
+    @staticmethod
+    def _compute_longest_losing_streak(trades: Sequence[object]) -> int:
+        """최장 연패 수 계산."""
+        max_streak = 0
+        current_streak = 0
+        for t in trades:
+            pnl = getattr(t, "pnl", None)
+            if pnl is not None and float(pnl) < 0:
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+        return max_streak
 
     # ─── Bar Close Report ──────────────────────────────────────
 

@@ -22,6 +22,7 @@ from src.notification.formatters import (
     format_daily_report_embed,
     format_enhanced_daily_report_embed,
     format_spot_daily_report_embed,
+    format_spot_monthly_report_embed,
     format_spot_weekly_report_embed,
     format_weekly_report_embed,
 )
@@ -67,18 +68,20 @@ class ReportScheduler:
         self._health_collector = health_collector
         self._daily_task: asyncio.Task[None] | None = None
         self._weekly_task: asyncio.Task[None] | None = None
+        self._monthly_task: asyncio.Task[None] | None = None
         self._bar_close_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """스케줄 task 시작."""
         self._daily_task = asyncio.create_task(self._daily_loop())
         self._weekly_task = asyncio.create_task(self._weekly_loop())
+        self._monthly_task = asyncio.create_task(self._monthly_loop())
         self._bar_close_task = asyncio.create_task(self._bar_close_loop())
-        logger.info("ReportScheduler started (daily + weekly + bar_close)")
+        logger.info("ReportScheduler started (daily + weekly + monthly + bar_close)")
 
     async def stop(self) -> None:
         """Task 취소."""
-        for task in (self._daily_task, self._weekly_task, self._bar_close_task):
+        for task in (self._daily_task, self._weekly_task, self._monthly_task, self._bar_close_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -97,8 +100,11 @@ class ReportScheduler:
         """매일 00:00 UTC 일일 리포트 (상위 리포트 있는 날은 생략)."""
         while True:
             await _sleep_until_next(hour=0, minute=0)
-            # 우선순위: Monthly(미래) > Weekly > Daily
+            # 우선순위: Monthly > Weekly > Daily
             now = datetime.now(UTC)
+            if now.day == 1:
+                logger.info("Daily report skipped (Monthly report day)")
+                continue
             if now.weekday() == _MONDAY:
                 logger.info("Daily report skipped (Weekly report day)")
                 continue
@@ -140,13 +146,71 @@ class ReportScheduler:
         logger.info("Bar close report enqueued")
 
     async def _weekly_loop(self) -> None:
-        """매주 월요일 00:00 UTC 주간 리포트."""
+        """매주 월요일 00:00 UTC 주간 리포트 (매월 1일은 생략)."""
         while True:
             await _sleep_until_next(hour=0, minute=0, weekday=_MONDAY)
+            now = datetime.now(UTC)
+            if now.day == 1:
+                logger.info("Weekly report skipped (Monthly report day)")
+                continue
             try:
                 await self._send_weekly_report()
             except Exception:
                 logger.exception("Failed to send weekly report")
+
+    async def _monthly_loop(self) -> None:
+        """매월 1일 00:00 UTC 월간 리포트."""
+        while True:
+            await _sleep_until_next_monthly()
+            try:
+                await self._send_monthly_report()
+            except Exception:
+                logger.exception("Failed to send monthly report")
+
+    async def _send_monthly_report(self) -> None:
+        """월간 리포트 생성 + enqueue."""
+        equity_series = self._analytics.get_equity_series()
+        trades = self._analytics.closed_trades
+        metrics = self._analytics.compute_metrics()
+
+        now = datetime.now(UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        trades_month = [t for t in trades if t.exit_time and t.exit_time >= month_start]
+
+        embed: dict[str, object]
+        severity = Severity.INFO
+        _has_spot = (
+            self._health_collector is not None
+            and getattr(self._health_collector, "_spot_client", None) is not None
+        )
+        if _has_spot:
+            assert self._health_collector is not None
+            try:
+                report_data = await self._health_collector.collect_monthly_report_data()
+                embed = format_spot_monthly_report_embed(report_data)
+                if report_data.alpha_decay_detected:
+                    severity = Severity.WARNING
+            except Exception:
+                logger.exception("Spot monthly report failed, falling back to weekly")
+                embed = format_weekly_report_embed(metrics=metrics, trades_week=trades_month)
+        else:
+            embed = format_weekly_report_embed(metrics=metrics, trades_week=trades_month)
+
+        # 차트 생성
+        loop = asyncio.get_running_loop()
+        charts = await loop.run_in_executor(
+            None, self._chart_gen.generate_weekly_report, equity_series, trades_month, metrics,
+        )
+
+        files = tuple(charts)
+        item = NotificationItem(
+            severity=severity,
+            channel=ChannelRoute.DAILY_REPORT,
+            embed=embed,
+            files=files,
+        )
+        await self._queue.enqueue(item)
+        logger.info("Monthly report enqueued ({} charts)", len(files))
 
     async def _send_daily_report(self) -> None:
         """일일 리포트 생성 + enqueue."""
@@ -309,6 +373,19 @@ async def _sleep_until_next(
         target = target + timedelta(days=days_ahead)
     elif now >= target:
         target = target + timedelta(days=1)
+
+    wait_seconds = (target - now).total_seconds()
+    if wait_seconds > 0:
+        await asyncio.sleep(wait_seconds)
+
+
+async def _sleep_until_next_monthly() -> None:
+    """다음 달 1일 00:00 UTC까지 sleep."""
+    now = datetime.now(UTC)
+    if now.month == 12:  # noqa: PLR2004
+        target = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        target = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
     wait_seconds = (target - now).total_seconds()
     if wait_seconds > 0:
