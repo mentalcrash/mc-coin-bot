@@ -141,7 +141,7 @@ class HealthDataCollector:
             uptime_seconds=uptime,
             total_equity=self._pm.total_equity,
             available_cash=self._pm.available_cash,
-            aggregate_leverage=self._pm.aggregate_leverage,
+            capital_utilization=self._pm.capital_utilization,
             open_position_count=self._pm.open_position_count,
             total_symbols=len(self._symbols),
             current_drawdown=self._rm.current_drawdown,
@@ -997,11 +997,21 @@ class HealthDataCollector:
         uptime = time.monotonic() - self._start_time
         ws_ok = len(self._symbols) - len(self._feed.stale_symbols)
 
+        equity = self._pm.total_equity
+        cash = self._pm.available_cash
+        deployed = equity - cash
+        dd_pct = self._rm.current_drawdown
+        util = self._pm.capital_utilization
+
         return BarCloseReportData(
             bar_time_utc=bar_time_utc,
             signal_changes=tuple(signal_changes),
             assets=tuple(assets),
-            total_equity=self._pm.total_equity,
+            total_equity=equity,
+            available_cash=cash,
+            capital_deployed=deployed,
+            drawdown_pct=dd_pct,
+            capital_utilization=util,
             today_pnl=today_pnl,
             invested_count=self._pm.open_position_count,
             total_asset_count=len(self._symbols),

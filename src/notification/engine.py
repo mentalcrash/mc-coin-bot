@@ -16,7 +16,6 @@ from loguru import logger
 
 from src.core.events import (
     AnyEvent,
-    BalanceUpdateEvent,
     CircuitBreakerEvent,
     EventType,
     FillEvent,
@@ -24,7 +23,6 @@ from src.core.events import (
     RiskAlertEvent,
 )
 from src.notification.formatters import (
-    format_balance_embed,
     format_circuit_breaker_embed,
     format_fill_with_position_embed,
     format_position_embed,
@@ -57,7 +55,6 @@ class NotificationEngine:
         bus.subscribe(EventType.FILL, self._on_fill)
         bus.subscribe(EventType.CIRCUIT_BREAKER, self._on_circuit_breaker)
         bus.subscribe(EventType.RISK_ALERT, self._on_risk_alert)
-        bus.subscribe(EventType.BALANCE_UPDATE, self._on_balance_update)
         bus.subscribe(EventType.POSITION_UPDATE, self._on_position_update)
         logger.info("NotificationEngine registered to EventBus")
 
@@ -87,18 +84,6 @@ class NotificationEngine:
             channel=ChannelRoute.ALERTS,
             embed=embed,
             spam_key=f"risk_alert:{event.alert_level}",
-        )
-        await self._queue.enqueue(item)
-
-    async def _on_balance_update(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent -> ALERTS 채널 (throttled)."""
-        assert isinstance(event, BalanceUpdateEvent)
-        embed = format_balance_embed(event)
-        item = NotificationItem(
-            severity=Severity.INFO,
-            channel=ChannelRoute.ALERTS,
-            embed=embed,
-            spam_key="balance_update",
         )
         await self._queue.enqueue(item)
 

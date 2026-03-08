@@ -24,8 +24,8 @@ def _make_balance(
     kwargs: dict[str, object] = {
         "total_equity": equity,
         "available_cash": equity * 0.5,
-        "total_margin_used": equity * 0.5,
-        "aggregate_leverage": leverage,
+        "capital_deployed": equity * 0.5,
+        "capital_utilization": leverage,
         "correlation_id": uuid4(),
         "source": "test",
     }
@@ -387,7 +387,7 @@ class TestEquityCurveNormalization:
         b1 = BalanceUpdateEvent(
             total_equity=10000.0,
             available_cash=5000.0,
-            total_margin_used=5000.0,
+            capital_deployed=5000.0,
             timestamp=ts,
             correlation_id=uuid4(),
             source="test",
@@ -395,7 +395,7 @@ class TestEquityCurveNormalization:
         b2 = BalanceUpdateEvent(
             total_equity=10100.0,
             available_cash=5100.0,
-            total_margin_used=5000.0,
+            capital_deployed=5000.0,
             timestamp=ts,
             correlation_id=uuid4(),
             source="test",
@@ -403,7 +403,7 @@ class TestEquityCurveNormalization:
         b3 = BalanceUpdateEvent(
             total_equity=10200.0,
             available_cash=5200.0,
-            total_margin_used=5000.0,
+            capital_deployed=5000.0,
             timestamp=ts,
             correlation_id=uuid4(),
             source="test",
@@ -424,7 +424,7 @@ class TestLeverageWeightedFunding:
     """펀딩비 leverage 가중 차감 테스트 (수정 3)."""
 
     async def test_leverage_recorded_in_equity_point(self) -> None:
-        """BalanceUpdateEvent.aggregate_leverage → EquityPoint.leverage."""
+        """BalanceUpdateEvent.capital_utilization → EquityPoint.leverage."""
         engine = AnalyticsEngine(initial_capital=10000.0)
         bus = EventBus(queue_size=100)
         await engine.register(bus)
@@ -434,8 +434,8 @@ class TestLeverageWeightedFunding:
         bal = BalanceUpdateEvent(
             total_equity=10000.0,
             available_cash=5000.0,
-            total_margin_used=5000.0,
-            aggregate_leverage=1.5,
+            capital_deployed=5000.0,
+            capital_utilization=1.5,
             timestamp=ts,
             correlation_id=uuid4(),
             source="test",
@@ -463,8 +463,8 @@ class TestLeverageWeightedFunding:
             bal = BalanceUpdateEvent(
                 total_equity=equity,
                 available_cash=equity * 0.5,
-                total_margin_used=equity * 0.5,
-                aggregate_leverage=lev,
+                capital_deployed=equity * 0.5,
+                capital_utilization=lev,
                 timestamp=ts,
                 correlation_id=uuid4(),
                 source="test",
@@ -495,8 +495,8 @@ class TestLeverageWeightedFunding:
             bal = BalanceUpdateEvent(
                 total_equity=equity,
                 available_cash=equity,
-                total_margin_used=0.0,
-                aggregate_leverage=0.0,  # 포지션 없음
+                capital_deployed=0.0,
+                capital_utilization=0.0,  # 포지션 없음
                 timestamp=ts,
                 correlation_id=uuid4(),
                 source="test",

@@ -272,10 +272,10 @@ class BalanceUpdateEvent(BaseModel):
 
     total_equity: float
     available_cash: float
-    total_margin_used: float = 0.0
+    capital_deployed: float = 0.0  # 투자 중인 자본 (USDT)
     drawdown_pct: float = 0.0  # HWM 대비 낙폭 0.0~1.0
     open_position_count: int = 0  # 오픈 포지션 수
-    aggregate_leverage: float = 0.0  # 합산 레버리지
+    capital_utilization: float = 0.0  # 자본 활용률 (0.0~1.0)
 
 
 # ==========================================================================

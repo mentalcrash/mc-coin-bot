@@ -248,13 +248,13 @@ class EDARiskManager:
         Returns:
             거부 사유 (None이면 통과)
         """
-        # 1. Aggregate leverage check
-        current_leverage = self._pm.aggregate_leverage
-        if current_leverage >= self._config.max_leverage_cap and not self._is_reducing_position(
+        # 1. Capital utilization check
+        current_utilization = self._pm.capital_utilization
+        if current_utilization >= self._config.max_leverage_cap and not self._is_reducing_position(
             order
         ):
             return (
-                f"Aggregate leverage {current_leverage:.2f} "
+                f"Capital utilization {current_utilization:.2f} "
                 f">= cap {self._config.max_leverage_cap:.2f}"
             )
 

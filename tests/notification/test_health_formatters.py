@@ -29,7 +29,7 @@ def _make_health_snapshot(**overrides: object) -> SystemHealthSnapshot:
         "uptime_seconds": 86400.0 + 3600.0 * 14,
         "total_equity": 52341.0,
         "available_cash": 30000.0,
-        "aggregate_leverage": 0.35,
+        "capital_utilization": 0.35,
         "open_position_count": 3,
         "total_symbols": 5,
         "current_drawdown": 0.023,

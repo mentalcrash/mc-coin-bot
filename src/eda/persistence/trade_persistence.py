@@ -164,12 +164,12 @@ class TradePersistence:
             conn = self._db.connection
             await conn.execute(
                 """INSERT INTO equity_snapshots
-                   (total_equity, available_cash, margin_used, timestamp)
+                   (total_equity, available_cash, capital_deployed, timestamp)
                    VALUES (?, ?, ?, ?)""",
                 (
                     event.total_equity,
                     event.available_cash,
-                    event.total_margin_used,
+                    event.capital_deployed,
                     event.timestamp.isoformat(),
                 ),
             )

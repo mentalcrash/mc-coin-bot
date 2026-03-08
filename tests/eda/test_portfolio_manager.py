@@ -285,7 +285,7 @@ class TestPortfolioManagerProperties:
         pm = EDAPortfolioManager(config=config, initial_capital=10000.0)
         assert pm.total_equity == 10000.0
         assert pm.available_cash == 10000.0
-        assert pm.aggregate_leverage == 0.0
+        assert pm.capital_utilization == 0.0
         assert pm.open_position_count == 0
 
 

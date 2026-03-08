@@ -391,15 +391,15 @@ groups:
           summary: "High gross exposure ({{ $value | printf \"%.2f\" }})"
           description: "Pod간 총 gross exposure 3.0 초과. 레버리지 과다 위험."
 
-      # 34. 과도 레버리지 — 강제 청산 위험
-      - alert: HighAggregateLeverage
-        expr: mcbot_aggregate_leverage > 5
-        for: 1m
+      # 34. 과도 자본 활용 — Spot 과다 투입 경고
+      - alert: HighCapitalUtilization
+        expr: mcbot_capital_utilization > 0.95
+        for: 2m
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: "Aggregate leverage dangerously high ({{ $value | printf \"%.1f\" }}x)"
-          description: "Portfolio aggregate leverage exceeds 5x for over 1 minute. Liquidation risk elevated."
+          summary: "Capital utilization high ({{ $value | printf \"%.0f\" }}%)"
+          description: "Capital utilization exceeds 95% for over 2 minutes. Almost all capital is deployed in positions."
 
       # 35. Live API 차단 — 무음 주문 차단 감지
       - alert: LiveAPIBlocked
@@ -410,15 +410,15 @@ groups:
           summary: "Live orders blocked due to unhealthy API ({{ $value | printf \"%.0f\" }} in 5m)"
           description: "Orders are being silently blocked because exchange API is unhealthy. Check APIUnhealthy alert and network status."
 
-      # 36. 마진 사용률 80% 초과 — margin call 사전 경고
-      - alert: HighMarginUtilization
-        expr: mcbot_margin_used_usdt / mcbot_equity_usdt > 0.8 and mcbot_equity_usdt > 0
+      # 36. 자본 투입 비율 80% 초과 — 유동성 부족 경고
+      - alert: HighCapitalDeployment
+        expr: mcbot_capital_deployed_usdt / mcbot_equity_usdt > 0.8 and mcbot_equity_usdt > 0
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "High margin utilization ({{ $value | printf \"%.1f\" }}%)"
-          description: "Margin utilization exceeds 80% for over 2 minutes. Margin call risk. Reduce position sizes or add margin."
+          summary: "High capital deployment ({{ $value | printf \"%.0f\" }}%)"
+          description: "Capital deployment exceeds 80% for over 2 minutes. Low cash reserve. Consider reducing position sizes."
 
       # 37. Thread 수 과다 — thread leak 감지
       - alert: HighThreadCount

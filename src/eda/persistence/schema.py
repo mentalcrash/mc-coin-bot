@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS equity_snapshots (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     total_equity    REAL NOT NULL,
     available_cash  REAL NOT NULL,
-    margin_used     REAL DEFAULT 0.0,
+    capital_deployed REAL DEFAULT 0.0,
     timestamp       TEXT NOT NULL
 );
 

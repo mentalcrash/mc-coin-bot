@@ -72,33 +72,33 @@
       "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
     },
     {
-      "title": "Margin Used",
+      "title": "Capital Deployed",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 5 },
       "targets": [
-        { "expr": "mcbot_margin_used_usdt", "legendFormat": "Margin", "refId": "A" }
+        { "expr": "mcbot_capital_deployed_usdt", "legendFormat": "Deployed", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
     },
     {
-      "title": "Aggregate Leverage",
+      "title": "Capital Utilization",
       "type": "gauge",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
       "targets": [
-        { "expr": "mcbot_aggregate_leverage", "legendFormat": "Leverage", "refId": "A" }
+        { "expr": "mcbot_capital_utilization", "legendFormat": "Utilization", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 1.5 },
-              { "color": "red", "value": 2.5 }
+              { "color": "yellow", "value": 0.7 },
+              { "color": "red", "value": 0.9 }
             ]
           },
-          "max": 5
+          "max": 1
         },
         "overrides": []
       }

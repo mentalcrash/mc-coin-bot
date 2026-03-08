@@ -75,7 +75,7 @@ def sample_balance_update() -> BalanceUpdateEvent:
     return BalanceUpdateEvent(
         total_equity=10500.0,
         available_cash=8000.0,
-        total_margin_used=2500.0,
+        capital_deployed=2500.0,
     )
 
 

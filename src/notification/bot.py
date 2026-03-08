@@ -247,7 +247,7 @@ class DiscordBotService:
         )
         embed.add_field(name="Total Equity", value=f"${pm.total_equity:,.2f}", inline=True)
         embed.add_field(name="Available Cash", value=f"${pm.available_cash:,.2f}", inline=True)
-        embed.add_field(name="Leverage", value=f"{pm.aggregate_leverage:.2f}x", inline=True)
+        embed.add_field(name="Utilization", value=f"{pm.capital_utilization:.0%}", inline=True)
 
         rm = ctx.rm
         embed.add_field(name="Drawdown", value=f"{rm.current_drawdown:.2f}%", inline=True)
@@ -337,8 +337,8 @@ class DiscordBotService:
             inline=True,
         )
         embed.add_field(
-            name="Aggregate Leverage",
-            value=f"{pm.aggregate_leverage:.2f}x",
+            name="Capital Utilization",
+            value=f"{pm.capital_utilization:.0%}",
             inline=True,
         )
         embed.set_footer(text="MC-Coin-Bot")
@@ -380,7 +380,7 @@ class DiscordBotService:
         embed = discord.Embed(title="System Health", color=0x2ECC71)
         embed.add_field(name="Equity", value=f"${pm.total_equity:,.2f}", inline=True)
         embed.add_field(name="Cash", value=f"${pm.available_cash:,.2f}", inline=True)
-        embed.add_field(name="Leverage", value=f"{pm.aggregate_leverage:.2f}x", inline=True)
+        embed.add_field(name="Utilization", value=f"{pm.capital_utilization:.0%}", inline=True)
         embed.add_field(name="Drawdown", value=f"{rm.current_drawdown:.2f}%", inline=True)
         cb_status = "ACTIVE" if rm.is_circuit_breaker_active else "OK"
         embed.add_field(name="Circuit Breaker", value=cb_status, inline=True)

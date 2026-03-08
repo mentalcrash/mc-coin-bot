@@ -21,7 +21,7 @@ def _make_mock_pm() -> MagicMock:
     pm = MagicMock()
     pm.total_equity = 50000.0
     pm.available_cash = 30000.0
-    pm.aggregate_leverage = 0.4
+    pm.capital_utilization = 0.4
     pm.open_position_count = 2
     pm.positions = {}
     return pm
@@ -257,6 +257,58 @@ class TestDetectAlphaDecay:
         collector._sharpe_history = [1.0, 0.5]
         assert collector.detect_alpha_decay() is False
         assert collector._alpha_decay_streak == 0
+
+
+# ─── Bar Close Report Data 테스트 ────────────────────────
+
+
+class TestCollectBarCloseReportData:
+    async def test_includes_available_cash(self) -> None:
+        """Bar Close Report에 available_cash 포함."""
+        pm = _make_mock_pm()
+        pm.available_cash = 30000.0
+        collector = _make_collector(pm=pm)
+
+        data = await collector.collect_bar_close_report_data("12:00")
+        assert data.available_cash == 30000.0
+
+    async def test_includes_capital_deployed(self) -> None:
+        """Bar Close Report에 capital_deployed 포함."""
+        pm = _make_mock_pm()
+        # capital_deployed = equity - cash
+        pm.total_equity = 50000.0
+        pm.available_cash = 30000.0
+        collector = _make_collector(pm=pm)
+
+        data = await collector.collect_bar_close_report_data("12:00")
+        assert data.capital_deployed == 20000.0  # 50000 - 30000
+
+    async def test_includes_drawdown_pct(self) -> None:
+        """Bar Close Report에 drawdown_pct 포함."""
+        rm = _make_mock_rm()
+        rm.current_drawdown = 0.05
+        collector = _make_collector(rm=rm)
+
+        data = await collector.collect_bar_close_report_data("00:00")
+        assert data.drawdown_pct == 0.05
+
+    async def test_includes_capital_utilization(self) -> None:
+        """Bar Close Report에 capital_utilization 포함."""
+        pm = _make_mock_pm()
+        pm.capital_utilization = 0.4
+        collector = _make_collector(pm=pm)
+
+        data = await collector.collect_bar_close_report_data("12:00")
+        assert data.capital_utilization == 0.4
+
+    async def test_zero_drawdown(self) -> None:
+        """Drawdown 0일 때 정상 수집."""
+        rm = _make_mock_rm()
+        rm.current_drawdown = 0.0
+        collector = _make_collector(rm=rm)
+
+        data = await collector.collect_bar_close_report_data("12:00")
+        assert data.drawdown_pct == 0.0
 
 
 # ─── Lifecycle 테스트 ────────────────────────────────────

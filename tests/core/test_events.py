@@ -286,7 +286,7 @@ class TestPortfolioEvents:
         bal = BalanceUpdateEvent(
             total_equity=10500.0,
             available_cash=5000.0,
-            total_margin_used=5500.0,
+            capital_deployed=5500.0,
         )
         assert bal.event_type == EventType.BALANCE_UPDATE
         assert bal.total_equity == 10500.0

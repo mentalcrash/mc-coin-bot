@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from src.notification.formatters import (
-    format_balance_embed,
+    format_bar_close_report_embed,
     format_circuit_breaker_embed,
     format_daily_report_embed,
     format_enhanced_daily_report_embed,
@@ -18,7 +18,6 @@ from src.notification.formatters import (
 
 if TYPE_CHECKING:
     from src.core.events import (
-        BalanceUpdateEvent,
         CircuitBreakerEvent,
         FillEvent,
         PositionUpdateEvent,
@@ -89,17 +88,6 @@ class TestFormatRiskAlertEmbed:
         embed = format_risk_alert_embed(sample_risk_alert_critical)
         assert embed["title"] == "RISK CRITICAL"
         assert embed["color"] == _COLOR_ORANGE
-
-
-class TestFormatBalanceEmbed:
-    def test_embed_structure(self, sample_balance_update: BalanceUpdateEvent) -> None:
-        embed = format_balance_embed(sample_balance_update)
-        assert embed["title"] == "Balance Update"
-        assert embed["color"] == _COLOR_BLUE
-        assert len(embed["fields"]) == 3
-        assert "$10,500" in embed["fields"][0]["value"]
-        assert "$8,000" in embed["fields"][1]["value"]
-        assert "$2,500" in embed["fields"][2]["value"]
 
 
 class TestFormatFillWithPositionEmbed:
@@ -331,3 +319,83 @@ class TestFormatEnhancedDailyReportEmbed:
         assert embed["title"] == "Daily Report"
         assert embed["color"] == _COLOR_BLUE
         assert len(embed["fields"]) == 6
+
+
+# ─── Bar Close Report Embed 테스트 (Balance Update 흡수) ──────
+
+
+class TestFormatBarCloseReportEmbed:
+    """Bar Close Report에 Balance Update 정보가 포함되는지 검증."""
+
+    def _make_bar_close_data(self, **overrides: object) -> Any:
+        from src.notification.health_models import BarCloseReportData
+
+        defaults: dict[str, Any] = {
+            "bar_time_utc": "12:00",
+            "signal_changes": (),
+            "assets": (),
+            "total_equity": 10500.0,
+            "available_cash": 8000.0,
+            "capital_deployed": 2500.0,
+            "drawdown_pct": 0.035,
+            "capital_utilization": 0.238,
+            "today_pnl": 150.0,
+            "invested_count": 2,
+            "total_asset_count": 6,
+            "uptime_seconds": 86400.0,
+            "is_circuit_breaker_active": False,
+            "ws_ok_count": 6,
+            "ws_total_count": 6,
+        }
+        defaults.update(overrides)
+        return BarCloseReportData(**defaults)
+
+    def test_portfolio_snapshot_has_cash_field(self) -> None:
+        """Portfolio Snapshot에 Available Cash 필드 포함."""
+        data = self._make_bar_close_data()
+        embed = format_bar_close_report_embed(data)
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Cash" in field_names
+        cash_field = next(f for f in embed["fields"] if f["name"] == "Cash")
+        assert "$8,000" in cash_field["value"]
+
+    def test_portfolio_snapshot_has_deployed_field(self) -> None:
+        """Portfolio Snapshot에 Capital Deployed 필드 포함."""
+        data = self._make_bar_close_data()
+        embed = format_bar_close_report_embed(data)
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Deployed" in field_names
+        deployed_field = next(f for f in embed["fields"] if f["name"] == "Deployed")
+        assert "$2,500" in deployed_field["value"]
+
+    def test_portfolio_snapshot_has_drawdown_field(self) -> None:
+        """Portfolio Snapshot에 Drawdown 필드 포함."""
+        data = self._make_bar_close_data()
+        embed = format_bar_close_report_embed(data)
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Drawdown" in field_names
+        dd_field = next(f for f in embed["fields"] if f["name"] == "Drawdown")
+        assert "3.5%" in dd_field["value"]
+
+    def test_portfolio_snapshot_has_utilization_field(self) -> None:
+        """Portfolio Snapshot에 Utilization 필드 포함."""
+        data = self._make_bar_close_data()
+        embed = format_bar_close_report_embed(data)
+        field_names = [f["name"] for f in embed["fields"]]
+        assert "Utilization" in field_names
+        util_field = next(f for f in embed["fields"] if f["name"] == "Utilization")
+        assert "23.8%" in util_field["value"]
+
+    def test_zero_drawdown_display(self) -> None:
+        """Drawdown 0%일 때도 정상 표시."""
+        data = self._make_bar_close_data(drawdown_pct=0.0)
+        embed = format_bar_close_report_embed(data)
+        dd_field = next(f for f in embed["fields"] if f["name"] == "Drawdown")
+        assert "0.0%" in dd_field["value"]
+
+    def test_high_utilization_display(self) -> None:
+        """Utilization 100%에 가까울 때 정상 표시."""
+        data = self._make_bar_close_data(capital_utilization=0.95)
+        embed = format_bar_close_report_embed(data)
+        util_field = next(f for f in embed["fields"] if f["name"] == "Utilization")
+        assert "95.0%" in util_field["value"]

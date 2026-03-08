@@ -103,7 +103,7 @@ def format_heartbeat_embed(snapshot: SystemHealthSnapshot) -> dict[str, Any]:
         {"name": "Drawdown", "value": f"-{dd_pct:.1f}%", "inline": True},
         {"name": "WS Status", "value": ws_label, "inline": True},
         {"name": "Positions", "value": f"{snapshot.open_position_count}", "inline": True},
-        {"name": "Leverage", "value": f"{snapshot.aggregate_leverage:.2f}x", "inline": True},
+        {"name": "Utilization", "value": f"{snapshot.capital_utilization:.0%}", "inline": True},
         {
             "name": "Today PnL",
             "value": f"${snapshot.today_pnl:+,.0f} ({snapshot.today_trades})",

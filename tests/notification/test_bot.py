@@ -130,7 +130,7 @@ class TestSlashCommandHandlers:
         pm = MagicMock()
         pm.total_equity = 10000.0
         pm.available_cash = 8000.0
-        pm.aggregate_leverage = 1.5
+        pm.capital_utilization = 1.5
         pm.open_position_count = 2
         pm.positions = {}
 

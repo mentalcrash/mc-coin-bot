@@ -25,6 +25,7 @@ class DataType(StrEnum):
     MACRO = "macro"
     OPTIONS = "options"
     DERIV_EXT = "deriv_ext"
+    TRADE_FLOW = "trade_flow"
 
 
 class EnrichmentScope(StrEnum):
@@ -33,6 +34,7 @@ class EnrichmentScope(StrEnum):
     GLOBAL = "global"
     ASSET = "asset"
     PER_ASSET = "per_asset"
+    PER_SYMBOL = "per_symbol"
 
 
 # ─── Models ──────────────────────────────────────────────────────────

@@ -215,8 +215,8 @@ class EDAPortfolioManager:
         return self._positions
 
     @property
-    def aggregate_leverage(self) -> float:
-        """합산 레버리지 = 총 포지션 / equity."""
+    def capital_utilization(self) -> float:
+        """자본 활용률 = 총 포지션 notional / equity (0.0~1.0 for Spot)."""
         equity = self.total_equity
         if equity <= 0:
             return 0.0
@@ -1444,6 +1444,27 @@ class EDAPortfolioManager:
             pos.last_price,
         )
 
+    def build_balance_snapshot(self) -> BalanceUpdateEvent:
+        """현재 상태 기반 BalanceUpdateEvent 생성 (read-only, peak 미갱신).
+
+        주기적 메트릭 갱신 및 재시작 시 gauge 복구용.
+        """
+        deployed = sum(p.notional for p in self._positions.values() if p.is_open)
+        equity = self.total_equity
+        drawdown_pct = (
+            max(0.0, 1.0 - equity / self._peak_equity) if self._peak_equity > 0 else 0.0
+        )
+        return BalanceUpdateEvent(
+            total_equity=equity,
+            available_cash=self._cash,
+            capital_deployed=deployed,
+            drawdown_pct=drawdown_pct,
+            open_position_count=self.open_position_count,
+            capital_utilization=self.capital_utilization,
+            correlation_id=None,
+            source="PortfolioManager:periodic",
+        )
+
     async def _publish_balance_update(
         self, correlation_id: UUID | None, timestamp: datetime | None = None
     ) -> None:
@@ -1456,17 +1477,17 @@ class EDAPortfolioManager:
         bus = self._bus
         assert bus is not None
 
-        margin_used = sum(p.notional for p in self._positions.values() if p.is_open)
+        deployed = sum(p.notional for p in self._positions.values() if p.is_open)
         equity = self.total_equity
         self._peak_equity = max(self._peak_equity, equity)
         drawdown_pct = max(0.0, 1.0 - equity / self._peak_equity) if self._peak_equity > 0 else 0.0
         kwargs: dict[str, object] = {
             "total_equity": equity,
             "available_cash": self._cash,
-            "total_margin_used": margin_used,
+            "capital_deployed": deployed,
             "drawdown_pct": drawdown_pct,
             "open_position_count": self.open_position_count,
-            "aggregate_leverage": self.aggregate_leverage,
+            "capital_utilization": self.capital_utilization,
             "correlation_id": correlation_id,
             "source": "PortfolioManager",
         }

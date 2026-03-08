@@ -5,7 +5,7 @@ prometheus_client HTTP 서버를 통해 /metrics endpoint로 노출합니다.
 
 Layers:
     L1. Order Execution — 주문 지연시간/슬리피지/수수료
-    L2. Position & PnL — 포지션/잔고/레버리지
+    L2. Position & PnL — 포지션/잔고/자본활용
     L3. Exchange API — API 호출/지연시간/WS 상태
     L4. Bot Health — uptime/heartbeat/EventBus 상태
     L5. Per-Strategy — 전략별 PnL/슬리피지/이상 탐지
@@ -67,8 +67,8 @@ realized_profit_counter = Counter(
 realized_loss_counter = Counter(
     "mcbot_realized_loss_usdt_total", "Cumulative realized loss", ["symbol"]
 )
-aggregate_leverage_gauge = Gauge("mcbot_aggregate_leverage", "Portfolio aggregate leverage ratio")
-margin_used_gauge = Gauge("mcbot_margin_used_usdt", "Margin currently in use")
+capital_utilization_gauge = Gauge("mcbot_capital_utilization", "Capital utilization ratio (deployed / equity)")
+capital_deployed_gauge = Gauge("mcbot_capital_deployed_usdt", "Capital currently deployed in positions")
 
 # ==========================================================================
 # Layer 1: Order Execution — 기존 Counter
@@ -401,8 +401,8 @@ class PrometheusLiveExecutorMetrics:
 # Rejection reason 분류
 # ==========================================================================
 _REJECTION_REASON_MAP: dict[str, str] = {
-    "leverage": "leverage_exceeded",
-    "aggregate leverage": "leverage_exceeded",
+    "leverage": "utilization_exceeded",
+    "capital utilization": "utilization_exceeded",
     "max_positions": "max_positions",
     "positions reached": "max_positions",
     "order_size": "order_size_exceeded",
@@ -669,15 +669,41 @@ class MetricsExporter:
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
+    def restore_gauges(
+        self,
+        total_equity: float,
+        available_cash: float,
+        capital_deployed: float,
+        drawdown_pct: float,
+        open_position_count: int,
+        capital_utilization: float,
+    ) -> None:
+        """재시작 시 Prometheus gauge 즉시 복구 (동기).
+
+        Args:
+            total_equity: 총 자산가치
+            available_cash: 가용 현금
+            capital_deployed: 투입 자본
+            drawdown_pct: 드로다운 (0-1 스케일, 내부에서 *100 변환)
+            open_position_count: 오픈 포지션 수
+            capital_utilization: 자본 활용률
+        """
+        equity_gauge.set(total_equity)
+        cash_gauge.set(available_cash)
+        capital_deployed_gauge.set(capital_deployed)
+        drawdown_gauge.set(drawdown_pct * 100)
+        position_count_gauge.set(open_position_count)
+        capital_utilization_gauge.set(capital_utilization)
+
     async def _on_balance(self, event: AnyEvent) -> None:
-        """BalanceUpdateEvent → equity/cash/margin/drawdown/positions/leverage gauges."""
+        """BalanceUpdateEvent → equity/cash/deployed/drawdown/positions/utilization gauges."""
         assert isinstance(event, BalanceUpdateEvent)
         equity_gauge.set(event.total_equity)
         cash_gauge.set(event.available_cash)
-        margin_used_gauge.set(event.total_margin_used)
+        capital_deployed_gauge.set(event.capital_deployed)
         drawdown_gauge.set(event.drawdown_pct * 100)  # 0-1 → 0-100% scale
         position_count_gauge.set(event.open_position_count)
-        aggregate_leverage_gauge.set(event.aggregate_leverage)
+        capital_utilization_gauge.set(event.capital_utilization)
 
     async def _on_fill(self, event: AnyEvent) -> None:
         """FillEvent → fills counter + latency + slippage + fees + execution quality alerts."""

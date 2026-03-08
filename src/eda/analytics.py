@@ -117,7 +117,7 @@ class AnalyticsEngine:
         """
         assert isinstance(event, BalanceUpdateEvent)
         ts = event.timestamp
-        lev = event.aggregate_leverage
+        lev = event.capital_utilization
         if self._last_equity_ts is not None and ts == self._last_equity_ts and self._equity_curve:
             # 같은 timestamp → 마지막 값 덮어쓰기
             self._equity_curve[-1] = EquityPoint(

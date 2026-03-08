@@ -23,7 +23,7 @@ class SystemHealthSnapshot(BaseModel):
         uptime_seconds: 봇 가동 시간 (초)
         total_equity: 총 자산
         available_cash: 가용 현금
-        aggregate_leverage: 합산 레버리지
+        capital_utilization: 자본 활용률
         open_position_count: 오픈 포지션 수
         total_symbols: 전체 심볼 수
         current_drawdown: 현재 drawdown (0.0~1.0)
@@ -44,7 +44,7 @@ class SystemHealthSnapshot(BaseModel):
     uptime_seconds: float
     total_equity: float
     available_cash: float
-    aggregate_leverage: float
+    capital_utilization: float
     open_position_count: int
     total_symbols: int
     current_drawdown: float
@@ -213,6 +213,10 @@ class BarCloseReportData(BaseModel):
 
     # Section 3: Portfolio Snapshot
     total_equity: float
+    available_cash: float
+    capital_deployed: float
+    drawdown_pct: float
+    capital_utilization: float
     today_pnl: float
     invested_count: int
     total_asset_count: int

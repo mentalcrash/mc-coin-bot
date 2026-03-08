@@ -436,6 +436,7 @@ class LiveRunner:
                         bus,
                         self._futures_client or self._spot_client,
                         ws_detail_callback=getattr(self, "_ws_detail_callback", None),
+                        pm=pm,
                     )
                 )
 
@@ -1339,13 +1340,18 @@ class LiveRunner:
         exchange_client: Any = None,
         ws_detail_callback: Any = None,
         interval: float = 30.0,
+        pm: EDAPortfolioManager | None = None,
     ) -> None:
-        """주기적으로 uptime + EventBus + exchange health + bar ages 메트릭 갱신."""
+        """주기적으로 uptime + EventBus + exchange health + bar ages + equity 메트릭 갱신."""
         while True:
             await asyncio.sleep(interval)
             exporter.update_uptime()
             exporter.update_eventbus_metrics(bus)
             exporter.update_bar_ages()
+            # PM mark-to-market equity snapshot → BalanceUpdateEvent 발행
+            if pm is not None:
+                snapshot = pm.build_balance_snapshot()
+                await bus.publish(snapshot)
             if exchange_client is not None:
                 exporter.update_exchange_health(exchange_client.consecutive_failures)
             if ws_detail_callback is not None:

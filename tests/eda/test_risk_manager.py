@@ -48,7 +48,7 @@ def _make_balance(
     return BalanceUpdateEvent(
         total_equity=total_equity,
         available_cash=available_cash,
-        total_margin_used=total_equity - available_cash,
+        capital_deployed=total_equity - available_cash,
         correlation_id=uuid4(),
         source="test",
     )

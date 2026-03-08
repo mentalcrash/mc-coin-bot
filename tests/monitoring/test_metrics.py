@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from datetime import UTC, datetime
 
@@ -81,13 +82,13 @@ class TestBalanceEvent:
         event = BalanceUpdateEvent(
             total_equity=15000.0,
             available_cash=12000.0,
-            total_margin_used=3000.0,
+            capital_deployed=3000.0,
         )
         await _run_with_bus(exporter, [event])
 
         assert _sample("mcbot_equity_usdt") == 15000.0
         assert _sample("mcbot_cash_usdt") == 12000.0
-        assert _sample("mcbot_margin_used_usdt") == 3000.0
+        assert _sample("mcbot_capital_deployed_usdt") == 3000.0
 
 
 class TestFillEvent:
@@ -340,7 +341,7 @@ class TestBalanceUpdateExtended:
         event = BalanceUpdateEvent(
             total_equity=9000.0,
             available_cash=5000.0,
-            total_margin_used=4000.0,
+            capital_deployed=4000.0,
             drawdown_pct=0.10,
         )
         await _run_with_bus(exporter, [event])
@@ -361,17 +362,17 @@ class TestBalanceUpdateExtended:
         val = _sample("mcbot_open_positions")
         assert val == 3.0
 
-    async def test_aggregate_leverage_gauge(self) -> None:
-        """aggregate_leverage=1.5 → gauge=1.5."""
+    async def test_capital_utilization_gauge(self) -> None:
+        """capital_utilization=1.5 → gauge=1.5."""
         exporter = MetricsExporter(port=0)
         event = BalanceUpdateEvent(
             total_equity=10000.0,
             available_cash=5000.0,
-            aggregate_leverage=1.5,
+            capital_utilization=1.5,
         )
         await _run_with_bus(exporter, [event])
 
-        val = _sample("mcbot_aggregate_leverage")
+        val = _sample("mcbot_capital_utilization")
         assert val == 1.5
 
 
@@ -508,13 +509,13 @@ class TestOrderRejectedEvent:
         rej = OrderRejectedEvent(
             client_order_id="rej-001",
             symbol="BTC/USDT",
-            reason="Leverage limit exceeded: current 3.0x > max 2.0x",
+            reason="Capital utilization exceeded: current 0.95 >= cap 1.00",
         )
         await _run_with_bus(exporter, [req, rej])
 
         after = _sample(
             "mcbot_order_rejected_total",
-            {"symbol": "BTC/USDT", "reason": "leverage_exceeded"},
+            {"symbol": "BTC/USDT", "reason": "utilization_exceeded"},
         )
         assert after is not None
         assert after > before
@@ -677,8 +678,8 @@ class TestSlippageCalculation:
 
 
 class TestReasonCategorization:
-    def test_leverage_exceeded(self) -> None:
-        assert _categorize_reason("Leverage limit exceeded: 3.0x") == "leverage_exceeded"
+    def test_utilization_exceeded(self) -> None:
+        assert _categorize_reason("Capital utilization limit exceeded: 0.95") == "utilization_exceeded"
 
     def test_max_positions(self) -> None:
         assert _categorize_reason("max_positions reached") == "max_positions"
@@ -1143,8 +1144,8 @@ class TestSignedSlippageMetric:
 class TestRejectionReasonExtended:
     """보강된 _categorize_reason() 테스트."""
 
-    def test_aggregate_leverage(self) -> None:
-        assert _categorize_reason("Aggregate leverage exceeded: 5.0x") == "leverage_exceeded"
+    def test_capital_utilization(self) -> None:
+        assert _categorize_reason("Capital utilization exceeded: 0.95") == "utilization_exceeded"
 
     def test_positions_reached(self) -> None:
         assert _categorize_reason("Max positions reached (8)") == "max_positions"
@@ -1627,3 +1628,306 @@ class TestHeartbeatEventPublish:
         event = HeartbeatEvent(component="LiveRunner")
         assert event.component == "LiveRunner"
         assert event.event_type.value == "heartbeat"
+
+
+# ==========================================================================
+# restore_gauges — 재시작 시 PM 상태에서 Prometheus gauge 복구
+# ==========================================================================
+class TestRestoreGauges:
+    """MetricsExporter.restore_gauges() 검증."""
+
+    def test_restore_gauges_sets_equity(self) -> None:
+        """restore_gauges 호출 시 equity gauge가 설정됨."""
+        exporter = MetricsExporter(port=0)
+        exporter.restore_gauges(
+            total_equity=12345.0,
+            available_cash=10000.0,
+            capital_deployed=2345.0,
+            drawdown_pct=0.05,
+            open_position_count=2,
+            capital_utilization=0.19,
+        )
+        assert _sample("mcbot_equity_usdt") == 12345.0
+
+    def test_restore_gauges_sets_cash(self) -> None:
+        """restore_gauges 호출 시 cash gauge가 설정됨."""
+        exporter = MetricsExporter(port=0)
+        exporter.restore_gauges(
+            total_equity=10000.0,
+            available_cash=7500.0,
+            capital_deployed=2500.0,
+            drawdown_pct=0.0,
+            open_position_count=1,
+            capital_utilization=0.25,
+        )
+        assert _sample("mcbot_cash_usdt") == 7500.0
+
+    def test_restore_gauges_sets_drawdown_pct_scaled(self) -> None:
+        """restore_gauges: drawdown_pct 0-1 → 0-100 스케일 변환."""
+        exporter = MetricsExporter(port=0)
+        exporter.restore_gauges(
+            total_equity=9500.0,
+            available_cash=9500.0,
+            capital_deployed=0.0,
+            drawdown_pct=0.05,  # 5%
+            open_position_count=0,
+            capital_utilization=0.0,
+        )
+        assert _sample("mcbot_drawdown_pct") == pytest.approx(5.0)
+
+    def test_restore_gauges_sets_deployed_and_utilization(self) -> None:
+        """restore_gauges: capital deployed + utilization gauge 설정."""
+        exporter = MetricsExporter(port=0)
+        exporter.restore_gauges(
+            total_equity=20000.0,
+            available_cash=15000.0,
+            capital_deployed=5000.0,
+            drawdown_pct=0.0,
+            open_position_count=3,
+            capital_utilization=0.25,
+        )
+        assert _sample("mcbot_capital_deployed_usdt") == 5000.0
+        assert _sample("mcbot_capital_utilization") == pytest.approx(0.25)
+        assert _sample("mcbot_open_positions") == 3.0
+
+    def test_restore_gauges_zero_drawdown(self) -> None:
+        """drawdown 0이면 gauge도 0."""
+        exporter = MetricsExporter(port=0)
+        exporter.restore_gauges(
+            total_equity=10000.0,
+            available_cash=10000.0,
+            capital_deployed=0.0,
+            drawdown_pct=0.0,
+            open_position_count=0,
+            capital_utilization=0.0,
+        )
+        assert _sample("mcbot_drawdown_pct") == 0.0
+
+
+# ==========================================================================
+# build_balance_snapshot — PM에서 현재 상태 기반 BalanceUpdateEvent 생성
+# ==========================================================================
+class TestBuildBalanceSnapshot:
+    """EDAPortfolioManager.build_balance_snapshot() 검증."""
+
+    def _make_pm(self, initial_capital: float = 10000.0) -> EDAPortfolioManager:
+        from src.eda.portfolio_manager import EDAPortfolioManager
+        from src.portfolio.config import PortfolioManagerConfig
+
+        config = PortfolioManagerConfig()
+        return EDAPortfolioManager(
+            config=config,
+            initial_capital=initial_capital,
+            asset_weights={"BTC/USDT": 0.5, "ETH/USDT": 0.5},
+        )
+
+    def test_snapshot_no_positions(self) -> None:
+        """포지션 없을 때 snapshot: equity = cash = initial_capital."""
+        pm = self._make_pm(10000.0)
+        snapshot = pm.build_balance_snapshot()
+        assert isinstance(snapshot, BalanceUpdateEvent)
+        assert snapshot.total_equity == 10000.0
+        assert snapshot.available_cash == 10000.0
+        assert snapshot.capital_deployed == 0.0
+        assert snapshot.drawdown_pct == 0.0
+        assert snapshot.open_position_count == 0
+        assert snapshot.capital_utilization == 0.0
+
+    def test_snapshot_with_position(self) -> None:
+        """포지션이 있을 때 snapshot이 올바른 equity/deployed 반영."""
+        pm = self._make_pm(10000.0)
+        # 수동으로 포지션 설정 (테스트용)
+        from src.eda.portfolio_manager import Position
+
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.1,
+            avg_entry_price=50000.0,
+            last_price=55000.0,
+        )
+        pm._cash = 5000.0  # 5000 USDT 투자
+
+        snapshot = pm.build_balance_snapshot()
+        # equity = cash(5000) + long_notional(0.1 * 55000 = 5500) = 10500
+        assert snapshot.total_equity == pytest.approx(10500.0)
+        assert snapshot.available_cash == 5000.0
+        assert snapshot.capital_deployed == pytest.approx(5500.0)
+        assert snapshot.open_position_count == 1
+
+    def test_snapshot_drawdown_calculation(self) -> None:
+        """peak_equity 대비 drawdown이 올바르게 계산."""
+        pm = self._make_pm(10000.0)
+        pm._peak_equity = 12000.0  # HWM
+        pm._cash = 10000.0  # 현재 equity = 10000 (no positions)
+
+        snapshot = pm.build_balance_snapshot()
+        # drawdown = 1 - 10000/12000 = 0.1667
+        expected_dd = 1.0 - 10000.0 / 12000.0
+        assert snapshot.drawdown_pct == pytest.approx(expected_dd, abs=1e-4)
+
+    def test_snapshot_does_not_update_peak(self) -> None:
+        """build_balance_snapshot은 peak_equity를 갱신하지 않음 (read-only)."""
+        pm = self._make_pm(10000.0)
+        pm._peak_equity = 8000.0  # HWM이 현재 equity(10000)보다 낮음
+
+        pm.build_balance_snapshot()
+        # peak_equity는 갱신되면 안 됨 (BAR/FILL에서만 갱신)
+        assert pm._peak_equity == 8000.0
+
+    def test_snapshot_capital_utilization(self) -> None:
+        """capital_utilization = deployed / equity."""
+        pm = self._make_pm(10000.0)
+        from src.eda.portfolio_manager import Position
+
+        pm._positions["ETH/USDT"] = Position(
+            symbol="ETH/USDT",
+            direction=Direction.LONG,
+            size=1.0,
+            avg_entry_price=3000.0,
+            last_price=3000.0,
+        )
+        pm._cash = 7000.0  # equity = 7000 + 3000 = 10000
+
+        snapshot = pm.build_balance_snapshot()
+        assert snapshot.capital_utilization == pytest.approx(0.3, abs=1e-4)
+
+    def test_snapshot_source_field(self) -> None:
+        """snapshot의 source가 식별 가능."""
+        pm = self._make_pm()
+        snapshot = pm.build_balance_snapshot()
+        assert snapshot.source == "PortfolioManager:periodic"
+
+
+# ==========================================================================
+# Periodic equity update — _periodic_metrics_update에서 PM 기반 갱신
+# ==========================================================================
+class TestPeriodicEquityUpdate:
+    """_periodic_metrics_update에서 PM mark-to-market equity 갱신 검증."""
+
+    def _make_pm(self, initial_capital: float = 10000.0) -> EDAPortfolioManager:
+        from src.eda.portfolio_manager import EDAPortfolioManager
+        from src.portfolio.config import PortfolioManagerConfig
+
+        config = PortfolioManagerConfig()
+        return EDAPortfolioManager(
+            config=config,
+            initial_capital=initial_capital,
+            asset_weights={"BTC/USDT": 1.0},
+        )
+
+    async def test_periodic_update_publishes_balance_event(self) -> None:
+        """periodic update가 BalanceUpdateEvent를 발행."""
+        from src.core.events import EventType
+        from src.eda.live_runner import LiveRunner
+
+        pm = self._make_pm(10000.0)
+        bus = EventBus(queue_size=100)
+        exporter = MetricsExporter(port=0)
+        await exporter.register(bus)
+
+        captured: list[BalanceUpdateEvent] = []
+
+        async def capture_balance(event: object) -> None:
+            assert isinstance(event, BalanceUpdateEvent)
+            captured.append(event)
+
+        bus.subscribe(EventType.BALANCE_UPDATE, capture_balance)
+        bus_task = asyncio.create_task(bus.start())
+
+        try:
+            # 1회 실행 후 즉시 종료 (interval=0.01)
+            task = asyncio.create_task(
+                LiveRunner._periodic_metrics_update(
+                    exporter, bus, pm=pm, interval=0.01
+                )
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        assert len(captured) >= 1
+        evt = captured[0]
+        assert evt.total_equity == pytest.approx(10000.0)
+        assert evt.source == "PortfolioManager:periodic"
+
+    async def test_periodic_update_reflects_position_mtm(self) -> None:
+        """periodic update가 position mark-to-market을 반영."""
+        from src.core.events import EventType
+        from src.eda.live_runner import LiveRunner
+        from src.eda.portfolio_manager import Position
+
+        pm = self._make_pm(10000.0)
+        pm._positions["BTC/USDT"] = Position(
+            symbol="BTC/USDT",
+            direction=Direction.LONG,
+            size=0.1,
+            avg_entry_price=50000.0,
+            last_price=60000.0,
+        )
+        pm._cash = 5000.0
+
+        bus = EventBus(queue_size=100)
+        exporter = MetricsExporter(port=0)
+        await exporter.register(bus)
+
+        captured: list[BalanceUpdateEvent] = []
+
+        async def capture_balance(event: object) -> None:
+            assert isinstance(event, BalanceUpdateEvent)
+            captured.append(event)
+
+        bus.subscribe(EventType.BALANCE_UPDATE, capture_balance)
+        bus_task = asyncio.create_task(bus.start())
+
+        try:
+            task = asyncio.create_task(
+                LiveRunner._periodic_metrics_update(
+                    exporter, bus, pm=pm, interval=0.01
+                )
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        assert len(captured) >= 1
+        # equity = 5000 + (0.1 * 60000) = 11000
+        assert captured[0].total_equity == pytest.approx(11000.0)
+
+    async def test_periodic_update_gauge_values(self) -> None:
+        """periodic update 후 Prometheus gauge 값이 갱신됨."""
+        from src.eda.live_runner import LiveRunner
+
+        pm = self._make_pm(10000.0)
+        bus = EventBus(queue_size=100)
+        exporter = MetricsExporter(port=0)
+        await exporter.register(bus)
+        bus_task = asyncio.create_task(bus.start())
+
+        try:
+            task = asyncio.create_task(
+                LiveRunner._periodic_metrics_update(
+                    exporter, bus, pm=pm, interval=0.01
+                )
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await bus.flush()
+        finally:
+            await bus.stop()
+            await bus_task
+
+        assert _sample("mcbot_equity_usdt") == pytest.approx(10000.0)
+        assert _sample("mcbot_cash_usdt") == pytest.approx(10000.0)

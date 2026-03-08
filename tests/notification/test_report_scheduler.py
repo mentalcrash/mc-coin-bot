@@ -321,6 +321,10 @@ def _make_scheduler_with_spot_collector() -> tuple[ReportScheduler, AsyncMock, M
                 ),
             ),
             total_equity=10100.0,
+            available_cash=7600.0,
+            capital_deployed=2500.0,
+            drawdown_pct=0.02,
+            capital_utilization=0.248,
             today_pnl=100.0,
             invested_count=2,
             total_asset_count=6,
@@ -361,6 +365,18 @@ class TestBarCloseReport:
         signal_field = item.embed["fields"][0]
         assert signal_field["name"] == "Signal Changes"
         assert "BTC/USDT" in signal_field["value"]
+
+    async def test_bar_close_has_balance_fields(self) -> None:
+        """Bar Close Report에 Balance 정보 (Cash/Deployed/Drawdown/Utilization) 포함."""
+        scheduler, queue, _collector = _make_scheduler_with_spot_collector()
+        await scheduler._send_bar_close_report()
+
+        item = queue.enqueue.call_args[0][0]
+        field_names = [f["name"] for f in item.embed["fields"]]
+        assert "Cash" in field_names
+        assert "Deployed" in field_names
+        assert "Drawdown" in field_names
+        assert "Utilization" in field_names
 
     async def test_bar_close_skipped_without_spot_client(self) -> None:
         """spot_client 없으면 skip."""

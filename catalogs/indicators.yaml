@@ -1,8 +1,8 @@
-# Indicator Catalog — 70개 지표 메타데이터
+# Indicator Catalog — 71개 지표 메타데이터
 # src/market/indicators/__all__ 함수와 1:1 매핑
 
 indicators:
-  # ─── Trend (6) ──────────────────────────────────────────────────────
+  # ─── Trend (7) ──────────────────────────────────────────────────────
   - id: adx
     name: Average Directional Index
     module: trend
@@ -59,6 +59,16 @@ indicators:
     default_params: {period: 20}
     used_by: [ctrend]
     alpha_potential: low
+
+  - id: supertrend
+    name: SuperTrend
+    module: trend
+    category: trend
+    description: "ATR 기반 동적 지지/저항선. 가격 돌파 시 추세 전환"
+    default_params: {period: 10, multiplier: 3.0}
+    used_by: [supertrend-v1.1]
+    alpha_potential: high
+    notes: "현재 운용 전략(SuperTrend v1.1)의 핵심 지표"
 
   # ─── Oscillators (7) ────────────────────────────────────────────────
   - id: cci

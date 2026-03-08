@@ -133,10 +133,10 @@ class TestNotificationEngine:
         await bus.stop()
         await bus_task
 
-    async def test_balance_update_throttled(
+    async def test_balance_update_not_subscribed(
         self, sample_balance_update: BalanceUpdateEvent
     ) -> None:
-        """BalanceUpdateEvent에 spam_key가 설정됨."""
+        """BalanceUpdateEvent는 구독하지 않음 (Bar Close 리포트로 대체)."""
         mock_queue = AsyncMock()
         engine = NotificationEngine(mock_queue)
 
@@ -147,12 +147,25 @@ class TestNotificationEngine:
         await bus.publish(sample_balance_update)
         await bus.flush()
 
-        item = mock_queue.enqueue.call_args[0][0]
-        assert item.spam_key == "balance_update"
-        assert item.channel == ChannelRoute.ALERTS
+        # Balance Update는 더 이상 enqueue되지 않아야 함
+        mock_queue.enqueue.assert_not_called()
 
         await bus.stop()
         await bus_task
+
+    async def test_register_does_not_subscribe_balance_update(self) -> None:
+        """register() 호출 시 BALANCE_UPDATE를 구독하지 않음."""
+        from src.core.events import EventType
+
+        mock_queue = AsyncMock()
+        engine = NotificationEngine(mock_queue)
+
+        bus = EventBus(queue_size=100)
+        await engine.register(bus)
+
+        # BALANCE_UPDATE 핸들러가 등록되지 않았는지 확인
+        balance_handlers = bus._handlers.get(EventType.BALANCE_UPDATE, [])
+        assert len(balance_handlers) == 0
 
     async def test_position_update_standalone(
         self, sample_position_update: PositionUpdateEvent

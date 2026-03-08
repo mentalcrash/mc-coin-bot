@@ -29,11 +29,11 @@ if TYPE_CHECKING:
         QuarterlyReportData,
         StrategyHealthSnapshot,
         StrategyIndicatorItem,
+        StrategyInfoMixin,
+        SystemHealthMixin,
         SystemHealthSnapshot,
         WeeklyReportData,
         YearlyReportData,
-        StrategyInfoMixin,
-        SystemHealthMixin,
     )
 
 # Discord Embed 색상 코드 (decimal)
@@ -44,6 +44,21 @@ _COLOR_YELLOW = 0xFFFF00
 _COLOR_ORANGE = 0xE67E22
 
 _FOOTER_TEXT = "MC-Coin-Bot"
+
+
+def _fmt_price(value: float) -> str:
+    """가격을 사람이 읽기 좋은 형식으로 포맷.
+
+    $1 이상: 소수점 2자리 (예: $67,260.00)
+    $0.01~$1: 소수점 4자리 (예: $0.0386)
+    $0.01 미만: 유효숫자 4개 (예: $0.001234)
+    """
+    abs_val = abs(value)
+    if abs_val >= 1:
+        return f"${value:,.2f}"
+    if abs_val >= 0.01:
+        return f"${value:,.4f}"
+    return f"${value:.4g}"
 
 
 def format_fill_embed(fill: FillEvent) -> dict[str, Any]:
@@ -185,8 +200,8 @@ def format_balance_embed(event: BalanceUpdateEvent) -> dict[str, Any]:
             {"name": "Total Equity", "value": f"${event.total_equity:,.2f}", "inline": True},
             {"name": "Available Cash", "value": f"${event.available_cash:,.2f}", "inline": True},
             {
-                "name": "Margin Used",
-                "value": f"${event.total_margin_used:,.2f}",
+                "name": "Capital Deployed",
+                "value": f"${event.capital_deployed:,.2f}",
                 "inline": True,
             },
         ],
@@ -514,7 +529,7 @@ def _build_indicator_fields(indicators: tuple[StrategyIndicatorItem, ...]) -> di
     """Section: Strategy Indicators embed field."""
     ind_lines: list[str] = []
     for i in indicators:
-        st_str = f"ST ${i.supertrend_line:,.4g}" if i.supertrend_line else "ST —"
+        st_str = f"ST {_fmt_price(i.supertrend_line)}" if i.supertrend_line else "ST —"
         adx_str = f"ADX {i.adx_value:.1f}" if i.adx_value is not None else "ADX —"
         ind_lines.append(f"**{i.symbol}** {st_str} | {adx_str} | {i.outlook}")
     return {
@@ -602,14 +617,14 @@ def format_spot_daily_report_embed(data: DailyReportData) -> dict[str, Any]:
             if a.position_value > 0:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.change_24h_pct:+.1f}%) | "
                     f"${a.position_value:,.0f} | "
                     f"PnL ${a.day_pnl:+,.2f} | {stop_str}"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.change_24h_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
@@ -695,13 +710,13 @@ def format_bar_close_report_embed(data: BarCloseReportData) -> dict[str, Any]:
                 )
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.change_24h_pct:+.1f}%) | "
                     f"${a.position_value:,.0f} {stop_str}"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.change_24h_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.change_24h_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
@@ -716,7 +731,11 @@ def format_bar_close_report_embed(data: BarCloseReportData) -> dict[str, Any]:
     fields.extend(
         [
             {"name": "Equity", "value": f"${data.total_equity:,.0f}", "inline": True},
+            {"name": "Cash", "value": f"${data.available_cash:,.0f}", "inline": True},
+            {"name": "Deployed", "value": f"${data.capital_deployed:,.0f}", "inline": True},
             {"name": "Today PnL", "value": f"${data.today_pnl:+,.2f}", "inline": True},
+            {"name": "Drawdown", "value": f"{data.drawdown_pct:.1%}", "inline": True},
+            {"name": "Utilization", "value": f"{data.capital_utilization:.1%}", "inline": True},
             {
                 "name": "Invested",
                 "value": f"{data.invested_count}/{data.total_asset_count}",
@@ -793,13 +812,13 @@ def format_spot_weekly_report_embed(data: WeeklyReportData) -> dict[str, Any]:
             if a.week_trades > 0:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.week_change_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.week_change_pct:+.1f}%) | "
                     f"PnL ${a.week_pnl:+,.2f} | {a.week_trades} trades"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.week_change_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.week_change_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
@@ -903,13 +922,13 @@ def format_spot_monthly_report_embed(data: MonthlyReportData) -> dict[str, Any]:
             if a.month_trades > 0:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.month_change_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.month_change_pct:+.1f}%) | "
                     f"PnL ${a.month_pnl:+,.2f} | {a.month_trades} trades"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.month_change_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.month_change_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
@@ -1051,13 +1070,13 @@ def format_spot_quarterly_report_embed(data: QuarterlyReportData) -> dict[str, A
             if a.quarter_trades > 0:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.quarter_change_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.quarter_change_pct:+.1f}%) | "
                     f"PnL ${a.quarter_pnl:+,.2f} | {a.quarter_trades} trades"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.quarter_change_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.quarter_change_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
@@ -1199,13 +1218,13 @@ def format_spot_yearly_report_embed(data: YearlyReportData) -> dict[str, Any]:
             if a.year_trades > 0:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.year_change_pct:+.1f}%) | "
+                    f"{_fmt_price(a.current_price)} ({a.year_change_pct:+.1f}%) | "
                     f"PnL ${a.year_pnl:+,.2f} | {a.year_trades} trades"
                 )
             else:
                 line = (
                     f"**{a.symbol}** {a.signal} | "
-                    f"${a.current_price:,.4g} ({a.year_change_pct:+.1f}%)"
+                    f"{_fmt_price(a.current_price)} ({a.year_change_pct:+.1f}%)"
                 )
             lines.append(line)
         fields.append(
